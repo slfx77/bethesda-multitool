@@ -23,6 +23,10 @@ public sealed partial class WorldView3DControl
     // orientation; the whole capsule sample is only taken once per frame in walk mode (SnapToGround).
     private const int WalkCapsuleRingSamples = 8;
 
+    // Low obstacles below this height remain step/ground-sampler territory. Horizontal collision starts
+    // above it, so stairs and kerbs still raise the camera instead of behaving like vertical walls.
+    private const float WalkStepHeight = 48f;
+
     /// <summary>
     ///     One walk-capsule candidate: a placed reference whose XY footprint can overlap the capsule,
     ///     with the placement matrix + inverse hoisted out of the per-sample loop (they are per-REF
@@ -37,6 +41,59 @@ public sealed partial class WorldView3DControl
     // Scratch candidate lists (walk-mode is single-threaded on the UI/frame path).
     private readonly List<GroundCandidate> _groundCandidates = new(64);
     private readonly List<GroundCandidate> _ceilingCandidates = new(32);
+    private readonly List<GroundCandidate> _horizontalCandidates = new(64);
+    private readonly List<WalkCollisionInstance> _horizontalCollisionInstances = new(64);
+
+    /// <summary>
+    ///     Sweeps the walk camera's circular footprint through the requested XY move. Warm candidates
+    ///     use the cache's Havok-first triangle soup; a cold ordinary solid may temporarily use the same
+    ///     policy-gated OBND fallback as ground sampling. The body interval starts above step height,
+    ///     preserving the existing stair/ground behavior, and follows camera Z while jumping.
+    /// </summary>
+    private Vector2 ResolveWalkHorizontalMovement(Vector3 eyePosition, Vector2 requestedDisplacement)
+    {
+        if (_cellGridLookup is null || requestedDisplacement.LengthSquared() <= float.Epsilon)
+        {
+            return requestedDisplacement;
+        }
+
+        BuildRaycastCandidates(
+            eyePosition.X, eyePosition.Y, includeColdObnd: true, _horizontalCandidates,
+            additionalReach: requestedDisplacement.Length());
+
+        _horizontalCollisionInstances.Clear();
+        foreach (var candidate in _horizontalCandidates)
+        {
+            if (candidate.Collision is { } mesh)
+            {
+                _horizontalCollisionInstances.Add(WalkCollisionInstance.FromMesh(mesh, candidate.World));
+                continue;
+            }
+
+            var placement = candidate.Placement;
+            if (placement.Bounds is not { } bounds) continue;
+            var scale = placement.Scale > 0f ? placement.Scale : 1f;
+            _horizontalCollisionInstances.Add(WalkCollisionInstance.FromAxisAlignedBox(
+                new Vector3(
+                    placement.X + bounds.X1 * scale,
+                    placement.Y + bounds.Y1 * scale,
+                    placement.Z + bounds.Z1 * scale),
+                new Vector3(
+                    placement.X + bounds.X2 * scale,
+                    placement.Y + bounds.Y2 * scale,
+                    placement.Z + bounds.Z2 * scale)));
+        }
+
+        var bodyMinZ = eyePosition.Z - _controller.EyeHeight + WalkStepHeight;
+        var bodyMaxZ = eyePosition.Z + _controller.CeilingHeadroom;
+        return WalkHorizontalCollision.Resolve(
+            new Vector2(eyePosition.X, eyePosition.Y),
+            requestedDisplacement,
+            bodyMinZ,
+            bodyMaxZ,
+            WalkCapsuleRadius,
+            _horizontalCollisionInstances);
+    }
 
     /// <summary>
     ///     Capsule-aware ground sample for walk mode: the HIGHEST ground height under the player's
@@ -129,13 +186,18 @@ public sealed partial class WorldView3DControl
     ///     wrongly; warm meshes without OBND stay ungated (rare). Placement matrix + inverse are
     ///     computed here, once per candidate, instead of per capsule sample.
     /// </summary>
-    private void BuildRaycastCandidates(float centerX, float centerY, bool includeColdObnd, List<GroundCandidate> into)
+    private void BuildRaycastCandidates(
+        float centerX,
+        float centerY,
+        bool includeColdObnd,
+        List<GroundCandidate> into,
+        float additionalReach = 0f)
     {
         into.Clear();
         var gx = (int)MathF.Floor(centerX / _cellSize);
         var gy = (int)MathF.Floor(centerY / _cellSize);
         // Ring reach + eye slack + a safety pad for OBNDs that under-cover their collision mesh.
-        var reach = WalkCapsuleRadius + GroundRaycastEpsUp + 64f;
+        var reach = WalkCapsuleRadius + GroundRaycastEpsUp + 64f + MathF.Max(0f, additionalReach);
 
         for (var dy = -1; dy <= 1; dy++)
         {
@@ -145,7 +207,9 @@ public sealed partial class WorldView3DControl
                 foreach (var p in cell.PlacedObjects)
                 {
                     if (string.IsNullOrEmpty(p.ModelPath)) continue;
-                    if (!_showDisabled && p.IsInitiallyDisabled) continue;
+                    var authoredDisabled = p.IsInitiallyDisabled ||
+                                           _data?.XespDisabledRefs.Contains(p.FormId) == true;
+                    if (!_referenceEnabledOverrides.IsVisible(p.FormId, authoredDisabled, _showDisabled)) continue;
                     if (p.RecordType is "ACHR" or "ACRE") continue; // skinned actors carry no static collision
                     if (RenderableReference.IsMarkerModelPath(p.ModelPath) ||
                         RenderableReference.IsImposterModelPath(p.ModelPath) ||
@@ -179,7 +243,27 @@ public sealed partial class WorldView3DControl
                         continue;
                     }
 
-                    if (p.Bounds is { } b)
+                    var world = Matrix4x4.Identity;
+                    var inverse = Matrix4x4.Identity;
+                    if (collision is not null)
+                    {
+                        world = PlacedReferenceTransform.ComposeWorldMatrix(
+                            p.X, p.Y, p.Z, p.RotX, p.RotY, p.RotZ, p.Scale);
+                        if (!Matrix4x4.Invert(world, out inverse)) continue;
+
+                        // Gate authoritative collision by its own bounds, not OBND. Some Bethesda
+                        // statics under-cover their physics soup; using OBND here would decode the
+                        // correct Havok wall and then silently exclude it from the walk query.
+                        var scale = p.Scale > 0f ? p.Scale : 1f;
+                        var ax = MathF.Max(MathF.Abs(collision.LocalMin.X), MathF.Abs(collision.LocalMax.X));
+                        var ay = MathF.Max(MathF.Abs(collision.LocalMin.Y), MathF.Abs(collision.LocalMax.Y));
+                        var az = MathF.Max(MathF.Abs(collision.LocalMin.Z), MathF.Abs(collision.LocalMax.Z));
+                        var r = MathF.Sqrt((ax * ax) + (ay * ay) + (az * az)) * scale + reach;
+                        var ddx = centerX - p.X;
+                        var ddy = centerY - p.Y;
+                        if ((ddx * ddx) + (ddy * ddy) > r * r) continue;
+                    }
+                    else if (p.Bounds is { } b)
                     {
                         var scale = p.Scale > 0f ? p.Scale : 1f;
                         var rx = MathF.Max(MathF.Abs(b.X1), MathF.Abs(b.X2)) * scale;
@@ -188,15 +272,6 @@ public sealed partial class WorldView3DControl
                         var ddx = centerX - p.X;
                         var ddy = centerY - p.Y;
                         if ((ddx * ddx) + (ddy * ddy) > r * r) continue;
-                    }
-
-                    var world = Matrix4x4.Identity;
-                    var inverse = Matrix4x4.Identity;
-                    if (collision is not null)
-                    {
-                        world = PlacedReferenceTransform.ComposeWorldMatrix(
-                            p.X, p.Y, p.Z, p.RotX, p.RotY, p.RotZ, p.Scale);
-                        if (!Matrix4x4.Invert(world, out inverse)) continue;
                     }
 
                     into.Add(new GroundCandidate(p, collision, world, inverse));

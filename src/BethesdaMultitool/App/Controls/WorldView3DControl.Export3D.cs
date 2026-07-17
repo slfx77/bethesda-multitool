@@ -163,7 +163,13 @@ public sealed partial class WorldView3DControl
                     _water.SetSceneDepth(NoDepthSrv, _camera.NearPlane, _camera.FarPlane);
                     _water.Render(viewProj, cylinder);
                 }
-                if (opts.ShowReferences) _references.RenderBlendedDeferred();
+                if (opts.ShowReferences)
+                {
+                    // Orthographic exports have no perspective-compatible scene-depth SRV; clear
+                    // any live-frame binding retained on the shared renderer and use its DSV PSO.
+                    _references.SetSceneDepth(NoDepthSrv, _camera.NearPlane, _camera.FarPlane);
+                    _references.RenderBlendedDeferred();
+                }
                 if (opts.ShowNavMesh) _navMesh?.Render(viewProj, cylinder);
                 if (opts.ShowCollision) _collisionDebug?.Render(viewProj, cylinder);
                 if (opts.ShowGrid) _cellGrid?.Render(viewProj, cylinder);

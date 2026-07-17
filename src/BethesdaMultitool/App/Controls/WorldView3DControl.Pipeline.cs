@@ -125,7 +125,7 @@ public sealed partial class WorldView3DControl
                 speedTreeDimming: _data?.SpeedTreeDimming);
             _references = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12,
-                _cbvSrvUavHeap12, _referenceMeshCache12)
+                _cbvSrvUavHeap12, _referenceMeshCache12, _referenceEnabledOverrides)
             {
                 DetailedProfilingEnabled = _profileLogging,
                 ShowInitiallyDisabled = _showDisabled, // persist the toggle across ESM reloads

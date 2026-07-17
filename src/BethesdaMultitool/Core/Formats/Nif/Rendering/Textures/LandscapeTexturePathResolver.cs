@@ -4,7 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 
 /// <summary>
-///     Pure chain walk LTEX FormID → diffuse texture path, used by both the 2D map
+///     Pure chain walk LTEX FormID → texture-set paths, used by both the 2D map
 ///     (<c>LandscapeTexturePalette</c>, CPU-decode path) and the 3D viewer
 ///     (<c>TerrainTextureResolver</c>, GPU-upload path) so the lookup semantics stay in lock-step.
 ///     Two forms are supported:
@@ -44,6 +44,27 @@ internal static class LandscapeTexturePathResolver
         // Prefix it to the textures\-relative form the loader's Normalize expects (Normalize prepends
         // textures\), unless the path is already landscape\- or textures\-rooted.
         return string.IsNullOrWhiteSpace(ltex.IconPath) ? null : PrefixLandscape(ltex.IconPath);
+    }
+
+    /// <summary>
+    ///     Resolves an LTEX FormID through TNAM to the linked TXST's slot-1 normal texture. Unlike
+    ///     <see cref="ResolveDiffuse" />, there is no TES4 ICON fallback: an absent link or TX01 is a
+    ///     genuinely missing authored normal and callers should retain the geometric surface normal.
+    /// </summary>
+    internal static string? ResolveNormal(
+        uint ltexFormId,
+        IReadOnlyDictionary<uint, LandscapeTextureRecord> ltexByFormId,
+        IReadOnlyDictionary<uint, TextureSetRecord> txstByFormId)
+    {
+        if (!ltexByFormId.TryGetValue(ltexFormId, out var ltex) ||
+            ltex.TextureSetFormId is not uint txstFormId ||
+            !txstByFormId.TryGetValue(txstFormId, out var txst) ||
+            string.IsNullOrWhiteSpace(txst.NormalTexture))
+        {
+            return null;
+        }
+
+        return txst.NormalTexture;
     }
 
     private static string PrefixLandscape(string iconPath)

@@ -104,6 +104,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTextureCache12? _referenceTextureCache12;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceMeshCache12? _referenceMeshCache12;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12? _references;
+    // Per-placement ACTI/REFR Enabled preview overrides. This table is scene-local and keyed by the
+    // placed FormID, so changing one selected instance never mutates its parsed/base record or siblings.
+    private readonly ReferenceEnabledOverrideStore _referenceEnabledOverrides = new();
     private WorldViewData? _data;
     private DateTime _lastFrameTime;
     // Atmosphere: current game hour (0..24) feeding the shared b3 atmosphere CB. Defaults to noon and
@@ -157,10 +160,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // still reading it crashes the process. Resources go here instead of being disposed
     // immediately, and are released N frames later.
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDeletionQueue12? _deletionQueue12;
-    // Scene-depth SRV feeding the water depth-fade. The depth resource is R32_TYPELESS; we create an
-    // R32_FLOAT SRV over it in the shared bindless heap so water.frag samples the real water-column
-    // depth (FNV WATER000's DepthMap path) instead of a view-angle proxy. Allocated once and the SRV
-    // recreated in place on resize (the depth resource changes identity). NoDepthSrv => proxy.
+    // Scene-depth SRV feeding single-sample water depth-fade and eligible blended effects. The
+    // R32_TYPELESS resource receives an R32_FLOAT Texture2D/Texture2DMS view in the shared bindless
+    // heap; the per-draw soft-effect binding selects the matching HLSL alias. Allocated once and
+    // recreated in place on resize (the depth resource changes identity). NoDepthSrv => no sampling.
     private const uint NoDepthSrv = 0xFFFFFFFF;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12.PersistentAllocation? _depthSrv;
     private bool _suppressWorldspaceSelectionEvent;
@@ -344,6 +347,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     internal void LoadData(WorldViewData data)
     {
         var loadSelectionGeneration = BeginSceneSelection();
+        // Overrides are inspection previews, not plugin edits. A newly loaded file starts from its
+        // authored REFR + XESP state even when it reuses a FormID from the prior scene.
+        _referenceEnabledOverrides.Clear();
         _data = data;
         // Morrowind has no engine HDR/bloom/imagespace stage (LegacyClamp) — hide the toggles
         // rather than offering dead switches. Re-evaluated on every LoadData (ESM switch).

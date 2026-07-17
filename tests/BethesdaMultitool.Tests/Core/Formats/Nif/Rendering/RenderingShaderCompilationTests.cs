@@ -95,6 +95,102 @@ public sealed class RenderingShaderCompilationTests
         Assert.Equal(2, source.Split("* vertexWeight", StringSplitOptions.None).Length - 1);
     }
 
+    [Fact]
+    public void FnvRtFreeWaterKeepsRecoveredWater003ReflectionAndBodyLightTerms()
+    {
+        var source = ReadEmbeddedShader("water.frag.hlsl");
+
+        Assert.Contains(
+            "float3 fnvBodyLightDir = normalize(float3(sunDir.x, 4.0 * sunDir.y, sunDir.z));",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("float3 refl = uReflection.rgb;", source, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "float3 refl = uReflection.rgb * reflectivity;",
+            source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WaterDepthShaderMaxResolvesReversedZMsaaBeforeLinearization()
+    {
+        var source = ReadEmbeddedShader("water.frag.hlsl");
+        var helperStart = source.IndexOf("float LoadSceneDepth(", StringComparison.Ordinal);
+        var helperEnd = source.IndexOf("#if FO4_WATER_ARCHITECTURAL", helperStart, StringComparison.Ordinal);
+
+        Assert.True(helperStart >= 0);
+        Assert.True(helperEnd > helperStart);
+        var helper = source[helperStart..helperEnd];
+        Assert.Contains("if (suppliedSampleCount <= 1u)", helper, StringComparison.Ordinal);
+        Assert.Contains(
+            "gWaterTextures[NonUniformResourceIndex(depthIndex)].Load(int3(pixel, 0)).r",
+            helper,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "for (uint sampleIndex = 0; sampleIndex < descriptorSampleCount; sampleIndex++)",
+            helper,
+            StringComparison.Ordinal);
+        Assert.Contains("nearestNdc = max(nearestNdc,", helper, StringComparison.Ordinal);
+
+        Assert.Contains(
+            "Texture2DMS<float> gWaterDepthTexturesMsaa[] : register(t0, space3);",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("uint depthSampleCount = max((uint)uRenderOrigin.w, 1u);",
+            source,
+            StringComparison.Ordinal);
+        var resolveCall = source.IndexOf(
+            "float sceneNdc = LoadSceneDepth(depthIndex, (int2)input.Position.xy, depthSampleCount);",
+            StringComparison.Ordinal);
+        var linearizeCall = source.IndexOf(
+            "float sceneDist = LinearizeDepth(sceneNdc, near, far);",
+            StringComparison.Ordinal);
+        Assert.True(resolveCall >= 0);
+        Assert.True(linearizeCall > resolveCall);
+    }
+
+    [Theory]
+    [InlineData("reference.frag.hlsl")]
+    [InlineData("skin.frag.hlsl")]
+    public void BethesdaDirectXNormalMapsKeepAuthoredGreenInDirectXShaders(string shaderName)
+    {
+        var source = ReadEmbeddedShader(shaderName);
+
+        // Recovered FNV SLS1009: sample.rgb * 2 - 1, then dot with the authored tangent-space
+        // light vector. Bethesda DDS normals are converted to glTF by flipping green exactly once
+        // in NpcGlbNormalMapPacker, so doing it in the DirectX renderer would invert the relief.
+        Assert.DoesNotContain("mapN.y = -mapN.y", source, StringComparison.Ordinal);
+        Assert.Contains("* 2.0 - 1.0", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FnvNoLightingDoesNotInheritLighting30HdrEmissiveMultiplier()
+    {
+        var source = ReadEmbeddedShader("reference.frag.hlsl");
+        var branchStart = source.IndexOf("if (fullBright)", StringComparison.Ordinal);
+        Assert.True(branchStart >= 0);
+
+        var branchEnd = source.IndexOf("else", branchStart, StringComparison.Ordinal);
+        Assert.True(branchEnd > branchStart);
+        var fullBrightBranch = source[branchStart..branchEnd];
+        Assert.Contains("shade = input.vSpecular.rgb;", fullBrightBranch, StringComparison.Ordinal);
+        Assert.DoesNotContain("uCameraOrigin.w", fullBrightBranch, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FnvLighting30UsesClassifiedGlowAndExactHdrInputs()
+    {
+        var source = ReadEmbeddedShader("reference.frag.hlsl");
+
+        Assert.Contains("(MaterialTextureFlags(packedState) & 8u) != 0u", source, StringComparison.Ordinal);
+        Assert.Contains("(MaterialTextureFlags(packedState) & 16u) != 0u", source, StringComparison.Ordinal);
+        Assert.Contains("emission *= input.vEffectFalloff.w * uCameraOrigin.w;", source,
+            StringComparison.Ordinal);
+        Assert.Contains("ambient = min(ambient, 1.0);", source, StringComparison.Ordinal);
+        Assert.Contains("shade += glow * emission;", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("lit += emission", source, StringComparison.Ordinal);
+    }
+
     private static void Compile(string name, string entryPoint, string profile, ShaderMacro[] macros)
     {
         var source = ReadEmbeddedShader(name);

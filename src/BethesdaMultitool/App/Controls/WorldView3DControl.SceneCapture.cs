@@ -24,8 +24,15 @@ public sealed partial class WorldView3DControl
     // waits its frame fence), so rewriting in place never races an in-flight read.
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12.PersistentAllocation? _captureDepthSrv;
 
-    /// <summary>Allocates (once) and rewrites the R32_Float SRV over the capture target's D32_Float
-    /// depth so the water shader can column-depth fade in headless captures (mirrors EnsureDepthSrv).</summary>
+    /// <summary>
+    ///     Strongly-typed subset of the most recent offscreen capture state. Acceptance scenarios
+    ///     consume this immediately after <see cref="Profiler_CaptureSceneAsync" /> returns; clearing
+    ///     it at capture start prevents a failed capture from reusing stale structural evidence.
+    /// </summary>
+    internal RendererProfilerScenarioSnapshot? Profiler_LastCaptureScenarioSnapshot { get; private set; }
+
+    /// <summary>Allocates (once) and rewrites the R32_Float Texture2D/Texture2DMS SRV over the
+    /// capture target's typeless depth (mirrors EnsureDepthSrv).</summary>
     private bool TryEnsureCaptureDepthSrv(GpuOffscreenSceneTarget12 target)
     {
         if (_gpu12 is null || _cbvSrvUavHeap12 is null)
@@ -37,10 +44,19 @@ public sealed partial class WorldView3DControl
         var srvDesc = new Vortice.Direct3D12.ShaderResourceViewDescription
         {
             Format = Vortice.DXGI.Format.R32_Float,
-            ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
+            ViewDimension = target.IsMsaa
+                ? Vortice.Direct3D12.ShaderResourceViewDimension.Texture2DMultisampled
+                : Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
             Shader4ComponentMapping = Vortice.Direct3D12.ShaderComponentMapping.Default,
-            Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 },
         };
+        if (!target.IsMsaa)
+        {
+            srvDesc.Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView
+            {
+                MipLevels = 1,
+                MostDetailedMip = 0,
+            };
+        }
         _gpu12.Device.CreateShaderResourceView(target.DepthResource, srvDesc, _captureDepthSrv.Value.Cpu);
         return true;
     }
@@ -130,6 +146,7 @@ public sealed partial class WorldView3DControl
         int pixelHeight,
         float animationTimeSeconds = 0f)
     {
+        Profiler_LastCaptureScenarioSnapshot = null;
         if (!CanRenderProjectionExport) return null; // D3D12 + scene renderers ready
         if (pixelWidth <= 0 || pixelHeight <= 0) return null;
         ArgumentOutOfRangeException.ThrowIfNegative(animationTimeSeconds);
@@ -299,37 +316,70 @@ public sealed partial class WorldView3DControl
                 // Defer blended reference submeshes until after water so water never paints over them
                 // (mirrors the live frame / 3D export). cullViewProj == viewProj (absolute coords).
                 _references?.Render(viewProj, cylinder, deferBlended: true, cullViewProj: viewProj);
+                // Capture depth is exposed as Texture2D or Texture2DMS. Water and eligible deferred
+                // effects consume both; deferred effects additionally keep a read-only DSV.
+                var captureDepthAvailable =
+                    (_references is not null || (_showWater && _water is not null)) &&
+                    TryEnsureCaptureDepthSrv(target);
+                var captureDepthIndex = captureDepthAvailable
+                    ? _captureDepthSrv!.Value.BindlessIndex
+                    : NoDepthSrv;
+                var captureReferencesUseDepth = _references is not null && captureDepthAvailable;
+                var captureWaterUsesDepth = _showWater && _water is not null && captureDepthAvailable;
+                _references?.SetSceneDepth(
+                    captureReferencesUseDepth ? captureDepthIndex : NoDepthSrv,
+                    _camera.NearPlane,
+                    _camera.FarPlane,
+                    target.SampleCount);
                 if (_showWater && _water is not null && _references is not null)
                 {
                     _water.SetNifWaterPlanes(_references.NifWaterPlanes);
                     // Bind the offscreen depth as an R32_Float SRV (mirrors the live frame's swap-chain
                     // depth SRV, Frame.cs) so the water shader computes the REAL column-depth fade —
-                    // Oblivion's shore alpha is depth-driven and invisible on the proxy path. MSAA depth
-                    // can't be a plain Texture2D SRV → fall back to the proxy (view-angle) fade.
-                    var captureUsesDepth = !target.IsMsaa && TryEnsureCaptureDepthSrv(target);
+                    // Oblivion's shore alpha is depth-driven and invisible on the proxy path. The shader
+                    // resolves Texture2DMS depth by choosing the nearest reversed-Z sample.
                     _water.SetSceneDepth(
-                        captureUsesDepth ? _captureDepthSrv!.Value.BindlessIndex : NoDepthSrv,
-                        _camera.NearPlane, _camera.FarPlane);
-                    if (captureUsesDepth)
-                    {
-                        target.BindColorOnly(cmd); // depth leaves the OM while it's a shader resource
-                        cmd.ResourceBarrierTransition(target.DepthResource,
-                            Vortice.Direct3D12.ResourceStates.DepthWrite,
-                            Vortice.Direct3D12.ResourceStates.PixelShaderResource);
-                    }
-
-                    _water.RenderAtTime(viewProj, cylinder, Vector3.Zero, animationTimeSeconds);
-
-                    if (captureUsesDepth)
-                    {
-                        cmd.ResourceBarrierTransition(target.DepthResource,
-                            Vortice.Direct3D12.ResourceStates.PixelShaderResource,
-                            Vortice.Direct3D12.ResourceStates.DepthWrite);
-                        target.Rebind(cmd); // restore depth for the blended-deferred pass below
-                    }
+                        captureWaterUsesDepth ? captureDepthIndex : NoDepthSrv,
+                        _camera.NearPlane, _camera.FarPlane,
+                        target.SampleCount);
                 }
 
+                var sampledDepthState = Vortice.Direct3D12.ResourceStates.DepthRead |
+                                        Vortice.Direct3D12.ResourceStates.PixelShaderResource;
+                if (captureWaterUsesDepth)
+                {
+                    target.BindColorOnly(cmd); // depth leaves the OM while it is a shader resource
+                    cmd.ResourceBarrierTransition(target.DepthResource,
+                        Vortice.Direct3D12.ResourceStates.DepthWrite,
+                        sampledDepthState);
+                }
+
+                if (_showWater && _water is not null && _references is not null)
+                {
+                    _water.RenderAtTime(viewProj, cylinder, Vector3.Zero, animationTimeSeconds);
+                }
+
+                if (captureReferencesUseDepth)
+                {
+                    if (!captureWaterUsesDepth)
+                    {
+                        target.BindColorOnly(cmd);
+                        cmd.ResourceBarrierTransition(target.DepthResource,
+                            Vortice.Direct3D12.ResourceStates.DepthWrite,
+                            sampledDepthState);
+                    }
+                    target.BindColorReadOnlyDepth(cmd);
+                }
                 _references?.RenderBlendedDeferred();
+
+                if (captureWaterUsesDepth || captureReferencesUseDepth)
+                {
+                    target.BindColorOnly(cmd);
+                    cmd.ResourceBarrierTransition(target.DepthResource,
+                        sampledDepthState,
+                        Vortice.Direct3D12.ResourceStates.DepthWrite);
+                    target.Rebind(cmd); // restore depth for shadow replay / subsequent depth users
+                }
 
                 // Frame-end shadow pass, same as the live loop (render origin 0 — this capture path
                 // is absolute). On the real pass it usually no-ops (key unchanged since the prime).
@@ -352,6 +402,14 @@ public sealed partial class WorldView3DControl
                 recorder.EndFrame();
             }
         }
+
+        Profiler_LastCaptureScenarioSnapshot = BuildProfilerScenarioSnapshot(
+            weatherTransition,
+            atmo,
+            masserDirection,
+            masserDrawAlpha,
+            animationTimeSeconds,
+            _showWater ? _water?.LastStats : null);
 
         EmitCaptureParityTelemetry(
             activeWeather, skyBand, cloudSourceIndices, atmo, tonemap,
@@ -398,6 +456,66 @@ public sealed partial class WorldView3DControl
             WaitForFrameFence(frameFence, fenceValue);
             return target.ReadbackToBytes(); // BGRA (B8G8R8A8_UNorm)
         });
+    }
+
+    private RendererProfilerScenarioSnapshot BuildProfilerScenarioSnapshot(
+        ResolvedWeatherTransition weatherTransition,
+        AtmosphereState.Resolved atmosphere,
+        Vector3 masserDirection,
+        float masserDrawAlpha,
+        float animationTimeSeconds,
+        WorldRenderStats? waterStats)
+    {
+        var game = _data?.Game ?? Core.Games.BethesdaGame.Unknown;
+        var moonProfile = MoonProfile;
+        var phaseLengthDays = _currentClimateTiming.MoonPhaseDays > 0
+            ? _currentClimateTiming.MoonPhaseDays
+            : moonProfile.PhaseLengthDays;
+        var primaryPhase = moonProfile.HasMoon
+            ? MoonSky.PhaseIndex(_gameDay, phaseLengthDays)
+            : -1;
+
+        var currentSources = CaptureCloudSourceIndices(weatherTransition.CurrentWeather);
+        var outgoingSources = CaptureCloudSourceIndices(weatherTransition.OutgoingWeather);
+        var cloudLayers = currentSources
+            .Concat(outgoingSources)
+            .Distinct()
+            .Order()
+            .Select(sourceIndex =>
+            {
+                var transition = WeatherCloudTransitionResolver.Resolve(
+                    weatherTransition.CurrentWeather,
+                    weatherTransition.OutgoingWeather,
+                    sourceIndex,
+                    weatherTransition.CurrentWeatherWeight,
+                    game);
+                return new RendererProfilerCloudLayerSnapshot(
+                    sourceIndex,
+                    transition.ScrollVelocity,
+                    WeatherCloudTransitionResolver.OffsetAtTime(
+                        transition.ScrollVelocity, animationTimeSeconds));
+            })
+            .ToArray();
+
+        return new RendererProfilerScenarioSnapshot(
+            game,
+            Profiler_SelectedWorldspaceEditorId,
+            weatherTransition.CurrentWeather?.EditorId,
+            _gameHour,
+            _gameDay,
+            animationTimeSeconds,
+            atmosphere.SunWorldDirection,
+            atmosphere.SunBillboardDirection,
+            moonProfile.MoonCount,
+            masserDirection,
+            masserDrawAlpha,
+            primaryPhase,
+            phaseLengthDays,
+            cloudLayers,
+            waterStats?.WaterDraws ?? 0,
+            waterStats?.WaterPipeline,
+            waterStats?.WaterNoisePrepassUsed ?? false,
+            waterStats?.WaterMapResolved.ToArray() ?? []);
     }
 
     private AtmosphereState.WeatherBandBlend CaptureWeatherBand(WeatherRecord? weather)
@@ -1095,6 +1213,22 @@ public sealed partial class WorldView3DControl
                 ? $"0x{baseImageSpaceId:X8}"
                 : null,
             ["editorId"] = _tonemapBaseImageSpaceEditorId,
+            ["contextWorldspaceFormId"] = _tonemapBaseImageSpaceSelection.ContextWorldspaceFormId,
+            ["contextWorldspaceFormIdHex"] = _tonemapBaseImageSpaceSelection.ContextWorldspaceFormId is { } contextWorldId
+                ? $"0x{contextWorldId:X8}"
+                : null,
+            ["sourceWorldspaceFormId"] = _tonemapBaseImageSpaceSelection.SourceWorldspaceFormId,
+            ["sourceWorldspaceFormIdHex"] = _tonemapBaseImageSpaceSelection.SourceWorldspaceFormId is { } sourceWorldId
+                ? $"0x{sourceWorldId:X8}"
+                : null,
+            ["cellContextSource"] = _tonemapBaseImageSpaceSelection.CellContext.SourceTelemetry,
+            ["cellFormId"] = _tonemapBaseImageSpaceSelection.CellContext.CellFormId,
+            ["cellFormIdHex"] = _tonemapBaseImageSpaceSelection.CellContext.CellFormId is { } cellId
+                ? $"0x{cellId:X8}"
+                : null,
+            ["cellEditorId"] = _tonemapBaseImageSpaceSelection.CellContext.Cell?.EditorId,
+            ["cellGridX"] = _tonemapBaseImageSpaceSelection.CellContext.GridX,
+            ["cellGridY"] = _tonemapBaseImageSpaceSelection.CellContext.GridY,
             ["unavailableReason"] = _tonemapBaseImageSpaceUnavailableReason,
         };
         fields["weatherImageSpace"] = _weatherImageSpaceTelemetry;
@@ -1170,6 +1304,12 @@ public sealed partial class WorldView3DControl
         fields["particleAtlasFrames"] = referenceStats?.ReferenceLiveParticleAtlasFrameCount ?? 0;
         fields["particleAuthoredCapacity"] = referenceStats?.ReferenceLiveParticleAuthoredCapacity ?? 0;
         fields["particleRenderedCount"] = referenceStats?.ReferenceParticleRenderedCount ?? 0;
+        fields["materialAlphaControllerDraws"] =
+            referenceStats?.ReferenceMaterialAlphaControllerDraws ?? 0;
+        fields["materialAlphaControllerMinimum"] =
+            referenceStats?.ReferenceMaterialAlphaControllerMinimum ?? 0f;
+        fields["materialAlphaControllerMaximum"] =
+            referenceStats?.ReferenceMaterialAlphaControllerMaximum ?? 0f;
         fields["particleSystems"] = referenceStats?.ReferenceParticleSystems
             .Select(system => new Dictionary<string, object?>
             {

@@ -51,6 +51,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     private readonly ID3D12DescriptorHeap _rtvHeap;
     private readonly ID3D12DescriptorHeap _dsvHeap;
     private readonly uint _rtvDescriptorSize;
+    private readonly uint _dsvDescriptorSize;
     private readonly int _sampleCount;
     private readonly ID3D12Resource[] _backBuffers;
     private ID3D12Resource? _depthTexture;
@@ -91,6 +92,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         _rtvHeap = rtvHeap;
         _dsvHeap = dsvHeap;
         _rtvDescriptorSize = gpu.Device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
+        _dsvDescriptorSize = gpu.Device.GetDescriptorHandleIncrementSize(DescriptorHeapType.DepthStencilView);
         _sampleCount = sampleCount;
         _backBuffers = backBuffers;
         _depthTexture = depthTexture;
@@ -111,6 +113,9 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     /// the back buffer before Present (scene-wide MSAA).</summary>
     public bool IsMsaa => _sampleCount > 1;
 
+    /// <summary>Number of samples in the scene color and depth targets.</summary>
+    public int SampleCount => _sampleCount;
+
     /// <summary>RTV for the scene's MSAA color target (valid only when <see cref="IsMsaa" />). Lives
     /// at RTV-heap slot <see cref="BufferCount" /> (after the per-frame back-buffer RTVs).</summary>
     public CpuDescriptorHandle MsaaColorRtv =>
@@ -120,9 +125,13 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     /// every frame; depth resource is single-buffered so the handle is stable across frames.</summary>
     public CpuDescriptorHandle DepthStencilView => _dsvHeap.GetCPUDescriptorHandleForHeapStart();
 
+    /// <summary>Read-only DSV for simultaneous hardware depth testing and depth-SRV sampling.</summary>
+    public CpuDescriptorHandle ReadOnlyDepthStencilView =>
+        new(_dsvHeap.GetCPUDescriptorHandleForHeapStart(), 1, _dsvDescriptorSize);
+
     /// <summary>The depth resource (R32_TYPELESS, AllowDepthStencil). Exposed so the caller can
-    /// create an R32_FLOAT SRV over it (the water shader samples scene depth for its depth-fade)
-    /// and transition it DEPTH_WRITE ↔ PIXEL_SHADER_RESOURCE around that pass. Changes identity on
+    /// create an R32_FLOAT Texture2D or Texture2DMS SRV over it and transition it
+    /// DEPTH_WRITE ↔ DEPTH_READ|PIXEL_SHADER_RESOURCE around sampled draws. Changes identity on
     /// <see cref="Resize" />, so any SRV over it must be recreated afterward.</summary>
     public ID3D12Resource? DepthResource => _depthTexture;
 
@@ -221,7 +230,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
             dsvHeap = gpu.Device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
             {
                 Type = DescriptorHeapType.DepthStencilView,
-                DescriptorCount = 1,
+                DescriptorCount = 2, // writable + read-only views of the same depth resource
                 Flags = DescriptorHeapFlags.None
             });
 
@@ -375,15 +384,11 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         ID3D12DescriptorHeap dsvHeap,
         int sampleCount)
     {
-        // Non-MSAA: R32_TYPELESS so the water pass can read scene depth as an R32_FLOAT SRV (and
-        // 4d's Hi-Z pyramid can CopyResource it). The DSV supplies the typed D32_Float view, which
-        // every depth-test PSO (DepthStencilFormat = D32_Float) validates against.
-        // MSAA: a multisampled depth can't be sampled as a plain Texture2D SRV, and the water
-        // depth-fade is gated off under MSAA, so create a typed D32_Float multisampled depth and let
-        // the DSV infer the Texture2DMS view (null desc).
+        // R32_TYPELESS permits both a typed D32_Float DSV and an R32_Float SRV. Under MSAA the
+        // latter is a Texture2DMS view used by soft particles in the normal 4x GUI path.
         var msaa = sampleCount > 1;
         var resourceDesc = ResourceDescription.Texture2D(
-            msaa ? Format.D32_Float : Format.R32_Typeless,
+            Format.R32_Typeless,
             width,
             height,
             arraySize: 1,
@@ -402,21 +407,20 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
             ResourceStates.DepthWrite,
             clearValue);
 
-        if (msaa)
+        var dsvSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.DepthStencilView);
+        var writableDsv = dsvHeap.GetCPUDescriptorHandleForHeapStart();
+        var readOnlyDsv = new CpuDescriptorHandle(writableDsv, 1, dsvSize);
+        var dsvDesc = new DepthStencilViewDescription
         {
-            // Typed D32_Float multisampled resource → null desc infers the Texture2DMS DSV.
-            device.CreateDepthStencilView(depth, null, dsvHeap.GetCPUDescriptorHandleForHeapStart());
-        }
-        else
-        {
-            var dsvDesc = new DepthStencilViewDescription
-            {
-                Format = Format.D32_Float,
-                ViewDimension = DepthStencilViewDimension.Texture2D,
-                Flags = DepthStencilViewFlags.None
-            };
-            device.CreateDepthStencilView(depth, dsvDesc, dsvHeap.GetCPUDescriptorHandleForHeapStart());
-        }
+            Format = Format.D32_Float,
+            ViewDimension = msaa
+                ? DepthStencilViewDimension.Texture2DMultisampled
+                : DepthStencilViewDimension.Texture2D,
+            Flags = DepthStencilViewFlags.None
+        };
+        device.CreateDepthStencilView(depth, dsvDesc, writableDsv);
+        dsvDesc.Flags = DepthStencilViewFlags.ReadOnlyDepth;
+        device.CreateDepthStencilView(depth, dsvDesc, readOnlyDsv);
         return depth;
     }
 

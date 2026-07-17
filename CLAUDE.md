@@ -92,6 +92,7 @@ dmp buffers <file>              # Memory buffer analysis
 dmp coverage <file>             # Runtime structure coverage analysis
 dmp compare <f1> <f2>           # Cross-build HTML/JSON/CSV diff (weapons, NPCs, map markers, …)
 dmp formtype-census <file>      # FormType distribution analysis
+dmp game-time <file-or-dir>     # In-game date/time (game-clock GLOBs) per dump, sorted by build date
 dmp rtti <file>                 # RTTI structure scanning
 
 # Report validation commands (sanity-check generated reports)

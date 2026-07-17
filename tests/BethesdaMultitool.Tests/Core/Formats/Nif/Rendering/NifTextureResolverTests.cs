@@ -109,8 +109,10 @@ public sealed class NifTextureResolverTests
         Assert.Null(MaterialTexturePathResolver.ResolveDiffuseTexturePath(@"materials\missing.bgsm", [source]));
     }
 
-    [Fact]
-    public void ResolveTextureSetPathsAndShaderFlags_FromLightingProperty()
+    [Theory]
+    [InlineData("BSShaderPPLightingProperty")]
+    [InlineData("Lighting30ShaderProperty")]
+    public void ResolveTextureSetPathsAndShaderFlags_FromClassicLightingProperty(string propertyType)
     {
         const string diffusePath = @"textures\characters\boone\face.dds";
         const string normalPath = @"textures\characters\boone\face_n.dds";
@@ -135,7 +137,7 @@ public sealed class NifTextureResolverTests
         WriteSizedString(data, ref pos, normalPath);
 
         var nif = CreateNifInfo(
-            ("BSShaderPPLightingProperty", 0, 38),
+            (propertyType, 0, 38),
             ("BSShaderTextureSet", textureSetOffset, textureSetSize));
 
         var propertyRefs = new List<int> { 0 };
@@ -148,6 +150,7 @@ public sealed class NifTextureResolverTests
         Assert.Equal(diffusePath, resolvedDiffuse);
         Assert.Equal(normalPath, resolvedNormal);
         Assert.NotNull(metadata);
+        Assert.Equal(propertyType, metadata.PropertyType);
         Assert.Equal(8, metadata.TextureSlots.Count);
         Assert.Equal(diffusePath, metadata.GetTextureSlot(0));
         Assert.Equal(normalPath, metadata.GetTextureSlot(1));
@@ -194,6 +197,45 @@ public sealed class NifTextureResolverTests
     }
 
     [Fact]
+    public void ReadShaderMetadata_FromTallGrassProperty_ReadsInlineTextureWithoutClampField()
+    {
+        // FNV's TallGrassShaderProperty inherits BSShaderProperty directly. Its File Name begins
+        // immediately after the common 16-byte shader payload; the four-byte texture-clamp field
+        // present in BSShaderNoLightingProperty does not exist here.
+        const string diffusePath = @"textures\landscape\grass\NVGreenGrass.dds";
+
+        var data = new byte[96];
+        WriteNiObjectNetHeader(data, 0);
+        WriteUInt16(data, 12, 0);
+        WriteUInt32(data, 14, 7);
+        WriteUInt32(data, 18, 0x03234567u);
+        WriteUInt32(data, 22, 0x89ABCDEFu);
+        WriteFloat(data, 26, 0.5f);
+
+        var pos = 30;
+        WriteSizedString(data, ref pos, diffusePath);
+
+        var nif = CreateNifInfo(("TallGrassShaderProperty", 0, pos));
+        var metadata = NifTextureResolver.ReadShaderMetadata(data, nif, [0]);
+
+        Assert.NotNull(metadata);
+        Assert.Equal("TallGrassShaderProperty", metadata.PropertyType);
+        Assert.True(metadata.HasRemappableTextures);
+        Assert.Equal(7u, metadata.ShaderType);
+        Assert.Equal(0x03234567u, metadata.ShaderFlags);
+        Assert.Equal(0x89ABCDEFu, metadata.ShaderFlags2);
+        Assert.Equal(0.5f, metadata.EnvMapScale);
+        Assert.Equal(diffusePath, metadata.DiffusePath);
+        Assert.Equal(8, metadata.TextureSlots.Count);
+        for (var slot = 1; slot < 8; slot++)
+        {
+            Assert.Null(metadata.GetTextureSlot(slot));
+        }
+
+        Assert.Equal(diffusePath, NifTextureResolver.ResolveDiffusePath(data, nif, [0]));
+    }
+
+    [Fact]
     public void ReadShaderMetadata_FromEffectShaderProperty_ReadsSourceTextureAsDiffuse()
     {
         // Skyrim/SE/FO4 BSEffectShaderProperty (fire, magic, glow, some ice): the effect texture is the
@@ -204,7 +246,7 @@ public sealed class NifTextureResolverTests
 
         var data = new byte[128];
         WriteNiObjectNetHeader(data, 0); // 0..11
-        const uint shaderFlags1 = 0xAC000000; // Z-test + External_Emittance + Dynamic_Decal + Decal
+        const uint shaderFlags1 = 0xEC000000; // Z-test + Soft_Effect + External_Emittance + Dynamic_Decal + Decal
         const uint shaderFlags2 = 0x40000029; // Effect_Lighting + Vertex_Colors + No_Fade + Z-write
         WriteUInt32(data, 12, shaderFlags1);
         WriteUInt32(data, 16, shaderFlags2);
@@ -227,7 +269,8 @@ public sealed class NifTextureResolverTests
         WriteFloat(data, pos + 8, 0.75f); // Base Color B
         WriteFloat(data, pos + 12, 0.25f); // Base Color A (distinct authored opacity)
         WriteFloat(data, pos + 16, 2f);   // Base Color Scale
-        pos += 20;
+        WriteFloat(data, pos + 20, 128f); // authored Soft Falloff Depth
+        pos += 24;
 
         var nif = CreateNifInfo(("BSEffectShaderProperty", 0, pos));
         nif.BsVersion = 83;
@@ -244,6 +287,7 @@ public sealed class NifTextureResolverTests
         Assert.Equal(2f, metadata.EffectBaseColorScale);
         Assert.Equal((0.25f, 0.5f, 0.75f, 0.25f), metadata.EffectBaseColor);
         Assert.Equal((1f, 1f, 0f, 0f), metadata.EffectFalloff);
+        Assert.Equal(128f, metadata.SoftEffectFalloffDepth);
         Assert.Equal(sourceTexture, NifTextureResolver.ResolveDiffusePath(data, nif, [0]));
     }
 

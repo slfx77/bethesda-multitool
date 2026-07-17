@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool.Core;
 using Microsoft.Graphics.Canvas;
 using Windows.Foundation;
@@ -12,6 +13,18 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class WorldMapTerrainTileRenderer
 {
+    /// <summary>
+    ///     Per-layer culling result returned to callers that want profiler/debug counters without
+    ///     coupling the renderer to a telemetry sink. <see cref="CandidateEntries" /> and
+    ///     <see cref="VisibleEntries" /> count cached mip entries; <see cref="DrawnCells" /> counts
+    ///     the unique visible cells left after best-tier selection.
+    /// </summary>
+    internal readonly record struct TileDrawCounts(
+        int CandidateEntries, int VisibleEntries, int DrawnCells)
+    {
+        internal int CulledEntries => CandidateEntries - VisibleEntries;
+    }
+
     /// <summary>
     ///     Reusable per-frame dedup dict for <see cref="DrawTextureCellBitmaps" />. Sized to
     ///     ~256 entries (typical fill viewport) on first frame; subsequent frames clear + refill
@@ -80,10 +93,11 @@ internal static class WorldMapTerrainTileRenderer
     ///     which both aliased (2D-3) and was the dominant per-frame cost (2D-2). The chosen tile is then
     ///     drawn with bilinear when it's near screen resolution and cubic only when heavily minified.
     /// </summary>
-    internal static void DrawTextureCellBitmaps(
+    internal static TileDrawCounts DrawTextureCellBitmaps(
         CanvasDrawingSession ds,
         IReadOnlyDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap> bitmaps,
-        float zoom, float cellWorldSize)
+        float zoom, float cellWorldSize,
+        Vector2 tlWorld, Vector2 brWorld)
     {
         // Outset each tile's destination rect by ~1 device pixel in world units so adjacent
         // OPAQUE tiles overlap by ~1px and the inter-tile seam disappears (the seam shows when the
@@ -94,6 +108,7 @@ internal static class WorldMapTerrainTileRenderer
         // margin, so the overlap band is opaque-over-opaque with identical edge colors — no
         // darkening, and mixed per-cell resolutions are fine.
         var outset = Math.Min(1f / Math.Max(zoom, 1e-6f), cellWorldSize * 0.01f);
+        var viewport = WorldMapViewportHelper.NormalizeWorldBounds(tlWorld, brWorld, outset);
 
         // Target on-screen pixels per cell = the mip level we want. The cache may hold several tiers
         // per cell; pick the one nearest this (smallest tier that still covers it).
@@ -104,8 +119,17 @@ internal static class WorldMapTerrainTileRenderer
         // GC out of the critical path.
         var bestPerCell = t_bestPerCellScratch ??= new Dictionary<(int gx, int gy), (int ppc, CanvasBitmap bmp)>(256);
         bestPerCell.Clear();
+        var visibleEntries = 0;
         foreach (var (key, bmp) in bitmaps)
         {
+            // Cull before dictionary lookup/tier comparison. Large worlds can retain every streamed
+            // mip in this cache, while only a few dozen cells intersect the current viewport.
+            if (!viewport.IntersectsCell(key.gx, key.gy, cellWorldSize))
+            {
+                continue;
+            }
+
+            visibleEntries++;
             var cellKey = (key.gx, key.gy);
             var candidate = (key.pixelsPerCell, bmp);
             if (!bestPerCell.TryGetValue(cellKey, out var current))
@@ -140,6 +164,8 @@ internal static class WorldMapTerrainTileRenderer
                 1f,
                 interpolation);
         }
+
+        return new TileDrawCounts(bitmaps.Count, visibleEntries, bestPerCell.Count);
     }
 
     /// <summary>
@@ -217,16 +243,25 @@ internal static class WorldMapTerrainTileRenderer
     ///     overlapping outset band would double-composite into visibly darker seams. Adjacent water tiles
     ///     meeting edge-to-edge is correct (shoreline coverage already fades to 0 at dry edges).
     /// </summary>
-    internal static void DrawWaterCellBitmaps(
+    internal static TileDrawCounts DrawWaterCellBitmaps(
         CanvasDrawingSession ds,
         IReadOnlyDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap> bitmaps,
-        float zoom, float cellWorldSize)
+        float zoom, float cellWorldSize,
+        Vector2 tlWorld, Vector2 brWorld)
     {
         var targetScreenPpc = cellWorldSize * Math.Max(zoom, 1e-6f);
+        var viewport = WorldMapViewportHelper.NormalizeWorldBounds(tlWorld, brWorld);
         var bestPerCell = t_bestPerCellScratch ??= new Dictionary<(int gx, int gy), (int ppc, CanvasBitmap bmp)>(256);
         bestPerCell.Clear();
+        var visibleEntries = 0;
         foreach (var (key, bmp) in bitmaps)
         {
+            if (!viewport.IntersectsCell(key.gx, key.gy, cellWorldSize))
+            {
+                continue;
+            }
+
+            visibleEntries++;
             var cellKey = (key.gx, key.gy);
             var candidate = (key.pixelsPerCell, bmp);
             bestPerCell[cellKey] = bestPerCell.TryGetValue(cellKey, out var current)
@@ -246,5 +281,7 @@ internal static class WorldMapTerrainTileRenderer
                 1f,
                 interpolation);
         }
+
+        return new TileDrawCounts(bitmaps.Count, visibleEntries, bestPerCell.Count);
     }
 }

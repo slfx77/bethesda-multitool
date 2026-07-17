@@ -123,6 +123,8 @@ internal sealed class ReferenceMeshDecoder12
             // animated NIFs — banners, cloth flags with tracks).
             NifMeshAnimation? animation = null;
             Dictionary<int, Skinning.NifSubmeshSkin>? skinsByShapeIndex = null;
+            IReadOnlyDictionary<int, PhysicsLiteSwayDescriptor> physicsLiteRoutes =
+                new Dictionary<int, PhysicsLiteSwayDescriptor>();
 
             NifRenderableModel? model;
             if (lookupPath.EndsWith(".spt", StringComparison.OrdinalIgnoreCase))
@@ -266,6 +268,15 @@ internal sealed class ReferenceMeshDecoder12
                     // opaque instancing never shares one external-emittance color across refs.
                     externalEmittanceColor: externalEmittanceColor);
 
+                // FNV physics-lite is source-graph data, resolved before SourceBlockIndex is dropped
+                // by the persistent/GPU payload. The parser is deliberately profile-gated to retail
+                // 20.2.0.7 / BS34 and returns no routes when ordinary transform animation exists.
+                if (FnvHavokConstraintParser.IsPhysicsLiteCandidate(nif))
+                {
+                    physicsLiteRoutes = PhysicsLiteSway.BuildSourceBlockRoutes(
+                        FnvHavokConstraintParser.Parse(nifData, nif));
+                }
+
                 // Decode Havok (bhk*) collision geometry from the same (converted, LE) buffer/parse,
                 // off the render thread. Walk mode prefers this gapless physics mesh over the visual
                 // submeshes so the camera doesn't fall through plank gaps. Null when the NIF has none.
@@ -348,7 +359,7 @@ internal sealed class ReferenceMeshDecoder12
                               !string.IsNullOrEmpty(normalPath);
 
                 var specularColor = new Vector3(sub.SpecularColor.R, sub.SpecularColor.G, sub.SpecularColor.B);
-                var specularEnabled = ComputeSpecularEnabled(sub);
+                var specularEnabled = NifSpecularPolicy.IsEnabled(sub);
                 // Emissive (no-lighting/effect) shapes never take the specular path (spec is
                 // force-disabled below and the PS gates on non-emissive), so the specular-color
                 // slot carries their material emissive GLOW TINT instead: the engine renders
@@ -435,8 +446,20 @@ internal sealed class ReferenceMeshDecoder12
                     ClampTextureU: sub.ClampTextureU,
                     ClampTextureV: sub.ClampTextureV,
                     IsParticleCloud: sub.IsParticleCloud,
+                    SoftParticleFalloffDepth: sub.SoftParticleFalloffDepth,
+                    MaterialAlphaController: sub.MaterialAlphaController,
+                    PhysicsLiteSway: !sub.IsBillboard && !sub.IsParticleCloud &&
+                                      physicsLiteRoutes.TryGetValue(sub.SourceBlockIndex, out var sway)
+                        ? sway
+                        : null,
                     ParticleRuntime: ParticleLiveSettings.Enabled ? sub.ParticleRuntime : null,
-                    SpeedTreeLod: sub.SpeedTreeLod));
+                    SpeedTreeLod: sub.SpeedTreeLod,
+                    IsLighting30: sub.IsLighting30,
+                    Lighting30GlowMapTexturePath: sub.Lighting30GlowMapTexturePath,
+                    Lighting30EmissionColor: sub.Lighting30EmissionColor is { } lighting30Emission
+                        ? new Vector3(lighting30Emission.R, lighting30Emission.G, lighting30Emission.B)
+                        : Vector3.Zero,
+                    Lighting30EmissionMultiplier: sub.Lighting30EmissionMultiplier));
             }
 
             if (submeshes.Count == 0)
@@ -512,7 +535,14 @@ internal sealed class ReferenceMeshDecoder12
                 sub.Skin,
                 sub.ClampTextureU,
                 sub.ClampTextureV,
-                sub.IsParticleCloud));
+                sub.IsParticleCloud,
+                sub.SoftParticleFalloffDepth,
+                sub.MaterialAlphaController,
+                sub.PhysicsLiteSway,
+                sub.IsLighting30,
+                sub.Lighting30GlowMapTexturePath,
+                sub.Lighting30EmissionColor,
+                sub.Lighting30EmissionMultiplier));
         }
 
         return new ReferenceDecodedMeshPayload12(
@@ -564,7 +594,14 @@ internal sealed class ReferenceMeshDecoder12
                 sub.SpeedTreeWindSpeeds,
                 sub.ClampTextureU,
                 sub.ClampTextureV,
-                sub.IsParticleCloud));
+                sub.IsParticleCloud,
+                sub.SoftParticleFalloffDepth,
+                sub.MaterialAlphaController,
+                sub.PhysicsLiteSway,
+                IsLighting30: sub.IsLighting30,
+                Lighting30GlowMapTexturePath: sub.Lighting30GlowMapTexturePath,
+                Lighting30EmissionColor: sub.Lighting30EmissionColor,
+                Lighting30EmissionMultiplier: sub.Lighting30EmissionMultiplier));
         }
 
         return new DecodedNifMesh12(
@@ -648,29 +685,6 @@ internal sealed class ReferenceMeshDecoder12
         }
 
         return hash;
-    }
-
-    // Whether a submesh should get a sun specular highlight. Gated conservatively so it only lights up
-    // where the source material asks for it — never on emissive shapes, never with a black/near-black
-    // specular tint or zero gloss. FO3/FNV expose BSShaderFlags; honor their Specular bit (0x1). When no
-    // shader flags are present (Morrowind NiMaterialProperty, or Skyrim+ BSLightingShaderProperty which
-    // doesn't surface them), fall back to the tint/gloss gate — Skyrim shapes carry no NiMaterialProperty
-    // specular so they stay matte (no regression), while Morrowind's matte materials are filtered by tint.
-    private static bool ComputeSpecularEnabled(RenderableSubmesh sub)
-    {
-        if (sub.IsEmissive)
-        {
-            return false;
-        }
-
-        var (r, g, b) = sub.SpecularColor;
-        if (MathF.Max(r, MathF.Max(g, b)) < 0.04f || sub.MaterialGlossiness <= 0f)
-        {
-            return false;
-        }
-
-        const uint specularFlag = 0x1u; // BSShaderFlags bit 0 = Specular (nif.xml)
-        return sub.ShaderMetadata?.ShaderFlags is not uint flags || (flags & specularFlag) != 0;
     }
 
     private static Vector3 ComputeLocalBoundsCenter(float[] positions)

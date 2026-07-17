@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -332,6 +333,64 @@ public sealed class TerrainMeshBuilderTests
 
         Assert.NotNull(mesh);
         Assert.Equal(mesh.Value.Indices, shared);
+    }
+
+    [Fact]
+    public void BuildSharedIndexBufferData_FnvUsesRecoveredCheckerboardWithoutChangingDefaults()
+    {
+        var defaults = TerrainMeshBuilder.BuildSharedIndexBufferData(33);
+        var fnv = TerrainMeshBuilder.BuildSharedIndexBufferData(
+            33,
+            TerrainTriangleTopology.AlternatingCheckerboard);
+
+        // Default/non-profile callers retain the original v10-v01 diagonal.
+        Assert.Equal(new ushort[] { 0, 1, 33, 33, 1, 34 }, defaults[..6]);
+
+        // FNV even quad (0,0): v00-v11 diagonal. Adjacent odd quad (1,0): original diagonal.
+        Assert.Equal(new ushort[] { 0, 1, 34, 0, 34, 33 }, fnv[..6]);
+        Assert.Equal(new ushort[] { 1, 2, 34, 34, 2, 35 }, fnv[6..12]);
+
+        Assert.Equal(
+            TerrainTriangleTopology.AlternatingCheckerboard,
+            TerrainSurfaceTopology.ForGame(BethesdaGame.FalloutNewVegas));
+        Assert.Equal(
+            TerrainTriangleTopology.FixedSouthEastNorthWest,
+            TerrainSurfaceTopology.ForGame(BethesdaGame.Skyrim));
+        Assert.Equal(
+            TerrainTriangleTopology.FixedSouthEastNorthWest,
+            TerrainSurfaceTopology.ForGame(BethesdaGame.Fallout4));
+    }
+
+    [Fact]
+    public void TrySampleTriangle_UsesTheSamePlaneAsTheSelectedDiagonal()
+    {
+        var heights = new float[33 * 33];
+        heights[34] = 128f; // first quad's v11 only
+
+        Assert.True(TerrainSurfaceTopology.TrySampleTriangle(
+            heights,
+            33,
+            localX: 32f,
+            localY: 32f,
+            spacing: 128f,
+            TerrainTriangleTopology.FixedSouthEastNorthWest,
+            out var fixedHeight,
+            out var fixedNormal));
+        Assert.True(TerrainSurfaceTopology.TrySampleTriangle(
+            heights,
+            33,
+            localX: 32f,
+            localY: 32f,
+            spacing: 128f,
+            TerrainTriangleTopology.AlternatingCheckerboard,
+            out var fnvHeight,
+            out var fnvNormal));
+
+        Assert.Equal(0f, fixedHeight, 5);
+        Assert.Equal(32f, fnvHeight, 5);
+        Assert.Equal(Vector3.UnitZ, fixedNormal);
+        Assert.True(fnvNormal.Z > 0f);
+        Assert.NotEqual(fixedNormal, fnvNormal);
     }
 
     private static Vector3 TriangleNormal(Vector3 a, Vector3 b, Vector3 c)

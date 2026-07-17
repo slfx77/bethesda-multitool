@@ -69,6 +69,8 @@ internal static class WorldMapOverviewRenderer
     {
         var transform = WorldMapViewportHelper.GetViewTransform(zoom, panOffset);
         ds.Transform = transform;
+        var (tlWorld, brWorld) = WorldMapViewportHelper.GetVisibleWorldBounds(
+            canvasWidth, canvasHeight, zoom, panOffset);
 
         // Real world-units per cell for this worldspace (8192 Morrowind, 4096 Fallout). Drives every
         // grid→world / bitmap-placement conversion below so the terrain layer lines up with placed
@@ -88,7 +90,14 @@ internal static class WorldMapOverviewRenderer
         }
         else if (textureCellBitmaps is not null)
         {
-            WorldMapTerrainTileRenderer.DrawTextureCellBitmaps(ds, textureCellBitmaps, zoom, cellWorldSize);
+            var counts = WorldMapTerrainTileRenderer.DrawTextureCellBitmaps(
+                ds, textureCellBitmaps, zoom, cellWorldSize, tlWorld, brWorld);
+            if (Map2DProfilerTrace.IsEnabled)
+            {
+                Map2DProfilerTrace.Event("terrain-tile-draw",
+                    $"cached={counts.CandidateEntries} visibleEntries={counts.VisibleEntries} " +
+                    $"drawnCells={counts.DrawnCells} culled={counts.CulledEntries}");
+            }
         }
         else if (worldHeightmapBitmap != null)
         {
@@ -143,7 +152,14 @@ internal static class WorldMapOverviewRenderer
         {
             if (waterCellBitmaps is not null)
             {
-                WorldMapTerrainTileRenderer.DrawWaterCellBitmaps(ds, waterCellBitmaps, zoom, cellWorldSize);
+                var counts = WorldMapTerrainTileRenderer.DrawWaterCellBitmaps(
+                    ds, waterCellBitmaps, zoom, cellWorldSize, tlWorld, brWorld);
+                if (Map2DProfilerTrace.IsEnabled)
+                {
+                    Map2DProfilerTrace.Event("water-tile-draw",
+                        $"cached={counts.CandidateEntries} visibleEntries={counts.VisibleEntries} " +
+                        $"drawnCells={counts.DrawnCells} culled={counts.CulledEntries}");
+                }
             }
             else if (worldWaterBitmap is not null)
             {
@@ -165,9 +181,6 @@ internal static class WorldMapOverviewRenderer
         // 3. Placed objects (LOD-based) — skipped when the rendered-models overlay replaces them.
         if (!overlayActive && zoom > 0.05f && activeCells.Count > 0)
         {
-            var (tlWorld, brWorld) = WorldMapViewportHelper.GetVisibleWorldBounds(
-                canvasWidth, canvasHeight, zoom, panOffset);
-
             if (spatialIndex is not null)
             {
                 var refs = GetRefScratch();
@@ -211,14 +224,14 @@ internal static class WorldMapOverviewRenderer
         // 5. Selected object highlight
         if (selectedObject != null)
         {
-            DrawSelectedObjectHighlight(ds, selectedObject, data, zoom);
+            DrawSelectedObjectHighlight(ds, selectedObject, data, markers, zoom);
             DrawSpawnOverlay(ds, selectedObject, data, zoom);
         }
 
         // 6. Hovered object highlight (overview)
         if (hoveredObject != null)
         {
-            DrawPlacedObjectHighlight(ds, hoveredObject, data, zoom);
+            DrawPlacedObjectHighlight(ds, hoveredObject, data, markers, zoom);
         }
     }
 
@@ -362,9 +375,8 @@ internal static class WorldMapOverviewRenderer
         var (tlWorld, brWorld) = WorldMapViewportHelper.GetVisibleWorldBounds(
             canvasWidth, canvasHeight, zoom, panOffset);
         var profile = GameProfiles.For(markers.Game);
-        var markerScreenScale = MapMarkerDisplayScale.Resolve(profile, zoom);
-        var markerSize = 16f * markerScreenScale / zoom;
-        var iconScale = profile.MarkerIconScale;
+        var metrics = MapMarkerMetrics.Resolve(profile, zoom);
+        var markerSize = metrics.VisualDiameterPixels / zoom;
 
         using var labelFormat = new CanvasTextFormat
         {
@@ -375,7 +387,7 @@ internal static class WorldMapOverviewRenderer
 
         using var glyphFormat = new CanvasTextFormat
         {
-            FontSize = 12f * markerScreenScale / zoom,
+            FontSize = 12f * metrics.ScreenScale / zoom,
             FontFamily = "Segoe MDL2 Assets",
             HorizontalAlignment = CanvasHorizontalAlignment.Center,
             VerticalAlignment = CanvasVerticalAlignment.Center
@@ -389,12 +401,13 @@ internal static class WorldMapOverviewRenderer
         // unreadability anyway, so omitting the overflow is a free perf win. Icons still all draw.
         const int maxLabelsPerDraw = 250;
         var labelsDrawn = 0;
+        var cullMargin = MathF.Max(metrics.HitRadiusPixels, metrics.IconHeightPixels * 2f) / zoom;
 
         foreach (var marker in filteredMarkers)
         {
             var pos = new Vector2(marker.X, -marker.Y);
 
-            if (!WorldMapViewportHelper.IsPointInView(pos.X, pos.Y, tlWorld, brWorld, markerSize * 2))
+            if (!WorldMapViewportHelper.IsPointInView(pos.X, pos.Y, tlWorld, brWorld, cullMargin))
             {
                 continue;
             }
@@ -419,7 +432,7 @@ internal static class WorldMapOverviewRenderer
                 // city/hold markers) aren't squashed into the square cell and don't render cramped.
                 float sw = icon.SizeInPixels.Width;
                 float sh = icon.SizeInPixels.Height;
-                var drawH = markerSize * iconScale;
+                var drawH = metrics.IconHeightPixels / zoom;
                 var drawW = sh > 0f ? drawH * sw / sh : drawH;
                 var iconDest = new Rect(pos.X - drawW / 2, pos.Y - drawH / 2, drawW, drawH);
                 ds.DrawImage(icon, iconDest, new Rect(0, 0, sw, sh));
@@ -700,22 +713,54 @@ internal static class WorldMapOverviewRenderer
     }
 
     internal static void DrawPlacedObjectHighlight(
-        CanvasDrawingSession ds, PlacedReference obj, WorldViewData data, float zoom)
+        CanvasDrawingSession ds, PlacedReference obj, WorldViewData data,
+        MarkerRenderContext markers, float zoom)
     {
-        DrawObjectOutline(ds, obj, data, zoom, Colors.Yellow, 3f, 12f);
+        DrawObjectOutline(ds, obj, data, markers, zoom, Colors.Yellow, 3f, 12f);
+    }
+
+    internal static void DrawPlacedObjectHighlight(
+        CanvasDrawingSession ds, PlacedReference obj, WorldViewData data, float zoom) =>
+        DrawPlacedObjectHighlight(ds, obj, data, new MarkerRenderContext(data.Game, null), zoom);
+
+    internal static void DrawSelectedObjectHighlight(
+        CanvasDrawingSession ds, PlacedReference obj, WorldViewData data,
+        MarkerRenderContext markers, float zoom)
+    {
+        DrawObjectOutline(ds, obj, data, markers, zoom,
+            Color.FromArgb(255, 0, 200, 255), 4f, 14f);
     }
 
     internal static void DrawSelectedObjectHighlight(
-        CanvasDrawingSession ds, PlacedReference obj, WorldViewData data, float zoom)
-    {
-        DrawObjectOutline(ds, obj, data, zoom, Color.FromArgb(255, 0, 200, 255), 4f, 14f);
-    }
+        CanvasDrawingSession ds, PlacedReference obj, WorldViewData data, float zoom) =>
+        DrawSelectedObjectHighlight(ds, obj, data, new MarkerRenderContext(data.Game, null), zoom);
 
     internal static void DrawObjectOutline(
         CanvasDrawingSession ds, PlacedReference obj, WorldViewData data,
-        float zoom, Color color, float strokeWidth, float fallbackRadius)
+        MarkerRenderContext markers, float zoom,
+        Color color, float strokeWidth, float fallbackRadius)
     {
         var pos = new Vector2(obj.X, -obj.Y);
+
+        if (obj.IsMapMarker)
+        {
+            var metrics = MapMarkerMetrics.Resolve(GameProfiles.For(markers.Game), zoom);
+            var raw = obj.MarkerType.HasValue ? (int)obj.MarkerType.Value : 0;
+            var visualHeight = metrics.VisualDiameterPixels;
+            var visualWidth = visualHeight;
+            if (markers.Icons?.TryGetValue(raw, out var icon) == true && icon.SizeInPixels.Height > 0)
+            {
+                visualHeight = metrics.IconHeightPixels;
+                visualWidth = visualHeight * (float)icon.SizeInPixels.Width / (float)icon.SizeInPixels.Height;
+            }
+
+            var halfWidth = MathF.Max(metrics.HitRadiusPixels, visualWidth * 0.5f) / zoom;
+            var halfHeight = MathF.Max(metrics.HitRadiusPixels, visualHeight * 0.5f) / zoom;
+            ds.DrawRectangle(
+                new Rect(pos.X - halfWidth, pos.Y - halfHeight, halfWidth * 2f, halfHeight * 2f),
+                color, strokeWidth / zoom);
+            return;
+        }
 
         if (data.BoundsIndex.TryGetValue(obj.BaseFormId, out var bounds))
         {

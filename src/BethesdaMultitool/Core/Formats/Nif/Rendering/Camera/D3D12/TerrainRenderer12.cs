@@ -33,8 +33,11 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 {
     private const uint PerFrameByteSize = 64;     // float4x4 viewProj
-    private const uint PerDrawByteSize = 64;      // uint4[4] = 16 terrain texture bindless indices
-    private const uint PerModeByteSize = 16;      // float4 (debugMode.x, uvScale, pad, pad)
+    // b1 preserves the original 16 diffuse indices at byte 0, then appends 16 FNV normal indices
+    // and a uint4 of decode metadata (x = 16-slot BC5 mask). Both the old 64 bytes and the new
+    // 144 bytes occupy one 256-byte-aligned ring slot, so draw capacity is unchanged.
+    private const uint PerDrawByteSize = 144;     // uint4[4] diffuse + uint4[4] normal + uint4 metadata
+    private const uint PerModeByteSize = 16;      // float4 (textures, uvScale, VCLR, FNV normals)
     // No per-frame COUNT cap by default — the wall-clock time budget below is the pacer, so the
     // per-frame build cost is bounded by frame-TIME rather than a fixed cell count (a count cap
     // couples terrain load rate to FPS; time-budgeting keeps the per-frame cost FPS-independent).
@@ -115,6 +118,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     // a Morrowind worldspace load bumps this to 65×65. The shared index buffer + scratch arrays are
     // rebuilt in LoadData when the grid size changes, and DrawCell issues _indexCount per cell.
     private int _gridSize = TerrainConstants.LandGridSize;
+    private TerrainTriangleTopology _triangleTopology = TerrainTriangleTopology.FixedSouthEastNorthWest;
     private int _indexCount = TerrainMeshBuilder.IndexCount;
     private ushort[] _sharedIndexData;
     private ID3D12Resource? _sharedIndexBuffer;
@@ -332,10 +336,9 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     }
 
     /// <summary>
-    ///     Determine the worldspace's LAND grid resolution from its cells and, when it differs from
-    ///     the current one, rebuild the grid-size-dependent state: the shared index buffer (recreated
-    ///     lazily next frame from the new CPU data) and the per-cell build scratch arrays. No-op when
-    ///     the grid size is unchanged (the common case — same game reloaded, or a 33×33 worldspace).
+    ///     Determine the worldspace's LAND grid resolution and game-specific triangle topology.
+    ///     When either differs, rebuild the shared index buffer lazily from new CPU data; grid-size
+    ///     changes also resize the per-cell build scratch arrays.
     /// </summary>
     private void EnsureGridSize(Dictionary<(int gx, int gy), CellRecord> cells)
     {
@@ -349,14 +352,19 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             }
         }
 
-        if (gridSize == _gridSize)
+        var topology = _renderCache is null
+            ? TerrainTriangleTopology.FixedSouthEastNorthWest
+            : TerrainSurfaceTopology.ForGame(_renderCache.Game);
+        var gridChanged = gridSize != _gridSize;
+        if (!gridChanged && topology == _triangleTopology)
         {
             return;
         }
 
         _gridSize = gridSize;
+        _triangleTopology = topology;
         _indexCount = TerrainMeshBuilder.IndexCountFor(gridSize);
-        _sharedIndexData = TerrainMeshBuilder.BuildSharedIndexBufferData(gridSize);
+        _sharedIndexData = TerrainMeshBuilder.BuildSharedIndexBufferData(gridSize, topology);
 
         // Drop the GPU index buffer so EnsureSharedIndexBuffer recreates it from the new data on the
         // next render (we have no command list here). Route the old one through the deletion queue.
@@ -366,9 +374,12 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             _sharedIndexBuffer = null;
         }
 
-        var vertexCount = TerrainMeshBuilder.VertexCountFor(gridSize);
-        _vertexScratch = new GpuMeshUploader.GpuVertex[vertexCount];
-        _blendWeightScratch = new Vector4[vertexCount * CellTerrainTextureSet.SlotVectors];
+        if (gridChanged)
+        {
+            var vertexCount = TerrainMeshBuilder.VertexCountFor(gridSize);
+            _vertexScratch = new GpuMeshUploader.GpuVertex[vertexCount];
+            _blendWeightScratch = new Vector4[vertexCount * CellTerrainTextureSet.SlotVectors];
+        }
     }
 
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
@@ -530,7 +541,8 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 
         // Per-mode CB (b2): x = show diffuse textures (1/0), y = diffuse UV scale (formerly in the
         // per-quadrant CB, now per-frame since every cell uses the same scale), z = apply VCLR tint
-        // (1/0), w = padding. textures off + vclr on reproduces the old VCLR-only debug look.
+        // (1/0), w = FNV terrain normals (1/0). Textures off + VCLR on reproduces the old VCLR-only
+        // debug look and also leaves the geometric LAND normal untouched.
         if (!_ringBuffer.TryAllocate(frameIndex, PerModeByteSize, out var perModeAlloc, GpuRingBuffer12.CbAlignment))
         {
             LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
@@ -539,7 +551,10 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         unsafe
         {
             *(Vector4*)perModeAlloc.CpuPtr = new Vector4(
-                _showTextures ? 1f : 0f, DefaultDiffuseUvScale, _showVertexColors ? 1f : 0f, 0f);
+                _showTextures ? 1f : 0f,
+                DefaultDiffuseUvScale,
+                _showVertexColors ? 1f : 0f,
+                _textureResolver.LandscapeNormalMappingEnabled ? 1f : 0f);
         }
 
         cmd.SetPipelineState(pso);
@@ -715,7 +730,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     }
 
     /// <summary>
-    ///     Engine-accurate per-cell draw: binds the cell's 4 cell-wide diffuse bindless indices
+    ///     Engine-accurate per-cell draw: binds the cell's diffuse and FNV normal bindless indices
     ///     (resolved once at mesh-build time via <see cref="CellTerrainTextureSet" />) and issues a
     ///     single DrawIndexedInstanced for the full 33×33 mesh. The per-vertex blend weights
     ///     bound at vertex slot 1 carry all per-cell variation, so the prior 4-quadrant
@@ -730,7 +745,16 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         {
             return;
         }
-        unsafe { *(TerrainTextureIndices*)perDrawAlloc.CpuPtr = entry.TextureIndices; }
+        var textureIndices = entry.TextureIndices;
+        unsafe
+        {
+            // Entry metadata is deliberately read at draw time. Cold normal-map misses initially
+            // expose the RGB flat placeholder (decode mode None); an asynchronously promoted Xbox
+            // ATI2/BC5 texture changes the same stable Entry to Bc5ReconstructZ without rebuilding
+            // this cell or changing its bindless index.
+            textureIndices.NormalDecodeMetadata[0] = BuildNormalBc5Mask(entry.NormalTextureEntries);
+            *(TerrainTextureIndices*)perDrawAlloc.CpuPtr = textureIndices;
+        }
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, perDrawAlloc.GpuAddress);
 
         cmd.DrawIndexedInstanced(
@@ -943,13 +967,14 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                 cpu.BlendWeights!,
                 ResourceStates.VertexAndConstantBuffer);
 
-            var textureIndices = ResolveSlotTextureIndices(cpu.TextureSet);
+            var textureIndices = ResolveSlotTextureIndices(cpu.TextureSet, out var normalTextureEntries);
 
             var entry = new CachedCellMesh12
             {
                 VertexBuffer = vb,
                 BlendWeightBuffer = blendBuffer,
                 TextureIndices = textureIndices,
+                NormalTextureEntries = normalTextureEntries,
                 DeletionQueue = _deletionQueue,
             };
             _meshCache.Set(key, entry);
@@ -1010,13 +1035,14 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                 _blendWeightScratch,
                 ResourceStates.VertexAndConstantBuffer);
 
-            var textureIndices = ResolveSlotTextureIndices(textureSet);
+            var textureIndices = ResolveSlotTextureIndices(textureSet, out var normalTextureEntries);
 
             var entry = new CachedCellMesh12
             {
                 VertexBuffer = vb,
                 BlendWeightBuffer = blendBuffer,
                 TextureIndices = textureIndices,
+                NormalTextureEntries = normalTextureEntries,
                 DeletionQueue = _deletionQueue,
             };
             _meshCache.Set(key, entry);
@@ -1044,25 +1070,65 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     }
 
     /// <summary>
-    ///     Resolve the 4 cell-wide diffuse bindless texture indices the terrain shader samples.
-    ///     The engine-default sentinel routes to DirtWasteland01; empty slots also fall back there
-    ///     so all 4 sample positions remain valid when fewer than 4 LTEXs are assigned.
+    ///     Resolve the cell-wide diffuse and normal bindless texture indices the terrain shader
+    ///     samples. The engine-default sentinel routes to DirtWasteland01 and its paired normal.
+    ///     Missing authored normals use uint.MaxValue, which the shader maps to an exact flat normal.
+    ///     Non-FNV games fill only that sentinel and remain on their old geometric-normal path.
     /// </summary>
-    private TerrainTextureIndices ResolveSlotTextureIndices(CellTerrainTextureSet? set)
+    private TerrainTextureIndices ResolveSlotTextureIndices(
+        CellTerrainTextureSet? set,
+        out GpuTextureCache12.Entry?[]? normalTextureEntries)
     {
         var active = set?.ActiveSlotCount ?? 0;
         var indices = new TerrainTextureIndices();
+        normalTextureEntries = _textureResolver.LandscapeNormalMappingEnabled
+            ? new GpuTextureCache12.Entry?[CellTerrainTextureSet.MaxSlots]
+            : null;
         unsafe
         {
             for (var slot = 0; slot < CellTerrainTextureSet.MaxSlots; slot++)
             {
-                var entry = slot < active && set!.SlotFormIds[slot] != CellLayerWeightTable.EngineDefaultSentinelFormId
-                    ? _textureResolver.Resolve(set.SlotFormIds[slot])
+                var hasAuthoredLayer = slot < active &&
+                    set!.SlotFormIds[slot] != CellLayerWeightTable.EngineDefaultSentinelFormId;
+                var entry = hasAuthoredLayer
+                    ? _textureResolver.Resolve(set!.SlotFormIds[slot])
                     : _textureResolver.EngineDefault;
                 indices.Index[slot] = entry.BindlessIndex;
+
+                if (!_textureResolver.LandscapeNormalMappingEnabled)
+                {
+                    indices.NormalIndex[slot] = uint.MaxValue;
+                    continue;
+                }
+
+                var normalEntry = hasAuthoredLayer
+                    ? _textureResolver.ResolveLandscapeNormal(set!.SlotFormIds[slot])
+                    : _textureResolver.EngineDefaultNormal;
+                indices.NormalIndex[slot] = normalEntry?.BindlessIndex ?? uint.MaxValue;
+                normalTextureEntries![slot] = normalEntry;
             }
         }
         return indices;
+    }
+
+    private static uint BuildNormalBc5Mask(GpuTextureCache12.Entry?[]? normalTextureEntries)
+    {
+        if (normalTextureEntries is null)
+        {
+            return 0;
+        }
+
+        uint mask = 0;
+        var count = Math.Min(normalTextureEntries.Length, CellTerrainTextureSet.MaxSlots);
+        for (var slot = 0; slot < count; slot++)
+        {
+            if (normalTextureEntries[slot]?.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ)
+            {
+                mask |= 1u << slot;
+            }
+        }
+
+        return mask;
     }
 
     private long StartTiming() => DetailedProfilingEnabled ? Stopwatch.GetTimestamp() : 0;

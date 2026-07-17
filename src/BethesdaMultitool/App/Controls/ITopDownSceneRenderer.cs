@@ -84,4 +84,9 @@ internal sealed record TopDownRender(
     float WorldMinY,
     float WorldMaxY,
     bool IsComplete,
-    bool IsFullySettled);
+    bool IsFullySettled,
+    int ReferenceInstances = 0,
+    int ReferenceDrawn = 0,
+    int SpeedTreeBranchInstances = 0,
+    int SpeedTreeLeafInstances = 0,
+    int SpeedTreeBillboardInstances = 0);

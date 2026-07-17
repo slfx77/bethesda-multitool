@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -46,6 +47,24 @@ public sealed class TerrainRaycasterTests
             cell, new Vector3(96f, 96f, 200f), -Vector3.UnitZ, out var t));
 
         Assert.InRange(t, 135.999f, 136.001f);
+    }
+
+    [Fact]
+    public void RaycastNearest_FnvCacheUsesRecoveredCheckerboardAndOtherProfilesStayFixed()
+    {
+        var heights = new float[33, 33];
+        heights[1, 1] = 128f; // first quad's v11 only
+        var cell = Cell(heights, 4096f);
+        var fnvCache = new WorldRenderCache { Game = BethesdaGame.FalloutNewVegas };
+        var skyrimCache = new WorldRenderCache { Game = BethesdaGame.Skyrim };
+        var origin = new Vector3(32f, 32f, 200f);
+
+        Assert.True(TerrainRaycaster.RaycastNearest(cell, origin, -Vector3.UnitZ, out var fnvT, fnvCache));
+        Assert.True(TerrainRaycaster.RaycastNearest(cell, origin, -Vector3.UnitZ, out var skyrimT, skyrimCache));
+
+        // FNV's v00-v11 plane is z=32 here. The fixed/default split's south-west plane stays z=0.
+        Assert.InRange(fnvT, 167.999f, 168.001f);
+        Assert.InRange(skyrimT, 199.999f, 200.001f);
     }
 
     [Fact]

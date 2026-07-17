@@ -56,6 +56,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     private readonly CpuDescriptorHandle _rtvHandle;    // scene color RTV
     private readonly CpuDescriptorHandle _ldrRtvHandle; // tonemap output RTV
     private readonly CpuDescriptorHandle _dsvHandle;
+    private readonly CpuDescriptorHandle _readOnlyDsvHandle;
     private readonly uint _rtvDescriptorSize;
     private ID3D12Resource? _readback;
     private PlacedSubresourceFootPrint _readbackFootprint;
@@ -68,8 +69,11 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     /// <summary>Pixel height of the target.</summary>
     public int Height { get; }
 
-    /// <summary>True when the scene targets are multisampled (depth can't be a plain Texture2D SRV).</summary>
+    /// <summary>True when the scene targets are multisampled.</summary>
     public bool IsMsaa { get; }
+
+    /// <summary>Number of samples in the scene color and depth targets.</summary>
+    public int SampleCount { get; }
 
     /// <summary>Whether the most recent readback tonemap invalidated eye-adaptation history.</summary>
     public bool TonemapHistoryReset => _tonemap.LastHistoryReset;
@@ -78,9 +82,8 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     public string? TonemapHistoryResetReason => _tonemap.LastHistoryResetReason;
 
     /// <summary>
-    ///     The D32_Float depth texture, exposed so the capture path can bind it as an R32_Float SRV
-    ///     for the water shader's real column-depth fade. Only valid as an SRV when
-    ///     <see cref="IsMsaa" /> is false; the caller owns the transitions around the water draw.
+    ///     The R32_Typeless depth texture, exposed so the capture path can bind it as an R32_Float
+    ///     Texture2D or Texture2DMS SRV. The caller owns transitions around sampled draws.
     /// </summary>
     public ID3D12Resource DepthResource => _depthTex;
 
@@ -93,6 +96,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         var device = gpu.Device;
         var msaa = sampleCount > 1;
         IsMsaa = msaa;
+        SampleCount = sampleCount;
         _tonemap = new GpuTonemapPass12(gpu);
         TonemapSettings = GpuTonemapSettings.ApplyOverrides(GpuTonemapSettings.GammaAcesDefaults);
         _tonemapEnabled = HdrActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
@@ -107,7 +111,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
 
         _depthTex = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.DefaultHeapProperties, HeapFlags.None,
-            ResourceDescription.Texture2D(DepthFormat, (uint)width, (uint)height,
+            ResourceDescription.Texture2D(Format.R32_Typeless, (uint)width, (uint)height,
                 arraySize: 1, mipLevels: 1, sampleCount: (uint)sampleCount, sampleQuality: 0,
                 ResourceFlags.AllowDepthStencil),
             ResourceStates.DepthWrite,
@@ -143,7 +147,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         _dsvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
         {
             Type = DescriptorHeapType.DepthStencilView,
-            DescriptorCount = 1,
+            DescriptorCount = 2, // writable + read-only views of the same depth resource
             Flags = DescriptorHeapFlags.None,
         });
         _rtvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
@@ -151,9 +155,21 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         _ldrRtvHandle = _rtvHandle;
         _ldrRtvHandle.Ptr += (nuint)_rtvDescriptorSize;
         _dsvHandle = _dsvHeap.GetCPUDescriptorHandleForHeapStart();
+        var dsvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.DepthStencilView);
+        _readOnlyDsvHandle = new CpuDescriptorHandle(_dsvHandle, 1, dsvDescriptorSize);
         device.CreateRenderTargetView(_colorTex, null, _rtvHandle);
         device.CreateRenderTargetView(_ldrOutputTex, null, _ldrRtvHandle);
-        device.CreateDepthStencilView(_depthTex, null, _dsvHandle);
+        var dsvDesc = new DepthStencilViewDescription
+        {
+            Format = DepthFormat,
+            ViewDimension = msaa
+                ? DepthStencilViewDimension.Texture2DMultisampled
+                : DepthStencilViewDimension.Texture2D,
+            Flags = DepthStencilViewFlags.None,
+        };
+        device.CreateDepthStencilView(_depthTex, dsvDesc, _dsvHandle);
+        dsvDesc.Flags = DepthStencilViewFlags.ReadOnlyDepth;
+        device.CreateDepthStencilView(_depthTex, dsvDesc, _readOnlyDsvHandle);
     }
 
     /// <summary>
@@ -176,6 +192,10 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     /// <summary>Re-binds the color target WITHOUT the depth target and without clearing — used while
     /// the depth texture is transitioned to a shader resource for the water depth-fade pass.</summary>
     public void BindColorOnly(ID3D12GraphicsCommandList cmd) => cmd.OMSetRenderTargets(_rtvHandle);
+
+    /// <summary>Re-binds color with a read-only depth view while depth is also an SRV.</summary>
+    public void BindColorReadOnlyDepth(ID3D12GraphicsCommandList cmd) =>
+        cmd.OMSetRenderTargets(_rtvHandle, _readOnlyDsvHandle);
 
     /// <summary>Re-binds color + depth without clearing (restores the targets after the water pass).</summary>
     public void Rebind(ID3D12GraphicsCommandList cmd) => cmd.OMSetRenderTargets(_rtvHandle, _dsvHandle);

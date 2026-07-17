@@ -9,6 +9,7 @@ using Windows.UI.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
 namespace BethesdaMultitool;
 
@@ -19,6 +20,7 @@ public sealed partial class SingleFileTab
 {
     private CellRecord? _selectedWorldCell;
     private PlacedReference? _selectedWorldObject;
+    private bool _suppressActivatorStateSelectionChanged;
 
     private async Task PopulateWorldMapAsync(CancellationToken cancellationToken)
     {
@@ -253,6 +255,7 @@ public sealed partial class SingleFileTab
         _selectedWorldObject = null;
         ViewBaseInBrowserButton.Visibility = Visibility.Collapsed;
         ViewCellInDetailButton.Visibility = Visibility.Visible;
+        ActivatorStatePanel.Visibility = Visibility.Collapsed;
 
         // Mirror the guard in WorldMap_InspectObject: a cell inspected from the 3D viewer must
         // not clear the hidden 2D map's selection (the 3D viewer owns its own highlight).
@@ -316,6 +319,7 @@ public sealed partial class SingleFileTab
         var worldResolver = _session.WorldViewData?.Resolver ?? _session.Resolver;
         WorldObjectTitle.Text = PlacedObjectCategoryResolver.GetObjectInspectionTitle(
             obj, _session.WorldViewData, worldResolver);
+        UpdateActivatorStateInspection(obj);
 
         WorldPropertyPanel.Children.Clear();
         var properties = PlacedObjectCategoryResolver.BuildObjectProperties(obj, _session.WorldViewData, worldResolver);
@@ -347,6 +351,44 @@ public sealed partial class SingleFileTab
         }
 
         BuildWorldPropertyPanel(properties);
+    }
+
+    /// <summary>
+    ///     Shows the per-instance Enabled preview for ACTI placements and effect-category references
+    ///     (the latter covers authored Fort/Hoover effect sheets). The authored label is resolved from
+    ///     both the placement flag and its XESP parent chain.
+    /// </summary>
+    private void UpdateActivatorStateInspection(PlacedReference obj)
+    {
+        var hasEnabledPreview = _session.WorldViewData?.CategoryIndex.TryGetValue(
+            obj.BaseFormId, out var category) == true &&
+            category is PlacedObjectCategory.Activator or PlacedObjectCategory.Effects;
+        ActivatorStatePanel.Visibility = hasEnabledPreview ? Visibility.Visible : Visibility.Collapsed;
+        if (!hasEnabledPreview) return;
+
+        var enabledOverride = WorldView3DControl.GetReferenceEnabledOverride(obj.FormId);
+        _suppressActivatorStateSelectionChanged = true;
+        ActivatorStateComboBox.SelectedIndex = (int)enabledOverride;
+        _suppressActivatorStateSelectionChanged = false;
+        UpdateActivatorStateHint(obj, enabledOverride);
+    }
+
+    private void ActivatorStateComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressActivatorStateSelectionChanged || _selectedWorldObject is not { } obj) return;
+        if (ActivatorStateComboBox.SelectedIndex is < 0 or > 2) return;
+
+        var enabledOverride = (ReferenceEnabledOverride)ActivatorStateComboBox.SelectedIndex;
+        WorldView3DControl.SetReferenceEnabledOverride(obj.FormId, enabledOverride);
+        UpdateActivatorStateHint(obj, enabledOverride);
+    }
+
+    private void UpdateActivatorStateHint(PlacedReference obj, ReferenceEnabledOverride enabledOverride)
+    {
+        var authored = WorldView3DControl.IsReferenceAuthoredEnabled(obj) ? "On" : "Off";
+        ActivatorStateHint.Text = enabledOverride == ReferenceEnabledOverride.Authored
+            ? $"Static authored state: {authored} (REFR/XESP). Quest/script runtime changes are not simulated."
+            : $"Preview forced {enabledOverride} for Form ID 0x{obj.FormId:X8} only; the parsed record is unchanged.";
     }
 
     private void BuildWorldPropertyPanel(List<EsmPropertyEntry> properties)

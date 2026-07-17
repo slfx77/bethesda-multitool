@@ -117,6 +117,14 @@ internal sealed class RenderableSubmesh
     /// </summary>
     public (float StartAngle, float StopAngle, float StartOpacity, float StopOpacity)? EffectFalloff { get; set; }
 
+    /// <summary>
+    ///     Authored scene-depth intersection falloff in game units. Currently sourced from the
+    ///     inline Skyrim-family BSEffectShaderProperty when SLSF1_Soft_Effect is set; zero means the
+    ///     source format supplied no usable soft depth and the narrowly-scoped runtime policy may
+    ///     choose an engine-family fallback for particle/effects geometry.
+    /// </summary>
+    public float SoftParticleFalloffDepth { get; set; }
+
     /// <summary>Shader property metadata resolved from the source NIF.</summary>
     public NifShaderTextureMetadata? ShaderMetadata { get; init; }
 
@@ -125,6 +133,13 @@ internal sealed class RenderableSubmesh
 
     /// <summary>True if BSShaderFlags2 bit 5 (Vertex_Colors) is set, meaning vertex colors should modulate the texture.</summary>
     public bool UseVertexColors { get; init; }
+
+    /// <summary>
+    ///     True when the vertex-color alpha channel is authored opacity. False keeps the raw channel
+    ///     available as non-opacity shader data while render/export consumers substitute opaque alpha.
+    ///     FO3/FNV <c>TallGrassShaderProperty</c> uses this channel as wind amplitude, not coverage.
+    /// </summary>
+    public bool UseVertexAlphaForOpacity { get; set; } = true;
 
     /// <summary>True if NiStencilProperty DrawMode is DRAW_BOTH (3), meaning both sides should be rendered.</summary>
     public bool IsDoubleSided { get; set; }
@@ -156,6 +171,13 @@ internal sealed class RenderableSubmesh
     ///     the effect pipeline; values below 1 trigger alpha blending.
     /// </summary>
     public float MaterialAlpha { get; set; } = 1f;
+
+    /// <summary>
+    ///     Optional manager-driven NiAlphaController bound to this submesh's NiMaterialProperty.
+    ///     The GPU renderer samples it from the shared animation clock and multiplies the result by
+    ///     <see cref="MaterialAlpha" />. Null keeps the ordinary static-material path byte-identical.
+    /// </summary>
+    public Animation.NifMaterialAlphaController? MaterialAlphaController { get; set; }
 
     /// <summary>Material glossiness from NiMaterialProperty. Fallout 3 / New Vegas commonly default this to 10.</summary>
     public float MaterialGlossiness { get; init; } = 10f;
@@ -213,6 +235,32 @@ internal sealed class RenderableSubmesh
     ///     glow renders clipped white). Null when the shape has no NiMaterialProperty (render as-is).
     /// </summary>
     public (float R, float G, float B)? EmissiveColor { get; set; }
+
+    /// <summary>
+    ///     Raw selected emittance for a standard FO3/FNV Lighting30 material (NiMaterialProperty,
+    ///     or resolved XEMI when External_Emittance is set). Unlike <see cref="EmissiveColor" />,
+    ///     this remains scene-lit and is folded into the shader's ambient term (or multiplied by
+    ///     <see cref="Lighting30GlowMapTexturePath" />). Null means no source was available.
+    /// </summary>
+    public (float R, float G, float B)? Lighting30EmissionColor { get; set; }
+
+    /// <summary>
+    ///     Explicit classic Lighting30 route. Kept even when the authored emission is black and no
+    ///     glow map is present so downstream code never infers shader identity from color values.
+    /// </summary>
+    public bool IsLighting30 { get; set; }
+
+    /// <summary>
+    ///     NiMaterialProperty Emissive Mult kept separate from the raw Lighting30 color: the engine
+    ///     applies it only in HDR mode. XEMI replaces only RGB and retains this material multiplier.
+    /// </summary>
+    public float Lighting30EmissionMultiplier { get; set; } = 1f;
+
+    /// <summary>
+    ///     Standard Lighting30 GlowMap (classic PP texture-set slot 2). Hair and FaceGen also use
+    ///     slot 2, so this is populated only by <see cref="NifLighting30EmissionPolicy" />.
+    /// </summary>
+    public string? Lighting30GlowMapTexturePath { get; set; }
 
     /// <summary>
     ///     Constant UV scroll velocity (UV units/second) resolved from a TES3-era NiUVController

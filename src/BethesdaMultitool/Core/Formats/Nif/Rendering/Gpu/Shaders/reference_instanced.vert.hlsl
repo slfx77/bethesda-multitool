@@ -43,7 +43,7 @@ cbuffer InstanceDraw : register(b1)
 {
     float4 uAlphaState;
     float4 uRenderState;
-    float4 uTextureState; // .x = BC5; .y = leaf/SpeedTree; .z flags: spec/clampU/clampV; .w palette row
+    float4 uTextureState; // .x BC5; .y leaf/ST; .z spec/clamp/glow/L30 flags; .w palette row
     uint4  uTexIndices;
     uint   uInstanceBase;
     // Per-submesh UV scroll offset, CPU-wrapped (frac(velocity × animClock)) so precision never
@@ -66,12 +66,16 @@ cbuffer InstanceDraw : register(b1)
     float4 uWind;
     // BGEM effect terms: uEffectTint.rgb multiplies the source texture (baseColor × scale);
     // .w > 0.5 enables the |N·V| opacity falloff in uEffectFalloff =
-    // (startAngle, stopAngle, startOpacity, stopOpacity).
+    // (startAngle, stopAngle, startOpacity, stopOpacity). On the mutually-exclusive Lighting30
+    // route this slot is raw emission rgb + material multiplier.
     float4 uEffectTint;
     float4 uEffectFalloff;
     // FO4 cubemap environment mapping: x = cube bindless slot (< 0 = none/not yet resident),
     // y = envMapScale (fo76utils envScale × specular strength), z = material smoothness 0–1.
     float4 uEnvMap;
+    // Opaque/instanced draws always upload x = 0. Declared for pixel-shader interface parity with
+    // the blended per-draw path, which can bind an R32 scene-depth SRV after opaque rendering.
+    float4 uSoftParticle;
 };
 
 // Per-instance data is now JUST the world matrix (64 bytes). Everything else is per-batch.
@@ -103,7 +107,8 @@ struct VSOutput
     nointerpolation float4 vSpecular   : TEXCOORD10; // xyz = tint, w = Phong exponent
     nointerpolation float4 vEffectTint    : TEXCOORD11; // rgb = BGEM tint, w = falloff enabled
     nointerpolation float4 vEffectFalloff : TEXCOORD12; // startAngle/stopAngle/startOp/stopOp
-    nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness, w = additive-fog flag
+    nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness, w = blend operation
+    nointerpolation float4 vSoftParticle  : TEXCOORD14;
 };
 
 VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
@@ -265,5 +270,6 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
     o.vEffectTint = uEffectTint;
     o.vEffectFalloff = uEffectFalloff;
     o.vEnvMap = uEnvMap;
+    o.vSoftParticle = uSoftParticle;
     return o;
 }

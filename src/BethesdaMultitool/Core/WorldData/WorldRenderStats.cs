@@ -90,6 +90,17 @@ internal sealed class WorldRenderStats
     internal int ReferenceInstances { get; set; }
     internal int ReferenceInstancedDraws { get; set; }
     internal int ReferenceBlendedDraws { get; set; }
+    // Deferred blend depth diagnostics. SceneDepth counts transparent draws issued while a sampled
+    // read-only depth view is active; SoftParticle is the eligible subset doing shader-side reject/fade.
+    internal int ReferenceSceneDepthBlendedDraws { get; set; }
+    internal int ReferenceSoftParticleDraws { get; set; }
+    internal int ReferenceSoftParticleAuthoredDraws { get; set; }
+    internal int ReferenceSoftParticleFallbackDraws { get; set; }
+    internal int ReferenceSoftParticleDepthSampleCount { get; set; }
+    // NiControllerSequence → NiAlphaController diagnostics for material-opacity animation.
+    internal int ReferenceMaterialAlphaControllerDraws { get; set; }
+    internal float ReferenceMaterialAlphaControllerMinimum { get; set; }
+    internal float ReferenceMaterialAlphaControllerMaximum { get; set; }
     // Opt-in live-particle diagnostics. Owners is the number of unique particle systems visible in
     // the frame (including when the opt-in is disabled); the remaining counters describe geometry
     // actually produced by the live path. Draws counts placed-reference draw calls, so one shared
@@ -190,6 +201,14 @@ internal sealed class WorldRenderStats
         ReferenceInstances = 0;
         ReferenceInstancedDraws = 0;
         ReferenceBlendedDraws = 0;
+        ReferenceSceneDepthBlendedDraws = 0;
+        ReferenceSoftParticleDraws = 0;
+        ReferenceSoftParticleAuthoredDraws = 0;
+        ReferenceSoftParticleFallbackDraws = 0;
+        ReferenceSoftParticleDepthSampleCount = 0;
+        ReferenceMaterialAlphaControllerDraws = 0;
+        ReferenceMaterialAlphaControllerMinimum = 0f;
+        ReferenceMaterialAlphaControllerMaximum = 0f;
         ReferenceLiveParticleOwners = 0;
         ReferenceLiveParticleParticles = 0;
         ReferenceLiveParticleDraws = 0;
@@ -287,6 +306,14 @@ internal sealed class WorldRenderStats
         ReferenceInstances = ReferenceInstances,
         ReferenceInstancedDraws = ReferenceInstancedDraws,
         ReferenceBlendedDraws = ReferenceBlendedDraws,
+        ReferenceSceneDepthBlendedDraws = ReferenceSceneDepthBlendedDraws,
+        ReferenceSoftParticleDraws = ReferenceSoftParticleDraws,
+        ReferenceSoftParticleAuthoredDraws = ReferenceSoftParticleAuthoredDraws,
+        ReferenceSoftParticleFallbackDraws = ReferenceSoftParticleFallbackDraws,
+        ReferenceSoftParticleDepthSampleCount = ReferenceSoftParticleDepthSampleCount,
+        ReferenceMaterialAlphaControllerDraws = ReferenceMaterialAlphaControllerDraws,
+        ReferenceMaterialAlphaControllerMinimum = ReferenceMaterialAlphaControllerMinimum,
+        ReferenceMaterialAlphaControllerMaximum = ReferenceMaterialAlphaControllerMaximum,
         ReferenceLiveParticleOwners = ReferenceLiveParticleOwners,
         ReferenceLiveParticleParticles = ReferenceLiveParticleParticles,
         ReferenceLiveParticleDraws = ReferenceLiveParticleDraws,

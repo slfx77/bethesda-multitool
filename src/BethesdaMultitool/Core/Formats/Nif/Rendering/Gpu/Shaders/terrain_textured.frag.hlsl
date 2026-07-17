@@ -1,11 +1,11 @@
-// v3 Phase 2c+ engine-accurate terrain fragment shader. Samples up to 4 diffuse textures
-// addressed by per-cell bindless texture indices (from CellTerrainTextureSet's
-// top-4-by-total-weight selection) and composes them by the per-vertex weights
+// v3 Phase 2c+ engine-accurate terrain fragment shader. Samples up to 16 diffuse textures
+// addressed by per-cell bindless texture indices and composes them by the per-vertex weights
 // interpolated across the cell mesh. Mirrors the per-vertex weighted sum the engine's
 // NiTerrainLandShader does, so quadrant midlines and (with neighbor-fed weight tables)
 // cell boundaries fade smoothly across rather than snapping at a hard edge.
 //
-// All diffuse samples share the same world-space UV (anisotropic wrap) so tiling stays
+// FNV normal maps use the exact same weights and world-space UV as their diffuse companions,
+// matching the recovered SLS2128/SLS2132 land passes. All samples use anisotropic wrap so tiling stays
 // sharp at any zoom — that's the property the pre-baked-composite alternative would have
 // given up.
 
@@ -21,7 +21,12 @@ cbuffer PerFrame : register(b0)
 cbuffer PerCell : register(b1)
 {
     // 16 bindless diffuse indices for the cell's blend slots (uint4[4] = slots 0..3, 4..7, …).
+    // This original array stays first so its byte offsets remain ABI-stable.
     uint4 uTextureIndices[4];
+    // FNV TXST slot-1 companions. 0xffffffff means no authored normal (exact flat identity).
+    uint4 uNormalTextureIndices[4];
+    // x low 16 bits: slot uses ATI2/BC5 and therefore stores only XY; yzw reserved.
+    uint4 uNormalDecodeMetadata;
 };
 
 cbuffer PerMode : register(b2)
@@ -29,6 +34,7 @@ cbuffer PerMode : register(b2)
     // x = 1.0 → show diffuse terrain textures (0 → flat white base)
     // y = uv scale (mirrors vertex shader so it stays in sync)
     // z = 1.0 → apply per-vertex (VCLR) tint
+    // w = 1.0 → apply recovered layered FNV terrain normal maps
     // (textures off + vclr on == the old "vertex colors only" debug look)
     float4 uDebugMode_UvScale_Pad;
 };
@@ -222,6 +228,51 @@ float3 AtmosphereLight(float3 N, float3 worldPos, float sunShadow)
     return max(shade, 0.0);
 }
 
+static const uint MissingNormalTextureIndex = 0xffffffffu;
+
+float3 DecodeTerrainNormal(uint textureIndex, uint slot, float2 uv)
+{
+    // Do not index the bindless table for a missing TX01. Returning the exact tangent-space flat
+    // vector keeps missing layers and their blends on the authored LAND/geometric normal.
+    float3 decoded = float3(0.0, 0.0, 1.0);
+    [branch] if (textureIndex != MissingNormalTextureIndex)
+    {
+        // Recovered PC FNV land PSOs decode RGB directly as (sample - 0.5) * 2. Bethesda DDS normals
+        // are already authored for DirectX, so green is deliberately not inverted here. Xbox DDX
+        // terrain normals promote asynchronously to ATI2/BC5, which exposes only RG; b1's live
+        // per-draw mask selects the same positive-Z reconstruction used by the reference-material path.
+        float3 packed = textures[NonUniformResourceIndex(textureIndex)].Sample(sDiffuse, uv).rgb;
+        float2 xy = packed.rg * 2.0 - 1.0;
+        bool reconstructZ = (uNormalDecodeMetadata.x & (1u << slot)) != 0u;
+        decoded = reconstructZ
+            ? float3(xy, sqrt(saturate(1.0 - dot(xy, xy))))
+            : packed * 2.0 - 1.0;
+    }
+    return decoded;
+}
+
+float3 TerrainTangentToWorld(float3 tangentNormal, float3 geometricNormal)
+{
+    float tangentNormalLengthSquared = dot(tangentNormal, tangentNormal);
+    tangentNormal = tangentNormalLengthSquared > 1e-8
+        ? tangentNormal * rsqrt(tangentNormalLengthSquared)
+        : float3(0.0, 0.0, 1.0);
+    float3 N = normalize(geometricNormal);
+
+    // Terrain UV is absolute world XY. For a height field, the +U tangent has zero Y and is
+    // proportional to (N.z, 0, -N.x); cross(N,T) supplies the right-handed +V bitangent.
+    // A vertical north/south-facing limit makes that vector degenerate, where world +X remains a
+    // valid tangent. LAND is a height field, but retain the guard for malformed/runtime records.
+    float3 T = float3(N.z, 0.0, -N.x);
+    float tangentLengthSquared = dot(T, T);
+    T = tangentLengthSquared > 1e-8
+        ? T * rsqrt(tangentLengthSquared)
+        : float3(1.0, 0.0, 0.0);
+    float3 B = normalize(cross(N, T));
+
+    return normalize(tangentNormal.x * T + tangentNormal.y * B + tangentNormal.z * N);
+}
+
 struct PSInput
 {
     float4 Position      : SV_Position;
@@ -238,11 +289,6 @@ struct PSInput
 float4 main(PSInput input) : SV_Target
 {
     float3 normal = normalize(input.vWorldNormal);
-    // Shared atmosphere lighting (rgb). Lighting-off path inside AtmosphereLight reproduces the
-    // legacy `0.4 + 0.6*lambert` scalar exactly, so the OFF state is pixel-identical to before.
-    float sunShadow = uSunColorLighting.w >= 0.5 ? ShadowFactor(input.vWorldPos) : 1.0;
-    float3 shade = AtmosphereLight(normal, input.vWorldPos, sunShadow);
-
     float3 color;
     if (uDebugMode_UvScale_Pad.x > 0.5)
     {
@@ -256,7 +302,9 @@ float4 main(PSInput input) : SV_Target
         };
 
         color = 0;
+        float3 tangentNormalSum = 0;
         float totalWeight = 0;
+        bool useTerrainNormals = uDebugMode_UvScale_Pad.w > 0.5;
         [unroll] for (int g = 0; g < 4; g++)
         {
             [unroll] for (int c = 0; c < 4; c++)
@@ -266,6 +314,14 @@ float4 main(PSInput input) : SV_Target
                 {
                     uint ti = uTextureIndices[g][c];
                     color += wt * textures[NonUniformResourceIndex(ti)].Sample(sDiffuse, input.vWorldUv).rgb;
+                    // Recovered SLS2128/SLS2132 use the very same v0/v1 layer weights for the normal
+                    // and diffuse companion samplers, then normalize once after accumulation.
+                    [branch] if (useTerrainNormals)
+                    {
+                        uint slot = (uint)(g * 4 + c);
+                        tangentNormalSum += wt * DecodeTerrainNormal(
+                            uNormalTextureIndices[g][c], slot, input.vWorldUv);
+                    }
                     totalWeight += wt;
                 }
             }
@@ -274,12 +330,26 @@ float4 main(PSInput input) : SV_Target
         if (totalWeight > 0.001)
         {
             color /= totalWeight;
+            if (useTerrainNormals)
+            {
+                float normalLengthSquared = dot(tangentNormalSum, tangentNormalSum);
+                float3 tangentNormal = normalLengthSquared > 1e-8
+                    ? tangentNormalSum * rsqrt(normalLengthSquared)
+                    : float3(0.0, 0.0, 1.0);
+                normal = TerrainTangentToWorld(tangentNormal, normal);
+            }
         }
         else
         {
             // Vertex with no slot contributions — typically corner of a cell whose every
             // neighbor was also empty. Render as engine-default to match the 2D fallback.
             color = textures[NonUniformResourceIndex(uTextureIndices[0].x)].Sample(sDiffuse, input.vWorldUv).rgb;
+            if (useTerrainNormals)
+            {
+                normal = TerrainTangentToWorld(
+                    DecodeTerrainNormal(uNormalTextureIndices[0].x, 0u, input.vWorldUv),
+                    normal);
+            }
         }
     }
     else
@@ -293,5 +363,11 @@ float4 main(PSInput input) : SV_Target
     {
         color *= input.vVertexColor.rgb;
     }
+
+    // Shared atmosphere lighting (rgb), now fed the weighted terrain normal for FNV. Lighting-off
+    // inside AtmosphereLight retains its existing diagnostic equation; non-FNV games never enter
+    // the normal-map branch because b2.w is zero.
+    float sunShadow = uSunColorLighting.w >= 0.5 ? ShadowFactor(input.vWorldPos) : 1.0;
+    float3 shade = AtmosphereLight(normal, input.vWorldPos, sunShadow);
     return float4(ApplyFog(color * shade, input.vWorldPos), 1.0);
 }

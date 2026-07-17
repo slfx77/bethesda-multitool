@@ -63,7 +63,11 @@ internal static class NifParticleSystemParser
     }
 
     /// <summary>Parse one NiParticleSystem block. Returns null if the block is malformed/inconsistent.</summary>
-    internal static ParticleSystemDefinition? Parse(byte[] data, NifInfo nif, int blockIndex)
+    internal static ParticleSystemDefinition? Parse(
+        byte[] data,
+        NifInfo nif,
+        int blockIndex,
+        IReadOnlyDictionary<int, NifMaterialAlphaController>? alphaControllersByProperty = null)
     {
         if (blockIndex < 0 || blockIndex >= nif.Blocks.Count)
         {
@@ -146,6 +150,17 @@ internal static class NifParticleSystemParser
         }
 
         ResolveAppearance(data, nif, propertyRefs, def);
+        if (alphaControllersByProperty is not null)
+        {
+            foreach (var propertyRef in propertyRefs)
+            {
+                if (alphaControllersByProperty.TryGetValue(propertyRef, out var alphaController))
+                {
+                    def.MaterialAlphaController = alphaController;
+                    break;
+                }
+            }
+        }
         return def;
     }
 

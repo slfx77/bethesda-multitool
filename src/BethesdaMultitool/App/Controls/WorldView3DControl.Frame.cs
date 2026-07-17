@@ -274,6 +274,7 @@ public sealed partial class WorldView3DControl
         // brightness). Keyed off the same per-game resolution the display pass uses so the two stay
         // consistent.
         var tonemap = ResolveTonemapSettings();
+        var hdrActive = _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
         // Sun-shadow sampling constants: the rendered cascades' light matrices (with this frame's
         // render origin folded in) + packed params. Disabled (zero) until the cascades have
         // content, when the caller opts out (ortho export / top-down), or when the toggle / env
@@ -291,7 +292,7 @@ public sealed partial class WorldView3DControl
             skyEnabled: _showSky ? 1f : 0f, fogEnabled: enableFog && _showFog ? 1f : 0f,
             placedLightCount: placedLightCount,
             cameraOrigin: cameraOrigin, ambientScale: ambientScale, shadow: shadow,
-            emissiveMult: tonemap.EmissiveMult,
+            emissiveMult: tonemap.EmissiveMult, hdrActive: hdrActive,
             sunlightScale: tonemap.Mode == Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.CreationModern
                 ? tonemap.SunlightScale : 1f,
             skyScale: tonemap.Mode == Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.CreationModern
@@ -313,7 +314,7 @@ public sealed partial class WorldView3DControl
         public Vector4 SunColorLighting;   // rgb = sun color, w = lightingEnabled (0/1)
         public Vector4 AmbientColor;       // rgb = ambient, w = spare
         public Vector4 SkyTopSkyEnabled;   // rgb = sky-top color, w = skyEnabled (0/1)
-        public Vector4 SkyHorizon;         // rgb = sky-horizon color, w = spare
+        public Vector4 SkyHorizon;         // rgb = sky-horizon color, w = effective HDR active (0/1)
         public Vector4 FogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
         public Vector4 Params;             // x = gameHour, y = fogNear, z = fogFar, w = placed-light count
         public Vector4 CameraPosFogPower;  // xyz = camera world pos (0 in camera-relative mode), w = fog power
@@ -359,6 +360,7 @@ public sealed partial class WorldView3DControl
             float ambientScale = 0.3f,
             Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.ShadowSampleConstants shadow = default,
             float emissiveMult = 1f,
+            bool hdrActive = true,
             float sunlightScale = 1f,
             float skyScale = 1f)
         {
@@ -372,7 +374,9 @@ public sealed partial class WorldView3DControl
                 // w carries the per-game ambient ("fill") scale read by the object/terrain shaders.
                 AmbientColor = new Vector4(a.AmbientColor, ambientScale),
                 SkyTopSkyEnabled = new Vector4(a.SkyTopColor * skyScale, skyEnabled),
-                SkyHorizon = new Vector4(a.SkyHorizonColor * skyScale, 0f),
+                // Spare w is the explicit HDR branch used only by classic Lighting30. This avoids
+                // overloading EmissiveMult=0, which is valid authored IMGS data.
+                SkyHorizon = new Vector4(a.SkyHorizonColor * skyScale, hdrActive ? 1f : 0f),
                 FogColorFogEnabled = new Vector4(a.FogColor, fogEnabled),
                 Params = new Vector4(gameHour, a.FogNear, a.FogFar, placedLightCount),
                 CameraPosFogPower = new Vector4(cameraPos, a.FogPower),
@@ -822,27 +826,37 @@ public sealed partial class WorldView3DControl
         }
         segmentStarted = StartProfileTimestamp();
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterStart);
-        // Feed water the real scene depth (terrain + references already wrote it) so it computes the
-        // WATER000-style water-column depth fade. The depth-sample PSO binds no DSV, so for this pass
-        // only: unbind the depth target and transition the R32_TYPELESS depth DEPTH_WRITE →
-        // PIXEL_SHADER_RESOURCE, then restore both for the depth-reading navmesh/wireframe overlays.
-        // Without a depth SRV, water keeps the hardware-depth-test PSO + view-angle proxy (DSV stays).
+        // Feed water/effects the real scene depth (terrain + opaque references already wrote it).
+        // Both paths select Texture2D or Texture2DMS from the surface sample count.
         var depthRes = surface.DepthResource;
         // Ortho modes skip the depth-SRV soft-fade: it linearizes with the perspective camera near/far,
         // which don't describe the ortho depth range. Fall back to the hardware depth-test water PSO
         // (same path the top-down overlay uses) so water stays height-correct in ortho.
         var waterUsesDepth = !projectionActive && _showWater && _water is not null
                              && _depthSrv is not null && depthRes is not null;
+        // The same R32 view feeds eligible deferred effects. A read-only DSV stays bound for that
+        // pass, preserving exact hardware depth for ordinary alpha decals/foliage and blend modes.
+        var referencesUseDepth = !projectionActive && _showReferences && _references is not null
+                                 && _depthSrv is not null && depthRes is not null;
         _water?.SetSceneDepth(
             waterUsesDepth ? _depthSrv!.Value.BindlessIndex : NoDepthSrv,
             _camera.NearPlane,
-            _camera.FarPlane);
+            _camera.FarPlane,
+            surface.SampleCount);
+        _references?.SetSceneDepth(
+            referencesUseDepth ? _depthSrv!.Value.BindlessIndex : NoDepthSrv,
+            _camera.NearPlane,
+            _camera.FarPlane,
+            surface.SampleCount);
+        var sceneDepthSampled = waterUsesDepth || referencesUseDepth;
+        var sampledDepthState = Vortice.Direct3D12.ResourceStates.DepthRead |
+                                Vortice.Direct3D12.ResourceStates.PixelShaderResource;
         if (waterUsesDepth)
         {
             cmd.OMSetRenderTargets(sceneRtv); // drop the DSV; keep the scene color RTV
             cmd.ResourceBarrierTransition(depthRes!,
                 Vortice.Direct3D12.ResourceStates.DepthWrite,
-                Vortice.Direct3D12.ResourceStates.PixelShaderResource);
+                sampledDepthState);
         }
         // Water projects CAMERA-RELATIVE like terrain/references (same viewProjScene + render origin, VS
         // subtracts) — the absolute path lost float32 precision far from the origin and the water edge
@@ -851,19 +865,31 @@ public sealed partial class WorldView3DControl
         var visibleWater = _showWater
             ? _water?.Render(viewProjScene, cylinder, referenceRenderOrigin) ?? 0
             : 0;
-        if (waterUsesDepth)
-        {
-            cmd.ResourceBarrierTransition(depthRes!,
-                Vortice.Direct3D12.ResourceStates.PixelShaderResource,
-                Vortice.Direct3D12.ResourceStates.DepthWrite);
-            cmd.OMSetRenderTargets(sceneRtv, sceneDsv);
-        }
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterEnd);
         var waterMs = ElapsedMilliseconds(segmentStarted);
         // Blended (transparent) reference submeshes draw AFTER water so water never paints over
-        // them. Water wrote no depth, so they depth-test against the opaque scene depth (terrain +
-        // opaque refs); the DSV was restored above, so this stays depth-correct.
+        // them. Eligible effects sample scene depth and manually reject/fade intersections; the
+        // read-only DSV keeps the established GreaterEqual hardware test for every blended draw.
+        if (referencesUseDepth)
+        {
+            if (!waterUsesDepth)
+            {
+                cmd.OMSetRenderTargets(sceneRtv);
+                cmd.ResourceBarrierTransition(depthRes!,
+                    Vortice.Direct3D12.ResourceStates.DepthWrite,
+                    sampledDepthState);
+            }
+            cmd.OMSetRenderTargets(sceneRtv, surface.ReadOnlyDepthStencilView);
+        }
         if (_showReferences) _references?.RenderBlendedDeferred();
+        if (sceneDepthSampled)
+        {
+            cmd.OMSetRenderTargets(sceneRtv); // release read-only DSV before returning to DepthWrite
+            cmd.ResourceBarrierTransition(depthRes!,
+                sampledDepthState,
+                Vortice.Direct3D12.ResourceStates.DepthWrite);
+            cmd.OMSetRenderTargets(sceneRtv, sceneDsv);
+        }
         // Navmesh overlay — translucent and depth-disabled so authored NAVM remains visible even
         // where it sits slightly below rendered ground. Editor selection/grid guides draw later.
         var visibleNavMesh = _showNavMesh ? _navMesh?.Render(viewProjAbsolute, cylinder) ?? 0 : 0;

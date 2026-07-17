@@ -13,6 +13,7 @@ internal sealed record Map2DProfilerOptions
     internal string? DataDirectory { get; init; }
     internal IReadOnlyList<string> LoadOrderPaths { get; init; } = [];
     internal string ProfileOutputPath { get; init; } = CreateDefaultProfileOutputPath();
+    internal string? ArtifactOutputPath { get; init; }
     internal int? DurationSeconds { get; init; }
     internal int? WorldspaceIndex { get; init; }
     internal string? ScenarioName { get; init; }
@@ -42,9 +43,14 @@ internal sealed record Map2DProfilerOptions
         Optional:
           --load-order <paths>        Extra ESM/ESP/DMP files, repeatable or semicolon-separated.
           --profile-output <path>     Profile/log output file. Defaults to a timestamped temp log.
+          --artifact-output <path>    Settled PNG for topdown-interior/topdown-speedtree.
           --worldspace <index>        Select worldspace by index after data loads.
           --scenario <name>           Run a scripted scenario after worldspace selection.
-                                      Names: zoom-pan-zigzag (default if --duration is set)
+                                      Names: zoom-pan-zigzag, terrain-aggregate, zoom-into-cells,
+                                      zoom-into-cells-heightmap, zoom-in-out, pan-stress,
+                                      topdown-still, topdown-interior, topdown-lighting,
+                                      topdown-speedtree.
+                                      Every topdown-* scenario implies --rendered-models.
           --rendered-models           Bring up the 3D viewer + enable the "Rendered models" overlay
                                       so the run is a TRUE full-path perf test (terrain tiles + the
                                       per-frame top-down model/water overlay). Selects TerrainTextures.
@@ -61,6 +67,8 @@ internal sealed record Map2DProfilerOptions
           BethesdaMap2DProfiler --input "C:\Games\Fallout New Vegas\Data\FalloutNV.esm"
           BethesdaMap2DProfiler --data-dir "C:\Games\Fallout New Vegas\Data" --worldspace 0 \
                                --scenario zoom-pan-zigzag --duration-seconds 60
+          BethesdaMap2DProfiler --data-dir "C:\Games\Morrowind\Data Files" --worldspace 0 \
+                               --scenario topdown-still --profile-output "topdown-still.log"
         """;
 
     internal static bool TryParse(
@@ -71,6 +79,7 @@ internal sealed record Map2DProfilerOptions
         string? input = null;
         string? dataDir = null;
         string? profileOutput = null;
+        string? artifactOutput = null;
         var loadOrder = new List<string>();
         int? durationSeconds = null;
         int? worldspaceIndex = null;
@@ -112,6 +121,11 @@ internal sealed record Map2DProfilerOptions
                 case "--profile-output":
                 case "--log":
                     profileOutput = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options);
+                    break;
+
+                case "--artifact-output":
+                    artifactOutput = RequireValue(args, ref i, arg, out error);
                     if (error != null) return Fail(out options);
                     break;
 
@@ -203,11 +217,14 @@ internal sealed record Map2DProfilerOptions
             ProfileOutputPath = string.IsNullOrWhiteSpace(profileOutput)
                 ? CreateDefaultProfileOutputPath()
                 : Path.GetFullPath(profileOutput),
+            ArtifactOutputPath = string.IsNullOrWhiteSpace(artifactOutput)
+                ? null
+                : Path.GetFullPath(artifactOutput),
             DurationSeconds = durationSeconds,
             WorldspaceIndex = worldspaceIndex,
             ScenarioName = scenarioName,
             Verbose = verbose,
-            RenderedModels = renderedModels,
+            RenderedModels = renderedModels || IsTopDownScenario(scenarioName),
             WindowWidth = Math.Max(width, 640),
             WindowHeight = Math.Max(height, 480)
         };
@@ -294,6 +311,10 @@ internal sealed record Map2DProfilerOptions
             paths.Add(piece);
         }
     }
+
+    private static bool IsTopDownScenario(string? scenarioName) =>
+        scenarioName is not null
+        && scenarioName.StartsWith("topdown-", StringComparison.OrdinalIgnoreCase);
 
     private static string CreateDefaultProfileOutputPath()
     {

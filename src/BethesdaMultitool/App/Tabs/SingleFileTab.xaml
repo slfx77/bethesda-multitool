@@ -656,18 +656,46 @@
                              TextWrapping="Wrap"
                              Margin="0,0,0,8" />
 
-                  <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8"
-                              Margin="0,0,0,8">
-                    <Button x:Name="ViewCellInDetailButton"
-                            Content="View Cell"
-                            Click="ViewCellInDetail_Click"
-                            Visibility="Collapsed"
-                            ToolTipService.ToolTip="View this cell on the map in detail mode" />
-                    <Button x:Name="ViewBaseInBrowserButton"
-                            Content="View in Records"
-                            Click="ViewBaseInBrowser_Click"
-                            Visibility="Collapsed"
-                            ToolTipService.ToolTip="View the base record in Records" />
+                  <StackPanel Grid.Row="1" Spacing="8" Margin="0,0,0,8">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button x:Name="ViewCellInDetailButton"
+                              Content="View Cell"
+                              Click="ViewCellInDetail_Click"
+                              Visibility="Collapsed"
+                              ToolTipService.ToolTip="View this cell on the map in detail mode" />
+                      <Button x:Name="ViewBaseInBrowserButton"
+                              Content="View in Records"
+                              Click="ViewBaseInBrowser_Click"
+                              Visibility="Collapsed"
+                              ToolTipService.ToolTip="View the base record in Records" />
+                    </StackPanel>
+
+                    <!--  A per-placed-reference preview, deliberately separate from Visibility's
+                          global category/show-disabled filters. ComboBox is natively keyboard
+                          operable; the explicit automation name makes its purpose unambiguous.  -->
+                    <StackPanel x:Name="ActivatorStatePanel" Visibility="Collapsed" Spacing="4">
+                      <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="Auto" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Enabled preview"
+                                   VerticalAlignment="Center" />
+                        <ComboBox x:Name="ActivatorStateComboBox" Grid.Column="1"
+                                  MinWidth="140" HorizontalAlignment="Stretch"
+                                  SelectedIndex="0"
+                                  SelectionChanged="ActivatorStateComboBox_SelectionChanged"
+                                  AutomationProperties.Name="Selected activator or effect enabled preview state"
+                                  AutomationProperties.HelpText="Choose Authored, On, or Off for only this placed activator or effect instance">
+                          <ComboBoxItem Content="Authored" />
+                          <ComboBoxItem Content="On" />
+                          <ComboBoxItem Content="Off" />
+                        </ComboBox>
+                      </Grid>
+                      <TextBlock x:Name="ActivatorStateHint" FontSize="11"
+                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                 TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    </StackPanel>
                   </StackPanel>
 
                   <Border Grid.Row="2" CornerRadius="4"

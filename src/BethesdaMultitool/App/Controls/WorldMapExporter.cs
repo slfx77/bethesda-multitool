@@ -13,6 +13,7 @@ using Windows.Foundation;
 using Windows.UI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool;
 
@@ -149,7 +150,7 @@ internal static class WorldMapExporter
             DrawExportMapMarkers(ds, device, pixelsPerWorldUnit, imageW, imageH,
                 worldOriginX, worldMaxX, worldMinY, worldMaxY, sizing,
                 filteredMarkers, hiddenCategories, markerIconBitmaps, colorScheme,
-                data?.Game ?? Core.Games.BethesdaGame.Unknown);
+                data?.Game ?? BethesdaGame.Unknown);
         }
 
         await using var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write);
@@ -165,7 +166,7 @@ internal static class WorldMapExporter
         HashSet<PlacedObjectCategory> hiddenCategories,
         IReadOnlyDictionary<int, CanvasBitmap>? markerIconBitmaps,
         HeightmapColorScheme colorScheme,
-        Core.Games.BethesdaGame game)
+        BethesdaGame game)
     {
         if (filteredMarkers.Count == 0 ||
             hiddenCategories.Contains(PlacedObjectCategory.MapMarker))
@@ -177,10 +178,17 @@ internal static class WorldMapExporter
             .Select(m => new MapMarkerInput(m.X, m.Y, m.MarkerType, m.MarkerName))
             .ToList();
 
+        // An export's pixels-per-world-unit is the direct equivalent of the live viewport zoom. Apply
+        // the same profile policy to both the layout's reserved marker bounds and the eventual draw.
+        var profile = GameProfiles.For(game);
+        var metrics = MapMarkerMetrics.Resolve(
+            profile, pixelsPerWorldUnit, sizing.MarkerRadius * 2f);
+        var markerSizing = sizing with { MarkerRadius = metrics.VisualDiameterPixels * 0.5f };
+
         var layout = MapExportLayoutEngine.ComputeLayout(
             inputs, imageW, imageH,
             worldMinX, worldMaxX, worldMinY, worldMaxY,
-            pixelsPerWorldUnit, sizing,
+            pixelsPerWorldUnit, markerSizing,
             (text, fontSize) =>
             {
                 using var tl = new CanvasTextLayout(device, text,
@@ -189,21 +197,23 @@ internal static class WorldMapExporter
                 return ((float)tl.LayoutBounds.Width, (float)tl.LayoutBounds.Height);
             });
 
-        var markerWorldRadius = sizing.MarkerRadius / pixelsPerWorldUnit;
+        var markerWorldRadius = markerSizing.MarkerRadius / pixelsPerWorldUnit;
+        var iconWorldHeight = metrics.IconHeightPixels / pixelsPerWorldUnit;
+        var glyphFontSize = sizing.LabelFontSize * metrics.ScreenScale;
         var tint = Color.FromArgb(255, colorScheme.R, colorScheme.G, colorScheme.B);
 
         foreach (var m in layout.Markers)
         {
             var marker = filteredMarkers[m.OriginalIndex];
-            DrawExportMarkerIcon(ds, marker, markerWorldRadius, tint,
-                sizing.LabelFontSize, pixelsPerWorldUnit, markerIconBitmaps, game);
+            DrawExportMarkerIcon(ds, marker, markerWorldRadius, iconWorldHeight, tint,
+                glyphFontSize, pixelsPerWorldUnit, markerIconBitmaps, profile, game);
         }
 
         // Switch to pixel space for leader lines + labels
         ds.Transform = Matrix3x2.Identity;
 
         var leaderColor = Color.FromArgb(150, 255, 255, 255);
-        var leaderWidth = Math.Max(1f, sizing.MarkerRadius * 0.1f);
+        var leaderWidth = Math.Max(1f, markerSizing.MarkerRadius * 0.1f);
 
         foreach (var lp in layout.Labels)
         {
@@ -217,7 +227,7 @@ internal static class WorldMapExporter
                 lp.LabelY + lp.PillHeight / 2);
             var markerPixel = new Vector2(lp.MarkerPixelX, lp.MarkerPixelY);
             var direction = Vector2.Normalize(labelCenter - markerPixel);
-            var lineStart = markerPixel + direction * (sizing.MarkerRadius + 1f);
+            var lineStart = markerPixel + direction * (markerSizing.MarkerRadius + 1f);
 
             ds.DrawLine(lineStart, labelCenter, leaderColor, leaderWidth);
         }
@@ -242,9 +252,11 @@ internal static class WorldMapExporter
 
     private static void DrawExportMarkerIcon(
         CanvasDrawingSession ds, PlacedReference marker,
-        float worldRadius, Color tint, float labelFontSize, float pixelsPerWorldUnit,
+        float worldRadius, float iconWorldHeight, Color tint,
+        float glyphFontSize, float pixelsPerWorldUnit,
         IReadOnlyDictionary<int, CanvasBitmap>? markerIconBitmaps,
-        Core.Games.BethesdaGame game)
+        GameProfile profile,
+        BethesdaGame game)
     {
         var pos = new Vector2(marker.X, -marker.Y);
         var destRect = new Rect(
@@ -254,13 +266,12 @@ internal static class WorldMapExporter
         // The raw TNAM value is game-specific; resolve it through the per-game catalog (mirrors the live
         // map). Mirrors the live map's height-normalized, aspect-preserved, per-game-scaled blit.
         var raw = marker.MarkerType.HasValue ? (int)marker.MarkerType.Value : 0;
-        var profile = Core.Games.GameProfiles.For(game);
 
         if (markerIconBitmaps?.TryGetValue(raw, out var icon) == true)
         {
             float sw = icon.SizeInPixels.Width;
             float sh = icon.SizeInPixels.Height;
-            var drawH = worldRadius * 2f * profile.MarkerIconScale;
+            var drawH = iconWorldHeight;
             var drawW = sh > 0f ? drawH * sw / sh : drawH;
             var iconDest = new Rect(pos.X - drawW / 2, pos.Y - drawH / 2, drawW, drawH);
             // FO3/FNV silhouettes tint to the scheme; pre-styled sets (Skyrim) draw as-is.
@@ -283,7 +294,7 @@ internal static class WorldMapExporter
             {
                 using var glyphFormat = new CanvasTextFormat
                 {
-                    FontSize = labelFontSize / pixelsPerWorldUnit,
+                    FontSize = glyphFontSize / pixelsPerWorldUnit,
                     FontFamily = "Segoe MDL2 Assets",
                     HorizontalAlignment = CanvasHorizontalAlignment.Center,
                     VerticalAlignment = CanvasVerticalAlignment.Center

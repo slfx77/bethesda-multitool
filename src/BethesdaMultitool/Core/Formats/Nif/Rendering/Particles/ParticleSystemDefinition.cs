@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 
@@ -68,6 +69,12 @@ internal sealed class ParticleSystemDefinition
 
     /// <summary>True when the system has a NiAlphaProperty with blend enabled (it nearly always does).</summary>
     public bool HasAlphaBlend { get; set; } = true;
+
+    /// <summary>
+    ///     Manager-driven material opacity for the particle system. FNV SandDust02's PCloud01
+    ///     authors a 0.05 maximum here; dropping this controller rendered that layer at 1.0.
+    /// </summary>
+    public NifMaterialAlphaController? MaterialAlphaController { get; set; }
 }
 
 internal enum ParticleSystemSourceLayout

@@ -132,6 +132,11 @@ internal sealed class CachedNifMesh12 : IDisposable
                 _textureCache.Release(gradientMap);
             }
 
+            if (submesh.Lighting30GlowMap is { } lighting30GlowMap)
+            {
+                _textureCache.Release(lighting30GlowMap);
+            }
+
             if (submesh.EnvMap is { } envMap)
             {
                 _textureCache.Release(envMap);

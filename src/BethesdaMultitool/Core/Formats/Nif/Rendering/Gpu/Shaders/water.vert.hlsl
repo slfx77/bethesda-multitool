@@ -20,7 +20,7 @@ cbuffer Uniforms : register(b0)
     float4 uLayer2;
     float4 uLayer3;
     uint4 uDepthParams;  // x = scene-depth SRV index, y/z = near/far bits (PS only; here for layout)
-    float4 uRenderOrigin; // xyz = camera-relative render origin (0 on absolute paths); w spare
+    float4 uRenderOrigin; // xyz = camera-relative render origin; w = scene-depth sample count (PS only)
 };
 
 struct WaterInstance
@@ -51,7 +51,7 @@ VSOutput main(uint vid : SV_VertexID, uint instanceId : SV_InstanceID)
                     : vid == 4 ? instance.Vertex4.xyz
                                : instance.Vertex5.xyz;
 
-    // Hardware-depth fallback (no scene-depth SRV: MSAA scene, ortho modes, top-down/capture): the
+    // Hardware-depth fallback (no scene-depth SRV: ortho modes and top-down/export paths): the
     // PS coplanar tie-break lives in its depth-sample branch and can't run here, so apply the SAME
     // world-unit bias (uDepthParams.w) by lifting the plane — near-coplanar terrain resolves in the
     // water's favour instead of z-fighting (Morrowind's Bitter Coast mud flats sit within ±1 unit

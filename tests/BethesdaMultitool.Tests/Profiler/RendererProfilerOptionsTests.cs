@@ -37,6 +37,17 @@ public sealed class RendererProfilerOptionsTests
     }
 
     [Fact]
+    public void Usage_DocumentsScenarioOptionsAndRegisteredNames()
+    {
+        Assert.Contains("--scenario", RendererProfilerOptions.Usage, StringComparison.Ordinal);
+        Assert.Contains("--scenario-output", RendererProfilerOptions.Usage, StringComparison.Ordinal);
+        foreach (var name in RendererProfilerScenarioCatalog.Names)
+        {
+            Assert.Contains(name, RendererProfilerOptions.Usage, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void TryParse_PreservesPerspectiveDefaultsForCompatibility()
     {
         WithInput(input =>
@@ -48,6 +59,86 @@ public sealed class RendererProfilerOptionsTests
             Assert.Null(options.CaptureYawDegrees);
             Assert.Equal(60, options.CaptureSettleTimeoutSeconds);
             Assert.Equal(0f, options.CaptureAnimationTimeSeconds);
+            Assert.Null(options.ScenarioName);
+            Assert.Null(options.ScenarioOutputDirectory);
+        });
+    }
+
+    [Fact]
+    public void TryParse_MapsScenarioAndCanonicalizesNameAndOutputDirectory()
+    {
+        WithInput(input =>
+        {
+            var output = Path.Combine(Path.GetTempPath(), $"scenario-{Guid.NewGuid():N}");
+            Assert.True(RendererProfilerOptions.TryParse(
+                ["--input", input, "--scenario", "FNV-CLOUD-MOTION", "--scenario-output", output],
+                out var options,
+                out var error));
+
+            Assert.Null(error);
+            Assert.Equal(RendererProfilerScenarioCatalog.FnvCloudMotion, options.ScenarioName);
+            Assert.Equal(Path.GetFullPath(output), options.ScenarioOutputDirectory);
+            Assert.Equal(Path.Combine(Path.GetFullPath(output), "scenario.log"), options.ProfileOutputPath);
+            Assert.Equal(Path.Combine(Path.GetFullPath(output), "scenario.jsonl"),
+                options.ProfileJsonlOutputPath);
+            Assert.Null(options.StressScene);
+        });
+    }
+
+    [Fact]
+    public void TryParse_ScenarioWithoutOutputGetsTimestampedArtifactDirectory()
+    {
+        WithInput(input =>
+        {
+            Assert.True(RendererProfilerOptions.TryParse(
+                ["--input", input, "--scenario", RendererProfilerScenarioCatalog.FnvWaterNightMatrix],
+                out var options,
+                out var error));
+
+            Assert.Null(error);
+            Assert.NotNull(options.ScenarioOutputDirectory);
+            Assert.EndsWith("-" + RendererProfilerScenarioCatalog.FnvWaterNightMatrix,
+                options.ScenarioOutputDirectory, StringComparison.Ordinal);
+            Assert.False(Directory.Exists(options.ScenarioOutputDirectory));
+        });
+    }
+
+    [Theory]
+    [InlineData("--scenario", "not-a-scenario", "Unknown scenario")]
+    [InlineData("--scenario-output", "unused", "requires --scenario")]
+    public void TryParse_RejectsInvalidScenarioSelection(
+        string option,
+        string value,
+        string expectedError)
+    {
+        WithInput(input =>
+        {
+            Assert.False(RendererProfilerOptions.TryParse(
+                ["--input", input, option, value], out _, out var error));
+            Assert.Contains(expectedError, error, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    [Theory]
+    [InlineData("--capture-frame", "capture.png")]
+    [InlineData("--capture-topdown", "capture.png")]
+    [InlineData("--capture-interior", "GSDocMitchellHouse")]
+    [InlineData("--duration-seconds", "30")]
+    [InlineData("--camera-motion", "orbit")]
+    public void TryParse_RejectsScenarioCombinedWithCompetingLifecycleMode(string option, string value)
+    {
+        WithInput(input =>
+        {
+            Assert.False(RendererProfilerOptions.TryParse(
+                [
+                    "--input", input,
+                    "--scenario", RendererProfilerScenarioCatalog.FnvCelestial,
+                    option, value,
+                ],
+                out _,
+                out var error));
+            Assert.NotNull(error);
+            Assert.Contains("scenario", error, StringComparison.OrdinalIgnoreCase);
         });
     }
 

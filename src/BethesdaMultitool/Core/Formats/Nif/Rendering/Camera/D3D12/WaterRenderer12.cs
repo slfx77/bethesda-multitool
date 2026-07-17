@@ -117,6 +117,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private uint _depthBindlessIndex = NoNormalMap; // scene depth SRV; NoNormalMap => proxy + depth-test PSO
     private float _depthNear = 16f;
     private float _depthFar = 1f;
+    private int _depthSampleCount = 1;
     private readonly long _startTimestamp = Stopwatch.GetTimestamp();
     private global::BethesdaMultitool.WorldSpatialIndex? _spatialIndex;
 
@@ -399,11 +400,31 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         EnsureInstanceCapacity(_waterCells.Count);
     }
 
-    public void SetSceneDepth(uint depthBindlessIndex, float near, float far)
+    public void SetSceneDepth(uint depthBindlessIndex, float near, float far, int sampleCount = 1)
     {
+        if (depthBindlessIndex == NoNormalMap)
+        {
+            _depthBindlessIndex = NoNormalMap;
+            _depthNear = 16f;
+            _depthFar = 1f;
+            _depthSampleCount = 1;
+            return;
+        }
+        // The host transitions/unbinds depth based on whether it supplied a valid descriptor, so a
+        // malformed enabled binding is a contract violation rather than a fail-soft fallback. Silently
+        // changing its dimension could select Texture2D for a Texture2DMS descriptor (undefined D3D12),
+        // while silently disabling it would make the renderer choose a DSV PSO after the host dropped DSV.
+        if (!float.IsFinite(near) || near <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(near), near, "Depth near plane must be finite and positive.");
+        if (!float.IsFinite(far) || far <= near)
+            throw new ArgumentOutOfRangeException(nameof(far), far, "Depth far plane must be finite and greater than near.");
+        if (sampleCount < 1)
+            throw new ArgumentOutOfRangeException(nameof(sampleCount), sampleCount, "Depth sample count must be positive.");
+
         _depthBindlessIndex = depthBindlessIndex;
         _depthNear = near;
         _depthFar = far;
+        _depthSampleCount = sampleCount;
     }
 
     public void SetModernCubeMap(uint? cubeMapBindlessIndex) =>
@@ -946,7 +967,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 DepthNear = _depthNear,
                 DepthFar = _depthFar,
                 DepthTieBias = _waterProfile.DepthTieBiasWorldUnits,
-                RenderOrigin = new Vector4(renderOrigin, 0f),
+                // xyz remains the camera-relative origin consumed by the VS. Spare w selects the
+                // Texture2D (1) or Texture2DMS (>1) depth alias without growing the 416-byte CB.
+                RenderOrigin = new Vector4(renderOrigin, _depthSampleCount),
                 // FO4-only constants (see WaterShaderVariant.Fo4Water); zero-defaults for other games.
                 Fo4Spec = new Vector4(
                     surface.SunSpecularMagnitude, surface.SiltAmount, surface.ShallowAlpha, surface.DeepAlpha),
@@ -1011,12 +1034,16 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView);
 
         // With a scene-depth SRV the host has unbound the DSV + transitioned depth to
-        // PIXEL_SHADER_RESOURCE, so use the no-depth-test PSO (occlusion is done in-shader).
+        // DEPTH_READ | PIXEL_SHADER_RESOURCE, so use the no-depth-test PSO (occlusion is done in-shader).
         // Otherwise the DSV is still bound → use the hardware-depth-test PSO.
         var depthSample = _depthBindlessIndex != NoNormalMap;
-        LastStats.WaterTechnique = useModernPipeline
-            ? $"modern-{modernTechnique}"
-            : $"{_waterProfile.ShaderVariant}-{(depthSample ? "scene-depth" : "hardware-depth")}";
+        LastStats.WaterTechnique = DescribeTechnique(
+            _game,
+            _waterProfile.ShaderVariant,
+            useModernPipeline,
+            modernTechnique,
+            depthSample,
+            _depthSampleCount);
         if (useModernPipeline)
         {
             cmd.SetPipelineState(depthSample ? modernResources!.PixelDepthSample : modernResources!.Pixel);
@@ -1044,6 +1071,48 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         LastStats.WaterDraws = visibleSurfaces;
         LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
         return visibleSurfaces;
+    }
+
+    private static string DescribeTechnique(
+        BethesdaGame game,
+        WaterShaderVariant shaderVariant,
+        bool modernPipeline,
+        ModernWaterTechnique modernTechnique,
+        bool sceneDepth,
+        int sampleCount)
+    {
+        string shaderName;
+        if (modernPipeline)
+        {
+            shaderName = $"modern-{modernTechnique}";
+        }
+        else if (shaderVariant == WaterShaderVariant.FnvWater000)
+        {
+            shaderName = game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas
+                ? "FnvWater003RtFree"
+                : $"{game}-ClassicRtFreeWaterStandIn";
+        }
+        else
+        {
+            shaderName = shaderVariant.ToString();
+        }
+        string depthName;
+        if (sceneDepth)
+        {
+            depthName = sampleCount > 1
+                ? $"scene-depth-msaa{sampleCount}x"
+                : "scene-depth-1x";
+        }
+        else if (!modernPipeline &&
+                 shaderVariant is WaterShaderVariant.FnvWater000 or WaterShaderVariant.Fo4Water)
+        {
+            depthName = "hardware-depth-view-angle-fallback";
+        }
+        else
+        {
+            depthName = "hardware-depth-no-scene-depth";
+        }
+        return $"{shaderName}-{depthName}";
     }
 
     public void Dispose()
@@ -1558,7 +1627,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         public float DepthNear;
         public float DepthFar;
         public float DepthTieBias;
-        // xyz = camera-relative render origin subtracted in the VS before projection (0 on absolute paths).
+        // xyz = camera-relative render origin subtracted in the VS before projection (0 on absolute paths);
+        // w = scene-depth sample count (1 selects Texture2D, >1 selects Texture2DMS in the PS).
         public Vector4 RenderOrigin;
         // FO4_WATER-only constants (appended so every other variant's offsets are untouched):
         // Fo4Spec = (Sun Specular Magnitude, Silt Amount, Shallow Alpha, Deep Alpha);

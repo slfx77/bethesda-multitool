@@ -50,19 +50,32 @@ internal static class WorldMapViewportHelper
             return false;
         }
 
-        var cellWorldSize = CellSizeOf(cell);
-        var cellMinX = cell.GridX.Value * cellWorldSize;
-        var cellMaxX = cellMinX + cellWorldSize;
-        var cellMinY = -(cell.GridY.Value + 1) * cellWorldSize;
-        var cellMaxY = cellMinY + cellWorldSize;
+        return IsGridCellVisible(
+            cell.GridX.Value, cell.GridY.Value, CellSizeOf(cell), tlWorld, brWorld);
+    }
 
-        var viewMinX = Math.Min(tlWorld.X, brWorld.X);
-        var viewMaxX = Math.Max(tlWorld.X, brWorld.X);
-        var viewMinY = Math.Min(tlWorld.Y, brWorld.Y);
-        var viewMaxY = Math.Max(tlWorld.Y, brWorld.Y);
+    /// <summary>
+    ///     Pure grid-cell visibility test shared by terrain/water tile compositing and record-backed
+    ///     cell rendering. Unlike <see cref="IsCellVisible" />, this overload does not require an ESM
+    ///     record and can therefore cull bitmap-cache keys before best-mip-per-cell selection.
+    /// </summary>
+    internal static bool IsGridCellVisible(
+        int gridX, int gridY, float cellWorldSize,
+        Vector2 tlWorld, Vector2 brWorld, float margin = 0f)
+    {
+        return NormalizeWorldBounds(tlWorld, brWorld, margin)
+            .IntersectsCell(gridX, gridY, cellWorldSize);
+    }
 
-        return cellMaxX >= viewMinX && cellMinX <= viewMaxX &&
-               cellMaxY >= viewMinY && cellMinY <= viewMaxY;
+    /// <summary>
+    ///     Normalizes arbitrary viewport corners and applies a non-negative world-space margin.
+    ///     Tile renderers call this once per layer, then test all cache entries through the returned
+    ///     value to keep the hot loop allocation-free and free of repeated min/max work.
+    /// </summary>
+    internal static WorldMapGridViewport NormalizeWorldBounds(
+        Vector2 tlWorld, Vector2 brWorld, float margin = 0f)
+    {
+        return WorldMapGridViewport.FromCorners(tlWorld, brWorld, margin);
     }
 
     internal static bool IsPointInView(float x, float y, Vector2 tlWorld, Vector2 brWorld, float margin)

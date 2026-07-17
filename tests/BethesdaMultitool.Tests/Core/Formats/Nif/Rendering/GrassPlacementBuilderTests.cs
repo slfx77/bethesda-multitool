@@ -28,6 +28,12 @@ public sealed class GrassPlacementBuilderTests
                 ? GrassPositionQuantization.FloorWorldUnits
                 : GrassPositionQuantization.HalfRelativeToTwelveCellBlock,
             profile.PositionQuantization);
+        Assert.Equal(
+            game == BethesdaGame.FalloutNewVegas
+                ? TerrainTriangleTopology.AlternatingCheckerboard
+                : null,
+            profile.TerrainTopology);
+        Assert.Equal(game == BethesdaGame.FalloutNewVegas, profile.FloorSampledHeight);
     }
 
     [Fact]
@@ -100,6 +106,51 @@ public sealed class GrassPlacementBuilderTests
             Assert.Equal((float)(Half)p.WorldMatrix.Translation.Y, p.WorldMatrix.Translation.Y);
             Assert.Equal((float)(Half)123.456f, p.WorldMatrix.Translation.Z);
         });
+    }
+
+    [Fact]
+    public void Build_FnvUsesCheckerboardTrianglePlaneAndFloorsReturnedHeight()
+    {
+        var heights = new float[33 * 33];
+        for (var y = 0; y < 33; y++)
+        for (var x = 0; x < 33; x++)
+            heights[y * 33 + x] = ((x + y) & 1) == 0 ? 0f : 80.75f;
+        var fixture = CreateFixture(
+            heights,
+            density: 100,
+            positionRange: 512f,
+            maxSlope: 90,
+            flags: 0x06);
+
+        var placements = Build(fixture, BethesdaGame.FalloutNewVegas);
+
+        Assert.Equal(64, placements.Count);
+        var fractionalSamples = 0;
+        foreach (var placement in placements)
+        {
+            var position = placement.WorldMatrix.Translation;
+            Assert.True(TerrainSurfaceTopology.TrySampleTriangle(
+                heights,
+                33,
+                position.X,
+                position.Y,
+                spacing: 128f,
+                TerrainTriangleTopology.AlternatingCheckerboard,
+                out var sampledHeight,
+                out var sampledNormal));
+
+            if (MathF.Abs(sampledHeight - MathF.Floor(sampledHeight)) > 1e-4f)
+                fractionalSamples++;
+            Assert.Equal(MathF.Floor(sampledHeight), position.Z);
+            Assert.Equal(position, placement.BoundsCenter);
+
+            var placedUp = Vector3.Normalize(new Vector3(
+                placement.WorldMatrix.M31,
+                placement.WorldMatrix.M32,
+                placement.WorldMatrix.M33));
+            Assert.InRange(Vector3.Distance(sampledNormal, placedUp), 0f, 1e-5f);
+        }
+        Assert.True(fractionalSamples > 0);
     }
 
     [Fact]

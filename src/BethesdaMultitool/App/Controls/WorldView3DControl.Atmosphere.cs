@@ -22,6 +22,7 @@ public sealed partial class WorldView3DControl
     private string? _tonemapBaseImageSpaceEditorId;
     private string _tonemapBaseImageSpaceSource = "unavailable";
     private string? _tonemapBaseImageSpaceUnavailableReason;
+    private ResolvedImageSpaceSelection _tonemapBaseImageSpaceSelection;
 
     /// <summary>Last classic WTHR→IMAD selection and sampled tonemap values, for captures/profiling.</summary>
     internal string WeatherImageSpaceTelemetry => _weatherImageSpaceTelemetry;
@@ -170,9 +171,32 @@ public sealed partial class WorldView3DControl
     }
 
     /// <summary>
+    ///     Active CELL for image-space selection. Perspective mode follows the camera position;
+    ///     orthographic inspection modes follow their visible projection focus because the perspective
+    ///     camera is intentionally parked/stale there.
+    /// </summary>
+    private ImageSpaceCellContext CurrentImageSpaceCellContext()
+    {
+        if (_selectedInterior is { } selectedInterior)
+        {
+            return ImageSpaceCellContext.ForSelectedInterior(selectedInterior);
+        }
+
+        var focus = ProjectionActive ? _projectionFocus : _camera.Position;
+        return ImageSpaceSelectionResolver.ResolveExteriorCell(
+            _cellGridLookup,
+            focus.X,
+            focus.Y,
+            _cellSize,
+            ProjectionActive
+                ? ImageSpaceCellContextSource.ProjectionFocusGrid
+                : ImageSpaceCellContextSource.CameraGrid);
+    }
+
+    /// <summary>
     ///     Tonemap operator + parameters for the current view. FO3/FNV (and Oblivion as a labeled
     ///     stand-in) reproduce the engine's imagespace HDR stage: the active IMGS resolves like the
-    ///     engine's <c>GetUsableImageSpace</c> — interior cell XCIM → worldspace INAM → the shipped
+    ///     engine's <c>GetUsableImageSpace</c> — active camera/interior CELL XCIM → worldspace INAM → the shipped
     ///     DefaultImageSpaceInterior/Exterior values (0x160/0x161). Other games get their family
     ///     default operator (see <see cref="Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings" />).
     /// </summary>
@@ -184,6 +208,7 @@ public sealed partial class WorldView3DControl
         _tonemapBaseImageSpaceEditorId = null;
         _tonemapBaseImageSpaceSource = "unavailable";
         _tonemapBaseImageSpaceUnavailableReason = null;
+        _tonemapBaseImageSpaceSelection = default;
         var skyContext = CurrentSkySceneContext();
         var behavesLikeExterior = skyContext.BehavesLikeExterior;
         var interior = skyContext.IsInterior && !behavesLikeExterior;
@@ -202,14 +227,17 @@ public sealed partial class WorldView3DControl
         var modernImagespaceFamily = settings.Mode ==
             Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.CreationModern;
         var imageSpaceWorld = skyContext.Worldspace;
-        var formId = _selectedInterior?.ImageSpaceFormId
-                     ?? ResolveInheritedWorldspaceImageSpace(imageSpaceWorld);
+        var cellContext = CurrentImageSpaceCellContext();
+        var imageSpaceSelection = ImageSpaceSelectionResolver.Resolve(
+            cellContext,
+            imageSpaceWorld,
+            _data?.Worldspaces,
+            interior,
+            useClassicDefault: engineImagespaceFamily);
+        _tonemapBaseImageSpaceSelection = imageSpaceSelection;
+        var formId = imageSpaceSelection.ImageSpaceFormId;
         _tonemapBaseImageSpaceFormId = formId;
-        _tonemapBaseImageSpaceSource = _selectedInterior?.ImageSpaceFormId is not null
-            ? "cell-xcim"
-            : formId is not null
-                ? "worldspace-inam-or-parent"
-                : "game-family-default";
+        _tonemapBaseImageSpaceSource = imageSpaceSelection.SourceTelemetry;
         if (_data is null)
         {
             _tonemapBaseImageSpaceUnavailableReason = "world data is unavailable";
@@ -222,8 +250,10 @@ public sealed partial class WorldView3DControl
             }
             else
             {
-                _tonemapBaseImageSpaceUnavailableReason =
-                    "selected IMGS FormID is not present in the retained image-space index";
+                _tonemapBaseImageSpaceUnavailableReason = imageSpaceSelection.Source is
+                    ImageSpaceSelectionSource.DefaultInterior or ImageSpaceSelectionSource.DefaultExterior
+                    ? "default IMGS record is not retained; the built-in shipped fallback is active"
+                    : "selected IMGS FormID is not present in the retained image-space index";
             }
         }
         else
@@ -231,9 +261,12 @@ public sealed partial class WorldView3DControl
             _tonemapBaseImageSpaceUnavailableReason =
                 "no CELL XCIM or inherited WRLD INAM resolved; game-family defaults are active";
         }
-        var contextId = _selectedInterior?.FormId ?? imageSpaceWorld?.FormId ?? 0u;
         var historyKey = TonemapHistoryKeyBuilder.Build(
-            game, contextId, formId ?? 0u,
+            game,
+            imageSpaceSelection.HistoryContextId,
+            imageSpaceSelection.HistoryCellId,
+            imageSpaceSelection.HistorySourceTag,
+            formId ?? 0u,
             weatherTransition.AppliedCurrentWeatherFormId ?? 0u,
             weatherTransition.AppliedOutgoingWeatherFormId ?? 0u,
             interior, _hdrEnabled, _imagespaceModifiersEnabled);
@@ -405,26 +438,6 @@ public sealed partial class WorldView3DControl
 
     private WorldspaceRecord? FindWorldspace(uint formId) =>
         _data?.Worldspaces.FirstOrDefault(w => w.FormId == formId);
-
-    /// <summary>
-    ///     WRLD PNAM bit 5 means "Use Image Space Data" from the parent. Walk that chain with a
-    ///     cycle guard before resolving INAM, matching TESWorldSpace::GetUsableImageSpace.
-    /// </summary>
-    private uint? ResolveInheritedWorldspaceImageSpace(WorldspaceRecord? worldspace)
-    {
-        if (_data is null || worldspace is null) return null;
-        var current = worldspace;
-        var visited = new HashSet<uint>();
-        while (visited.Add(current.FormId)
-               && (current.ParentUseFlags.GetValueOrDefault() & (1 << 5)) != 0
-               && current.ParentWorldspaceFormId is { } parentId
-               && FindWorldspace(parentId) is { } parent)
-        {
-            current = parent;
-        }
-
-        return current.ImageSpaceFormId;
-    }
 
     // Resolves the sky-element bindless texture indices for the current climate + active weather,
     // re-running only when either changes. Runs inside the render frame (a command list is open for the

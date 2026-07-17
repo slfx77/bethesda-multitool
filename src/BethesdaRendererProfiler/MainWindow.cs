@@ -13,7 +13,7 @@ using Microsoft.UI.Xaml.Media;
 
 namespace BethesdaRendererProfiler;
 
-internal sealed class MainWindow : Window, IDisposable
+internal sealed partial class MainWindow : Window, IDisposable
 {
     private static readonly Logger Log = Logger.Instance;
 
@@ -23,6 +23,7 @@ internal sealed class MainWindow : Window, IDisposable
     private readonly WorldView3DControl _worldView;
     private bool _disposed;
     private bool _exiting;
+    private CancellationTokenSource? _acceptanceScenarioCancellation;
     private Renderer3DScenario? _scenario;
     private bool _started;
     private DispatcherQueueTimer? _timedExitTimer;
@@ -67,6 +68,9 @@ internal sealed class MainWindow : Window, IDisposable
         _disposed = true;
         _timedExitTimer?.Stop();
         _timedExitTimer = null;
+        _acceptanceScenarioCancellation?.Cancel();
+        _acceptanceScenarioCancellation?.Dispose();
+        _acceptanceScenarioCancellation = null;
         _scenario?.Dispose();
         _scenario = null;
         _worldView.Dispose();
@@ -179,6 +183,14 @@ internal sealed class MainWindow : Window, IDisposable
             {
                 Log.Error("Renderer profiler scene did not become ready before the 30-second timeout.");
                 ExitProfiler("scene-ready-timeout", exitCode: 1);
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_options.ScenarioName))
+            {
+                _acceptanceScenarioCancellation = new CancellationTokenSource();
+                var result = await RunAcceptanceScenarioAsync(_acceptanceScenarioCancellation.Token);
+                ExitProfiler(result.Reason, result.ExitCode);
                 return;
             }
 

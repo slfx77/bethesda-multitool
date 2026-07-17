@@ -115,7 +115,12 @@ public sealed partial class WorldView3DControl
         _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex, appearance, normalIndices);
         _references?.LoadData(_data.RenderCache, _cellGridLookup, _spatialIndex);
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
-        if (_collisionDebug is not null) { _collisionDebug.LoadData(_spatialIndex); _collisionDebug.ShowDisabled = _showDisabled; }
+        if (_collisionDebug is not null)
+        {
+            _collisionDebug.LoadData(_spatialIndex);
+            _collisionDebug.ShowDisabled = _showDisabled;
+            _collisionDebug.XespDisabledRefs = _data.XespDisabledRefs;
+        }
     }
 
     /// <summary>
@@ -220,7 +225,12 @@ public sealed partial class WorldView3DControl
         _water?.LoadData(_cellGridLookup, worldspaceDefaultWaterHeight: null, _spatialIndex);
         _references?.LoadData(_data.RenderCache, _cellGridLookup, _spatialIndex);
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
-        if (_collisionDebug is not null) { _collisionDebug.LoadData(_spatialIndex); _collisionDebug.ShowDisabled = _showDisabled; }
+        if (_collisionDebug is not null)
+        {
+            _collisionDebug.LoadData(_spatialIndex);
+            _collisionDebug.ShowDisabled = _showDisabled;
+            _collisionDebug.XespDisabledRefs = _data.XespDisabledRefs;
+        }
     }
 
     /// <summary>

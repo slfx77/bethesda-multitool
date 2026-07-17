@@ -45,12 +45,14 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     private readonly ID3D12PipelineState _ldrPso;
     private readonly CollisionWireframeGeometryCache<ID3D12Resource> _geometryCache;
     private readonly CollisionReferencePriorityResolver _priorityResolver = new();
+    private readonly ReferenceEnabledOverrideStore _enabledOverrides;
 
     private readonly List<global::BethesdaMultitool.WorldSpatialCell> _visibleCellScratch = [];
     private readonly List<CollisionReferenceCandidate> _candidateScratch = [];
     private readonly List<CollisionWireframeInstance> _instanceScratch = [];
     private Func<string, CollisionMesh?>? _collisionResolver;
     private Func<string, float, CollisionMesh?>? _collisionWarmup;
+    private IReadOnlyCollection<uint>? _xespDisabledRefs;
     private bool _showDisabled;
     private bool _disposed;
 
@@ -96,16 +98,30 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
         }
     }
 
+    /// <summary>Resolved XESP-disabled placed FormIDs, shared with the main scene's authored-state bake.</summary>
+    public IReadOnlyCollection<uint>? XespDisabledRefs
+    {
+        get => _xespDisabledRefs;
+        set
+        {
+            if (ReferenceEquals(_xespDisabledRefs, value)) return;
+            _xespDisabledRefs = value;
+            _geometryCache.Invalidate();
+        }
+    }
+
     public CollisionDebugRenderer12(
         GpuDevice12 gpu,
         GpuCommandRecorder12 recorder,
         GpuRingBuffer12 ringBuffer,
         GpuRootSignature12 rootSignature,
-        GpuDeletionQueue12 deletionQueue)
+        GpuDeletionQueue12 deletionQueue,
+        ReferenceEnabledOverrideStore? enabledOverrides = null)
     {
         _gpu = gpu;
         _recorder = recorder;
         _ringBuffer = ringBuffer;
+        _enabledOverrides = enabledOverrides ?? new ReferenceEnabledOverrideStore();
         _geometryCache = new CollisionWireframeGeometryCache<ID3D12Resource>(
             UploadGeometry,
             deletionQueue.EnqueueDispose,
@@ -229,7 +245,8 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
             {
                 var candidateSourceOrder = sourceOrder++;
                 if (string.IsNullOrEmpty(p.ModelPath)) continue;
-                if (!_showDisabled && p.IsInitiallyDisabled) continue;
+                var authoredDisabled = p.IsInitiallyDisabled || _xespDisabledRefs?.Contains(p.FormId) == true;
+                if (!_enabledOverrides.IsVisible(p.FormId, authoredDisabled, _showDisabled)) continue;
                 if (p.RecordType is "ACHR" or "ACRE") continue; // skinned actors carry no static collision
                 if (RenderableReference.IsMarkerModelPath(p.ModelPath) ||
                     RenderableReference.IsImposterModelPath(p.ModelPath) ||

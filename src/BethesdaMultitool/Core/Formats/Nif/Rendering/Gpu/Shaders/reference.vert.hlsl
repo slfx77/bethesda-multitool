@@ -35,9 +35,11 @@ cbuffer PerDraw : register(b1)
     // Unused in VS; cull state is handled on the CPU side.
     float4 uRenderState;
     // uTextureState: x = BC5/ATI2 normal map; y = billboard/SpeedTree route; z = exact flags
-    // (bit0 spec map, bit1 clamp U, bit2 clamp V); w = gradient-map row (<0 disabled).
+    // (bit0 spec map, bit1 clamp U, bit2 clamp V, bit3 Lighting30 glow, bit4 Lighting30 route);
+    // w = gradient-map row (<0 disabled).
     float4 uTextureState;
-    // 4a — bindless TexIndices: .x diffuse slot, .y normal slot, .zw reserved. Mirrors
+    // 4a — bindless TexIndices: .x diffuse, .y normal, .z specular mask, .w gradient or
+    // Lighting30 glow (uTextureState disambiguates). Mirrors
     // the instanced VS's per-instance struct; the PS reads vTexIndices regardless of path.
     uint4  uTexIndices;
     // 1A — specular: xyz = tint, w = Phong exponent (0 = no specular). Matches PerDrawConstants.
@@ -48,15 +50,20 @@ cbuffer PerDraw : register(b1)
     float4 uCameraUp;
     // BGEM effect terms: uEffectTint.rgb multiplies the source texture (baseColor × scale);
     // .w > 0.5 enables the |N·V| opacity falloff in uEffectFalloff =
-    // (startAngle, stopAngle, startOpacity, stopOpacity), all stored as cosines/opacities.
+    // (startAngle, stopAngle, startOpacity, stopOpacity), all stored as cosines/opacities. On the
+    // mutually-exclusive Lighting30 route this slot is raw emission rgb + material multiplier.
     float4 uEffectTint;
     float4 uEffectFalloff;
     // FO4 cubemap environment mapping: x = cube bindless slot (< 0 = none/not yet resident),
     // y = envMapScale (fo76utils envScale × specular strength), z = material smoothness 0–1.
     float4 uEnvMap;
     // NiUVController scroll: xy = fractional UV phase this frame (0 = static), zw unused.
-    // Must stay layout-matched with PerDrawConstants in ReferenceRenderer12.cs (240 bytes).
+    // Must stay layout-matched with PerDrawConstants in ReferenceRenderer12.cs.
     float4 uUvScroll;
+    // Scene-depth blend pass: x = 0 disables, +(slot+1) = Texture2D, -(slot+1) = Texture2DMS,
+    // y/z = perspective near/far, |w| = soft falloff depth. w>0 fades output alpha;
+    // w<0 fades output RGB. w=0 keeps ordinary alpha geometry hard-intersecting.
+    float4 uSoftParticle;
 };
 
 struct VSInput
@@ -85,7 +92,8 @@ struct VSOutput
     nointerpolation float4 vSpecular   : TEXCOORD10; // xyz = tint, w = Phong exponent
     nointerpolation float4 vEffectTint    : TEXCOORD11; // rgb = BGEM tint, w = falloff enabled
     nointerpolation float4 vEffectFalloff : TEXCOORD12; // startAngle/stopAngle/startOp/stopOp
-    nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness, w = additive-fog flag
+    nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness, w = blend operation
+    nointerpolation float4 vSoftParticle  : TEXCOORD14;
 };
 
 VSOutput main(VSInput input)
@@ -138,5 +146,6 @@ VSOutput main(VSInput input)
     o.vEffectTint = uEffectTint;
     o.vEffectFalloff = uEffectFalloff;
     o.vEnvMap = uEnvMap;
+    o.vSoftParticle = uSoftParticle;
     return o;
 }

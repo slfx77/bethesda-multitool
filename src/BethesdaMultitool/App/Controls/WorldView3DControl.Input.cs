@@ -271,12 +271,17 @@ public sealed partial class WorldView3DControl
         {
             foreach (var placement in spatialCell.Cell.PlacedObjects)
             {
-                if (RenderableReference.TryBuild(placement) is not { } r) continue;
-                if (!_showDisabled && r.IsInitiallyDisabled) continue;
+                var xespDisabled = _data.XespDisabledRefs.Contains(placement.FormId);
+                var category = _data.CategoryIndex.GetValueOrDefault(
+                    placement.BaseFormId, PlacedObjectCategory.Unknown);
+                if (RenderableReference.TryBuild(placement, category, xespDisabled: xespDisabled) is not { } r)
+                    continue;
+                if (!_referenceEnabledOverrides.IsVisible(r.FormId, r.IsInitiallyDisabled, _showDisabled)) continue;
                 // Markers are pickable when VISIBLE (the pickable set mirrors the visible set);
                 // imposters are render-only LOD stand-ins and never pickable.
                 if (r.IsMarker && !_showMarkers) continue;
                 if (r.IsImposter) continue;
+                if (_hiddenCategories.Contains(r.Category)) continue;
                 // Warm collision meshes use their local AABB as broadphase and exact triangles as
                 // narrowphase. Cold/unavailable meshes retain the OBND/sphere path below.
                 // Refs with no OBND bake an oversized cell-wide cull sphere

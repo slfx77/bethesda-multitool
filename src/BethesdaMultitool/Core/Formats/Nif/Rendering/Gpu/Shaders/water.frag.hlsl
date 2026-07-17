@@ -12,7 +12,8 @@
 // a single NNAM normal tap, a Schlick fresnel, a dual sun/sky specular, and distance fog. Our
 // viewer has no reflection/refraction/depth render targets, so we reproduce the engine's RT-free
 // path exactly — which is what the engine itself does when those RTs are disabled:
-//   * reflection  == ReflectionColor          (engine: lerp(ReflectionColor, RT, VarAmounts.y), VarAmounts.y=0)
+//   * reflection  == ReflectionColor          (engine WATER003 no-RT permutation; unlike WATER000's
+//                                                RT path, it does not apply FresnelRI.w reflectivity)
 //   * refraction  == the water body color      (engine blends refraction by depth; we use the body)
 //   * depthT      == real scene-depth column when the host binds the D32 depth as an SRV (matches
 //                    the engine's DepthMap fade over DepthFalloffStart/End); else a view-angle proxy
@@ -39,7 +40,7 @@ cbuffer Uniforms : register(b0)
     float4 uLayer3;
     uint4 uDepthParams;  // x = scene-depth SRV bindless index (0xFFFFFFFF = none), y/z = near/far bits,
                          // w = depth-occlusion tie-break bias (world units, asfloat) — water wins coplanar ties
-    float4 uRenderOrigin; // xyz = camera-relative render origin (VS-only; declared for layout parity)
+    float4 uRenderOrigin; // xyz = camera-relative render origin; w = scene-depth sample count
     // ---- FO4_WATER-only constants (appended at the end so every other variant's offsets are
     // untouched; sourced from the FO4 WATR DNAM — see WaterShaderVariant.Fo4Water). ----
     float4 uFo4Spec;     // x = Sun Specular Magnitude, y = Silt Amount, z = Shallow Alpha, w = Deep Alpha
@@ -112,6 +113,9 @@ float3 ApplyFog(float3 color, float3 worldPos)
 // Bindless texture table (slot 4, space1) shared with terrain/references. The NNAM normal map
 // lives at uNoiseParams.x (FNV NoiseMap, sampler s2). s0 is the shared anisotropic-wrap sampler.
 Texture2D gWaterTextures[] : register(t0, space1);
+// space3 aliases the same bindless heap slots for R32_FLOAT Texture2DMS scene-depth descriptors.
+// uRenderOrigin.w selects this declaration only when the host supplied sampleCount > 1.
+Texture2DMS<float> gWaterDepthTexturesMsaa[] : register(t0, space3);
 SamplerState gWaterSampler : register(s0);
 #if FO4_WATER_ARCHITECTURAL
 TextureCube gWaterCubemaps[] : register(t0, space2);
@@ -183,6 +187,28 @@ float3 SampleNoiseLayer(uint idx, float2 worldXy, float freq, float4 layer, floa
 float LinearizeDepth(float ndcZ, float near, float far)
 {
     return (near * far) / max(near + ndcZ * (far - near), 1e-4);
+}
+
+float LoadSceneDepth(uint depthIndex, int2 pixel, uint suppliedSampleCount)
+{
+    if (suppliedSampleCount <= 1u)
+    {
+        return gWaterTextures[NonUniformResourceIndex(depthIndex)].Load(int3(pixel, 0)).r;
+    }
+
+    uint depthWidth, depthHeight, descriptorSampleCount;
+    gWaterDepthTexturesMsaa[NonUniformResourceIndex(depthIndex)]
+        .GetDimensions(depthWidth, depthHeight, descriptorSampleCount);
+    float nearestNdc = 0.0;
+    [loop]
+    for (uint sampleIndex = 0; sampleIndex < descriptorSampleCount; sampleIndex++)
+    {
+        // Reversed-Z: maximum is the nearest covered opaque sample. This preserves occlusion at an
+        // MSAA silhouette instead of allowing water through one uncovered/far sample.
+        nearestNdc = max(nearestNdc,
+            gWaterDepthTexturesMsaa[NonUniformResourceIndex(depthIndex)].Load(pixel, sampleIndex));
+    }
+    return nearestNdc;
 }
 
 #if FO4_WATER_ARCHITECTURAL
@@ -310,7 +336,8 @@ float4 main(PSInput input) : SV_Target
     {
         float near = asfloat(uDepthParams.y);
         float far = asfloat(uDepthParams.z);
-        float sceneNdc = gWaterTextures[NonUniformResourceIndex(depthIndex)].Load(int3((int2)input.Position.xy, 0)).r;
+        uint depthSampleCount = max((uint)uRenderOrigin.w, 1u);
+        float sceneNdc = LoadSceneDepth(depthIndex, (int2)input.Position.xy, depthSampleCount);
         float sceneDist = LinearizeDepth(sceneNdc, near, far);
         float waterDist = LinearizeDepth(input.Position.z, near, far);
         column = sceneDist - waterDist;           // >0: water over a floor; <0: geometry occludes
@@ -629,18 +656,23 @@ float4 main(PSInput input) : SV_Target
     // body sun modulation (sun enters via the specular only).
     float3 body = lerp(uDeep.rgb, uShallow.rgb, ndotv);
 #else
-    // FNV body color: lerp(Shallow, Deep, depthT), softly lit by the key light.
+    // FNV body color: lerp(Shallow, Deep, depthT), lit by WATER003's recovered key direction.
+    // The no-reflection/no-refraction hardware-depth permutation scales SunDir Y by four before
+    // normalizing (WATER003.pso asm 101-105: c0.zwzw = 1,4,1,4). Using the raw direction changed
+    // the body response substantially whenever the sun had a non-zero Y component.
     float3 body = lerp(uShallow.rgb, uDeep.rgb, depthT);
-    body *= saturate(dot(N, sunDir));
+    float3 fnvBodyLightDir = normalize(float3(sunDir.x, 4.0 * sunDir.y, sunDir.z));
+    body *= saturate(dot(N, fnvBodyLightDir));
 #endif
 
     // Reflected view vector — used for both the sky-reflection tint and the sun specular below.
     float3 R = reflect(-V, N);
 
-    // FNV reflection (RT-free path): with the skybox on (uSkyTopSkyEnabled.w), tint the reflection with
-    // the atmosphere sky — horizon→top by the reflected ray's up component — so water mirrors the
-    // time-of-day/weather sky (P5; one-way b3 read, no RTT loop). Otherwise the DNAM ReflectionColor.
-    // Scaled by the reflectivity multiplier either way.
+    // The viewer has no planar-reflection or refraction targets. FNV therefore follows the recovered
+    // WATER003 no-RT permutation, which stays on the authored DNAM ReflectionColor. Replacing it with
+    // the atmosphere gradient made daytime water flat gray and made the remaining night signal
+    // disappear with a dark sky. Oblivion's distinct recovered shader still interpolates its authored
+    // color toward the sky-gradient stand-in below.
     float3 reflectedSky = uSkyTopSkyEnabled.w > 0.5
         ? lerp(uSkyHorizon.rgb, uSkyTopSkyEnabled.rgb, saturate(R.z))
         : uReflection.rgb;
@@ -649,8 +681,10 @@ float4 main(PSInput input) : SV_Target
     // reflection is the RT-free stand-in for that RT, so the authored color remains the base term.
     float3 refl = lerp(uReflection.rgb, reflectedSky, reflectivity);
 #else
-    float3 reflBase = reflectedSky;
-    float3 refl = reflBase * reflectivity;
+    // WATER003.pso asm 106-107: lerp(body * NdotL, c4 ReflectionColor, fresnel). FresnelRI.w is
+    // absent from that no-RT composite; it only scales WATER000's sampled reflection-target path.
+    // Applying authored Reflectivity here suppressed Potomac's sole night signal by another 40%.
+    float3 refl = uReflection.rgb;
 #endif
 
     // FNV Schlick fresnel: F0 + (1-F0)*(1-NdotV)^5, F0 = FresnelAmount. Reflection over body.

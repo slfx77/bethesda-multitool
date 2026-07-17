@@ -21,9 +21,9 @@ cbuffer PerFrame : register(b0)
 // per-cell varies via bindless texture indices + the per-vertex weight stream.
 cbuffer PerMode : register(b2)
 {
-    // x = 1.0 → VCLR-only debug mode (skip texture sampling)
+    // x = 1.0 → show diffuse terrain textures (consumed by the fragment shader)
     // y = diffuse UV scale (world units → texture repeats; 1/512 = 8 repeats per cell)
-    // zw = padding
+    // z = apply VCLR; w = FNV terrain-normal gate (both consumed by the fragment shader)
     float4 uDebugMode_UvScale_Pad;
 };
 

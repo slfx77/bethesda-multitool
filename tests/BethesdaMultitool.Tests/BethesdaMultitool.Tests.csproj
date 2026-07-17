@@ -39,6 +39,16 @@
              Link="Profiler\CaptureReadinessGuard.cs" />
     <Compile Include="..\..\src\BethesdaRendererProfiler\CaptureImageFingerprint.cs"
              Link="Profiler\CaptureImageFingerprint.cs" />
+    <Compile Include="..\..\src\BethesdaRendererProfiler\RendererProfilerScenarioCatalog.cs"
+             Link="Profiler\RendererProfilerScenarioCatalog.cs" />
+    <Compile Include="..\..\src\BethesdaRendererProfiler\RendererProfilerScenarioContracts.cs"
+             Link="Profiler\RendererProfilerScenarioContracts.cs" />
+    <Compile Include="..\..\src\BethesdaRendererProfiler\RendererProfilerScenarioAssertions.cs"
+             Link="Profiler\RendererProfilerScenarioAssertions.cs" />
+    <Compile Include="..\..\src\BethesdaRendererProfiler\RendererProfilerScenarioRunner.cs"
+             Link="Profiler\RendererProfilerScenarioRunner.cs" />
+    <Compile Include="..\..\src\BethesdaRendererProfiler\RendererProfilerScenarioTraceSink.cs"
+             Link="Profiler\RendererProfilerScenarioTraceSink.cs" />
   </ItemGroup>
 
 </Project>

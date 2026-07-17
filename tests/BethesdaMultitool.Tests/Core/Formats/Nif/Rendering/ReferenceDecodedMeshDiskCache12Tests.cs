@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using Xunit;
@@ -62,6 +63,20 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.Equal(new Vector3(0.478f, 0.478f, 0.478f), loaded.EffectTint);
         Assert.Equal(new Vector4(0.98481f, 0.17365f, 1f, 0f), loaded.EffectFalloffParams);
         Assert.True(loaded.HasEffectFalloff);
+        Assert.Equal(321f, loaded.SoftParticleFalloffDepth);
+        Assert.NotNull(loaded.MaterialAlphaController);
+        Assert.Equal("sStorm03:0", loaded.MaterialAlphaController.TargetName);
+        Assert.Equal(0.5f, loaded.MaterialAlphaController.Sample(2.3333f), 3);
+        var sway = Assert.IsType<PhysicsLiteSwayDescriptor>(loaded.PhysicsLiteSway);
+        Assert.Equal(19, sway.ConstraintBlockIndex);
+        Assert.Equal(new Vector3(-55.7041f, 0.05523f, -19.1407f), sway.Pivot);
+        Assert.Equal(-Vector3.UnitY, sway.Axis);
+        Assert.Equal(-MathF.PI / 2f, sway.MinimumAngle);
+        Assert.Equal(MathF.PI / 2f, sway.MaximumAngle);
+        Assert.True(loaded.IsLighting30);
+        Assert.Equal("textures\\foo_g.dds", loaded.Lighting30GlowMapTexturePath);
+        Assert.Equal(new Vector3(0.25f, 0.5f, 0.75f), loaded.Lighting30EmissionColor);
+        Assert.Equal(2.5f, loaded.Lighting30EmissionMultiplier);
         Assert.True(loaded.ClampTextureU);
         Assert.False(loaded.ClampTextureV);
         Assert.Equal(new ushort[] { 0, 1, 2 }, loaded.Indices);
@@ -183,7 +198,32 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
                 EffectFalloffParams: new Vector4(0.98481f, 0.17365f, 1f, 0f),
                 HasEffectFalloff: true,
                 ClampTextureU: true,
-                ClampTextureV: false)
+                ClampTextureV: false,
+                SoftParticleFalloffDepth: 321f,
+                MaterialAlphaController: new NifMaterialAlphaController(
+                    17,
+                    "sStorm03:0",
+                    NifKeyInterpolation.Linear,
+                    [
+                        new NifFloatKey(0f, 0f),
+                        new NifFloatKey(2.3333f, 0.5f),
+                        new NifFloatKey(45f, 0f),
+                    ],
+                    null,
+                    new NifAlphaControllerClock(1f, 0f, 0f, 45f, NifCycleType.Loop),
+                    new NifAlphaControllerClock(1f, 0f, 0f, 45f, NifCycleType.Loop)),
+                PhysicsLiteSway: new PhysicsLiteSwayDescriptor(
+                    19,
+                    new Vector3(-55.7041f, 0.05523f, -19.1407f),
+                    -Vector3.UnitY,
+                    -MathF.PI / 2f,
+                    MathF.PI / 2f,
+                    0.35f,
+                    0.18f),
+                IsLighting30: true,
+                Lighting30GlowMapTexturePath: "textures\\foo_g.dds",
+                Lighting30EmissionColor: new Vector3(0.25f, 0.5f, 0.75f),
+                Lighting30EmissionMultiplier: 2.5f)
         ]);
     }
 

@@ -257,6 +257,7 @@ internal static class NpcMeshHelpers
                 NormalMapTexturePath = sub.NormalMapTexturePath,
                 IsEmissive = sub.IsEmissive,
                 UseVertexColors = sub.UseVertexColors,
+                UseVertexAlphaForOpacity = sub.UseVertexAlphaForOpacity,
                 IsDoubleSided = sub.IsDoubleSided,
                 HasAlphaBlend = sub.HasAlphaBlend,
                 HasAlphaTest = sub.HasAlphaTest,

@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.SpeedTree;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Effects;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
@@ -26,11 +27,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // viewProj (64) + the 4 SpeedTree wind-v2 sway matrices (4 × 64) — see reference_instanced.vert.hlsl
     // PerFrame. The shadow pass keeps its own shorter PerFrame; its shader variant never reads the matrices.
     private const uint PerFrameByteSize = 64 + 256;
-    private const uint PerDrawByteSize = 240;
+    private const uint PerDrawByteSize = 256;
     // 3 float4 (material) + uint4 (tex indices) + uint base + uint3 pad + float4 specular
     // + float4 camRight + float4 camUp (leaf billboard basis) + float4 wind
-    // + float4 effect tint + float4 effect falloff + float4 env map = 192 bytes.
-    private const uint InstanceDrawByteSize = 192;
+    // + float4 effect tint + float4 effect falloff + float4 env map + float4 soft-particle = 208 bytes.
+    private const uint InstanceDrawByteSize = 208;
+    private const uint NoSceneDepth = 0xFFFFFFFFu;
     private const float FrustumCullMargin = 512f;
 
     // Cold mesh realization is render-thread work. By DEFAULT there is no per-frame COUNT cap: the
@@ -70,6 +72,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private readonly GpuRingBuffer12 _ringBuffer;
     private readonly GpuDescriptorHeapAllocator12 _cbvSrvUavHeap;
     private readonly ReferenceMeshCache12 _meshCache;
+    private readonly ReferenceEnabledOverrideStore _enabledOverrides;
     private readonly ReferencePipelineFactory12 _pipelines;
     private readonly OpaqueBatchRegistry12 _opaqueBatches = new();
     private readonly List<BlendedReferenceDraw> _blendedDraws = new(256);
@@ -79,6 +82,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // kept as alpha blend but drawn INLINE before the water pass with a depth-writing PSO, so water occludes
     // them from above. Separate from _blendedDraws, which defers to after the water pass.
     private readonly List<BlendedReferenceDraw> _depthWritingBlendDraws = new(64);
+    private GrassDistanceEnvelope _grassDistanceEnvelope;
 
     // Sun-shadow pass replay list: one entry per instanced opaque draw recorded this frame (VB/IB
     // views + the frame's ring-buffer InstanceDraw-CB / instance-SRV GPU addresses), captured at
@@ -116,7 +120,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     public bool ShadowDrawsIncludeAnimatedLeaves { get; private set; }
 
     /// <summary>True when this frame's captured shadow casters include a KEYFRAME-ANIMATED mesh
-    /// (a CPU-skinned banner bound via its ring-buffer VB override) — same host contract as
+    /// (a CPU-skinned banner) or FNV physics-lite instance matrices — same host contract as
     /// <see cref="ShadowDrawsIncludeAnimatedLeaves" />: the map re-renders while one is casting.</summary>
     public bool ShadowDrawsIncludeAnimatedMeshes { get; private set; }
 
@@ -188,8 +192,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private double _animationClockSeconds;
     private readonly Animation.CpuMeshSkinner12 _skinner = new();
 
-    /// <summary>Master switch for NIF keyframe/UV playback (GUI "Animations" toggle). Off ⇒ UV
-    /// offsets stay (0,0) and the skinner clears its overrides — meshes draw their static rest pose.</summary>
+    /// <summary>Master switch for NIF keyframe/UV/physics-lite playback (GUI "Animations" toggle).
+    /// Off ⇒ UV offsets stay (0,0), the skinner clears its overrides, and sway matrices remain at
+    /// the byte-identical static rest pose.</summary>
     public bool AnimationsEnabled { get; set; } = true;
 
     /// <summary>
@@ -221,6 +226,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private bool _cullCacheShowGrass;
     private bool _cullCacheShowImposters;
     private bool _cullCacheShowDisabled;
+    private int _cullCacheEnabledOverrideVersion;
     private int _cullCacheCellsVisited;
     private int _cullCacheCandidates;
     private int _cullCacheCulled;
@@ -350,6 +356,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // rebinds PerFrameCbv (its own uniforms) and the DSV, which RenderBlendedDeferred must re-establish.
     private ulong _deferredPerFrameCbvAddress;
     private int _deferredFrameIndex;
+    private uint _deferredSceneDepthIndex = NoSceneDepth;
+    private float _deferredSceneDepthNear;
+    private float _deferredSceneDepthFar;
+    private int _deferredSceneDepthSampleCount;
 
     public ReferenceRenderer12(
         GpuDevice12 gpu,
@@ -357,12 +367,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         GpuRingBuffer12 ringBuffer,
         GpuRootSignature12 rootSignature,
         GpuDescriptorHeapAllocator12 cbvSrvUavHeap,
-        ReferenceMeshCache12 meshCache)
+        ReferenceMeshCache12 meshCache,
+        ReferenceEnabledOverrideStore? enabledOverrides = null)
     {
         _recorder = recorder;
         _ringBuffer = ringBuffer;
         _cbvSrvUavHeap = cbvSrvUavHeap;
         _meshCache = meshCache;
+        _enabledOverrides = enabledOverrides ?? new ReferenceEnabledOverrideStore();
 
         _pipelines = new ReferencePipelineFactory12(gpu, rootSignature);
     }
@@ -371,6 +383,30 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     public global::BethesdaMultitool.WorldRenderStats LastStats { get; } = new();
     public bool DetailedProfilingEnabled { get; set; }
     public bool ShowInitiallyDisabled { get; set; }
+
+    /// <summary>
+    ///     Selects the R32 scene-depth SRV used by eligible effects in the next deferred blended
+    ///     pass. The host must transition the resource to DepthRead|PixelShaderResource and bind
+    ///     its read-only DSV before <see cref="RenderBlendedDeferred" />. <see cref="NoSceneDepth" />
+    ///     retains the established hardware-only path.
+    /// </summary>
+    public void SetSceneDepth(uint depthBindlessIndex, float nearPlane, float farPlane, int sampleCount = 1)
+    {
+        if (depthBindlessIndex == NoSceneDepth || !float.IsFinite(nearPlane) ||
+            !float.IsFinite(farPlane) || nearPlane <= 0f || farPlane <= nearPlane || sampleCount < 1)
+        {
+            _deferredSceneDepthIndex = NoSceneDepth;
+            _deferredSceneDepthNear = 0f;
+            _deferredSceneDepthFar = 0f;
+            _deferredSceneDepthSampleCount = 0;
+            return;
+        }
+
+        _deferredSceneDepthIndex = depthBindlessIndex;
+        _deferredSceneDepthNear = nearPlane;
+        _deferredSceneDepthFar = farPlane;
+        _deferredSceneDepthSampleCount = sampleCount;
+    }
 
     /// <summary>
     ///     When <c>false</c> (default), engine "marker" objects (XMarker/heading, map/travel/door
@@ -453,6 +489,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _renderCache = renderCache;
         _cells = cells;
         _spatialIndex = spatialIndex;
+        _grassDistanceEnvelope = GrassScatterProfile.ForGame(renderCache.Game).DistanceEnvelope;
+        if (_grassDistanceEnvelope.Enabled)
+        {
+            Core.Diagnostics.Logger.Instance.Info(
+                "ReferenceRenderer12: grass distance envelope start={0} range={1} hardEnd={2}; " +
+                "the active horizontal render radius may cap the hard end.",
+                _grassDistanceEnvelope.FadeStart,
+                _grassDistanceEnvelope.FadeRange,
+                _grassDistanceEnvelope.HardEnd);
+        }
         // The reference set + spatial index changed — the cached cull survivors are stale, and so
         // are any frozen batches built from them.
         _cullCacheValid = false;
@@ -806,6 +852,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             && _cullCacheShowGrass == ShowGrass
             && _cullCacheShowImposters == ShowImposters
             && _cullCacheShowDisabled == ShowInitiallyDisabled
+            && _cullCacheEnabledOverrideVersion == _enabledOverrides.Version
             && _cullCacheShadowRing == shadowRing
             && (tolerant
                 ? _cullCachePose is not null
@@ -874,9 +921,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 candidates += _cullCandidateScratch.Count;
                 foreach (var r in _cullCandidateScratch)
                 {
-                    // Hide initially-disabled REFRs unless the toggle is on (default off = hidden),
-                    // matching the 2D viewer. Counted as culled so the HUD reflects the filter.
-                    if (!ShowInitiallyDisabled && r.IsInitiallyDisabled)
+                    // Authored state combines the REFR's own Initially Disabled flag with its resolved
+                    // XESP parent chain. A scene-local per-instance On/Off preview wins over both that
+                    // state and the global "show disabled" diagnostic; category/layer gates below stay
+                    // independent. Count a hidden state as culled so the HUD reflects the filter.
+                    if (!_enabledOverrides.IsVisible(r.FormId, r.IsInitiallyDisabled, ShowInitiallyDisabled))
                     {
                         culled++;
                         continue;
@@ -940,6 +989,19 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     // along either axis (Chebyshev), so references load as a square matching the terrain/
                     // grid footprint instead of a circle.
                     var rejected = MathF.Abs(dx) > maxDist || MathF.Abs(dy) > maxDist;
+                    // FNV's shipped fGrassStartFadeDistance/fGrassFadeRange describe a hard end at
+                    // 8000 world units. Only authored LAND/GRAS placements participate. The
+                    // establishment pass widens that end by the same camera-drift slack as the
+                    // other tolerant tests; DrawOpaqueBatches removes the slack every frame.
+                    if (!rejected && !GrassDistanceCullPolicy.Passes(
+                            r.IsGrass,
+                            in _grassDistanceEnvelope,
+                            HorizontalDistanceSquared(r.WorldMatrix.Translation, cylinderX, cylinderY),
+                            cylinderRadius,
+                            driftSlack))
+                    {
+                        rejected = true;
+                    }
                     // A5 — distance LOD: drop small props (clutter — barrels, debris, rocks) well
                     // beyond the near field. Shrinks the high-view-distance working set (fewer
                     // decodes/uploads/draws). Large props (cullRadius >= threshold: cars, shacks,
@@ -984,6 +1046,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             _cullCacheShowGrass = ShowGrass;
             _cullCacheShowImposters = ShowImposters;
             _cullCacheShowDisabled = ShowInitiallyDisabled;
+            _cullCacheEnabledOverrideVersion = _enabledOverrides.Version;
             _cullCacheShadowRing = shadowRing;
             _cullCacheCellsVisited = cellsVisited;
             _cullCacheCandidates = candidates;
@@ -1131,17 +1194,20 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 // world matrix per placement.
                 if (sub.AlphaRenderMode == NifAlphaRenderMode.Blend || sub.IsBillboard)
                 {
-                    var worldCenter = Vector3.Transform(sub.LocalBoundsCenter, r.WorldMatrix);
+                    var sampledSourceWorld = ApplyPhysicsLiteSway(sub, r.FormId, r.WorldMatrix);
+                    var worldCenter = Vector3.Transform(sub.LocalBoundsCenter, sampledSourceWorld);
                     // worldCenter stays ABSOLUTE (sorted against the actual rendering eye; billboard
                     // facing needs the absolute camera vector). The uploaded matrix is camera-relative:
-                    // the non-billboard case reuses the folded relWorldMatrix; BuildBillboardWorld folds
-                    // renderOrigin into its own composed translation.
+                    // the non-billboard case folds the possibly-swayed source matrix;
+                    // BuildBillboardWorld folds renderOrigin into its own composed translation.
+                    var sampledRelativeWorld = sampledSourceWorld;
+                    sampledRelativeWorld.Translation -= renderOrigin;
                     var world = sub.IsBillboard
                         ? BuildBillboardWorld(
-                            sub.LocalBoundsCenter, sub.BillboardFrontAxis, r.WorldMatrix,
+                            sub.LocalBoundsCenter, sub.BillboardFrontAxis, sampledSourceWorld,
                             worldCenter, frameCameraPosition,
                             renderOrigin)
-                        : relWorldMatrix;
+                        : sampledRelativeWorld;
                     var blendedDraw = new BlendedReferenceDraw(
                         world,
                         sub,
@@ -1150,7 +1216,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         sub.RenderState,
                         sub.TextureState,
                         sub.Specular,
-                        r.WorldMatrix);
+                        r.WorldMatrix,
+                        r.FormId,
+                        r.IsGrass);
                     // Depth-writing blend foliage (e.g. NVSeaPlant02) draws inline BEFORE the water pass so
                     // water occludes it from above; everything else defers to after water. Billboards keep
                     // the deferred path — they need per-frame camera-facing matrices and aren't occluders.
@@ -1173,7 +1241,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     (false, true) => _pipelines.OpaqueBackDecalPso,
                     (false, false) => _pipelines.OpaqueBackPso
                 };
-                var batch = _opaqueBatches.GetOrCreate(sub, pso);
+                var batch = _opaqueBatches.GetOrCreate(
+                    sub,
+                    pso,
+                    GrassDistanceCullPolicy.UsesEnvelope(r.IsGrass, in _grassDistanceEnvelope));
                 // Only the world matrix (+ its cull sphere) is per-instance. Material/texture state
                 // (AlphaState/RenderState/TextureState + bindless TexIndices) is identical
                 // across the whole batch — it comes from the submesh, which IS the batch key
@@ -1181,6 +1252,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 // instead of being copied into every instance record.
                 batch.Instances.Add(relWorldMatrix);
                 batch.InstanceBounds.Add(instanceBounds);
+                if (sub.PhysicsLiteSway is not null)
+                {
+                    batch.PhysicsLiteSeeds.Add(r.FormId);
+                }
                 anySubmeshDrawn = true;
             }
 
@@ -1230,7 +1305,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 }
 
                 var pso = sub.DoubleSided ? _pipelines.OpaqueDoublePso : _pipelines.OpaqueBackPso;
-                _opaqueBatches.GetOrCreate(sub, pso).ShadowOnlyInstances.Add(relWorldMatrix);
+                var batch = _opaqueBatches.GetOrCreate(
+                    sub,
+                    pso,
+                    GrassDistanceCullPolicy.UsesEnvelope(r.IsGrass, in _grassDistanceEnvelope));
+                batch.ShadowOnlyInstances.Add(relWorldMatrix);
+                if (sub.PhysicsLiteSway is not null)
+                {
+                    batch.ShadowOnlyPhysicsLiteSeeds.Add(r.FormId);
+                }
             }
         }
 
@@ -1266,8 +1349,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             _lastBuildTexturePending = texturePending;
             _batchesWidened = tolerant;
         }
-        // The draw passes apply the per-instance exact cull whenever the batches hold a widened
-        // (tolerant) survivor set — on build AND reuse frames — so the drawn set is always exact.
+        // Generic cylinder/LOD/frustum refiltering requires a real frustum. Enabled grass-distance
+        // batches independently force their own exact per-instance copy in DrawOpaqueBatches, so
+        // disabling reference-frustum culling never samples the default frustum and never bypasses
+        // the FNV hard end.
         _frameRefilterActive = _batchesWidened && hasFrustum;
         meshUploadMs = ElapsedMilliseconds(meshStarted);
 
@@ -1296,7 +1381,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // water pass via RenderBlendedDeferred() so water never paints over transparent meshes.
         if (!deferBlended)
         {
-            DrawBlended(cmd, frameIndex, ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws);
+            DrawBlended(
+                cmd, frameIndex, sceneDepthSampled: false,
+                ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws);
         }
 
         ReferencesDrawnLastFrame = drawn;
@@ -1338,8 +1425,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?)" /> with <c>deferBlended: true</c>. Called AFTER the water pass so water
     ///     never paints over transparent meshes. The water pass rebinds <c>PerFrameCbv</c> to its own
     ///     uniforms (and may change topology), so this re-establishes the reference per-frame state
-    ///     before issuing the blended draws. The DSV is bound by the frame loop, so blended draws stay
-    ///     depth-tested against the opaque scene depth.
+    ///     before issuing the blended draws. With a scene-depth SRV the host leaves the DSV unbound;
+    ///     the shader reproduces reversed-Z opaque occlusion and feathers only eligible effects.
+    ///     Otherwise the established hardware-depth PSO remains active.
     /// </summary>
     public void RenderBlendedDeferred()
     {
@@ -1354,7 +1442,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         ID3D12PipelineState? currentPso = null;
         double cbUpdateMs = 0, drawCallMs = 0;
         var submeshDraws = 0;
-        DrawBlended(cmd, _deferredFrameIndex, ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws);
+        var sceneDepthSampled = _deferredSceneDepthIndex != NoSceneDepth;
+        DrawBlended(
+            cmd, _deferredFrameIndex, sceneDepthSampled,
+            ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws);
 
         LastStats.ReferenceSubmeshDraws += submeshDraws;
         LastStats.ReferenceCbUpdateMilliseconds += cbUpdateMs;
@@ -1558,11 +1649,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var offset = 0;
             unsafe
             {
-                // Copy each batch's world matrices into the shared block. Exact-cull mode (top-down
-                // / kill-switch): one bulk memcpy per batch, all instances draw. Widened (tolerant)
-                // mode: per-instance copy gated by PassesExactCull, so only the instances inside
-                // THIS frame's exact bounds reach the GPU — the batches hold the cull-slack
-                // superset (and, on reuse frames, the frozen build's superset).
+                // Copy each batch's world matrices into the shared block. Ordinary exact-cull mode
+                // uses one bulk memcpy per batch. A widened generic cull OR an enabled grass-distance
+                // envelope switches to per-instance copy: generic bounds call PassesExactCull only
+                // while a real frustum is armed, while grass independently restores its zero-slack
+                // hard end even under the reference-frustum kill switch.
                 var span = new Span<Matrix4x4>((void*)instanceCpuPtr, totalInstances);
                 foreach (var batchState in activeBatches)
                 {
@@ -1570,13 +1661,20 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     var shadowWorlds = includeShadow ? batchState.ShadowOnlyInstances : null;
                     var shadowCount = shadowWorlds?.Count ?? 0;
                     var filterSpeedTreeLod = batchState.Submesh.SpeedTreeLod is not null;
+                    var filterMainGrassDistance = batchState.UsesGrassDistanceEnvelope;
+                    var exactMainPerInstance = GrassDistanceCullPolicy.RequiresExactPerInstanceFiltering(
+                        refilter,
+                        filterMainGrassDistance);
+                    var animatePhysicsLite = AnimationsEnabled &&
+                                             batchState.Submesh.PhysicsLiteSway is not null &&
+                                             batchState.PhysicsLiteSeeds.Count == worlds.Count;
                     if (worlds.Count == 0 && shadowCount == 0)
                     {
                         batchState.FrameDrawCount = 0;
                         batchState.FrameShadowOnlyCount = 0;
                         continue;
                     }
-                    if (!refilter && !filterSpeedTreeLod)
+                    if (!exactMainPerInstance && !filterSpeedTreeLod && !animatePhysicsLite)
                     {
                         CollectionsMarshal.AsSpan(worlds).CopyTo(span.Slice(offset, worlds.Count));
                         offset += worlds.Count;
@@ -1586,13 +1684,19 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     {
                         var worldSpan = CollectionsMarshal.AsSpan(worlds);
                         var boundsSpan = CollectionsMarshal.AsSpan(batchState.InstanceBounds);
+                        var physicsSeeds = CollectionsMarshal.AsSpan(batchState.PhysicsLiteSeeds);
                         var batchStart = offset;
                         for (var i = 0; i < worldSpan.Length; i++)
                         {
+                            if (filterMainGrassDistance && !PassesExactGrassDistance(
+                                    new Vector3(boundsSpan[i].X, boundsSpan[i].Y, boundsSpan[i].Z),
+                                    isGrass: true)) continue;
                             if (refilter && !PassesExactCull(in boundsSpan[i])) continue;
                             if (filterSpeedTreeLod &&
                                 !PassesSpeedTreeLod(batchState.Submesh, in worldSpan[i], in boundsSpan[i])) continue;
-                            span[offset++] = worldSpan[i];
+                            span[offset++] = animatePhysicsLite
+                                ? ApplyPhysicsLiteSway(batchState.Submesh, physicsSeeds[i], worldSpan[i])
+                                : worldSpan[i];
                         }
                         batchState.FrameDrawCount = offset - batchStart;
                     }
@@ -1603,7 +1707,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     // generated level would overlap in the shadow map.
                     if (shadowCount > 0)
                     {
-                        if (!filterSpeedTreeLod)
+                        var filterGrassDistance = batchState.UsesGrassDistanceEnvelope;
+                        var animateShadowPhysicsLite = AnimationsEnabled &&
+                                                       batchState.Submesh.PhysicsLiteSway is not null &&
+                                                       batchState.ShadowOnlyPhysicsLiteSeeds.Count == shadowCount;
+                        if (!filterSpeedTreeLod && !animateShadowPhysicsLite && !filterGrassDistance)
                         {
                             CollectionsMarshal.AsSpan(shadowWorlds!).CopyTo(span.Slice(offset, shadowCount));
                             offset += shadowCount;
@@ -1612,10 +1720,18 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         {
                             var shadowStart = offset;
                             var shadowSpan = CollectionsMarshal.AsSpan(shadowWorlds!);
+                            var shadowPhysicsSeeds =
+                                CollectionsMarshal.AsSpan(batchState.ShadowOnlyPhysicsLiteSeeds);
                             for (var i = 0; i < shadowSpan.Length; i++)
                             {
+                                if (filterGrassDistance && !PassesExactGrassDistance(
+                                        shadowSpan[i].Translation + _frameRenderOrigin,
+                                        isGrass: true)) continue;
                                 if (!PassesSpeedTreeLod(batchState.Submesh, in shadowSpan[i])) continue;
-                                span[offset++] = shadowSpan[i];
+                                span[offset++] = animateShadowPhysicsLite
+                                    ? ApplyPhysicsLiteSway(
+                                        batchState.Submesh, shadowPhysicsSeeds[i], shadowSpan[i])
+                                    : shadowSpan[i];
                             }
 
                             shadowCount = offset - shadowStart;
@@ -1656,10 +1772,17 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 var batchByteOffset = AlignUp(batchAlloc.ByteOffset, instanceStride);
                 var batchCpuPtr = batchAlloc.CpuPtr + (int)(batchByteOffset - batchAlloc.ByteOffset);
                 var filterSpeedTreeLod = batchState.Submesh.SpeedTreeLod is not null;
+                var filterMainGrassDistance = batchState.UsesGrassDistanceEnvelope;
+                var exactMainPerInstance = GrassDistanceCullPolicy.RequiresExactPerInstanceFiltering(
+                    refilter,
+                    filterMainGrassDistance);
+                var animatePhysicsLite = AnimationsEnabled &&
+                                         batchState.Submesh.PhysicsLiteSway is not null &&
+                                         batchState.PhysicsLiteSeeds.Count == batch.Count;
                 unsafe
                 {
                     var span = new Span<Matrix4x4>((void*)batchCpuPtr, batch.Count + fallbackShadowCount);
-                    if (!refilter && !filterSpeedTreeLod)
+                    if (!exactMainPerInstance && !filterSpeedTreeLod && !animatePhysicsLite)
                     {
                         CollectionsMarshal.AsSpan(batch).CopyTo(span);
                         drawCount = batch.Count;
@@ -1668,20 +1791,30 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     {
                         var worldSpan = CollectionsMarshal.AsSpan(batch);
                         var boundsSpan = CollectionsMarshal.AsSpan(batchState.InstanceBounds);
+                        var physicsSeeds = CollectionsMarshal.AsSpan(batchState.PhysicsLiteSeeds);
                         drawCount = 0;
                         for (var i = 0; i < worldSpan.Length; i++)
                         {
+                            if (filterMainGrassDistance && !PassesExactGrassDistance(
+                                    new Vector3(boundsSpan[i].X, boundsSpan[i].Y, boundsSpan[i].Z),
+                                    isGrass: true)) continue;
                             if (refilter && !PassesExactCull(in boundsSpan[i])) continue;
                             if (filterSpeedTreeLod &&
                                 !PassesSpeedTreeLod(batchState.Submesh, in worldSpan[i], in boundsSpan[i])) continue;
-                            span[drawCount++] = worldSpan[i];
+                            span[drawCount++] = animatePhysicsLite
+                                ? ApplyPhysicsLiteSway(batchState.Submesh, physicsSeeds[i], worldSpan[i])
+                                : worldSpan[i];
                         }
                     }
 
                     // Shadow-only casters after the main instances (same contract as the shared block).
                     if (fallbackShadowCount > 0)
                     {
-                        if (!filterSpeedTreeLod)
+                        var filterGrassDistance = batchState.UsesGrassDistanceEnvelope;
+                        var animateShadowPhysicsLite = AnimationsEnabled &&
+                                                       batchState.Submesh.PhysicsLiteSway is not null &&
+                                                       batchState.ShadowOnlyPhysicsLiteSeeds.Count == fallbackShadowCount;
+                        if (!filterSpeedTreeLod && !animateShadowPhysicsLite && !filterGrassDistance)
                         {
                             CollectionsMarshal.AsSpan(shadowOnly!).CopyTo(span.Slice(drawCount, fallbackShadowCount));
                             shadowCount = fallbackShadowCount;
@@ -1690,10 +1823,18 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         {
                             shadowCount = 0;
                             var shadowSpan = CollectionsMarshal.AsSpan(shadowOnly!);
+                            var shadowPhysicsSeeds =
+                                CollectionsMarshal.AsSpan(batchState.ShadowOnlyPhysicsLiteSeeds);
                             for (var i = 0; i < shadowSpan.Length; i++)
                             {
+                                if (filterGrassDistance && !PassesExactGrassDistance(
+                                        shadowSpan[i].Translation + _frameRenderOrigin,
+                                        isGrass: true)) continue;
                                 if (!PassesSpeedTreeLod(batchState.Submesh, in shadowSpan[i])) continue;
-                                span[drawCount + shadowCount++] = shadowSpan[i];
+                                span[drawCount + shadowCount++] = animateShadowPhysicsLite
+                                    ? ApplyPhysicsLiteSway(
+                                        batchState.Submesh, shadowPhysicsSeeds[i], shadowSpan[i])
+                                    : shadowSpan[i];
                             }
                         }
                     }
@@ -1763,7 +1904,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 sub.TextureState,
                 new TexIndexQuad(
                     sub.Diffuse.BindlessIndex, sub.Normal.BindlessIndex,
-                    sub.SpecularMap?.BindlessIndex ?? 0, sub.GradientMap?.BindlessIndex ?? 0),
+                    sub.SpecularMap?.BindlessIndex ?? 0,
+                    sub.GradientMap?.BindlessIndex ?? sub.Lighting30GlowMap?.BindlessIndex ?? 0),
                 drawStartInstance,
                 UvOffsetU: WrapUv(sub.UvScrollVelocity.X, UvScrollClock),
                 UvOffsetV: WrapUv(sub.UvScrollVelocity.Y, UvScrollClock),
@@ -1783,10 +1925,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         _wind.Z,
                         _wind.W * sub.SpeedTreeWindSpeeds.Y),
                 EffectTint: new Vector4(sub.EffectTint, sub.HasEffectFalloff ? 1f : 0f),
-                EffectFalloff: sub.EffectFalloffParams,
+                // The constant layout was exactly 208 bytes before Lighting30. Classic PP lighting
+                // and BGEM/NoLighting falloff are mutually exclusive; TextureState bit 4 tells the
+                // PS when this slot carries (raw emission rgb, material multiplier) instead.
+                EffectFalloff: sub.HasEffectFalloff ? sub.EffectFalloffParams : sub.Lighting30Emission,
                 // Re-read every frame (like the bindless indices) so a cube promoted after the
                 // batch froze still lands — EnvMapState flips from −1 to the slot on residency.
-                EnvMap: sub.EnvMapState);
+                EnvMap: sub.EnvMapState,
+                SoftParticle: Vector4.Zero);
             if (!_ringBuffer.TryAllocate(frameIndex, InstanceDrawByteSize, out var instanceDrawAlloc, GpuRingBuffer12.CbAlignment))
             {
                 LastFrameDrawsTruncated += batch.Count;
@@ -1828,6 +1974,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     // host must re-render the map every frame it casts (same as animated leaves).
                     ShadowDrawsIncludeAnimatedMeshes = true;
                 }
+                if (AnimationsEnabled && sub.PhysicsLiteSway is not null)
+                {
+                    // Reuse the host's general animated-mesh shadow contract: physics-lite changes
+                    // only per-instance matrices, but it has the same requirement that a cached sun
+                    // map be refreshed every frame while the GUI Animations switch is on.
+                    ShadowDrawsIncludeAnimatedMeshes = true;
+                }
             }
             drawCallMs += ElapsedMilliseconds(drawStarted);
             startInstance += (uint)(drawCount + shadowCount);
@@ -1842,6 +1995,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private void DrawBlended(
         ID3D12GraphicsCommandList cmd,
         int frameIndex,
+        bool sceneDepthSampled,
         ref ID3D12PipelineState? currentPso,
         ref double cbUpdateMs,
         ref double drawCallMs,
@@ -1864,7 +2018,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             for (var i = firstSelected; i < _blendedDraws.Count; i++)
             {
                 var draw = _blendedDraws[i];
-                if (draw.Submesh.EffectiveIndexCount <= 0) continue;
+                if (draw.Submesh.EffectiveIndexCount <= 0 ||
+                    !PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)) continue;
                 var pso = _pipelines.GetBlendPipeline(
                     draw.Submesh.SrcBlendMode,
                     draw.Submesh.DstBlendMode,
@@ -1876,11 +2031,30 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     draw,
                     pso,
                     reservations[i],
+                    sceneDepthSampled,
                     ref currentPso,
                     ref cbUpdateMs,
                     ref drawCallMs);
                 submeshDraws++;
                 LastStats.ReferenceBlendedDraws++;
+                if (sceneDepthSampled)
+                {
+                    LastStats.ReferenceSceneDepthBlendedDraws++;
+                    if (draw.Submesh.SoftParticle.Enabled)
+                    {
+                        LastStats.ReferenceSoftParticleDraws++;
+                        LastStats.ReferenceSoftParticleDepthSampleCount =
+                            Math.Max(LastStats.ReferenceSoftParticleDepthSampleCount, _deferredSceneDepthSampleCount);
+                        if (draw.Submesh.SoftParticle.Source == NifSoftParticleSource.AuthoredSoftEffect)
+                        {
+                            LastStats.ReferenceSoftParticleAuthoredDraws++;
+                        }
+                        else
+                        {
+                            LastStats.ReferenceSoftParticleFallbackDraws++;
+                        }
+                    }
+                }
                 if (draw.Submesh.LiveParticles is { HasLiveFrame: true })
                 {
                     LastStats.ReferenceLiveParticleDraws++;
@@ -1923,7 +2097,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             for (var i = firstSelected; i < _depthWritingBlendDraws.Count; i++)
             {
                 var draw = _depthWritingBlendDraws[i];
-                if (draw.Submesh.EffectiveIndexCount <= 0) continue;
+                if (draw.Submesh.EffectiveIndexCount <= 0 ||
+                    !PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)) continue;
                 var pso = _pipelines.GetBlendDepthWritePipeline(
                     draw.Submesh.SrcBlendMode,
                     draw.Submesh.DstBlendMode,
@@ -1935,6 +2110,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     draw,
                     pso,
                     reservations[i],
+                    sceneDepthSampled: false,
                     ref currentPso,
                     ref cbUpdateMs,
                     ref drawCallMs);
@@ -1968,7 +2144,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         {
             for (var i = 0; i < draws.Count; i++)
             {
-                drawable[i] = draws[i].Submesh.EffectiveIndexCount > 0 ? (byte)1 : (byte)0;
+                drawable[i] = draws[i].Submesh.EffectiveIndexCount > 0 &&
+                              PassesExactGrassDistance(
+                                  draws[i].SourceWorld.Translation,
+                                  draws[i].IsGrass)
+                    ? (byte)1
+                    : (byte)0;
             }
 
             var capacity = BlendedDrawPriority.CountAlignedAllocations(
@@ -2016,6 +2197,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         BlendedReferenceDraw draw,
         ID3D12PipelineState pso,
         GpuRingBuffer12.RingAllocation perDrawAlloc,
+        bool sceneDepthSampled,
         ref ID3D12PipelineState? currentPso,
         ref double cbUpdateMs,
         ref double drawCallMs)
@@ -2024,30 +2206,58 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         Debug.Assert(effectiveIndexCount > 0, "Quiet live-particle frames must be filtered before drawing.");
 
         var cbStarted = StartTiming();
+        var alphaState = draw.AlphaState;
+        if (draw.Submesh.MaterialAlphaController is { } alphaController)
+        {
+            var sampledAlpha = alphaController.Sample(
+                AnimationsEnabled ? (float)_animationClockSeconds : 0f);
+            alphaState.Z = alphaController.Apply(
+                alphaState.Z, (float)_animationClockSeconds, AnimationsEnabled);
+            if (LastStats.ReferenceMaterialAlphaControllerDraws == 0)
+            {
+                LastStats.ReferenceMaterialAlphaControllerMinimum = sampledAlpha;
+                LastStats.ReferenceMaterialAlphaControllerMaximum = sampledAlpha;
+            }
+            else
+            {
+                LastStats.ReferenceMaterialAlphaControllerMinimum = Math.Min(
+                    LastStats.ReferenceMaterialAlphaControllerMinimum, sampledAlpha);
+                LastStats.ReferenceMaterialAlphaControllerMaximum = Math.Max(
+                    LastStats.ReferenceMaterialAlphaControllerMaximum, sampledAlpha);
+            }
+
+            LastStats.ReferenceMaterialAlphaControllerDraws++;
+        }
+
         var perDraw = new PerDrawConstants
         {
             World = draw.World,
-            AlphaState = draw.AlphaState,
+            AlphaState = alphaState,
             RenderState = draw.RenderState,
             TextureState = draw.TextureState,
             // Bindless TexIndices on the blended draw path. Same convention as the instanced
-            // path: .x = diffuse, .y = normal, .z = specular mask, .w = gradient palette.
+            // path: .x = diffuse, .y = normal, .z = specular mask, .w = gradient palette OR the
+            // classified Lighting30 glow map (TextureState bits disambiguate them).
             TexIndices = new TexIndexQuad(
                 draw.Submesh.Diffuse.BindlessIndex,
                 draw.Submesh.Normal.BindlessIndex,
                 draw.Submesh.SpecularMap?.BindlessIndex ?? 0,
-                draw.Submesh.GradientMap?.BindlessIndex ?? 0),
+                draw.Submesh.GradientMap?.BindlessIndex ??
+                draw.Submesh.Lighting30GlowMap?.BindlessIndex ?? 0),
             Specular = draw.Specular,
             // Leaf-billboard camera basis (consumed only when TextureState.y marks a leaf submesh, e.g. a
             // baked particle cloud) so the blended-path VS can re-face the quads to the camera.
             CameraRight = _leafBillboardRight,
             CameraUp = _leafBillboardUp,
             EffectTint = new Vector4(draw.Submesh.EffectTint, draw.Submesh.HasEffectFalloff ? 1f : 0f),
-            EffectFalloff = draw.Submesh.EffectFalloffParams,
+            EffectFalloff = draw.Submesh.HasEffectFalloff
+                ? draw.Submesh.EffectFalloffParams
+                : draw.Submesh.Lighting30Emission,
             EnvMap = draw.Submesh.EnvMapState,
             UvScroll = new Vector4(
                 WrapUv(draw.Submesh.UvScrollVelocity.X, UvScrollClock),
                 WrapUv(draw.Submesh.UvScrollVelocity.Y, UvScrollClock), 0f, 0f),
+            SoftParticle = BuildSoftParticleConstants(draw.Submesh, sceneDepthSampled),
         };
         if (!ReferenceEquals(currentPso, pso))
         {
@@ -2248,6 +2458,31 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         return (float)(phase - Math.Floor(phase));
     }
 
+    /// <summary>
+    ///     Per-draw scene-depth contract. Only policy-approved effects get a depth slot; ordinary
+    ///     transparency keeps the read-only DSV's exact hardware test. Positive falloff fades
+    ///     alpha, while negative falloff fades RGB (multiplicative neutrality is selected from
+    ///     EnvMap.w in the shader).
+    /// </summary>
+    private Vector4 BuildSoftParticleConstants(CachedSubmesh12 submesh, bool sceneDepthSampled)
+    {
+        if (!sceneDepthSampled || _deferredSceneDepthIndex == NoSceneDepth ||
+            !submesh.SoftParticle.Enabled)
+        {
+            return Vector4.Zero;
+        }
+
+        var signedFalloff = submesh.SoftParticle.FadeTarget == NifSoftParticleFadeTarget.Alpha
+            ? submesh.SoftParticle.FalloffDepth
+            : -submesh.SoftParticle.FalloffDepth;
+        return new Vector4(
+            NifSoftParticleDepthBinding.Encode(
+                _deferredSceneDepthIndex, _deferredSceneDepthSampleCount),
+            _deferredSceneDepthNear,
+            _deferredSceneDepthFar,
+            signedFalloff);
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct PerDrawConstants
     {
@@ -2266,15 +2501,18 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         public Vector4 CameraRight;
         public Vector4 CameraUp;
         // BGEM effect terms (uEffectTint / uEffectFalloff): rgb tint + falloff-enabled flag in .w,
-        // then the |N·V| opacity ramp params.
+        // then the |N·V| opacity ramp params. For classic PP Lighting30 (TextureState bit 4), the
+        // mutually-exclusive EffectFalloff slot carries raw emission rgb + material multiplier.
         public Vector4 EffectTint;
         public Vector4 EffectFalloff;
         // FO4 cubemap environment mapping (uEnvMap): x = cube bindless slot (−1 until the cube
-        // texture is resident), y = envMapScale, z = material smoothness.
+        // texture is resident), y = envMapScale, z = material smoothness, w = blend operation.
         public Vector4 EnvMap;
         // uUvScroll: xy = fractional UV phase for scrolled materials (NiUVController — waterfalls
-        // draw on this blended path), zw unused. Brings this to 240 bytes.
+        // draw on this blended path), zw unused.
         public Vector4 UvScroll;
+        // uSoftParticle: encoded depth SRV slot/view kind, near/far, signed falloff. Total = 256 bytes.
+        public Vector4 SoftParticle;
     }
 
     /// <summary>
@@ -2293,8 +2531,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         TexIndexQuad TexIndices,
         uint InstanceBase,
         // uUvScroll: fractional UV phase for scrolled materials (NiUVController — waterfalls, lava).
-        // Occupies what were two padding uints, so the 192-byte layout is unchanged; writers that
-        // never fill them leave 0 = no scroll.
+        // Occupies what were two padding uints; writers that never fill them leave 0 = no scroll.
+        // Later append-only fields bring the current layout to 208 bytes (see SoftParticle below).
         float UvOffsetU = 0,
         float UvOffsetV = 0,
         // uWindMatrixValid: nonzero when this frame's PerFrame CB carries live wind-v2 sway matrices.
@@ -2309,19 +2547,22 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         Vector4 CameraUp = default,
         // SpeedTree wind (uWind = rock amount/phase, rustle amount/phase).
         Vector4 Wind = default,
-        // BGEM effect terms (uEffectTint / uEffectFalloff).
+        // BGEM effect terms (uEffectTint / uEffectFalloff), or the mutually-exclusive classic
+        // Lighting30 emission tuple selected by TextureState bit 4.
         Vector4 EffectTint = default,
         Vector4 EffectFalloff = default,
         // FO4 cubemap environment mapping (uEnvMap: x = cube slot or −1, y = scale,
-        // z = smoothness); brings this to 192 bytes.
-        Vector4 EnvMap = default);
+        // z = smoothness, w = blend operation).
+        Vector4 EnvMap = default,
+        // Opaque path sentinel (x = 0); total InstanceDraw layout = 208 bytes.
+        Vector4 SoftParticle = default);
 
     /// <summary>
     ///     Packed 4-uint TexIndices field. C# has no <c>uint4</c> primitive, so we lay out
     ///     four contiguous uints with explicit <see cref="LayoutKind.Sequential" /> so the
     ///     C# struct blits cleanly into the HLSL <c>uint4</c>. <see cref="X" /> = diffuse,
-    ///     <see cref="Y" /> = normal, <see cref="Z" />/<see cref="W" /> reserved (per-instance
-    ///     emissive / detail slots for future extension).
+    ///     <see cref="Y" /> = normal, <see cref="Z" /> = specular mask, <see cref="W" /> = FO4
+    ///     gradient palette or classic Lighting30 glow map (TextureState disambiguates).
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct TexIndexQuad(uint X, uint Y, uint Z, uint W);
@@ -2370,20 +2611,24 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         RefreshBlendedDrawList(_depthWritingBlendDraws, cameraPosition, renderOrigin);
     }
 
-    private static void RefreshBlendedDrawList(
+    private void RefreshBlendedDrawList(
         List<BlendedReferenceDraw> draws, Vector3 cameraPosition, Vector3 renderOrigin)
     {
         var span = CollectionsMarshal.AsSpan(draws);
         for (var i = 0; i < span.Length; i++)
         {
             ref var draw = ref span[i];
-            var worldCenter = Vector3.Transform(draw.Submesh.LocalBoundsCenter, draw.SourceWorld);
+            var sampledSourceWorld = ApplyPhysicsLiteSway(
+                draw.Submesh, draw.PhysicsLiteSeed, draw.SourceWorld);
+            var worldCenter = Vector3.Transform(draw.Submesh.LocalBoundsCenter, sampledSourceWorld);
+            var sampledRelativeWorld = sampledSourceWorld;
+            sampledRelativeWorld.Translation -= renderOrigin;
             var world = draw.Submesh.IsBillboard
                 ? BuildBillboardWorld(
                     draw.Submesh.LocalBoundsCenter, draw.Submesh.BillboardFrontAxis,
-                    draw.SourceWorld, worldCenter, cameraPosition,
+                    sampledSourceWorld, worldCenter, cameraPosition,
                     renderOrigin)
-                : draw.World;
+                : sampledRelativeWorld;
             draw = draw with
             {
                 World = world,
@@ -2393,11 +2638,34 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     }
 
     /// <summary>
-    ///     Per-instance exact cull for the draw passes, mirroring the establishment cull's
+    ///     Applies the strict FNV physics-lite descriptor before the REFR placement. The descriptor
+    ///     lives in baked mesh-root-local space, so row-vector order is sway * placement. Turning the
+    ///     GUI Animations switch off returns the byte-identical rest matrix; no batch rebuild or disk
+    ///     cache invalidation is required.
+    /// </summary>
+    private Matrix4x4 ApplyPhysicsLiteSway(
+        CachedSubmesh12 submesh,
+        uint placedReferenceSeed,
+        Matrix4x4 restWorld)
+    {
+        if (!AnimationsEnabled || submesh.PhysicsLiteSway is not { } descriptor)
+        {
+            return restWorld;
+        }
+
+        var sample = descriptor.Evaluate(_animationClockSeconds, placedReferenceSeed);
+        return sample.Applied ? sample.Transform * restWorld : restWorld;
+    }
+
+    /// <summary>
+    ///     Per-instance generic exact cull for draw passes with an armed frustum, mirroring the
+    ///     establishment cull's
     ///     resident-mesh tests WITHOUT the tolerant drift slack: square footprint reach, small-prop
     ///     distance LOD, frustum sphere. The batches hold the widened survivor superset; this keeps
     ///     the actually-drawn set exact for the CURRENT camera every frame — including on frozen
     ///     (reused) batches, where it is what makes camera drift inside the cull slack artifact-free.
+    ///     The grass hard end is intentionally separate in the copy loops so disabling reference
+    ///     frustum culling cannot call <c>IntersectsSphere</c> on an uninitialized frustum.
     /// </summary>
     private bool PassesExactCull(in Vector4 bounds)
     {
@@ -2409,14 +2677,34 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             return false;
         }
 
+        var horizontalDistanceSquared = (rdx * rdx) + (rdy * rdy);
         if (_enableDistanceLod && bounds.W < SmallPropLodRadius
-                               && (rdx * rdx) + (rdy * rdy) > _frameSmallPropCutoffSq)
+                               && horizontalDistanceSquared > _frameSmallPropCutoffSq)
         {
             return false;
         }
 
         return _frameFrustum.IntersectsSphere(
             new Vector3(bounds.X, bounds.Y, bounds.Z), bounds.W + FrustumCullMargin);
+    }
+
+    private bool PassesExactGrassDistance(Vector3 absolutePlacement, bool isGrass)
+        => PassesExactGrassDistance(
+            HorizontalDistanceSquared(absolutePlacement, _frameCylinderX, _frameCylinderY),
+            isGrass);
+
+    private bool PassesExactGrassDistance(float horizontalDistanceSquared, bool isGrass)
+        => GrassDistanceCullPolicy.Passes(
+            isGrass,
+            in _grassDistanceEnvelope,
+            horizontalDistanceSquared,
+            _frameCylinderRadius);
+
+    private static float HorizontalDistanceSquared(Vector3 placement, float cameraX, float cameraY)
+    {
+        var dx = placement.X - cameraX;
+        var dy = placement.Y - cameraY;
+        return (dx * dx) + (dy * dy);
     }
 
     /// <summary>
@@ -2475,7 +2763,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         Vector4 RenderState,
         Vector4 TextureState,
         Vector4 Specular,
-        Matrix4x4 SourceWorld);
+        Matrix4x4 SourceWorld,
+        uint PhysicsLiteSeed,
+        bool IsGrass);
 }
 #endif
 

@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 
@@ -33,7 +34,8 @@ internal static class NifParticleSystemExtractor
         NifRenderableModel model,
         IReadOnlyDictionary<int, Matrix4x4> worldTransforms,
         IReadOnlyDictionary<int, List<int>> nodeChildren,
-        bool treatRootsAsIdentity)
+        bool treatRootsAsIdentity,
+        IReadOnlyDictionary<int, NifMaterialAlphaController>? alphaControllersByProperty = null)
     {
         for (var i = 0; i < nif.Blocks.Count; i++)
         {
@@ -47,7 +49,8 @@ internal static class NifParticleSystemExtractor
             // marker its positive warm-cache entry looks particle-free and live mode never source-decodes it.
             model.ContainsParticleSource = true;
 
-            var def = NifParticleSystemParser.Parse(data, nif, i);
+            var def = NifParticleSystemParser.Parse(
+                data, nif, i, alphaControllersByProperty);
             if (def?.Emitter is null)
             {
                 continue;
@@ -388,6 +391,7 @@ internal static class NifParticleSystemExtractor
             SrcBlendMode = def.SrcBlendMode,
             DstBlendMode = def.DstBlendMode,
             MaterialAlpha = 1f,
+            MaterialAlphaController = def.MaterialAlphaController,
         };
     }
 }

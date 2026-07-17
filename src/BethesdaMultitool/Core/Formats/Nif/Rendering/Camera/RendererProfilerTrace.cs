@@ -175,6 +175,11 @@ internal static class RendererProfilerTrace
         Add("refInstances", stats.ReferenceInstances);
         Add("refInstancedDraws", stats.ReferenceInstancedDraws);
         Add("refBlendedDraws", stats.ReferenceBlendedDraws);
+        Add("refSceneDepthBlendedDraws", stats.ReferenceSceneDepthBlendedDraws);
+        Add("refSoftParticleDraws", stats.ReferenceSoftParticleDraws);
+        Add("refSoftParticleAuthoredDraws", stats.ReferenceSoftParticleAuthoredDraws);
+        Add("refSoftParticleFallbackDraws", stats.ReferenceSoftParticleFallbackDraws);
+        Add("refSoftParticleDepthSamples", stats.ReferenceSoftParticleDepthSampleCount);
         Add("refLiveParticleOwners", stats.ReferenceLiveParticleOwners);
         Add("refLiveParticleParticles", stats.ReferenceLiveParticleParticles);
         Add("refLiveParticleDraws", stats.ReferenceLiveParticleDraws);

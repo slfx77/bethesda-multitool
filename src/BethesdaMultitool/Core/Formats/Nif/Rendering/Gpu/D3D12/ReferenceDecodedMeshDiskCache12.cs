@@ -176,7 +176,20 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // Bumped 45→46: the mesh payload now retains particle-SOURCE provenance independently of baked
     // particle-cloud geometry. A controller-delayed system in a mixed NIF can emit nothing at time zero;
     // live mode must still reject that positive warm entry and recover its non-persisted runtime graph.
-    internal const int DecoderVersion = 46;
+    // Bumped 46→47: FO3/FNV TallGrassShaderProperty now resolves its inline File Name using the
+    // direct BSShaderProperty layout. Warm v46 entries cache GRAS cards with no diffuse texture.
+    // Bumped 47→48: the per-submesh payload now retains authored BSEffect SoftFalloffDepth for
+    // scene-depth particle feathering. Warm v47 entries lack the trailing field.
+    // Bumped 48→49: manager-driven NiAlphaController curves are persisted per submesh. Warm v48
+    // effects discard SandDust02's 0.50/0.35/0.05 authored layer fades and render at alpha 1.
+    // Bumped 49→50: FO3/FNV BSShaderPPLightingProperty specular selection now follows the authored
+    // Specular flag + usable normal/TBN inputs. Warm v49 entries incorrectly cache SpecularEnabled=false
+    // whenever retail NiMaterialProperty.SpecularColor is black, despite SLS2047 using light color.
+    // Bumped 50→51: strict FNV BS34 Havok-lite descriptors now persist per routed submesh. Warm v50
+    // entries have no root-local hinge pivot/axis and would silently keep hanging fixtures static.
+    // Bumped 51→52: classic FO3/FNV Lighting30 shader identity, raw material emission/multiplier,
+    // and classified glow-map path now persist per submesh. Warm v51 entries silently omit neon glow.
+    internal const int DecoderVersion = 52;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -571,6 +584,13 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(submesh.ClampTextureU);
         writer.Write(submesh.ClampTextureV);
         writer.Write(submesh.IsParticleCloud);
+        writer.Write(submesh.SoftParticleFalloffDepth);
+        WriteMaterialAlphaController(writer, submesh.MaterialAlphaController);
+        WritePhysicsLiteSway(writer, submesh.PhysicsLiteSway);
+        writer.Write(submesh.IsLighting30);
+        WriteNullableString(writer, submesh.Lighting30GlowMapTexturePath, MaxStringBytes);
+        WriteVector3(writer, submesh.Lighting30EmissionColor);
+        writer.Write(submesh.Lighting30EmissionMultiplier);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -642,7 +662,153 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             reader.ReadBoolean() ? ReadSubmeshSkin(reader) : null,
             reader.ReadBoolean(),
             reader.ReadBoolean(),
-            reader.ReadBoolean());
+            reader.ReadBoolean(),
+            reader.ReadSingle(),
+            ReadMaterialAlphaController(reader),
+            ReadPhysicsLiteSway(reader),
+            reader.ReadBoolean(),
+            ReadNullableString(reader, MaxStringBytes),
+            ReadVector3(reader),
+            reader.ReadSingle());
+    }
+
+    private static void WritePhysicsLiteSway(
+        BinaryWriter writer, PhysicsLiteSwayDescriptor? descriptor)
+    {
+        writer.Write(descriptor.HasValue);
+        if (descriptor is not { } sway)
+        {
+            return;
+        }
+
+        writer.Write(sway.ConstraintBlockIndex);
+        WriteVector3(writer, sway.Pivot);
+        WriteVector3(writer, sway.Axis);
+        writer.Write(sway.MinimumAngle);
+        writer.Write(sway.MaximumAngle);
+        writer.Write(sway.AmplitudeFraction);
+        writer.Write(sway.CyclesPerSecond);
+    }
+
+    private static PhysicsLiteSwayDescriptor? ReadPhysicsLiteSway(BinaryReader reader)
+    {
+        if (!reader.ReadBoolean())
+        {
+            return null;
+        }
+
+        var descriptor = new PhysicsLiteSwayDescriptor(
+            reader.ReadInt32(),
+            ReadVector3(reader),
+            ReadVector3(reader),
+            reader.ReadSingle(),
+            reader.ReadSingle(),
+            reader.ReadSingle(),
+            reader.ReadSingle());
+        if (descriptor.ConstraintBlockIndex < 0 ||
+            !IsFinite(descriptor.Pivot) ||
+            !IsFinite(descriptor.Axis) || descriptor.Axis.LengthSquared() < 1e-8f ||
+            !float.IsFinite(descriptor.MinimumAngle) ||
+            !float.IsFinite(descriptor.MaximumAngle) ||
+            descriptor.MinimumAngle > descriptor.MaximumAngle ||
+            !float.IsFinite(descriptor.AmplitudeFraction) ||
+            descriptor.AmplitudeFraction <= 0f || descriptor.AmplitudeFraction > 1f ||
+            !float.IsFinite(descriptor.CyclesPerSecond) || descriptor.CyclesPerSecond <= 0f)
+        {
+            throw new InvalidDataException("Invalid FNV physics-lite descriptor in decoded mesh cache.");
+        }
+
+        return descriptor;
+    }
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+
+    private static void WriteMaterialAlphaController(
+        BinaryWriter writer, NifMaterialAlphaController? controller)
+    {
+        writer.Write(controller is not null);
+        if (controller is null)
+        {
+            return;
+        }
+
+        ValidateRange(controller.Keys.Length, 0, MaxKeysPerChannel, nameof(controller.Keys));
+        writer.Write(controller.MaterialPropertyRef);
+        WriteNullableString(writer, controller.TargetName, MaxStringBytes);
+        writer.Write((byte)controller.Interpolation);
+        writer.Write(controller.Keys.Length);
+        foreach (var key in controller.Keys)
+        {
+            writer.Write(key.Time);
+            writer.Write(key.Value);
+        }
+
+        writer.Write(controller.ConstantValue.HasValue);
+        if (controller.ConstantValue is { } constantValue)
+        {
+            writer.Write(constantValue);
+        }
+
+        WriteAlphaClock(writer, controller.SequenceClock);
+        WriteAlphaClock(writer, controller.ControllerClock);
+    }
+
+    private static NifMaterialAlphaController? ReadMaterialAlphaController(BinaryReader reader)
+    {
+        if (!reader.ReadBoolean())
+        {
+            return null;
+        }
+
+        var materialPropertyRef = reader.ReadInt32();
+        var targetName = ReadNullableString(reader, MaxStringBytes) ?? string.Empty;
+        var interpolationValue = reader.ReadByte();
+        if (!Enum.IsDefined(typeof(NifKeyInterpolation), interpolationValue))
+        {
+            throw new InvalidDataException("Invalid material-alpha interpolation in decoded mesh cache.");
+        }
+
+        var keys = new NifFloatKey[ReadInt32(reader, 0, MaxKeysPerChannel)];
+        for (var i = 0; i < keys.Length; i++)
+        {
+            keys[i] = new NifFloatKey(reader.ReadSingle(), reader.ReadSingle());
+        }
+
+        var constantValue = reader.ReadBoolean() ? reader.ReadSingle() : (float?)null;
+        return new NifMaterialAlphaController(
+            materialPropertyRef,
+            targetName,
+            (NifKeyInterpolation)interpolationValue,
+            keys,
+            constantValue,
+            ReadAlphaClock(reader),
+            ReadAlphaClock(reader));
+    }
+
+    private static void WriteAlphaClock(BinaryWriter writer, NifAlphaControllerClock clock)
+    {
+        writer.Write(clock.Frequency);
+        writer.Write(clock.Phase);
+        writer.Write(clock.StartTime);
+        writer.Write(clock.StopTime);
+        writer.Write((byte)clock.Cycle);
+    }
+
+    private static NifAlphaControllerClock ReadAlphaClock(BinaryReader reader)
+    {
+        var frequency = reader.ReadSingle();
+        var phase = reader.ReadSingle();
+        var startTime = reader.ReadSingle();
+        var stopTime = reader.ReadSingle();
+        var cycleValue = reader.ReadByte();
+        if (cycleValue > (byte)NifCycleType.Clamp)
+        {
+            throw new InvalidDataException("Invalid material-alpha cycle type in decoded mesh cache.");
+        }
+
+        return new NifAlphaControllerClock(
+            frequency, phase, startTime, stopTime, (NifCycleType)cycleValue);
     }
 
     private static NifSubmeshSkin ReadSubmeshSkin(BinaryReader reader)
@@ -795,4 +961,15 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     bool ClampTextureU = false,
     bool ClampTextureV = false,
     // Baked particle-cloud marker (v43+); drives per-quad camera sorting at draw time.
-    bool IsParticleCloud = false);
+    bool IsParticleCloud = false,
+    // Authored BSEffect soft-intersection depth (v48+); zero means no serialized depth.
+    float SoftParticleFalloffDepth = 0f,
+    // Manager-driven material opacity (v49+).
+    NifMaterialAlphaController? MaterialAlphaController = null,
+    // Strict FNV BS34 ambient hinge/ragdoll route (v51+), already in baked root-local coordinates.
+    PhysicsLiteSwayDescriptor? PhysicsLiteSway = null,
+    // Classic FO3/FNV Lighting30 material emission/glow route (v52+).
+    bool IsLighting30 = false,
+    string? Lighting30GlowMapTexturePath = null,
+    Vector3 Lighting30EmissionColor = default,
+    float Lighting30EmissionMultiplier = 1f);

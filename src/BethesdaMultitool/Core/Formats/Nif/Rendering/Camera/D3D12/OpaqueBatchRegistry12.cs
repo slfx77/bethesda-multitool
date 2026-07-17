@@ -7,7 +7,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 
 /// <summary>
 ///     CPU-side registry of instanced opaque draw batches for <see cref="ReferenceRenderer12" />.
-///     Batches are keyed by cached submesh (the batch key); each frame the renderer calls
+///     Batches are keyed by cached submesh plus enabled grass-distance-policy identity; each frame
+///     the renderer calls
 ///     <see cref="Begin" /> to reset per-frame instance lists (and periodically prune cold
 ///     batches), then <see cref="GetOrCreate" /> per visible submesh to append a world matrix.
 ///     Pure bookkeeping — it records no command-list work, so it has no effect on draw ordering.
@@ -17,9 +18,9 @@ internal sealed class OpaqueBatchRegistry12
     private const int StaleFrameWindow = 120;
     private const int PruneIntervalFrames = 30;
 
-    private readonly Dictionary<CachedSubmesh12, OpaqueBatchState> _batches = new();
+    private readonly Dictionary<OpaqueBatchKey, OpaqueBatchState> _batches = new();
     private readonly List<OpaqueBatchState> _activeBatches = new(256);
-    private readonly List<CachedSubmesh12> _staleKeys = new(64);
+    private readonly List<OpaqueBatchKey> _staleKeys = new(64);
     private int _frameId;
 
     /// <summary>The batches touched in the current frame, in first-touch order — what the
@@ -42,7 +43,9 @@ internal sealed class OpaqueBatchRegistry12
         {
             batch.Instances.Clear();
             batch.InstanceBounds.Clear();
+            batch.PhysicsLiteSeeds.Clear();
             batch.ShadowOnlyInstances.Clear();
+            batch.ShadowOnlyPhysicsLiteSeeds.Clear();
         }
         _activeBatches.Clear();
 
@@ -57,12 +60,16 @@ internal sealed class OpaqueBatchRegistry12
     ///     it to the active set the first time it is touched this frame so it participates in the
     ///     instanced draw pass.
     /// </summary>
-    public OpaqueBatchState GetOrCreate(CachedSubmesh12 submesh, ID3D12PipelineState pso)
+    public OpaqueBatchState GetOrCreate(
+        CachedSubmesh12 submesh,
+        ID3D12PipelineState pso,
+        bool usesGrassDistanceEnvelope)
     {
-        if (!_batches.TryGetValue(submesh, out var batch))
+        var key = new OpaqueBatchKey(submesh, usesGrassDistanceEnvelope);
+        if (!_batches.TryGetValue(key, out var batch))
         {
-            batch = new OpaqueBatchState(submesh, pso);
-            _batches.Add(submesh, batch);
+            batch = new OpaqueBatchState(submesh, pso, usesGrassDistanceEnvelope);
+            _batches.Add(key, batch);
         }
 
         if (batch.LastTouchedFrame != _frameId)
@@ -91,12 +98,27 @@ internal sealed class OpaqueBatchRegistry12
         }
         _staleKeys.Clear();
     }
+
+    /// <summary>
+    ///     A mesh can be placed both as FNV grass covered by the recovered envelope and as an
+    ///     ordinary reference. Keeping those placements separate preserves the hard end during
+    ///     exact filtering of frozen batches. Games without an enabled envelope use <c>false</c>
+    ///     for every placement, preserving their established one-batch-per-submesh topology.
+    /// </summary>
+    private readonly record struct OpaqueBatchKey(
+        CachedSubmesh12 Submesh,
+        bool UsesGrassDistanceEnvelope);
 }
 
-internal sealed class OpaqueBatchState(CachedSubmesh12 submesh, ID3D12PipelineState pso)
+internal sealed class OpaqueBatchState(
+    CachedSubmesh12 submesh,
+    ID3D12PipelineState pso,
+    bool usesGrassDistanceEnvelope)
 {
     public CachedSubmesh12 Submesh { get; } = submesh;
     public ID3D12PipelineState Pso { get; } = pso;
+    /// <summary>True only for instances covered by an enabled game-specific grass envelope.</summary>
+    public bool UsesGrassDistanceEnvelope { get; } = usesGrassDistanceEnvelope;
 
     /// <summary>Per-instance world matrices for this batch (the only per-instance GPU data;
     /// material/texture state is per-batch and lives in the InstanceDraw CBV at draw time).</summary>
@@ -110,6 +132,13 @@ internal sealed class OpaqueBatchState(CachedSubmesh12 submesh, ID3D12PipelineSt
     /// </summary>
     public List<Vector4> InstanceBounds { get; } = new(16);
 
+    /// <summary>
+    ///     Placed REFR FormIDs parallel to <see cref="Instances" /> only when this batch's submesh
+    ///     carries FNV physics-lite data. Empty for the common static path, preserving its compact
+    ///     matrix-only CPU storage and bulk-copy behavior.
+    /// </summary>
+    public List<uint> PhysicsLiteSeeds { get; } = new(8);
+
     /// <summary>Instances that passed this frame's exact cull in the shared-block copy pass
     /// (== Instances.Count when the refilter is inactive). Set by DrawOpaqueBatches.</summary>
     public int FrameDrawCount { get; set; }
@@ -122,6 +151,9 @@ internal sealed class OpaqueBatchState(CachedSubmesh12 submesh, ID3D12PipelineSt
     ///     block; the main draw's instance count excludes them, the shadow replay's includes them.
     /// </summary>
     public List<Matrix4x4> ShadowOnlyInstances { get; } = new(8);
+
+    /// <summary>Physics-lite phase seeds parallel to <see cref="ShadowOnlyInstances" /> for sway batches.</summary>
+    public List<uint> ShadowOnlyPhysicsLiteSeeds { get; } = new(4);
 
     /// <summary>Shadow-only instances uploaded this frame (0 when the shadow capture is unarmed).
     /// Set by DrawOpaqueBatches alongside <see cref="FrameDrawCount" />.</summary>

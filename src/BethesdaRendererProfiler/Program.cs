@@ -124,6 +124,8 @@ public static class Program
                     ["profileJsonl"] = options.ProfileJsonlOutputPath,
                     ["profileIntervalMs"] = options.ProfileIntervalMilliseconds,
                     ["durationSeconds"] = options.DurationSeconds,
+                    ["scenario"] = options.ScenarioName,
+                    ["scenarioOutput"] = options.ScenarioOutputDirectory,
                     ["stressScene"] = options.StressScene,
                     ["cameraMotion"] = options.CameraMotion.ToString(),
                     ["cameraSpeed"] = options.CameraSpeed,

@@ -40,6 +40,13 @@ internal sealed class NifShaderTextureMetadata
     public (float StartAngle, float StopAngle, float StartOpacity, float StopOpacity)? EffectFalloff { get; init; }
 
     /// <summary>
+    ///     Inline Skyrim-family <c>BSEffectShaderProperty.Soft Falloff Depth</c>. It is consumed only
+    ///     when SLSF1_Soft_Effect (flags1 bit 30) is authored; null for legacy FO3/FNV shader
+    ///     properties and layouts whose tail is unavailable.
+    /// </summary>
+    public float? SoftEffectFalloffDepth { get; init; }
+
+    /// <summary>
     ///     FO3/FNV BSShaderNoLightingProperty view-angle falloff (Start/Stop angle cosines +
     ///     Start/Stop opacity — the 4 floats after the shader's FileName, BS version &gt; 26).
     ///     The engine ramps effect opacity by |N·V| through these; without them, crossed-plane and

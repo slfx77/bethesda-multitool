@@ -129,6 +129,93 @@ public sealed class RecoveredWaterShaderReferenceTests
     }
 
     [Fact]
+    public void FnvWater003RtFreeReflectionUsesAuthoredColorWithoutReflectivityMultiplier()
+    {
+        // WATER003 is the no-reflection/no-refraction depth permutation. Its asm 106-107 lerps the
+        // lit body directly toward c4 ReflectionColor; unlike WATER000's reflection-target path, it
+        // never multiplies c4 by FresnelRI.w. Potomac authors #132510, reflectivity 0.6 and F0 0.75.
+        // At night the direct body can be zero, but exact WATER003 parity retains the unscaled c4.
+        var authoredReflection = new Vector3(0x13 / 255f, 0x25 / 255f, 0x10 / 255f);
+        const float fresnel = 0.75f;
+        var nightColor = Vector3.Lerp(Vector3.Zero, authoredReflection, fresnel);
+
+        AssertVector(new Vector3(0.05588235f, 0.10882353f, 0.04705882f), nightColor);
+        Assert.True(nightColor.LengthSquared() > 0f);
+    }
+
+    [Fact]
+    public void FnvWater003BodyUsesRecoveredOneFourOneSunDirectionScale()
+    {
+        // WATER003 asm 101-105 multiplies c12 by c0.zwzw=(1,4,1,4), normalizes, then dots N.
+        var sunDirection = Vector3.Normalize(new Vector3(0.2f, -0.3f, 0.9f));
+        var recovered = Vector3.Normalize(new Vector3(
+            sunDirection.X,
+            4f * sunDirection.Y,
+            sunDirection.Z));
+
+        AssertVector(new Vector3(0.13216373f, -0.79298234f, 0.59473675f), recovered);
+        Assert.NotEqual(sunDirection, recovered);
+    }
+
+    [Fact]
+    public void ReversedZMsaaDepthResolveSelectsNearestCoveredSample()
+    {
+        // Reverse-Z maps the nearest surface to the largest depth value. A color-style average or
+        // a conventional-Z minimum would select a farther surface and overstate the water column at
+        // mixed-coverage shorelines. Keep this oracle independent from the HLSL implementation.
+        float[] samples = [0.15f, 0.60f, 0.35f, 0.05f];
+
+        var resolved = ResolveReversedZMsaa(samples);
+
+        Assert.Equal(0.60f, resolved);
+        Assert.NotEqual(samples.Average(), resolved);
+        Assert.NotEqual(samples.Min(), resolved);
+    }
+
+    [Fact]
+    public void ReversedZMsaaDepthIsResolvedBeforeLinearizingWaterColumn()
+    {
+        const float near = 16f;
+        const float far = 16_384f;
+        const float waterNdc = 0.75f;
+        float[] sceneSamples = [0.20f, 0.60f, 0.40f, 0.10f];
+
+        var resolvedSceneNdc = ResolveReversedZMsaa(sceneSamples);
+        var sceneDistance = LinearizeReversedZ(resolvedSceneNdc, near, far);
+        var waterDistance = LinearizeReversedZ(waterNdc, near, far);
+        var column = sceneDistance - waterDistance;
+
+        Assert.Equal(0.60f, resolvedSceneNdc);
+        Assert.Equal(26.649f, sceneDistance, 3);
+        Assert.Equal(21.326f, waterDistance, 3);
+        Assert.Equal(5.323f, column, 3);
+
+        // Resolving already-linearized distances with max would choose the farthest sample, which
+        // reverses the intended nearest-surface rule and produces a much deeper false column.
+        var wrongLinearResolve = sceneSamples.Max(sample => LinearizeReversedZ(sample, near, far));
+        Assert.True(wrongLinearResolve - waterDistance > column * 10f);
+    }
+
+    [Fact]
+    public void ReversedZNearestSampleOccludesWaterAtMixedCoverageEdge()
+    {
+        const float near = 16f;
+        const float far = 16_384f;
+        const float waterNdc = 0.75f;
+        float[] sceneSamples = [0.60f, 0.60f, 0.90f, 0.60f];
+
+        var resolvedColumn =
+            LinearizeReversedZ(ResolveReversedZMsaa(sceneSamples), near, far) -
+            LinearizeReversedZ(waterNdc, near, far);
+        var averagedColumn =
+            LinearizeReversedZ(sceneSamples.Average(), near, far) -
+            LinearizeReversedZ(waterNdc, near, far);
+
+        Assert.True(resolvedColumn < 0f); // nearest geometry is in front: water must be clipped
+        Assert.True(averagedColumn > 0f); // averaging would incorrectly keep the water fragment
+    }
+
+    [Fact]
     public void ModernPointLightUsesRecoveredBoundedPowerAttenuation()
     {
         // At d/r=0.5, (1-(d/r)^2)^2.2 = 0.75^2.2. This pins both the squared radius term and
@@ -185,4 +272,9 @@ public sealed class RecoveredWaterShaderReferenceTests
         Assert.Equal(expected.Y, actual.Y, 6);
         Assert.Equal(expected.Z, actual.Z, 6);
     }
+
+    private static float ResolveReversedZMsaa(IEnumerable<float> samples) => samples.Max();
+
+    private static float LinearizeReversedZ(float ndcZ, float near, float far) =>
+        near * far / MathF.Max(near + ndcZ * (far - near), 1e-4f);
 }

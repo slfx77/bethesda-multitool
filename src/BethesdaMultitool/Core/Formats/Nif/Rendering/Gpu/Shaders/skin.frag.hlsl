@@ -132,7 +132,8 @@ PSOutput main(PSInput input)
     if ((flags & HAS_BUMP) != 0u)
     {
         float3 mapN = tNormalMap.Sample(sNormalMap, input.vTexCoord).rgb * 2.0 - 1.0;
-        mapN.y = -mapN.y; // DirectX convention (Y-down normal maps)
+        // Source DDS data and the NIF TBN are both DirectX-convention. Keep green authored here;
+        // NpcGlbNormalMapPacker performs the required flip only for glTF/OpenGL export.
         float bumpStr = uAmbient.w;
         mapN.xy *= bumpStr;
 

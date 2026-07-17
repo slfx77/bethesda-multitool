@@ -5,10 +5,10 @@ using BethesdaMultitool.Core.Formats.Esm.Terrain;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
 /// <summary>
-///     CPU raycast against one rendered LAND cell. The triangle split is intentionally identical to
-///     <see cref="TerrainMeshBuilder" />: each heightfield quad is <c>(v00,v10,v01)</c> plus
-///     <c>(v01,v10,v11)</c>. This lets object picking use the terrain depth as an occluder without a
-///     synchronous GPU depth readback.
+///     CPU raycast against one rendered LAND cell. Triangle selection is intentionally shared with
+///     <see cref="TerrainMeshBuilder" />: the default path uses one fixed diagonal, while a render
+///     cache carrying the FNV profile selects its recovered checkerboard. This lets object picking
+///     use the terrain depth as an occluder without a synchronous GPU depth readback.
 /// </summary>
 internal static class TerrainRaycaster
 {
@@ -80,6 +80,9 @@ internal static class TerrainRaycaster
 
         var best = maxDistance;
         var hit = false;
+        var topology = cache is null
+            ? TerrainTriangleTopology.FixedSouthEastNorthWest
+            : TerrainSurfaceTopology.ForGame(cache.Game);
         for (var y = 0; y < gridSize - 1; y++)
         {
             var y0 = originY + y * spacing;
@@ -103,8 +106,16 @@ internal static class TerrainRaycaster
                 var v01 = new Vector3(x0, y1, z01);
                 var v11 = new Vector3(x1, y1, z11);
 
-                TestTriangle(v00, v10, v01);
-                TestTriangle(v01, v10, v11);
+                if (TerrainSurfaceTopology.UsesSouthwestNortheastDiagonal(topology, x, y))
+                {
+                    TestTriangle(v00, v10, v11);
+                    TestTriangle(v00, v11, v01);
+                }
+                else
+                {
+                    TestTriangle(v00, v10, v01);
+                    TestTriangle(v01, v10, v11);
+                }
             }
         }
 

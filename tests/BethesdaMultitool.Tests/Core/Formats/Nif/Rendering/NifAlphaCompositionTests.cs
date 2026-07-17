@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -31,6 +32,41 @@ public sealed class NifAlphaCompositionTests
     public void D3d12BlendMapper_PreservesNifOpenGlOrder(byte mode, D12.Blend expected)
     {
         Assert.Equal(expected, NifD3D12BlendMapper.ResolveBlendFactor(mode));
+    }
+
+    [Theory]
+    [InlineData(false, (byte)1, (byte)2, 0)]
+    [InlineData(true, (byte)6, (byte)7, 0)]
+    [InlineData(true, (byte)6, (byte)0, 1)]
+    [InlineData(true, (byte)1, (byte)2, 2)]
+    [InlineData(true, (byte)4, (byte)1, 2)]
+    public void D3d12BlendMapper_ClassifiesCompositeNeutral(
+        bool alphaBlend,
+        byte sourceMode,
+        byte destinationMode,
+        int expected)
+    {
+        Assert.Equal(expected,
+            (int)NifD3D12BlendMapper.ClassifyOperation(alphaBlend, sourceMode, destinationMode));
+    }
+
+    [Fact]
+    public void MultiplicativeFog_ClampsHdrSourceAndApproachesNeutralWhite()
+    {
+        // CPU reference for reference.frag: multiplicative source > 1 would brighten dst. The
+        // legacy normalized output boundary clamps it, then fog removes the layer toward white.
+        var source = new Vector3(1.2f, 0.4f, 0.8f);
+        var clamped = Vector3.Clamp(source, Vector3.Zero, Vector3.One);
+        var fogged = Vector3.Lerp(clamped, Vector3.One, 0.75f);
+        var destination = new Vector3(0.6f, 0.5f, 0.4f);
+        var composite = destination * fogged;
+
+        Assert.Equal(1f, fogged.X, 6);
+        Assert.Equal(0.85f, fogged.Y, 6);
+        Assert.Equal(0.95f, fogged.Z, 6);
+        Assert.True(composite.X <= destination.X);
+        Assert.True(composite.Y <= destination.Y);
+        Assert.True(composite.Z <= destination.Z);
     }
 
     [Theory]

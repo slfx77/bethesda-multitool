@@ -1,9 +1,42 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.SpeedTree;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
 namespace BethesdaMultitool;
+
+/// <summary>Atomic UI-thread snapshot of the rendered-models overlay lifecycle and last applied pixels.</summary>
+internal readonly record struct TopDownProfilerSnapshot(
+    bool ProviderReady,
+    bool Enabled,
+    bool OverlayPresent,
+    bool CoversViewport,
+    bool InFlight,
+    bool Pending,
+    bool Incomplete,
+    bool Settled,
+    long RequestsStarted,
+    long RequestsCompleted,
+    long LastCompletedRequestId,
+    long OverlayRequestId,
+    double LastDurationMs,
+    bool RenderComplete,
+    bool RenderFullySettled,
+    ulong PixelHash,
+    int PixelCount,
+    int NonTransparentPixels,
+    int NonZeroPixels,
+    double MeanRed,
+    double MeanGreen,
+    double MeanBlue,
+    double MeanLuma,
+    int ReferenceInstances,
+    int ReferenceDrawn,
+    int SpeedTreeBranchInstances,
+    int SpeedTreeLeafInstances,
+    int SpeedTreeBillboardInstances);
 
 /// <summary>Worldspace / layer / color-scheme picker handlers and the profiler-driving surface.</summary>
 public sealed partial class WorldMapControl
@@ -237,6 +270,188 @@ public sealed partial class WorldMapControl
     internal int Profiler_CacheCap => _layerCellBitmapCap;
     internal int Profiler_BuildVersion => _worldHeightmapBuildVersion;
     internal int Profiler_CacheGen => _layerCellBitmapsCacheGen;
+    internal float Profiler_CellWorldSize => _cellSize;
+
+    /// <summary>
+    ///     Overlay request counters, convergence flags, coverage, and deterministic metrics from the
+    ///     last APPLIED readback. Read as one value on the UI thread so scenario assertions cannot mix
+    ///     fields from opposite sides of an async request completion.
+    /// </summary>
+    internal TopDownProfilerSnapshot Profiler_TopDownSnapshot() => new(
+        ProviderReady: _topDownProvider?.CanRenderTopDown == true,
+        Enabled: _showRenderedObjects,
+        OverlayPresent: _topDownOverlay is not null,
+        CoversViewport: DoesTopDownOverlayCoverViewport(),
+        InFlight: _topDownInFlight,
+        Pending: _topDownRequestPending,
+        Incomplete: _topDownIncomplete,
+        Settled: IsTopDownOverlaySettled(),
+        RequestsStarted: _topDownRequestsStarted,
+        RequestsCompleted: _topDownRequestsCompleted,
+        LastCompletedRequestId: _topDownLastCompletedRequestId,
+        OverlayRequestId: _topDownOverlayRequestId,
+        LastDurationMs: _topDownLastRequestDurationMs,
+        RenderComplete: _topDownLastRenderComplete,
+        RenderFullySettled: _topDownLastRenderFullySettled,
+        PixelHash: _topDownLastPixelHash,
+        PixelCount: _topDownLastPixelCount,
+        NonTransparentPixels: _topDownLastNonTransparentPixels,
+        NonZeroPixels: _topDownLastNonZeroPixels,
+        MeanRed: _topDownLastMeanRed,
+        MeanGreen: _topDownLastMeanGreen,
+        MeanBlue: _topDownLastMeanBlue,
+        MeanLuma: _topDownLastMeanLuma,
+        ReferenceInstances: _topDownLastReferenceInstances,
+        ReferenceDrawn: _topDownLastReferenceDrawn,
+        SpeedTreeBranchInstances: _topDownLastSpeedTreeBranchInstances,
+        SpeedTreeLeafInstances: _topDownLastSpeedTreeLeafInstances,
+        SpeedTreeBillboardInstances: _topDownLastSpeedTreeBillboardInstances);
+
+    /// <summary>Navigate through the real cell-detail path; false means the FormID is not loaded.</summary>
+    internal bool Profiler_NavigateToCell(uint formId)
+    {
+        var cell = _state.FindCellByFormId(formId);
+        if (cell is null) return false;
+        NavigateToCell(cell);
+        return true;
+    }
+
+    /// <summary>
+    ///     Select the loaded interior with the most placed references and enter its real cell-detail
+    ///     view. Returns its FormID, or null when the input contains no interiors.
+    /// </summary>
+    internal uint? Profiler_NavigateToDenseInterior()
+    {
+        var cell = _data?.InteriorCells
+            .OrderByDescending(candidate => candidate.PlacedObjects.Count)
+            .ThenBy(candidate => candidate.FormId)
+            .FirstOrDefault();
+        if (cell is null) return null;
+        NavigateToCell(cell);
+        return cell.FormId;
+    }
+
+    /// <summary>
+    ///     Drive lighting through the shared UI control so its normal event handlers invalidate both
+    ///     terrain hillshade and the rendered-models overlay exactly as an interactive change does.
+    /// </summary>
+    internal void Profiler_SetLighting(bool enabled, float gameHour)
+    {
+        LightingPanel.LightingEnabled = enabled;
+        LightingPanel.GameHour = Math.Clamp(gameHour, 0f, 24f);
+    }
+
+    /// <summary>
+    ///     Save the exact currently-applied, settled readback. Unlike the opt-in diagnostic dump in
+    ///     the request path, this cannot capture an early streaming frame and is therefore suitable
+    ///     as a deterministic visual-verification artifact.
+    /// </summary>
+    internal async Task<string> Profiler_SaveTopDownOverlayAsync(string path)
+    {
+        if (_topDownOverlay is null || !IsTopDownOverlaySettled())
+        {
+            throw new InvalidOperationException(
+                "Cannot save the top-down profiler artifact before the overlay has settled.");
+        }
+
+        var fullPath = Path.GetFullPath(path);
+        var directory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+        await _topDownOverlay.SaveAsync(
+            fullPath, Microsoft.Graphics.Canvas.CanvasBitmapFileFormat.Png);
+        return fullPath;
+    }
+
+    /// <summary>
+    ///     Find the loaded exterior cell containing the most placed .spt refs, select its owning
+    ///     worldspace (including the unlinked-exterior tail), and center on one actual tree position.
+    ///     Returns null only when no loaded exterior has a SpeedTree placement.
+    /// </summary>
+    internal (int WorldspaceIndex, uint CellFormId, uint ReferenceFormId, int SpeedTreeReferences)?
+        Profiler_CenterOnSpeedTreeReference(float zoom)
+    {
+        if (_data is null) return null;
+
+        (int WorldspaceIndex, CellRecord Cell, List<PlacedReference> References)?
+            best = null;
+
+        for (var worldspaceIndex = 0; worldspaceIndex < _data.Worldspaces.Count; worldspaceIndex++)
+        {
+            foreach (var cell in _data.Worldspaces[worldspaceIndex].Cells)
+            {
+                ConsiderCell(worldspaceIndex, cell);
+            }
+        }
+
+        if (_data.UnlinkedExteriorCells.Count > 0)
+        {
+            var unlinkedIndex = _data.Worldspaces.Count;
+            foreach (var cell in _data.UnlinkedExteriorCells)
+            {
+                ConsiderCell(unlinkedIndex, cell);
+            }
+        }
+
+        if (best is not { } target) return null;
+        if (WorldspaceComboBox.SelectedIndex != target.WorldspaceIndex)
+        {
+            WorldspaceComboBox.SelectedIndex = target.WorldspaceIndex;
+        }
+        EnsureOverviewMode();
+
+        var reference = target.References
+            .OrderBy(placed => placed.FormId)
+            .ThenBy(placed => placed.X)
+            .ThenBy(placed => placed.Y)
+            .First();
+        var center = new Vector2(reference.X, -reference.Y);
+        var screenCenter = new Vector2(
+            (float)MapCanvas.ActualWidth * 0.5f,
+            (float)MapCanvas.ActualHeight * 0.5f);
+        _zoom = Math.Clamp(zoom, 0.001f, 50f);
+        _panOffset = screenCenter - center * _zoom;
+        _panVelocity = Vector2.Zero;
+        MapCanvas.Invalidate();
+        return (target.WorldspaceIndex, target.Cell.FormId, reference.FormId, target.References.Count);
+
+        void ConsiderCell(int worldspaceIndex, CellRecord cell)
+        {
+            if (cell.GridX is null || cell.GridY is null) return;
+
+            var speedTrees = new List<PlacedReference>();
+            foreach (var placed in cell.PlacedObjects)
+            {
+                if (placed.IsInitiallyDisabled || _data.XespDisabledRefs.Contains(placed.FormId))
+                {
+                    continue;
+                }
+
+                var modelPath = placed.ModelPath;
+                if (string.IsNullOrWhiteSpace(modelPath)
+                    && _data.ModelPathIndex.TryGetValue(placed.BaseFormId, out var indexedPath))
+                {
+                    modelPath = indexedPath;
+                }
+
+                if (!string.IsNullOrWhiteSpace(modelPath) && SpeedTreeModelPath.IsSpt(modelPath))
+                {
+                    speedTrees.Add(placed);
+                }
+            }
+
+            if (speedTrees.Count == 0) return;
+            if (best is null
+                || speedTrees.Count > best.Value.References.Count
+                || (speedTrees.Count == best.Value.References.Count
+                    && worldspaceIndex < best.Value.WorldspaceIndex)
+                || (speedTrees.Count == best.Value.References.Count
+                    && worldspaceIndex == best.Value.WorldspaceIndex
+                    && cell.FormId < best.Value.Cell.FormId))
+            {
+                best = (worldspaceIndex, cell, speedTrees);
+            }
+        }
+    }
 
     /// <summary>Diagnostics: which overview bitmaps are currently resident (for the layer-toggle repro).</summary>
     internal bool Profiler_AggregateBitmapPresent => _terrainAggregateBitmap is not null;

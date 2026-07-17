@@ -127,6 +127,12 @@ internal sealed record RendererProfilerOptions
     /// </summary>
     internal int CaptureSettleTimeoutSeconds { get; init; } = 60;
 
+    /// <summary>Canonical named same-process acceptance scenario, or null for the legacy modes.</summary>
+    internal string? ScenarioName { get; init; }
+
+    /// <summary>Artifact directory for a named scenario. Contains its PNG matrix and, by default, logs.</summary>
+    internal string? ScenarioOutputDirectory { get; init; }
+
     internal static string Usage =>
         """
         BethesdaRendererProfiler
@@ -142,6 +148,10 @@ internal sealed record RendererProfilerOptions
           --profile-jsonl <path>      Structured JSONL output. Defaults to profile-output with .jsonl.
           --profile-interval-ms <n>   Aggregate profile interval. Default: 2000.
           --duration-seconds <n>      Exit automatically after the viewer has loaded.
+          --scenario <name>           Run a deterministic same-process acceptance scenario and exit.
+                                      Names: fnv-water-night-matrix, fnv-cloud-motion, fnv-celestial,
+                                      fnv-prospector-neon-bloom.
+          --scenario-output <dir>     Scenario artifact directory. Defaults beside the timestamped profile log.
           --stress-scene <name>       Sets FALLOUT_VIEWER_STRESS_SCENE. Default: WastelandNV; use none to disable.
           --worldspace <name>         Select this worldspace at load (EditorID/FullName; in-process FALLOUT_VIEWER_WORLDSPACE).
           --camera-motion <mode>      static, forward, orbit, or sweep. Default: static.
@@ -223,6 +233,8 @@ internal sealed record RendererProfilerOptions
         var captureWidth = 768;
         var captureHeight = 480;
         var captureSettleTimeoutSeconds = 60;
+        string? scenarioName = null;
+        string? scenarioOutput = null;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -279,6 +291,16 @@ internal sealed record RendererProfilerOptions
                     }
 
                     durationSeconds = seconds;
+                    break;
+
+                case "--scenario":
+                    scenarioName = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options, error);
+                    break;
+
+                case "--scenario-output":
+                    scenarioOutput = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options, error);
                     break;
 
                 case "--stress-scene":
@@ -582,6 +604,46 @@ internal sealed record RendererProfilerOptions
             }
         }
 
+        string? normalizedScenarioName = null;
+        if (!string.IsNullOrWhiteSpace(scenarioName) &&
+            !RendererProfilerScenarioCatalog.TryNormalizeName(scenarioName, out normalizedScenarioName))
+        {
+            error = $"Unknown scenario: {scenarioName}. Expected one of: " +
+                    string.Join(", ", RendererProfilerScenarioCatalog.Names) + ".";
+            return Fail(out options, error);
+        }
+
+        if (!string.IsNullOrWhiteSpace(scenarioOutput) && normalizedScenarioName is null)
+        {
+            error = "--scenario-output requires --scenario.";
+            return Fail(out options, error);
+        }
+
+        if (normalizedScenarioName is not null &&
+            (!string.IsNullOrWhiteSpace(captureFrame) || !string.IsNullOrWhiteSpace(captureTopDown)))
+        {
+            error = "--scenario cannot be combined with --capture-frame or --capture-topdown.";
+            return Fail(out options, error);
+        }
+
+        if (normalizedScenarioName is not null && !string.IsNullOrWhiteSpace(captureInterior))
+        {
+            error = "--scenario cannot be combined with --capture-interior.";
+            return Fail(out options, error);
+        }
+
+        if (normalizedScenarioName is not null && durationSeconds is not null)
+        {
+            error = "--scenario owns process completion and cannot be combined with --duration-seconds.";
+            return Fail(out options, error);
+        }
+
+        if (normalizedScenarioName is not null && cameraMotion != RendererCameraMotionKind.Static)
+        {
+            error = "--scenario requires deterministic static camera motion.";
+            return Fail(out options, error);
+        }
+
         if (!string.IsNullOrWhiteSpace(captureInterior) && string.IsNullOrWhiteSpace(captureFrame))
         {
             error = "--capture-interior requires --capture-frame.";
@@ -600,11 +662,23 @@ internal sealed record RendererProfilerOptions
             return Fail(out options, error);
         }
 
+        var defaultProfileOutput = CreateDefaultProfileOutputPath();
+        var resolvedScenarioOutput = normalizedScenarioName is null
+            ? null
+            : string.IsNullOrWhiteSpace(scenarioOutput)
+                ? Path.Combine(
+                    Path.GetDirectoryName(defaultProfileOutput)!,
+                    Path.GetFileNameWithoutExtension(defaultProfileOutput) + "-" + normalizedScenarioName)
+                : Path.GetFullPath(scenarioOutput);
         var resolvedProfileOutput = string.IsNullOrWhiteSpace(profileOutput)
-            ? CreateDefaultProfileOutputPath()
+            ? resolvedScenarioOutput is null
+                ? defaultProfileOutput
+                : Path.Combine(resolvedScenarioOutput, "scenario.log")
             : Path.GetFullPath(profileOutput);
         var resolvedProfileJsonl = string.IsNullOrWhiteSpace(profileJsonl)
-            ? CreateDefaultProfileJsonlOutputPath(resolvedProfileOutput)
+            ? resolvedScenarioOutput is null
+                ? CreateDefaultProfileJsonlOutputPath(resolvedProfileOutput)
+                : Path.Combine(resolvedScenarioOutput, "scenario.jsonl")
             : Path.GetFullPath(profileJsonl);
 
         options = new RendererProfilerOptions
@@ -616,7 +690,7 @@ internal sealed record RendererProfilerOptions
             ProfileJsonlOutputPath = resolvedProfileJsonl,
             ProfileIntervalMilliseconds = profileIntervalMs,
             DurationSeconds = durationSeconds,
-            StressScene = stressScene,
+            StressScene = normalizedScenarioName is null ? stressScene : null,
             CameraMotion = cameraMotion,
             CameraSpeed = cameraSpeed,
             RenderDistanceCells = renderDistanceCells,
@@ -645,7 +719,9 @@ internal sealed record RendererProfilerOptions
             CaptureYawDegrees = captureYawDegrees,
             CaptureWidth = captureWidth,
             CaptureHeight = captureHeight,
-            CaptureSettleTimeoutSeconds = captureSettleTimeoutSeconds
+            CaptureSettleTimeoutSeconds = captureSettleTimeoutSeconds,
+            ScenarioName = normalizedScenarioName,
+            ScenarioOutputDirectory = resolvedScenarioOutput
         };
         error = null;
         return true;

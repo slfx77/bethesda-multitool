@@ -5,6 +5,7 @@ using System.Globalization;
 using Windows.Graphics;
 using Windows.UI;
 using Microsoft.UI.Windowing;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -22,6 +23,8 @@ internal sealed class MainWindow : Window, IDisposable
     private readonly WorldView3DControl? _worldView3D;
     private bool _disposed;
     private bool _started;
+    private DispatcherQueueTimer? _providerReadyTimer;
+    private DispatcherQueueTimer? _timedExitTimer;
 
     public MainWindow(Map2DProfilerOptions options)
     {
@@ -70,6 +73,10 @@ internal sealed class MainWindow : Window, IDisposable
         }
 
         _disposed = true;
+        _providerReadyTimer?.Stop();
+        _providerReadyTimer = null;
+        _timedExitTimer?.Stop();
+        _timedExitTimer = null;
         _worldView3D?.Dispose();
         _worldMap.Dispose();
         GC.SuppressFinalize(this);
@@ -241,7 +248,19 @@ internal sealed class MainWindow : Window, IDisposable
             return;
         }
 
-        var scenario = Map2DScenario.Resolve(_options.ScenarioName);
+        var artifactOutputPath = _options.ArtifactOutputPath;
+        if (string.IsNullOrWhiteSpace(artifactOutputPath))
+        {
+            var profileDirectory = Path.GetDirectoryName(_options.ProfileOutputPath)
+                ?? AppContext.BaseDirectory;
+            var profileName = Path.GetFileNameWithoutExtension(_options.ProfileOutputPath);
+            var scenarioName = _options.ScenarioName.Replace(Path.DirectorySeparatorChar, '_')
+                .Replace(Path.AltDirectorySeparatorChar, '_');
+            artifactOutputPath = Path.Combine(
+                profileDirectory, $"{profileName}-{scenarioName}.png");
+        }
+
+        var scenario = Map2DScenario.Resolve(_options.ScenarioName, artifactOutputPath);
         if (scenario is null)
         {
             Log.Warn("Profiler: unknown scenario '{0}'. Skipping.", _options.ScenarioName);
@@ -261,6 +280,7 @@ internal sealed class MainWindow : Window, IDisposable
         }
         catch (Exception ex)
         {
+            Environment.ExitCode = 1;
             Log.Error("Profiler: scenario '{0}' failed: {1}", _options.ScenarioName, ex);
         }
 
@@ -289,6 +309,7 @@ internal sealed class MainWindow : Window, IDisposable
         }
 
         var timer = DispatcherQueue.CreateTimer();
+        _providerReadyTimer = timer;
         timer.Interval = TimeSpan.FromMilliseconds(250);
         timer.IsRepeating = true;
         var attempts = 0;
@@ -299,11 +320,13 @@ internal sealed class MainWindow : Window, IDisposable
             {
                 _worldMap.Profiler_ShowRenderedObjects = true;
                 timer.Stop();
+                _providerReadyTimer = null;
                 Log.Info("Profiler: rendered-models overlay enabled (provider ready after {0} poll(s)).", attempts);
             }
             else if (attempts >= 120)
             {
                 timer.Stop();
+                _providerReadyTimer = null;
                 Log.Warn(
                     "Profiler: 3D provider never became ready after {0} polls; rendered-models overlay NOT enabled.",
                     attempts);
@@ -320,10 +343,13 @@ internal sealed class MainWindow : Window, IDisposable
         }
 
         var timer = DispatcherQueue.CreateTimer();
+        _timedExitTimer = timer;
         timer.Interval = TimeSpan.FromSeconds(seconds);
         timer.IsRepeating = false;
         timer.Tick += (_, _) =>
         {
+            timer.Stop();
+            _timedExitTimer = null;
             Log.Info("BethesdaMap2DProfiler: duration elapsed ({0}s); exiting.", seconds);
             Dispose();
             Application.Current.Exit();

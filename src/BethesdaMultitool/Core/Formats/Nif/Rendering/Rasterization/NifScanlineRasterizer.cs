@@ -149,7 +149,9 @@ internal static class NifScanlineRasterizer
                         normalAlpha = mna;
 
                         var mapNx = (mnr / 127.5f - 1f) * NifSpriteRenderer.BumpStrength;
-                        var mapNy = -(mng / 127.5f - 1f) * NifSpriteRenderer.BumpStrength;
+                        // Bethesda DDS normals and the retained NIF TBN share DirectX convention.
+                        // Recovered FNV SLS1009 consumes green directly; only glTF export flips it.
+                        var mapNy = (mng / 127.5f - 1f) * NifSpriteRenderer.BumpStrength;
                         var mapNz = mnb / 127.5f - 1f;
 
                         float tx, ty, tz, bx, by, bz;

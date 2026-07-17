@@ -45,6 +45,9 @@ public sealed partial class WorldView3DControl
         // Walk-mode ceiling sampling for jumps: up-ray against the same per-ref collision meshes so the
         // camera bonks low roofs instead of clipping through them.
         _controller.CeilingHeightSampler = SampleCeilingHeight;
+        // Continuous XY capsule sweep against those same Havok-first candidates. This is separate from
+        // vertical sampling so wall sliding cannot disturb stair easing, ledge falls, or jump/ceiling Z.
+        _controller.HorizontalMovementResolver = ResolveWalkHorizontalMovement;
 
         if (firstInit)
         {
@@ -172,19 +175,13 @@ public sealed partial class WorldView3DControl
     }
 
     /// <summary>
-    ///     Allocates (once) and (re)creates an R32_FLOAT SRV over the swap-chain's R32_TYPELESS
-    ///     depth resource in the shared bindless heap, so <c>water.frag</c> can sample the scene
-    ///     depth for its real water-column depth-fade. The persistent slot is allocated once and
+    ///     Allocates (once) and (re)creates an R32_FLOAT Texture2D or Texture2DMS SRV over the
+    ///     swap-chain's R32_TYPELESS depth resource in the shared bindless heap. The persistent slot is allocated once and
     ///     the SRV rewritten in place after each surface resize (the depth resource changes
     ///     identity). Leaves <see cref="_depthSrv" /> null (→ proxy fade) if anything is missing.
     /// </summary>
     private void EnsureDepthSrv()
     {
-        // Under scene MSAA the depth is multisampled (D32_Float MS) and can't be bound as a plain
-        // Texture2D SRV; the water depth-fade is gated off in that mode and uses the view-angle proxy
-        // fade instead (RenderFrameD3D12's waterUsesDepth stays false while _depthSrv is null).
-        if (_surface12?.IsMsaa == true) return;
-
         var depth = _surface12?.DepthResource;
         if (_gpu12 is null || _cbvSrvUavHeap12 is null || depth is null)
         {
@@ -195,10 +192,19 @@ public sealed partial class WorldView3DControl
         var srvDesc = new Vortice.Direct3D12.ShaderResourceViewDescription
         {
             Format = Vortice.DXGI.Format.R32_Float,
-            ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
+            ViewDimension = _surface12!.IsMsaa
+                ? Vortice.Direct3D12.ShaderResourceViewDimension.Texture2DMultisampled
+                : Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
             Shader4ComponentMapping = Vortice.Direct3D12.ShaderComponentMapping.Default,
-            Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 },
         };
+        if (!_surface12.IsMsaa)
+        {
+            srvDesc.Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView
+            {
+                MipLevels = 1,
+                MostDetailedMip = 0,
+            };
+        }
         _gpu12.Device.CreateShaderResourceView(depth, srvDesc, _depthSrv.Value.Cpu);
     }
 

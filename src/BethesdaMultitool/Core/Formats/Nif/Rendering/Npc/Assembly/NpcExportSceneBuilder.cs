@@ -209,6 +209,7 @@ internal static class NpcExportSceneBuilder
             EffectFalloff = submesh.EffectFalloff,
             IsEmissive = submesh.IsEmissive,
             UseVertexColors = submesh.UseVertexColors,
+            UseVertexAlphaForOpacity = submesh.UseVertexAlphaForOpacity,
             IsDoubleSided = submesh.IsDoubleSided,
             HasAlphaBlend = submesh.HasAlphaBlend,
             HasAlphaTest = submesh.HasAlphaTest,

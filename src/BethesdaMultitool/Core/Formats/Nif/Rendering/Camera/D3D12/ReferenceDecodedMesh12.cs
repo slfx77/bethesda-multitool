@@ -91,9 +91,24 @@ internal sealed record DecodedSubmesh12(
     // Baked particle-cloud marker. The cache derives one center per four-vertex quad and the
     // blended renderer emits a camera-sorted transient index buffer each frame.
     bool IsParticleCloud = false,
+    // Authored BSEffect soft-intersection depth in game units. Legacy FNV effects generally leave
+    // this zero and are admitted only by NifSoftParticlePolicy's scoped particle/effects fallback.
+    float SoftParticleFalloffDepth = 0f,
+    // NiControllerSequence → NiAlphaController material-opacity curve. Persisted so warm-cache
+    // effects retain their authored fade instead of reverting to full opacity.
+    NifMaterialAlphaController? MaterialAlphaController = null,
+    // Strict FNV BS34 Havok-lite route. Pivot/axis are already converted from constraint body-local
+    // into the extractor's baked root-local frame. Phase remains per placed reference at draw time.
+    PhysicsLiteSwayDescriptor? PhysicsLiteSway = null,
     // Non-persisted source graph for the opt-in live path. Persistent payloads intentionally leave
     // this null; live mode bypasses disk-cache reads so a source decode always supplies it.
     ParticleRuntimeDefinition? ParticleRuntime = null,
     // Non-persisted opt-in .spt runtime-LOD identity. .spt decodes bypass the persistent cache.
-    SpeedTreeLodMetadata? SpeedTreeLod = null);
+    SpeedTreeLodMetadata? SpeedTreeLod = null,
+    // Classic FO3/FNV Lighting30 material emission (v52+). Kept distinct from IsEmissive:
+    // Lighting30 stays scene-lit and optionally masks its emission with the classified glow map.
+    bool IsLighting30 = false,
+    string? Lighting30GlowMapTexturePath = null,
+    Vector3 Lighting30EmissionColor = default,
+    float Lighting30EmissionMultiplier = 1f);
 #endif

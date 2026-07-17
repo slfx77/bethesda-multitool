@@ -135,7 +135,8 @@ public sealed partial class WorldView3DControl
             // reference cache (created later in the reference pipeline) via ResolveCollisionMesh; the
             // spatial index arrives in LoadData via TryBuildCellGrid like the other overlays.
             _collisionDebug = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.CollisionDebugRenderer12(
-                _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _deletionQueue12)
+                _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _deletionQueue12,
+                _referenceEnabledOverrides)
             {
                 CollisionResolver = ResolveCollisionMesh,
                 CollisionWarmup = ResolveOrWarmCollisionMesh,

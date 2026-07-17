@@ -173,6 +173,12 @@ public sealed partial class WorldMapControl
             return;
         }
 
+        var collectProfilerMetrics = Map2DProfilerTrace.IsEnabled;
+        long requestId = 0;
+        long requestStartTimestamp = 0;
+        var outcome = "not-started";
+        TopDownPixelMetrics? pixelMetrics = null;
+        TopDownRender? completedRender = null;
         try
         {
             // Visible bounds are in map space (X = world X, Y = -worldNorthY). Add a margin, then
@@ -201,6 +207,26 @@ public sealed partial class WorldMapControl
             var selectedCell = _state.SelectedCell;
             var interiorCellFormId = selectedCell is { IsInterior: true } ? selectedCell.FormId : (uint?)null;
 
+            if (collectProfilerMetrics)
+            {
+                requestId = ++_topDownRequestSequence;
+                _topDownRequestsStarted++;
+                requestStartTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+                outcome = "in-flight";
+                var requestDetail = string.Concat(
+                    FormattableString.Invariant(
+                        $"id={requestId} gen={gen} mode={_state.Mode} cell=0x{selectedCell?.FormId ?? 0u:X8} "),
+                    FormattableString.Invariant(
+                        $"interior=0x{interiorCellFormId ?? 0u:X8} ws=0x{_state.SelectedWorldspace?.FormId ?? 0u:X8} "),
+                    FormattableString.Invariant(
+                        $"bounds=({worldMinX:F3},{worldMinY:F3})-({worldMaxX:F3},{worldMaxY:F3}) "),
+                    FormattableString.Invariant(
+                        $"pixels={pxW}x{pxH} showDisabled={!_hideDisabledActors} water={_showWater} "),
+                    FormattableString.Invariant(
+                        $"lighting={_hillshadeLightingEnabled} hour={_gameHour:F2}"));
+                Map2DProfilerTrace.Event("topdown-request-start", requestDetail);
+            }
+
             var render = await provider.RenderTopDownAsync(
                 worldMinX, worldMaxX, worldMinY, worldMaxY, pxW, pxH,
                 showDisabled: !_hideDisabledActors,
@@ -215,8 +241,23 @@ public sealed partial class WorldMapControl
                 interiorCellFormId: interiorCellFormId,
                 ct);
 
-            if (gen != _topDownGen) return; // superseded (teardown / toggle off)
-            if (render is null) { _topDownIncomplete = false; return; }
+            if (gen != _topDownGen)
+            {
+                outcome = "superseded";
+                return; // teardown / toggle off
+            }
+            if (render is null)
+            {
+                outcome = "null";
+                _topDownIncomplete = false;
+                return;
+            }
+
+            if (collectProfilerMetrics)
+            {
+                completedRender = render;
+                pixelMetrics = MeasureTopDownPixels(render.Bgra, render.Width, render.Height);
+            }
 
             var bmp = CanvasBitmap.CreateFromBytes(
                 MapCanvas, render.Bgra, render.Width, render.Height,
@@ -228,6 +269,26 @@ public sealed partial class WorldMapControl
             _topDownWorldMinY = render.WorldMinY;
             _topDownWorldMaxY = render.WorldMaxY;
             _topDownIncomplete = !render.IsComplete;
+            if (pixelMetrics is { } appliedMetrics)
+            {
+                _topDownOverlayRequestId = requestId;
+                _topDownLastRenderComplete = render.IsComplete;
+                _topDownLastRenderFullySettled = render.IsFullySettled;
+                _topDownLastPixelHash = appliedMetrics.Hash;
+                _topDownLastPixelCount = appliedMetrics.PixelCount;
+                _topDownLastNonTransparentPixels = appliedMetrics.NonTransparentPixels;
+                _topDownLastNonZeroPixels = appliedMetrics.NonZeroPixels;
+                _topDownLastMeanRed = appliedMetrics.MeanRed;
+                _topDownLastMeanGreen = appliedMetrics.MeanGreen;
+                _topDownLastMeanBlue = appliedMetrics.MeanBlue;
+                _topDownLastMeanLuma = appliedMetrics.MeanLuma;
+                _topDownLastReferenceInstances = render.ReferenceInstances;
+                _topDownLastReferenceDrawn = render.ReferenceDrawn;
+                _topDownLastSpeedTreeBranchInstances = render.SpeedTreeBranchInstances;
+                _topDownLastSpeedTreeLeafInstances = render.SpeedTreeLeafInstances;
+                _topDownLastSpeedTreeBillboardInstances = render.SpeedTreeBillboardInstances;
+            }
+            outcome = "applied";
 
             if (_dumpTopDown && !_topDownDumpWritten)
             {
@@ -243,14 +304,51 @@ public sealed partial class WorldMapControl
 
             MapCanvas.Invalidate();
         }
-        catch (OperationCanceledException) { /* request superseded by a newer top-down render — expected */ }
+        catch (OperationCanceledException)
+        {
+            outcome = "canceled"; // request superseded by a newer top-down render — expected
+        }
         catch (Exception ex)
         {
+            outcome = $"error:{ex.GetType().Name}";
             Map2DProfilerTrace.Event("topdown-error", ex.Message);
         }
         finally
         {
             _topDownInFlight = false;
+            if (requestId != 0)
+            {
+                _topDownRequestsCompleted++;
+                _topDownLastCompletedRequestId = requestId;
+                _topDownLastRequestDurationMs =
+                    System.Diagnostics.Stopwatch.GetElapsedTime(requestStartTimestamp).TotalMilliseconds;
+                var metrics = pixelMetrics;
+                var metricText = metrics is { } m
+                    ? string.Concat(
+                        FormattableString.Invariant(
+                            $"pixelCount={m.PixelCount} nontransparent={m.NonTransparentPixels} "),
+                        FormattableString.Invariant(
+                            $"nonzero={m.NonZeroPixels} meanRgb=({m.MeanRed:F3},{m.MeanGreen:F3},{m.MeanBlue:F3}) "),
+                        FormattableString.Invariant(
+                            $"meanLuma={m.MeanLuma:F3} hash=0x{m.Hash:X16}"))
+                    : "pixelCount=0 nontransparent=0 nonzero=0 meanRgb=(0,0,0) meanLuma=0 hash=n/a";
+                var referenceText = completedRender is { } rendered
+                    ? $"references={rendered.ReferenceDrawn}/{rendered.ReferenceInstances} " +
+                      $"speedTree=(branch:{rendered.SpeedTreeBranchInstances},leaf:{rendered.SpeedTreeLeafInstances},billboard:{rendered.SpeedTreeBillboardInstances})"
+                    : "references=n/a speedTree=n/a";
+                var convergenceText = completedRender is { } convergedRender
+                    ? $"complete={convergedRender.IsComplete} fullySettled={convergedRender.IsFullySettled}"
+                    : "complete=n/a fullySettled=n/a";
+                var completionDetail = string.Concat(
+                    FormattableString.Invariant(
+                        $"id={requestId} gen={gen} outcome={outcome} durationMs={_topDownLastRequestDurationMs:F1} "),
+                    FormattableString.Invariant(
+                        $"{convergenceText} settled={IsTopDownOverlaySettled()} pending={_topDownRequestPending} "),
+                    FormattableString.Invariant(
+                        $"incomplete={_topDownIncomplete} {referenceText} {metricText}"));
+                Map2DProfilerTrace.Event("topdown-request-complete", completionDetail);
+            }
+
             // While the render reported streaming still in flight, keep the viewport timer alive so it
             // re-issues the next render. Single-flight + the timer ticking faster than a render
             // completes already makes these effectively back-to-back; the real load-speed lever is the
@@ -259,4 +357,91 @@ public sealed partial class WorldMapControl
             if (_topDownIncomplete) EnsureViewportTimerRunning();
         }
     }
+
+    /// <summary>True once a usable overlay is resident and no refresh/convergence work remains.</summary>
+    private bool IsTopDownOverlaySettled() =>
+        _showRenderedObjects
+        && _topDownProvider?.CanRenderTopDown == true
+        && _topDownOverlay is not null
+        && !_topDownInFlight
+        && !_topDownRequestPending
+        && !_topDownIncomplete;
+
+    /// <summary>Whether the resident margin-backed overlay fully covers the CURRENT visible viewport.</summary>
+    private bool DoesTopDownOverlayCoverViewport()
+    {
+        if (_topDownOverlay is null) return false;
+        var canvasW = (float)MapCanvas.ActualWidth;
+        var canvasH = (float)MapCanvas.ActualHeight;
+        if (canvasW < 1f || canvasH < 1f) return false;
+
+        var (tl, br) = WorldMapViewportHelper.GetVisibleWorldBounds(canvasW, canvasH, _zoom, _panOffset);
+        var visibleMinX = MathF.Min(tl.X, br.X);
+        var visibleMaxX = MathF.Max(tl.X, br.X);
+        var visibleWorldMinY = -MathF.Max(tl.Y, br.Y);
+        var visibleWorldMaxY = -MathF.Min(tl.Y, br.Y);
+        return _topDownWorldMinX <= visibleMinX
+            && _topDownWorldMaxX >= visibleMaxX
+            && _topDownWorldMinY <= visibleWorldMinY
+            && _topDownWorldMaxY >= visibleWorldMaxY;
+    }
+
+    /// <summary>
+    ///     One deterministic pass over the returned BGRA buffer. The hash is FNV-1a over packed BGRA
+    ///     pixels (seeded with dimensions); color means exclude fully-transparent pixels so a clear
+    ///     background cannot dilute lighting comparisons.
+    /// </summary>
+    private static TopDownPixelMetrics MeasureTopDownPixels(byte[] bgra, int width, int height)
+    {
+        const ulong fnvOffset = 14695981039346656037UL;
+        const ulong fnvPrime = 1099511628211UL;
+        var expectedPixels = Math.Max(0, width) * (long)Math.Max(0, height);
+        var pixelCount = (int)Math.Min(int.MaxValue, Math.Min(expectedPixels, bgra.LongLength / 4L));
+        var hash = fnvOffset;
+        hash = unchecked((hash ^ (uint)width) * fnvPrime);
+        hash = unchecked((hash ^ (uint)height) * fnvPrime);
+        long sumRed = 0, sumGreen = 0, sumBlue = 0;
+        var nonTransparent = 0;
+        var nonZero = 0;
+
+        for (var pixel = 0; pixel < pixelCount; pixel++)
+        {
+            var i = pixel * 4;
+            var blue = bgra[i];
+            var green = bgra[i + 1];
+            var red = bgra[i + 2];
+            var alpha = bgra[i + 3];
+            var packed = (uint)(blue | (green << 8) | (red << 16) | (alpha << 24));
+            hash = unchecked((hash ^ packed) * fnvPrime);
+            if (packed != 0) nonZero++;
+            if (alpha == 0) continue;
+            nonTransparent++;
+            sumRed += red;
+            sumGreen += green;
+            sumBlue += blue;
+        }
+
+        if (nonTransparent == 0)
+        {
+            return new TopDownPixelMetrics(
+                hash, pixelCount, nonTransparent, nonZero, 0d, 0d, 0d, 0d);
+        }
+
+        var meanRed = sumRed / (double)nonTransparent;
+        var meanGreen = sumGreen / (double)nonTransparent;
+        var meanBlue = sumBlue / (double)nonTransparent;
+        var meanLuma = 0.2126d * meanRed + 0.7152d * meanGreen + 0.0722d * meanBlue;
+        return new TopDownPixelMetrics(
+            hash, pixelCount, nonTransparent, nonZero, meanRed, meanGreen, meanBlue, meanLuma);
+    }
+
+    private readonly record struct TopDownPixelMetrics(
+        ulong Hash,
+        int PixelCount,
+        int NonTransparentPixels,
+        int NonZeroPixels,
+        double MeanRed,
+        double MeanGreen,
+        double MeanBlue,
+        double MeanLuma);
 }

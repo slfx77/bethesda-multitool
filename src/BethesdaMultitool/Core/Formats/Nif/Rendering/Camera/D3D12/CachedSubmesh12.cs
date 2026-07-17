@@ -1,6 +1,9 @@
 #if WINDOWS_GUI
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Effects;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using Vortice.Direct3D12;
 
@@ -31,6 +34,12 @@ internal sealed class CachedSubmesh12
     /// </summary>
     public GpuTextureCache12.Entry? GradientMap { get; init; }
 
+    /// <summary>
+    ///     Classic FO3/FNV Lighting30 glow mask. It shares TexIndices.w with the FO4 gradient map;
+    ///     the engine families and policy routes are mutually exclusive.
+    /// </summary>
+    public GpuTextureCache12.Entry? Lighting30GlowMap { get; init; }
+
     /// <summary>Palette row (V) for the gradient lookup; only meaningful when <see cref="GradientMap" /> is set.</summary>
     public float GradientMapV { get; init; }
 
@@ -49,7 +58,7 @@ internal sealed class CachedSubmesh12
 
     /// <summary>
     ///     Per-draw env-map constants (uEnvMap): x = cube bindless slot, y = scale, z = smoothness,
-    ///     w = additive-blend flag (see <see cref="IsAdditiveBlend" /> — consumed by the fog term).
+    ///     w = <see cref="NifD3D12BlendOperation" /> (consumed by the fog/output-range term).
     ///     x stays −1 until the entry is RESIDENT as a TextureCube — cold placeholders are 2D SRVs,
     ///     and indexing one through the shader's cube alias would read a mismatched descriptor.
     ///     Deliberately NOT cached: per-frame CB fills re-read it so promotion lands (same pattern
@@ -57,8 +66,8 @@ internal sealed class CachedSubmesh12
     /// </summary>
     public Vector4 EnvMapState =>
         EnvMap is { IsResident: true, IsCubemap: true } env
-            ? new Vector4(env.BindlessIndex, EnvMapScale, EnvMapSmoothness, IsAdditiveBlend ? 1f : 0f)
-            : new Vector4(-1f, 0f, 0f, IsAdditiveBlend ? 1f : 0f);
+            ? new Vector4(env.BindlessIndex, EnvMapScale, EnvMapSmoothness, (float)BlendOperation)
+            : new Vector4(-1f, 0f, 0f, (float)BlendOperation);
 
     /// <summary>
     ///     Destination blend factor ONE (NIF blend byte 0; 10 = GL src-alpha-saturate approximates
@@ -67,7 +76,16 @@ internal sealed class CachedSubmesh12
     ///     toward the fog color, which ADDS fog-colored light to every distant glow (backlog A8:
     ///     the distant Strip glow never attenuated).
     /// </summary>
-    public bool IsAdditiveBlend => AlphaBlend && DstBlendMode is 0 or 10;
+    public NifD3D12BlendOperation BlendOperation =>
+        NifD3D12BlendMapper.ClassifyOperation(AlphaBlend, SrcBlendMode, DstBlendMode);
+
+    public bool IsAdditiveBlend => BlendOperation == NifD3D12BlendOperation.Additive;
+
+    /// <summary>
+    ///     Multiplicative shadow/dust equation. These draws require a white fog neutral and a
+    ///     normalized source range; values above one brighten the destination instead of dimming it.
+    /// </summary>
+    public bool IsMultiplicativeBlend => BlendOperation == NifD3D12BlendOperation.Multiplicative;
 
     public required Vector4 AlphaState { get; init; }
     public required Vector4 RenderState { get; init; }
@@ -83,6 +101,10 @@ internal sealed class CachedSubmesh12
                 return _textureState;
             }
 
+            System.Diagnostics.Debug.Assert(
+                GradientMap is null || Lighting30GlowMap is null,
+                "FO4 gradient and classic Lighting30 glow maps cannot share TexIndices.w.");
+
             var state = new Vector4(
                 Normal.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ ? 1f : 0f,
                 // .y > 0.5 routes the instanced VS to the leaf-billboard branch; 2 additionally marks
@@ -90,11 +112,14 @@ internal sealed class CachedSubmesh12
                 // undo mip alpha decay; baked particle clouds are blends and stay at 1).
                 IsSpeedTreeBranch ? -1f : IsLeafBillboard ? (AlphaTest ? 2f : 1f) : 0f,
                 // Exact integer flags carried in a float constant: bit 0 = sample TexIndices.z for
-                // the spec mask, bit 1 = clamp U, bit 2 = clamp V. All values are <= 7 and therefore
-                // exactly representable; shaders decode with integer bit tests.
+                // the spec mask, bits 1/2 = clamp U/V, bit 3 = TexIndices.w is a Lighting30 glow
+                // map, bit 4 = classic Lighting30 material route. All values are <= 31 and exactly
+                // representable; shaders decode with integer bit tests.
                 (SpecularMap is not null ? 1f : 0f) +
                 (ClampTextureU ? 2f : 0f) +
-                (ClampTextureV ? 4f : 0f),
+                (ClampTextureV ? 4f : 0f) +
+                (Lighting30GlowMap is not null ? 8f : 0f) +
+                (IsLighting30 ? 16f : 0f),
                 GradientMap is not null ? GradientMapV : -1f); // .w >= 0 = palette row for TexIndices.w
             if (TexturesReady)
             {
@@ -107,6 +132,7 @@ internal sealed class CachedSubmesh12
     }
     public bool TexturesReady => Diffuse.IsReady && Normal.IsReady &&
                                  SpecularMap is not { IsReady: false } && GradientMap is not { IsReady: false } &&
+                                 Lighting30GlowMap is not { IsReady: false } &&
                                  EnvMap is not { IsReady: false };
     public required bool HasBump { get; init; }
     public required NifAlphaRenderMode AlphaRenderMode { get; init; }
@@ -117,8 +143,27 @@ internal sealed class CachedSubmesh12
     public required byte SrcBlendMode { get; init; }
     public required byte DstBlendMode { get; init; }
     public required float MaterialAlpha { get; init; }
+
+    /// <summary>Optional live material-opacity curve sampled by the blended draw path.</summary>
+    public NifMaterialAlphaController? MaterialAlphaController { get; init; }
+
+    /// <summary>
+    ///     Strict FNV BS34 ambient-sway descriptor in baked mesh-root-local coordinates. The phase
+    ///     seed remains per placed reference and is evaluated while matrices enter the frame ring,
+    ///     so this property stays part of the submesh batch key without splitting instances.
+    /// </summary>
+    public PhysicsLiteSwayDescriptor? PhysicsLiteSway { get; init; }
     public required bool DoubleSided { get; init; }
     public required bool IsEmissive { get; init; }
+
+    /// <summary>True for the classic scene-lit Lighting30 material path (never full-bright).</summary>
+    public bool IsLighting30 { get; init; }
+
+    /// <summary>
+    ///     Raw selected Lighting30 RGB in xyz and NiMaterial emission multiplier in w. The shader
+    ///     applies w and IMGS EmissiveMult only while HDR is active.
+    /// </summary>
+    public Vector4 Lighting30Emission { get; init; } = new(0f, 0f, 0f, 1f);
     public required Vector3 LocalBoundsCenter { get; init; }
 
     /// <summary>
@@ -189,6 +234,12 @@ internal sealed class CachedSubmesh12
 
     /// <summary>True when the effect material enables the view-angle opacity falloff.</summary>
     public bool HasEffectFalloff { get; init; }
+
+    /// <summary>
+    ///     Scene-depth feather eligibility resolved once from authored soft-effect data or the
+    ///     explicitly-scoped particle/effects fallback. Disabled for ordinary alpha geometry.
+    /// </summary>
+    public NifSoftParticleSettings SoftParticle { get; init; }
 
     /// <summary>
     ///     Constant UV scroll velocity (UV units/second) from a TES3 NiUVController looping ramp

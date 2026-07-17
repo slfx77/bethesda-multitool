@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
@@ -347,6 +348,9 @@ internal static class NifGeometryExtractor
 
         // Extract geometry from each shape block
         var model = new NifRenderableModel();
+        var alphaControllersByProperty = NifMaterialAlphaControllerCollector.Collect(data, nif)
+            .GroupBy(static controller => controller.MaterialPropertyRef)
+            .ToDictionary(static group => group.Key, static group => group.First());
 
         foreach (var (shapeIndex, dataIndex) in shapeDataMap)
         {
@@ -391,6 +395,7 @@ internal static class NifGeometryExtractor
             var clampTextureU = false;
             var clampTextureV = false;
             (float, float, float, float)? effectFalloff = null;
+            var softParticleFalloffDepth = 0f;
             SkyObjectType? skyType = null;
             List<int>? propRefs = null;
             if (shapePropertyMap.TryGetValue(shapeIndex, out propRefs))
@@ -403,6 +408,8 @@ internal static class NifGeometryExtractor
                 {
                     staticUvOffset = shaderMetadata.UvOffset;
                     staticUvScale = shaderMetadata.UvScale;
+                    softParticleFalloffDepth = shaderMetadata.SoftEffectFalloffDepth ?? 0f;
+                    useVertexAlpha = NifVertexColorPolicy.UsesAlphaForOpacity(shaderMetadata);
                 }
                 // Self-illuminated (unlit) shaders: FO3/FNV BSShaderNoLightingProperty AND the Skyrim/
                 // SE/FO4 BSEffectShaderProperty (fire, magic, glow, light shafts). Without the effect
@@ -471,6 +478,7 @@ internal static class NifGeometryExtractor
                 if (shaderMetadata is
                     {
                         PropertyType: "BSLightingShaderProperty" or "BSShaderPPLightingProperty"
+                        or "Lighting30ShaderProperty"
                         or "BSShaderNoLightingProperty",
                         ShaderFlags: { } lsRefract
                     }
@@ -508,7 +516,6 @@ internal static class NifGeometryExtractor
                     { PropertyType: "BSLightingShaderProperty", ShaderFlags: { } lsf1, ShaderFlags2: { } lsf2 })
                 {
                     useVertexColors = (lsf2 & 0x20u) != 0;
-                    useVertexAlpha = (lsf1 & 0x8u) != 0;
                 }
 
                 // Fall back to a legacy NiTexturingProperty base map (e.g. effects\ambient\
@@ -783,8 +790,25 @@ internal static class NifGeometryExtractor
                 submesh.IsDecal = isDecal;
                 submesh.EffectTint = effectTint;
                 submesh.EffectFalloff = effectFalloff;
+                submesh.SoftParticleFalloffDepth = softParticleFalloffDepth;
+                submesh.UseVertexAlphaForOpacity = useVertexAlpha;
                 submesh.ClampTextureU = clampTextureU;
                 submesh.ClampTextureV = clampTextureV;
+                var isLighting30 = NifLighting30EmissionPolicy.IsStandardLighting30(nif, shaderMetadata);
+                submesh.IsLighting30 = isLighting30;
+                submesh.Lighting30GlowMapTexturePath =
+                    NifLighting30EmissionPolicy.ResolveGlowMapPath(nif, shaderMetadata);
+                if (propRefs is not null)
+                {
+                    foreach (var propertyRef in propRefs)
+                    {
+                        if (alphaControllersByProperty.TryGetValue(propertyRef, out var alphaController))
+                        {
+                            submesh.MaterialAlphaController = alphaController;
+                            break;
+                        }
+                    }
+                }
 
                 if (submesh.UVs is { } staticUvs &&
                     (staticUvOffset != Vector2.Zero || staticUvScale != Vector2.One))
@@ -793,17 +817,6 @@ internal static class NifGeometryExtractor
                     {
                         staticUvs[ui] = staticUvs[ui] * staticUvScale.X + staticUvOffset.X;
                         staticUvs[ui + 1] = staticUvs[ui + 1] * staticUvScale.Y + staticUvOffset.Y;
-                    }
-                }
-
-                // SLSF1_Vertex_Alpha clear — the vertex alpha channel is engine data (wind weight),
-                // not opacity. Neutralize it in place so every consumer (GPU alpha test, CPU
-                // rasterizer, GLB export) stops treating it as a fade.
-                if (!useVertexAlpha && submesh.VertexColors is { } vertexColors)
-                {
-                    for (var ci = 3; ci < vertexColors.Length; ci += 4)
-                    {
-                        vertexColors[ci] = 255;
                     }
                 }
 
@@ -824,17 +837,44 @@ internal static class NifGeometryExtractor
                     submesh.UvScrollVelocity = uvScroll;
                 }
 
-                // External_Emittance (classic BSShaderFlags bit 29 and Skyrim BSEffect): the engine
-                // sources the color from the placed reference's XEMI REGN/LIGH target, not from the
-                // material's emissive color/multiplier. Unresolved XEMI deliberately remains neutral.
+                // External_Emittance (classic BSShaderFlags bit 29 and Skyrim BSEffect). Lighting30
+                // replaces only the raw emission RGB with the placed reference's XEMI color: its HDR
+                // path still applies NiMaterial's emission multiplier, and an unresolved XEMI falls
+                // back to the material RGB. Keep that lit route separate from the existing NoLighting/
+                // BSEffect approximation below, where resolved XEMI modulates the full-bright tint and
+                // an unresolved placement remains neutral.
                 var externalEmittance = shaderMetadata is
                     {
-                        PropertyType: "BSShaderPPLightingProperty" or "BSShaderNoLightingProperty" or
-                            "BSEffectShaderProperty",
+                        PropertyType: "BSShaderPPLightingProperty" or "Lighting30ShaderProperty" or
+                            "BSShaderNoLightingProperty" or "BSEffectShaderProperty",
                         ShaderFlags: { } eeFlags
                     } && (eeFlags & 0x20000000u) != 0;
 
-                if (externalEmittance && externalEmittanceColor is { } resolvedEmittance)
+                var materialEmission = isLighting30 && propRefs is not null
+                    ? NifBlockParsers.ReadMaterialEmissionSource(data, nif, propRefs)
+                    : null;
+                if (isLighting30)
+                {
+                    var materialColor = materialEmission is { } materialSource
+                        ? new Vector3(materialSource.R, materialSource.G, materialSource.B)
+                        : (Vector3?)null;
+                    var selected = NifLighting30EmissionPolicy.SelectEmission(
+                        materialColor,
+                        materialEmission?.Mult ?? 1f,
+                        externalEmittance,
+                        externalEmittanceColor);
+                    if (selected.Color is { } selectedColor)
+                    {
+                        submesh.Lighting30EmissionColor =
+                            (selectedColor.X, selectedColor.Y, selectedColor.Z);
+                    }
+
+                    // HDR multiplies either selected RGB source by this authored value. SDR ignores
+                    // it in the pixel shader. A material-less external source uses the neutral 1.
+                    submesh.Lighting30EmissionMultiplier = selected.MaterialMultiplier;
+                }
+
+                if (!isLighting30 && externalEmittance && externalEmittanceColor is { } resolvedEmittance)
                 {
                     var influence = shaderMetadata!.PropertyType == "BSEffectShaderProperty"
                         ? shaderMetadata.EffectLightingInfluence ?? 1f
@@ -847,7 +887,7 @@ internal static class NifGeometryExtractor
                 }
 
                 // Read animated emissive color from NiMaterialColorController chain
-                if (propRefs != null && !externalEmittance)
+                if (propRefs != null && !externalEmittance && !isLighting30)
                 {
                     var animEmissive = NifBlockParsers.ReadAnimatedEmissiveColor(data, nif, propRefs);
                     if (animEmissive.HasValue)
@@ -899,7 +939,8 @@ internal static class NifGeometryExtractor
         if (collectBillboards && !bindPoseOnly)
         {
             Particles.NifParticleSystemExtractor.Append(
-                data, nif, model, nodeTransforms, nodeChildren, treatRootsAsIdentity);
+                data, nif, model, nodeTransforms, nodeChildren, treatRootsAsIdentity,
+                alphaControllersByProperty);
         }
 
         return model.HasGeometry ? model : null;

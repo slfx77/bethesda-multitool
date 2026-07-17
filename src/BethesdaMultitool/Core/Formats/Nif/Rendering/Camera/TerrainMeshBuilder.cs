@@ -102,9 +102,18 @@ internal static class TerrainMeshBuilder
     ///     per worldspace load and reused across every cell.
     /// </summary>
     public static ushort[] BuildSharedIndexBufferData(int gridSize)
+        => BuildSharedIndexBufferData(gridSize, TerrainTriangleTopology.FixedSouthEastNorthWest);
+
+    /// <summary>
+    ///     Builds the invariant index buffer for a LAND cell using the requested engine-family
+    ///     triangle topology. The public/default overload remains the legacy fixed-diagonal path.
+    /// </summary>
+    internal static ushort[] BuildSharedIndexBufferData(
+        int gridSize,
+        TerrainTriangleTopology topology)
     {
         var indices = new ushort[IndexCountFor(gridSize)];
-        FillIndices(indices, gridSize);
+        FillIndices(indices, gridSize, topology);
         return indices;
     }
 
@@ -338,6 +347,12 @@ internal static class TerrainMeshBuilder
     }
 
     private static void FillIndices(Span<ushort> indices, int n)
+        => FillIndices(indices, n, TerrainTriangleTopology.FixedSouthEastNorthWest);
+
+    private static void FillIndices(
+        Span<ushort> indices,
+        int n,
+        TerrainTriangleTopology topology)
     {
         // Four quadrant ranges, in order 0=SW, 1=SE, 2=NW, 3=NE. Each quadrant emits (mid×mid) quads,
         // each quad = 2 CCW triangles (mid = (n-1)/2). Vertices on the center cross (i=mid or j=mid)
@@ -361,8 +376,16 @@ internal static class TerrainMeshBuilder
                     var v01 = (ushort)((j + 1) * n + i);
                     var v11 = (ushort)((j + 1) * n + i + 1);
 
-                    indices[k++] = v00; indices[k++] = v10; indices[k++] = v01;
-                    indices[k++] = v01; indices[k++] = v10; indices[k++] = v11;
+                    if (TerrainSurfaceTopology.UsesSouthwestNortheastDiagonal(topology, i, j))
+                    {
+                        indices[k++] = v00; indices[k++] = v10; indices[k++] = v11;
+                        indices[k++] = v00; indices[k++] = v11; indices[k++] = v01;
+                    }
+                    else
+                    {
+                        indices[k++] = v00; indices[k++] = v10; indices[k++] = v01;
+                        indices[k++] = v01; indices[k++] = v10; indices[k++] = v11;
+                    }
                 }
             }
         }

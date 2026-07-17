@@ -45,6 +45,9 @@ internal static class NifHeadlessRenderer
         float? litHour = null; // when set, bind real AtmosphereState lighting (sun+ambient) at this hour
         var azimuthDeg = 315f; // camera azimuth; override with --yaw to view a specific face
         var animTime = 0f; // --anim-time: pins the animation clock (UV scroll / skinned pose) for deterministic captures
+        // Verification-only override for CameraOrigin.w. Paired direct-NIF captures can vary the
+        // active IMGS EmissiveMult while holding every other GPU input constant.
+        var emissiveMult = 1f;
         // --anim-hold + --out2: after settle, keep rendering N extra iterations with the SAME camera
         // and the clock ADVANCING from --anim-time at 30 Hz, then save the last frame to --out2.
         // Reproduces the live viewer's parked-camera state (streaming quiesces → batch reuse/freeze
@@ -79,6 +82,16 @@ internal static class NifHeadlessRenderer
                 case "--lit": litHour = float.TryParse(Next(args, ref i), out var h) ? h : 13f; break;
                 case "--yaw": azimuthDeg = float.TryParse(Next(args, ref i), out var az) ? az : 315f; break;
                 case "--anim-time": animTime = float.TryParse(Next(args, ref i), out var at) ? at : 0f; break;
+                case "--emissive-mult":
+                    emissiveMult = float.TryParse(
+                                       Next(args, ref i),
+                                       System.Globalization.NumberStyles.Float,
+                                       System.Globalization.CultureInfo.InvariantCulture,
+                                       out var em)
+                                   && float.IsFinite(em)
+                        ? em
+                        : 1f;
+                    break;
                 case "--anim-hold": _ = int.TryParse(Next(args, ref i), out animHoldIterations); break;
                 case "--out2": outPng2 = Next(args, ref i); break;
                 case "--gui-shape": guiShape = true; break;
@@ -96,7 +109,8 @@ internal static class NifHeadlessRenderer
         {
             Console.Error.WriteLine("Usage: --render-nif <esm-relative-nif-path> --archive <meshes.bsa> " +
                                     "--textures-bsa <tex.bsa> [<tex2.bsa> ...] --out <png> [--size N] " +
-                                    "[--bg <#RRGGBB|magenta|gray|checker>] [--bg-clear <#RRGGBB|gray|...>]");
+                                    "[--bg <#RRGGBB|magenta|gray|checker>] [--bg-clear <#RRGGBB|gray|...>] " +
+                                    "[--emissive-mult <n>]");
             return 2;
         }
         if (!File.Exists(meshArchive))
@@ -112,7 +126,9 @@ internal static class NifHeadlessRenderer
         // so a warm entry would serve a STALE decode that hides classifier/extractor changes under test.
         EnvironmentVariables.Set(EnvironmentVariables.Viewer.PersistentMeshCache, "0");
 
-        Console.WriteLine($"[nif-render] {nifPath}  via {Path.GetFileName(meshArchive)}  -> {outPng} ({size}px)");
+        Console.WriteLine(
+            $"[nif-render] {nifPath}  via {Path.GetFileName(meshArchive)}  -> {outPng} ({size}px) " +
+            $"EmissiveMult={emissiveMult.ToString("G9", System.Globalization.CultureInfo.InvariantCulture)}");
 
         var gpu = GpuDevice12.Create(false);
         if (gpu is null)
@@ -215,6 +231,7 @@ internal static class NifHeadlessRenderer
             references.LoadData(new WorldRenderCache(), cells, spatialIndex: null);
 
             target = new GpuOffscreenSceneTarget12(gpu, size, size);
+            Console.WriteLine($"[nif-render] scene samples={target.SampleCount}");
             var meshId = RenderableReference.ComputeMeshId(nifPath);
 
             // Frame the mesh's real AABB center (the placement is at world origin, scale 1, so the
@@ -263,11 +280,11 @@ internal static class NifHeadlessRenderer
                 cmd.SetGraphicsRootSignature(rootSig.RootSignature);
                 if (litHour is { } lh)
                 {
-                    BindLitAtmosphere(cmd, recorder.FrameIndex, ring, lh, focus);
+                    BindLitAtmosphere(cmd, recorder.FrameIndex, ring, lh, focus, emissiveMult);
                 }
                 else
                 {
-                    BindFlatAtmosphere(cmd, recorder.FrameIndex, ring);
+                    BindFlatAtmosphere(cmd, recorder.FrameIndex, ring, emissiveMult);
                 }
                 // --bg-clear: clear the target to an OPAQUE color BEFORE rendering, instead of the
                 // post-composite --bg. Required to judge multiplicative (ZERO/SRC_COLOR) decals —
@@ -327,6 +344,10 @@ internal static class NifHeadlessRenderer
                         $"missing={s.ReferenceMeshMissing} texPending={s.ReferenceTexturePending} drawn={s.ReferenceDrawn} " +
                         $"submeshDraws={s.ReferenceSubmeshDraws} batches={s.ReferenceBatches} inst={s.ReferenceInstances} " +
                         $"instDraws={s.ReferenceInstancedDraws} blended={s.ReferenceBlendedDraws} " +
+                        $"soft={s.ReferenceSoftParticleDraws}/{s.ReferenceSoftParticleDepthSampleCount} " +
+                        $"alphaCtl={s.ReferenceMaterialAlphaControllerDraws}" +
+                        $"[{s.ReferenceMaterialAlphaControllerMinimum:0.###}," +
+                        $"{s.ReferenceMaterialAlphaControllerMaximum:0.###}] " +
                         $"uploads={s.ReferenceGpuUploads} qDec={s.ReferenceQueuedDecodes} aDec={s.ReferenceActiveDecodes} " +
                         $"texPendRes={s.ReferenceTexturePendingResolves} texPendUp={s.ReferenceTexturePendingUploads}");
                 }
@@ -351,6 +372,10 @@ internal static class NifHeadlessRenderer
                     Console.WriteLine(
                         $"[nif-render] settled at iter {it} (drawn={s.ReferenceDrawn}, " +
                         $"submeshDraws={s.ReferenceSubmeshDraws}, waterPlanes={waterDraws}, " +
+                        $"soft={s.ReferenceSoftParticleDraws}/{s.ReferenceSoftParticleDepthSampleCount}, " +
+                        $"alphaCtl={s.ReferenceMaterialAlphaControllerDraws}" +
+                        $"[{s.ReferenceMaterialAlphaControllerMinimum:0.###}," +
+                        $"{s.ReferenceMaterialAlphaControllerMaximum:0.###}], " +
                         $"local radius {localRadius:F0})");
                     break;
                 }
@@ -419,11 +444,11 @@ internal static class NifHeadlessRenderer
                     cmd.SetGraphicsRootSignature(rootSig.RootSignature);
                     if (litHour is { } holdHour)
                     {
-                        BindLitAtmosphere(cmd, recorder.FrameIndex, ring, holdHour, focus);
+                        BindLitAtmosphere(cmd, recorder.FrameIndex, ring, holdHour, focus, emissiveMult);
                     }
                     else
                     {
-                        BindFlatAtmosphere(cmd, recorder.FrameIndex, ring);
+                        BindFlatAtmosphere(cmd, recorder.FrameIndex, ring, emissiveMult);
                     }
 
                     target.Bind(cmd);
@@ -499,16 +524,21 @@ internal static class NifHeadlessRenderer
         }
     }
 
-    /// <summary>Binds a neutral atmosphere CB (b3) — lighting/fog/sky disabled and EmissiveMult=1, so
+    /// <summary>Binds a neutral atmosphere CB (b3) — lighting/fog/sky disabled, so
     /// reference.frag uses its legacy flat shade (0.4 + 0.6·lambert). Faithful for verifying
     /// material/alpha, not time-of-day.</summary>
-    private static void BindFlatAtmosphere(ID3D12GraphicsCommandList cmd, int frameIndex, GpuRingBuffer12 ring)
+    private static void BindFlatAtmosphere(
+        ID3D12GraphicsCommandList cmd,
+        int frameIndex,
+        GpuRingBuffer12 ring,
+        float emissiveMult)
     {
-        const int atmosphereBytes = 10 * 16 + 4 * 64 + 4 * 16;
+        const int atmosphereBytes = 10 * 16 + 4 * 64 + 4 * 16 + 6 * 16;
         var cb = new float[atmosphereBytes / sizeof(float)];
-        // CameraOrigin.w carries EmissiveMult; the material verifier has no active IMGS, so bind the
-        // explicit neutral value while every atmosphere enable flag remains zero.
-        cb[9 * 4 + 3] = 1f;
+        // CameraOrigin.w carries EmissiveMult. The default is neutral; --emissive-mult deliberately
+        // overrides it for paired GPU regressions without enabling the rest of atmosphere lighting.
+        cb[4 * 4 + 3] = 1f; // SkyHorizon.w = HDR active for Lighting30 verification.
+        cb[9 * 4 + 3] = emissiveMult;
         var bytes = new byte[atmosphereBytes];
         Buffer.BlockCopy(cb, 0, bytes, 0, atmosphereBytes);
         var alloc = ring.Allocate(frameIndex, atmosphereBytes, GpuRingBuffer12.CbAlignment);
@@ -524,13 +554,18 @@ internal static class NifHeadlessRenderer
     /// WorldView3DControl.AtmosphereConstants layout. uAmbientColor.w stays 0 → the shader's
     /// 1.0 fallback (engine value).</summary>
     private static void BindLitAtmosphere(
-        ID3D12GraphicsCommandList cmd, int frameIndex, GpuRingBuffer12 ring, float gameHour, Vector3 focus)
+        ID3D12GraphicsCommandList cmd,
+        int frameIndex,
+        GpuRingBuffer12 ring,
+        float gameHour,
+        Vector3 focus,
+        float emissiveMult)
     {
         var a = AtmosphereState.Resolve(gameHour, weather: null, climate: null, lightingEnabled: true);
         // Zero the complete append-only b3 layout (ten atmosphere vectors, four shadow matrices,
-        // four shadow vectors). In particular Params.w remains zero: this verifier has no world
-        // placement cache, so it binds an empty local-light list.
-        const int atmosphereBytes = 10 * 16 + 4 * 64 + 4 * 16;
+        // four shadow vectors, six directional-ambient vectors). In particular Params.w remains
+        // zero: this verifier has no world placement cache, so it binds an empty local-light list.
+        const int atmosphereBytes = 10 * 16 + 4 * 64 + 4 * 16 + 6 * 16;
         var cb = new float[atmosphereBytes / sizeof(float)];
         void Put(int slot, float x, float y, float z, float w)
         {
@@ -540,7 +575,7 @@ internal static class NifHeadlessRenderer
         Put(1, a.SunColor.X, a.SunColor.Y, a.SunColor.Z, 1f);   // w = lightingEnabled
         Put(2, a.AmbientColor.X, a.AmbientColor.Y, a.AmbientColor.Z, 0f);
         Put(3, a.SkyTopColor.X, a.SkyTopColor.Y, a.SkyTopColor.Z, 0f);   // w = skyEnabled OFF
-        Put(4, a.SkyHorizonColor.X, a.SkyHorizonColor.Y, a.SkyHorizonColor.Z, 0f);
+        Put(4, a.SkyHorizonColor.X, a.SkyHorizonColor.Y, a.SkyHorizonColor.Z, 1f); // w = HDR active
         Put(5, a.FogColor.X, a.FogColor.Y, a.FogColor.Z, 0f);   // w = fogEnabled OFF
         // Oblique eye matching the 315°/30° ortho view — NOT directly above. A straight-up eye makes V
         // point along +Z, and a below-horizon/degenerate sunDir gives H = normalize(sunDir+V) ≈
@@ -552,7 +587,7 @@ internal static class NifHeadlessRenderer
         // CameraOrigin (camera-relative render origin) = 0: this is an ABSOLUTE ortho render, so nothing is
         // shifted. The reference VS no longer reads this slot anyway (it folds the origin CPU-side); leaving
         // the old eye value here was a latent shift that only didn't bite because the VS now ignores it.
-        Put(9, 0f, 0f, 0f, 1f); // absolute origin + neutral EmissiveMult (no active IMGS)
+        Put(9, 0f, 0f, 0f, emissiveMult); // absolute origin + requested IMGS EmissiveMult
 
         var alloc = ring.Allocate(frameIndex, atmosphereBytes, GpuRingBuffer12.CbAlignment);
         var bytes = new byte[atmosphereBytes];

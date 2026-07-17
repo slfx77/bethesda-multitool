@@ -16,6 +16,9 @@ Texture2D    textures[]   : register(t0, space1);
 // with the SAME bindless index the 2D array uses elsewhere. Only index a slot through this
 // declaration when the C# side has confirmed the promoted descriptor IS a cube (vEnvMap.x >= 0).
 TextureCube  cubemaps[]   : register(t0, space2);
+// space3 is a third alias over the same descriptor heap for R32_FLOAT multisampled scene depth.
+// Per-draw slot encoding selects this declaration only when the descriptor is Texture2DMS.
+Texture2DMS<float> depthTexturesMsaa[] : register(t0, space3);
 SamplerState sDiffuse     : register(s0); // wrap, anisotropic (set in C#)
 SamplerState sNormalMap   : register(s1); // wrap, anisotropic (set in C#)
 SamplerState sPalette     : register(s2); // CLAMP, linear — palette + cubemap lookups
@@ -34,13 +37,13 @@ cbuffer Atmosphere : register(b3)
     float4 uSunColorLighting;   // rgb = sun color, w = lightingEnabled (0/1)
     float4 uAmbientColor;       // rgb = ambient, w = spare
     float4 uSkyTopSkyEnabled;   // rgb = sky-top color, w = skyEnabled (0/1)
-    float4 uSkyHorizon;         // rgb = sky-horizon color, w = spare
+    float4 uSkyHorizon;         // rgb = sky-horizon color, w = effective HDR active (0/1)
     float4 uFogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
     float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = placed-light count
     float4 uCameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
     float4 uFogFarColorMax;     // rgb = far-fog color, w = max powered fog amount
     float4 uCameraOrigin;       // xyz = camera-relative render origin (VS-consumed; layout parity),
-                                // w = IMGS EmissiveMult (hdrData[3]; explicitly 1 when inactive)
+                                // w = IMGS EmissiveMult for Lighting30; NoLighting does not consume it
     // Sun shadow CASCADES, near→far (appended — earlier shaders declare only the prefix above,
     // layout-safe). Each matrix: origin-relative world → that cascade's shadow clip (xy ±1,
     // z reversed 0..1); each params: x = enabled, y = texel UV size, z = bias, w = SRV slot.
@@ -79,9 +82,18 @@ StructuredBuffer<PointLight> uPointLights : register(t9, space0);
 // ADDS the shader output to the framebuffer, so lerping toward the fog COLOR injects fog-colored
 // light at any distance and distant glows never attenuate (the Strip's night dome washing out the
 // wasteland view — backlog A8). Fading the contribution to zero is what the engine's fogged
-// additive pass produces.
-float3 ApplyFog(float3 color, float3 worldPos, bool additive)
+// additive pass produces. MULTIPLICATIVE draws (dst * src; baked shadows and other modulate decals) use
+// WHITE as their neutral contribution. Clamp those sources to the normalized legacy output range
+// first: allowing HDR values above one turns a dimming layer into a glow.
+float3 ApplyFog(float3 color, float3 worldPos, float blendOperation)
 {
+    bool additive = blendOperation > 0.5 && blendOperation < 1.5;
+    bool multiplicative = blendOperation >= 1.5;
+    if (multiplicative)
+    {
+        color = saturate(color);
+    }
+
     if (uFogColorFogEnabled.w < 0.5)
     {
         return color;
@@ -91,7 +103,11 @@ float3 ApplyFog(float3 color, float3 worldPos, bool additive)
     float q = saturate((dist - uAtmosphereParams.y) / max(uAtmosphereParams.z - uAtmosphereParams.y, 1.0));
     float amount = min(pow(q, max(uCameraPosFogPower.w, 0.01)), saturate(uFogFarColorMax.w));
     float3 fogRgb = lerp(uFogColorFogEnabled.rgb, uFogFarColorMax.rgb, amount);
-    return additive ? color * (1.0 - amount) : lerp(color, fogRgb, amount);
+    return additive
+        ? color * (1.0 - amount)
+        : multiplicative
+            ? lerp(color, 1.0, amount)
+            : lerp(color, fogRgb, amount);
 }
 
 // One cascade attempt for ShadowFactor: returns true when worldPos lands inside this cascade's
@@ -196,12 +212,20 @@ float3 PlacedLightContribution(float3 N, float3 worldPos)
     return contribution;
 }
 
-float3 AtmosphereLight(float3 N, float3 worldPos, float sunShadow)
+float3 AtmosphereLight(
+    float3 N, float3 worldPos, float sunShadow, float3 materialEmission, bool hdrActive)
 {
     if (uSunColorLighting.w < 0.5)
     {
         float legacyLambert = saturate(dot(N, normalize(float3(0.5, 0.5, 1.0))));
-        return (0.4 + 0.6 * legacyLambert).xxx;
+        // Keep the legacy OFF diagnostic byte-identical when emission is zero while retaining the
+        // engine's SDR boundary: clamp ambient+emission before adding the direct Lambert term.
+        float3 legacyAmbient = 0.4.xxx + materialEmission;
+        if (!hdrActive)
+        {
+            legacyAmbient = min(legacyAmbient, 1.0);
+        }
+        return max(legacyAmbient + 0.6 * legacyLambert, 0.0);
     }
 
     // FNV basic SLS lighting: finalRGB = BaseMap * (Ambient + NdotL*Sunlight), ambient at FULL strength.
@@ -226,8 +250,16 @@ float3 AtmosphereLight(float3 N, float3 worldPos, float sunShadow)
                   (unitNormal.y >= 0.0 ? uAmbientPositiveY.rgb : uAmbientNegativeY.rgb) * normalSquared.y +
                   (unitNormal.z >= 0.0 ? uAmbientPositiveZ.rgb : uAmbientNegativeZ.rgb) * normalSquared.z;
     }
+    // Lighting30Shader::SetupGeometryConstants_Emittance folds no-glow emission into AmbientColor.
+    // In SDR it clamps that componentwise sum before direct lights; HDR keeps the authored range.
+    ambient = ambient * kAmbientScale + materialEmission;
+    if (!hdrActive)
+    {
+        ambient = min(ambient, 1.0);
+    }
+
     float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
-    float3 shade = ambient * kAmbientScale +
+    float3 shade = ambient +
         uSunColorLighting.rgb * (ndotl * sunShadow) +
         PlacedLightContribution(N, worldPos);
     // Negative LIGH records subtract illumination but never produce physically meaningless
@@ -251,9 +283,67 @@ struct PSInput
     nointerpolation float4 vSpecular   : TEXCOORD10; // xyz = tint, w = Phong exponent (0 = none)
     nointerpolation float4 vEffectTint    : TEXCOORD11; // rgb = BGEM tint, w = falloff enabled
     nointerpolation float4 vEffectFalloff : TEXCOORD12; // startAngle/stopAngle/startOp/stopOp
-    nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness, w = additive-fog flag
+    nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness, w = blend operation
+    nointerpolation float4 vSoftParticle  : TEXCOORD14; // encoded depth slot/view, near, far, signed soft depth
     bool   IsFrontFace  : SV_IsFrontFace;
 };
+
+// Reversed-Z [1,0] depth to positive perspective view distance (world units), identical to
+// water.frag's scene-column conversion. Eligible effects explicitly reject occluded fragments and
+// feather intersections; a read-only DSV remains bound so all ordinary blends keep hardware depth.
+float LinearizeSceneDepth(float ndcZ, float nearPlane, float farPlane)
+{
+    return (nearPlane * farPlane) /
+        max(nearPlane + ndcZ * (farPlane - nearPlane), 1e-4);
+}
+
+float ResolveSceneDepthFeather(PSInput input)
+{
+    float encodedSlot = input.vSoftParticle.x;
+    if (encodedSlot == 0.0)
+    {
+        return 1.0; // ordinary blend or an ortho/direct-NIF hardware-only path
+    }
+
+    bool multisampled = encodedSlot < 0.0;
+    uint depthSlot = (uint)(abs(encodedSlot) - 1.0);
+    float sceneNdc;
+    if (multisampled)
+    {
+        uint depthWidth, depthHeight, sampleCount;
+        depthTexturesMsaa[NonUniformResourceIndex(depthSlot)]
+            .GetDimensions(depthWidth, depthHeight, sampleCount);
+        sceneNdc = 0.0;
+        [loop]
+        for (uint sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++)
+        {
+            // Reversed-Z: the maximum sample is the nearest opaque surface. Choosing it avoids a
+            // soft effect bleeding through one covered sample at an MSAA silhouette.
+            sceneNdc = max(sceneNdc,
+                depthTexturesMsaa[NonUniformResourceIndex(depthSlot)]
+                    .Load((int2)input.Position.xy, sampleIndex));
+        }
+    }
+    else
+    {
+        sceneNdc = textures[NonUniformResourceIndex(depthSlot)]
+            .Load(int3((int2)input.Position.xy, 0)).r;
+    }
+    float sceneDistance = LinearizeSceneDepth(
+        sceneNdc, input.vSoftParticle.y, input.vSoftParticle.z);
+    float fragmentDistance = LinearizeSceneDepth(
+        input.Position.z, input.vSoftParticle.y, input.vSoftParticle.z);
+    float sceneGap = sceneDistance - fragmentDistance;
+
+    // Reproduce the scene PSO's reversed-Z GreaterEqual test. A tiny world-space keep bias makes
+    // an equal/coplanar tie deterministic without allowing genuinely hidden effects through.
+    clip(sceneGap + 0.01);
+
+    float falloffDepth = abs(input.vSoftParticle.w);
+    return falloffDepth > 0.0
+        ? saturate(max(sceneGap, 0.0) / falloffDepth)
+        : 1.0;
+}
 
 bool PassAlphaTest(float alpha, float threshold, float functionId)
 {
@@ -271,7 +361,8 @@ bool PassAlphaTest(float alpha, float threshold, float functionId)
 }
 
 // vTextureState.z is an exact integer bitfield carried through a float constant:
-// bit 0 = specular map present, bit 1 = clamp U, bit 2 = clamp V.
+// bit 0 = specular map present, bit 1 = clamp U, bit 2 = clamp V,
+// bit 3 = TexIndices.w is a classic Lighting30 glow map, bit 4 = Lighting30 route.
 uint MaterialTextureFlags(float packedState)
 {
     return (uint)round(packedState);
@@ -280,6 +371,16 @@ uint MaterialTextureFlags(float packedState)
 bool HasMaterialSpecularMap(float packedState)
 {
     return (MaterialTextureFlags(packedState) & 1u) != 0u;
+}
+
+bool HasLighting30GlowMap(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 8u) != 0u;
+}
+
+bool IsLighting30Material(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 16u) != 0u;
 }
 
 float4 SampleMaterialTexture(uint slot, float2 uv, float packedState)
@@ -320,6 +421,10 @@ float CalculateMaterialTextureLod(uint slot, float2 uv, float packedState)
 
 float4 main(PSInput input) : SV_Target
 {
+    // Do this before texture/lighting work. Only explicitly eligible effects carry an encoded depth
+    // slot; ordinary transparent draws rely exclusively on the simultaneously bound read-only DSV.
+    float sceneDepthFeather = ResolveSceneDepthFeather(input);
+
     float4 sample = SampleMaterialTexture(
         input.vTexIndices.x, input.vTexCoord, input.vTextureState.z);
 
@@ -422,7 +527,9 @@ float4 main(PSInput input) : SV_Target
             specSmoothScale = specSample.g;
         }
 
-        mapN.y = -mapN.y; // DirectX convention (Y-down normal maps), matching skin.frag.hlsl.
+        // Bethesda's DDS normals are already in the DirectX convention consumed by the authored
+        // tangent/bitangent basis. The recovered FNV SLS1009 pixel shader unpacks RGB directly and
+        // does not negate green. Green is flipped only when exporting these maps to glTF/OpenGL.
         mapN.xy *= input.vRenderState.z;
 
         // Only perturb when there's a usable tangent basis. SpeedTree bark carries a normal map but NO
@@ -461,12 +568,14 @@ float4 main(PSInput input) : SV_Target
     // LeafVertexColorHelp product) is baked into the vertex color, which multiplies into `lit`
     // below exactly like the engine's packed-attribute frc. (An earlier wrap-lighting stand-in
     // lived here while the dimmer was missing.)
-    // Sun-shadow visibility, computed once per pixel and shared by the diffuse sun term (inside
-    // AtmosphereLight) and the specular sun term below. 1.0 when lighting or shadows are off.
-    float sunShadow = uSunColorLighting.w >= 0.5 ? ShadowFactor(input.vWorldPos) : 1.0;
-    float3 shade = AtmosphereLight(normal, input.vWorldPos, sunShadow);
-
-    if (input.vRenderState.w > 0.5)
+    bool fullBright = input.vRenderState.w > 0.5;
+    // NoLighting bypasses both scene lighting and its shadow lookup. This is also what keeps that
+    // branch entirely independent of Lighting30's IMGS EmissiveMult input.
+    float sunShadow = !fullBright && uSunColorLighting.w >= 0.5
+        ? ShadowFactor(input.vWorldPos)
+        : 1.0;
+    float3 shade;
+    if (fullBright)
     {
         // Emissive / full-bright shapes — unaffected by scene lighting. Their color is the
         // MATERIAL EMISSIVE glow tint (× mult) modulating the texture, the FO3/FNV
@@ -474,9 +583,45 @@ float4 main(PSInput input) : SV_Target
         // (shared\shadefade01.dds) × green (0.05, 1, 0) × 2 — without the tint they clip to
         // pure white. The decoder rides the tint in vSpecular.rgb (specular is force-disabled
         // on emissive shapes, so the slot is free); shapes without a material carry (1,1,1).
-        // × the active imagespace's EmissiveMult (IMGS hdrData[3]; FNV ships 1.0 interior /
-        // 1.2 exterior). Every scene path uploads an explicit neutral 1 when HDR/modifiers are off.
-        shade = input.vSpecular.rgb * uCameraOrigin.w;
+        // Recovered SLS1003/SLS1004 NoLighting shaders do not bind IMGS EmissiveMult. The exact
+        // FalloutNV MemDebug xref is in Lighting30Shader::SetupGeometryConstants_Emittance, where
+        // HDR hdrData[3] scales NiMaterial emittance/glow-map constants instead. Applying it here
+        // brightened every fullbright dust/effect surface merely because the exterior IMGS is 1.2.
+        shade = input.vSpecular.rgb;
+    }
+    else
+    {
+        bool lighting30 = IsLighting30Material(input.vTextureState.z);
+        bool hasLighting30Glow = lighting30 && HasLighting30GlowMap(input.vTextureState.z);
+        bool hdrActive = uSkyHorizon.w >= 0.5;
+        float3 emission = 0.0;
+        if (lighting30)
+        {
+            // vEffectFalloff is a layout-preserving union for this mutually-exclusive material
+            // family: raw selected RGB (NiMaterial or XEMI) + NiMaterial emission multiplier.
+            emission = input.vEffectFalloff.rgb;
+            if (hdrActive)
+            {
+                emission *= input.vEffectFalloff.w * uCameraOrigin.w;
+            }
+            else if (hasLighting30Glow)
+            {
+                // SDR glow setup clamps EmittanceColor itself. The no-glow path instead clamps the
+                // ambient+raw-emission sum inside AtmosphereLight.
+                emission = min(emission, 1.0);
+            }
+        }
+
+        shade = AtmosphereLight(
+            normal, input.vWorldPos, sunShadow,
+            hasLighting30Glow ? 0.0 : emission,
+            hdrActive);
+        if (hasLighting30Glow)
+        {
+            float3 glow = SampleMaterialTexture(
+                input.vTexIndices.w, input.vTexCoord, input.vTextureState.z).rgb;
+            shade += glow * emission;
+        }
     }
 
     // Vertex color modulates the diffuse (vertexRgb is pre-neutralized for gradient shapes) —
@@ -490,7 +635,7 @@ float4 main(PSInput input) : SV_Target
     // Blinn-Phong: the engine only highlights where the material's spec mask is bright (metal/wet
     // trim), not the whole surface — which is why specular previously read as far too strong. Gated on
     // scene lighting on, a normal map present (the mask's source), the material's Specular flag
-    // (vSpecular.w > 0 via ComputeSpecularEnabled), a non-zero mask, and a non-emissive shape. The
+    // (vSpecular.w > 0 via NifSpecularPolicy), a non-zero mask, and a non-emissive shape. The
     // exponent uses the material glossiness as a per-material stand-in for the engine's global shininess
     // constant (Toggles.z / c27.z), which isn't recoverable from the static shader.
     if (uSunColorLighting.w >= 0.5 && input.vRenderState.y > 0.5 && input.vSpecular.w > 0.0 &&
@@ -552,5 +697,26 @@ float4 main(PSInput input) : SV_Target
     float outAlpha = input.vAlphaState.w > 0.5
         ? saturate(sampleAlpha * input.vAlphaState.z)
         : 1.0;
-    return float4(ApplyFog(lit, input.vWorldPos, input.vEnvMap.w > 0.5), outAlpha);
+    float3 outputRgb = ApplyFog(lit, input.vWorldPos, input.vEnvMap.w);
+    if (abs(input.vSoftParticle.w) > 0.0)
+    {
+        if (input.vEnvMap.w >= 1.5)
+        {
+            // Multiplicative dst*src effects disappear toward WHITE, their blend-neutral source.
+            outputRgb = lerp(1.0, outputRgb, sceneDepthFeather);
+            outAlpha *= sceneDepthFeather;
+        }
+        else if (input.vSoftParticle.w > 0.0)
+        {
+            // SRC_ALPHA / SRC_ALPHA_SATURATE equations derive RGB contribution from output alpha.
+            outAlpha *= sceneDepthFeather;
+        }
+        else
+        {
+            // ONE-source additive (and other color-factor) effects need RGB itself to approach zero.
+            outputRgb *= sceneDepthFeather;
+            outAlpha *= sceneDepthFeather;
+        }
+    }
+    return float4(outputRgb, outAlpha);
 }

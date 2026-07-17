@@ -243,6 +243,16 @@ public sealed partial class WorldView3DControl
         // before the resource is released. The fence is captured HERE: the body must not dereference
         // _gpu12, which the UI thread nulls during teardown while this task is still in flight.
         var frameFence = _gpu12!.FrameFence;
+        // Snapshot diagnostics before the async readback. LastStats is reset by the next render,
+        // while these values belong to the exact pixels returned below (and let the 2D verification
+        // harness prove that SpeedTree geometry participated in the top-down pass).
+        var referenceStats = _references!.LastStats;
+        var referenceInstances = referenceStats.ReferenceInstances;
+        var referenceDrawn = referenceStats.ReferenceDrawn;
+        var speedTreeBranchInstances = referenceStats.ReferenceSpeedTreeBranchInstances;
+        var speedTreeLeafInstances = referenceStats.ReferenceSpeedTreeLeafInstances;
+        var speedTreeBillboardInstances = referenceStats.ReferenceSpeedTreeBillboardInstances;
+
         var readbackTask = Task.Run(() =>
         {
             WaitForFrameFence(frameFence, fenceValue);
@@ -252,7 +262,9 @@ public sealed partial class WorldView3DControl
                 ? NifSpriteRenderer.Downsample(ssBytes, ssWidth, ssHeight, supersample)
                 : ssBytes;
             return new TopDownRender(pixels, finalW, finalH,
-                worldMinX, worldMaxX, worldMinY, worldMaxY, isComplete, isFullySettled);
+                worldMinX, worldMaxX, worldMinY, worldMaxY, isComplete, isFullySettled,
+                referenceInstances, referenceDrawn,
+                speedTreeBranchInstances, speedTreeLeafInstances, speedTreeBillboardInstances);
         });
         _topDownReadbackTask = readbackTask;
         try

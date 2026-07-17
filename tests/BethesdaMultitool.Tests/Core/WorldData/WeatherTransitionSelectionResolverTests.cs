@@ -134,6 +134,8 @@ public sealed class WeatherTransitionSelectionResolverTests
         static ulong Key(ResolvedWeatherTransition transition) => TonemapHistoryKeyBuilder.Build(
             BethesdaGame.FalloutNewVegas,
             contextId: 0x10,
+            activeCellId: 0x11,
+            imageSpaceSource: (uint)ImageSpaceSelectionSource.CellXcim,
             imageSpaceId: 0x20,
             currentWeatherId: transition.AppliedCurrentWeatherFormId ?? 0,
             outgoingWeatherId: transition.AppliedOutgoingWeatherFormId ?? 0,
@@ -164,6 +166,8 @@ public sealed class WeatherTransitionSelectionResolverTests
         static ulong Key(ResolvedWeatherTransition transition) => TonemapHistoryKeyBuilder.Build(
             BethesdaGame.FalloutNewVegas,
             contextId: 0x10,
+            activeCellId: 0x11,
+            imageSpaceSource: (uint)ImageSpaceSelectionSource.CellXcim,
             imageSpaceId: 0x20,
             currentWeatherId: transition.AppliedCurrentWeatherFormId ?? 0,
             outgoingWeatherId: transition.AppliedOutgoingWeatherFormId ?? 0,

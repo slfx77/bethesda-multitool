@@ -5,13 +5,15 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// <summary>
 ///     Stable identity for eye-adaptation history. Weather transition progress is deliberately
 ///     excluded: the current/outgoing source pair owns one continuous adaptation history, while a
-///     source-pair, context, image-space, or toggle change starts a new one.
+///     source-pair, CELL/context, image-space source, image-space, or toggle change starts a new one.
 /// </summary>
 internal static class TonemapHistoryKeyBuilder
 {
     internal static ulong Build(
         BethesdaGame game,
         uint contextId,
+        uint activeCellId,
+        uint imageSpaceSource,
         uint imageSpaceId,
         uint currentWeatherId,
         uint outgoingWeatherId,
@@ -24,6 +26,8 @@ internal static class TonemapHistoryKeyBuilder
         var key = offset;
         key = (key ^ (uint)game) * prime;
         key = (key ^ contextId) * prime;
+        key = (key ^ activeCellId) * prime;
+        key = (key ^ imageSpaceSource) * prime;
         key = (key ^ imageSpaceId) * prime;
         key = (key ^ currentWeatherId) * prime;
         key = (key ^ outgoingWeatherId) * prime;

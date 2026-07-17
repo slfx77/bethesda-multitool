@@ -316,6 +316,7 @@ internal static class NifExportExtractor
             NormalMapTexturePath = properties.NormalMapPath,
             IsEmissive = properties.IsEmissive,
             UseVertexColors = properties.UseVertexColors,
+            UseVertexAlphaForOpacity = properties.UseVertexAlphaForOpacity,
             IsDoubleSided = properties.IsDoubleSided,
             HasAlphaBlend = properties.HasAlphaBlend,
             HasAlphaTest = properties.HasAlphaTest,
@@ -381,6 +382,7 @@ internal static class NifExportExtractor
             IsEmissive = shaderMetadata?.PropertyType is "BSShaderNoLightingProperty"
                 or "BSEffectShaderProperty",
             UseVertexColors = useVertexColors,
+            UseVertexAlphaForOpacity = NifVertexColorPolicy.UsesAlphaForOpacity(shaderMetadata),
             IsDoubleSided = NifBlockParsers.ReadIsDoubleSided(data, nif, propRefs),
             HasAlphaBlend = hasAlphaBlend,
             HasAlphaTest = hasAlphaTest,
@@ -463,6 +465,8 @@ internal static class NifExportExtractor
         public bool IsEmissive { get; init; }
 
         public bool UseVertexColors { get; init; }
+
+        public bool UseVertexAlphaForOpacity { get; init; } = true;
 
         public bool IsDoubleSided { get; init; }
 

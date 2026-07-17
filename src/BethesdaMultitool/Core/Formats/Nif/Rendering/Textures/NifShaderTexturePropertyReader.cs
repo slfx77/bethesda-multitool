@@ -93,6 +93,13 @@ internal static class NifShaderTexturePropertyReader
                     EffectBaseColorScale = inline?.BaseColorScale,
                     EffectLightingInfluence = inline?.LightingInfluence,
                     EffectFalloff = inline?.Falloff,
+                    SoftEffectFalloffDepth = inline is
+                    {
+                        ShaderFlags1: var softFlags,
+                        SoftFalloffDepth: > 0f and var softDepth
+                    } && (softFlags & (1u << 30)) != 0
+                        ? softDepth
+                        : null,
                     TextureSlots = slots,
                     // BSEffectShaderProperty has no leading "Shader Type" — the Name (a .bgem path on
                     // FO4/FO76) sits at the block data offset.
@@ -119,7 +126,9 @@ internal static class NifShaderTexturePropertyReader
                 continue;
             }
 
-            if (propBlock.TypeName == "BSShaderPPLightingProperty")
+            // Lighting30ShaderProperty inherits BSShaderPPLightingProperty without adding fields
+            // (nif.xml), so it uses the identical classic texture-set layout.
+            if (propBlock.TypeName is "BSShaderPPLightingProperty" or "Lighting30ShaderProperty")
             {
                 return new NifShaderTextureMetadata
                 {
@@ -129,6 +138,26 @@ internal static class NifShaderTexturePropertyReader
                     ShaderFlags2 = shaderFlags2,
                     EnvMapScale = envMapScale,
                     TextureSlots = ReadTextureSetSlots(data, nif, propBlock)
+                };
+            }
+
+            // FO3/FNV grass cards use TallGrassShaderProperty. Unlike
+            // BSShaderNoLightingProperty, it inherits BSShaderProperty directly, so its inline
+            // File Name follows the 16-byte common shader payload immediately; there is no
+            // BSShaderLightingProperty Texture Clamp Mode field to skip. Treating this as the
+            // no-lighting layout advances four bytes into the sized string and leaves every GRAS
+            // mesh without a diffuse texture.
+            if (propBlock.TypeName == "TallGrassShaderProperty")
+            {
+                return new NifShaderTextureMetadata
+                {
+                    PropertyType = propBlock.TypeName,
+                    ShaderType = shaderType,
+                    ShaderFlags = shaderFlags,
+                    ShaderFlags2 = shaderFlags2,
+                    EnvMapScale = envMapScale,
+                    TextureSlots = CreateFixedTextureSlots(
+                        ResolveTallGrassTexture(data, nif, propBlock)),
                 };
             }
 
@@ -189,7 +218,7 @@ internal static class NifShaderTexturePropertyReader
         List<int> propertyRefs)
     {
         var metadata = ReadShaderMetadata(data, nif, propertyRefs);
-        if (metadata?.PropertyType != "BSShaderPPLightingProperty" ||
+        if (metadata?.PropertyType is not ("BSShaderPPLightingProperty" or "Lighting30ShaderProperty") ||
             metadata.ShaderFlags == null ||
             metadata.EnvMapScale == null)
         {
@@ -218,7 +247,9 @@ internal static class NifShaderTexturePropertyReader
     {
         return propBlock.TypeName is
             "BSShaderPPLightingProperty" or
-            "BSShaderNoLightingProperty";
+            "Lighting30ShaderProperty" or
+            "BSShaderNoLightingProperty" or
+            "TallGrassShaderProperty";
     }
 
     private static bool TryReadCommonShaderData(
@@ -329,6 +360,21 @@ internal static class NifShaderTexturePropertyReader
 
         pos += 16;
         pos += 4;
+        return NifBinaryCursor.ReadSizedString(data, ref pos, end, nif.IsBigEndian);
+    }
+
+    private static string? ResolveTallGrassTexture(
+        byte[] data,
+        NifInfo nif,
+        BlockInfo propBlock)
+    {
+        if (!TryReadShaderPropertyStart(data, propBlock, nif.IsBigEndian, out var pos, out var end) ||
+            pos + 16 + 4 > end)
+        {
+            return null;
+        }
+
+        pos += 16; // shader type + flags + flags2 + env-map scale
         return NifBinaryCursor.ReadSizedString(data, ref pos, end, nif.IsBigEndian);
     }
 
@@ -535,19 +581,20 @@ internal static class NifShaderTexturePropertyReader
 
         if (pos + 4 > end)
         {
-            return new ClassicBsEffectShaderData(flags1, flags2, null, null, null, null);
+            return new ClassicBsEffectShaderData(flags1, flags2, null, null, null, null, null);
         }
 
         var misc = BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian);
         pos += 4;
         var lightingInfluence = ((misc >> 8) & 0xFFu) / 255f;
 
-        // Four falloff floats + Color4 + BaseColorScale. SoftFalloffDepth and the following
-        // GreyscaleTexture do not affect this renderer path, so no tail beyond the scale is needed.
+        // Four falloff floats + Color4 + BaseColorScale. The immediately-following
+        // SoftFalloffDepth now feeds the scene-depth feather when SLSF1_Soft_Effect is set; the
+        // sized GreyscaleTexture after it is unrelated and need not be parsed here.
         if (pos + 36 > end)
         {
             return new ClassicBsEffectShaderData(
-                flags1, flags2, lightingInfluence, null, null, null);
+                flags1, flags2, lightingInfluence, null, null, null, null);
         }
 
         var startAngle = BinaryUtils.ReadFloat(data, pos, nif.IsBigEndian);
@@ -561,6 +608,9 @@ internal static class NifShaderTexturePropertyReader
         var baseB = BinaryUtils.ReadFloat(data, pos + 8, nif.IsBigEndian);
         var baseA = BinaryUtils.ReadFloat(data, pos + 12, nif.IsBigEndian);
         var baseScale = BinaryUtils.ReadFloat(data, pos + 16, nif.IsBigEndian);
+        var softFalloffDepth = pos + 24 <= end
+            ? BinaryUtils.ReadFloat(data, pos + 20, nif.IsBigEndian)
+            : float.NaN;
 
         var falloffFinite = float.IsFinite(startAngle) && float.IsFinite(stopAngle)
                             && float.IsFinite(startOpacity) && float.IsFinite(stopOpacity);
@@ -573,7 +623,8 @@ internal static class NifShaderTexturePropertyReader
             lightingInfluence,
             baseFinite ? (baseR, baseG, baseB, baseA) : null,
             float.IsFinite(baseScale) ? baseScale : null,
-            falloffFinite ? (startAngle, stopAngle, startOpacity, stopOpacity) : null);
+            falloffFinite ? (startAngle, stopAngle, startOpacity, stopOpacity) : null,
+            float.IsFinite(softFalloffDepth) && softFalloffDepth > 0f ? softFalloffDepth : null);
     }
 
     private static bool TryReadBsShaderUvTransform(
@@ -622,7 +673,8 @@ internal static class NifShaderTexturePropertyReader
         float? LightingInfluence,
         (float R, float G, float B, float A)? BaseColor,
         float? BaseColorScale,
-        (float StartAngle, float StopAngle, float StartOpacity, float StopOpacity)? Falloff);
+        (float StartAngle, float StopAngle, float StartOpacity, float StopOpacity)? Falloff,
+        float? SoftFalloffDepth);
 
     /// <summary>
     ///     Reads the inline "Source Texture" of a Skyrim / SE / Fallout 4 BSEffectShaderProperty (the

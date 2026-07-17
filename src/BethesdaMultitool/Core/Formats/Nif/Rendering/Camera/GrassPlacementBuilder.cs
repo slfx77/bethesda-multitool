@@ -231,6 +231,7 @@ internal static class GrassPlacementBuilder
                         originY,
                         cellSize,
                         spacing,
+                        profile.TerrainTopology,
                         out var height,
                         out var normal))
                 {
@@ -252,10 +253,11 @@ internal static class GrassPlacementBuilder
                 var heightScale = MathF.Max(0.01f, 1f + heightVariation);
                 var uniformScale = (data.Flags & 0x02) != 0;
                 var fitToSlope = (data.Flags & 0x04) != 0;
-                var instanceHeight = profile.PositionQuantization ==
-                                     GrassPositionQuantization.HalfRelativeToTwelveCellBlock
-                    ? (float)(Half)height
-                    : height;
+                var instanceHeight = profile.FloorSampledHeight
+                    ? MathF.Floor(height)
+                    : profile.PositionQuantization == GrassPositionQuantization.HalfRelativeToTwelveCellBlock
+                        ? (float)(Half)height
+                        : height;
                 var world = ComposeWorldMatrix(
                     new Vector3(x, y, instanceHeight),
                     fitToSlope ? normal : Vector3.UnitZ,
@@ -346,6 +348,7 @@ internal static class GrassPlacementBuilder
         float originY,
         float cellSize,
         float spacing,
+        TerrainTriangleTopology? terrainTopology,
         out float height,
         out Vector3 normal)
     {
@@ -356,6 +359,19 @@ internal static class GrassPlacementBuilder
             height = 0f;
             normal = Vector3.UnitZ;
             return false;
+        }
+
+        if (terrainTopology is { } topology)
+        {
+            return TerrainSurfaceTopology.TrySampleTriangle(
+                heights,
+                LandGridSize,
+                localX,
+                localY,
+                spacing,
+                topology,
+                out height,
+                out normal);
         }
 
         var vx = localX / spacing;

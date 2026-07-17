@@ -6,7 +6,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 
 /// <summary>
 ///     v3 Pass 4 Step 2c — D3D12 analog of <c>TerrainTextureResolver</c>. Resolves
-///     LTEX FormIDs to texture entries via the same LTEX → TXST → DiffuseTexture chain;
+///     LTEX FormIDs to texture entries via the same LTEX → TXST texture-set chain;
 ///     uploads through <see cref="GpuTextureCache12" /> instead of the old <c>GpuTextureCache</c>.
 ///     <para>
 ///         Owns both the <see cref="NifTextureResolver" /> (backend-agnostic decode) and
@@ -21,7 +21,9 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     private readonly NifGpuTextureResolver _textureResolver;
     private readonly GpuTextureCache12 _textureCache;
     private readonly Dictionary<uint, GpuTextureCache12.Entry> _byLtex = new();
+    private readonly Dictionary<uint, GpuTextureCache12.Entry?> _normalByLtex = new();
     private readonly BethesdaMultitool.Core.Games.BethesdaGame _game;
+    private GpuTextureCache12.Entry? _engineDefaultNormal;
     // Timestamp of the previous ResetFrameStats call (time-based streaming pace; 0 = first frame).
     private long _lastFrameTimestamp;
 
@@ -52,6 +54,29 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     /// don't bind FNV's texture (absent in their archives → white base).</summary>
     public GpuTextureCache12.Entry EngineDefault =>
         _textureCache.GetOrUpload(EngineDefaultLandscapeTexture.DiffuseFor(_game));
+
+    /// <summary>
+    ///     The recovered layered-normal pass is enabled only for Fallout: New Vegas in this slice.
+    ///     Other games keep their existing geometric-normal path until their own shader families are
+    ///     recovered and verified.
+    /// </summary>
+    public bool LandscapeNormalMappingEnabled =>
+        _game == BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas;
+
+    /// <summary>
+    ///     Engine-default landscape normal for FNV's no-BTXT/base-layer sentinel. Null means there is
+    ///     no authored default normal, in which case the shader retains the geometric LAND normal.
+    /// </summary>
+    public GpuTextureCache12.Entry? EngineDefaultNormal
+    {
+        get
+        {
+            if (!LandscapeNormalMappingEnabled) return null;
+            var path = EngineDefaultLandscapeTexture.NormalFor(_game);
+            if (string.IsNullOrWhiteSpace(path)) return null;
+            return _engineDefaultNormal ??= _textureCache.GetOrUpload(path, isNormalMap: true);
+        }
+    }
 
     public int FrameCacheMisses { get; private set; }
 
@@ -106,6 +131,23 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     }
 
     /// <summary>
+    ///     Resolves an FNV LTEX FormID through TNAM to TXST slot 1 (TX01). A missing link/path returns
+    ///     null so the terrain shader can use an exact flat tangent-space normal instead of inventing
+    ///     a filename. Results, including misses, are cached per LTEX.
+    /// </summary>
+    public GpuTextureCache12.Entry? ResolveLandscapeNormal(uint ltexFormId)
+    {
+        if (!LandscapeNormalMappingEnabled) return null;
+        if (_normalByLtex.TryGetValue(ltexFormId, out var cached)) return cached;
+        FrameCacheMisses++;
+
+        var path = LandscapeTexturePathResolver.ResolveNormal(ltexFormId, _ltexByFormId, _txstByFormId);
+        var entry = path is null ? null : _textureCache.GetOrUpload(path, isNormalMap: true);
+        _normalByLtex[ltexFormId] = entry;
+        return entry;
+    }
+
+    /// <summary>
     ///     Resolves an arbitrary texture path (e.g. a WATR NNAM noise/normal map) as a normal map
     ///     and returns its stable bindless SRV index, or <c>null</c> when no path is given. The
     ///     upload streams asynchronously through the same <see cref="GpuTextureCache12" /> as
@@ -143,6 +185,8 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     public void Dispose()
     {
         _byLtex.Clear();
+        _normalByLtex.Clear();
+        _engineDefaultNormal = null;
         _textureCache.Dispose();
         _textureResolver.Dispose();
     }

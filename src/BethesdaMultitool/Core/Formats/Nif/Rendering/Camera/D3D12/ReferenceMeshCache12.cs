@@ -8,6 +8,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Effects;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Orchestration;
@@ -895,6 +896,30 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             aabbMax = Vector3.Max(aabbMax, p);
         }
 
+        // A routed physics-lite submesh rotates around an off-origin root-local hinge. Preserve the
+        // renderer's conservative cull contract across the whole authored arc: rotation keeps each
+        // vertex's distance from the hinge fixed, so |pivot| + |vertex-pivot| is an exact upper bound
+        // on its possible distance from the NIF origin. This is scoped to the rare FNV descriptors;
+        // ordinary meshes retain the tighter one-pass radius above.
+        foreach (var sub in decoded.Submeshes)
+        {
+            if (sub.PhysicsLiteSway is not { } sway)
+            {
+                continue;
+            }
+
+            var maxPivotDistance = 0f;
+            foreach (var vertex in sub.Vertices)
+            {
+                maxPivotDistance = MathF.Max(
+                    maxPivotDistance,
+                    Vector3.Distance(vertex.Position, sway.Pivot));
+            }
+
+            var swayRadius = sway.Pivot.Length() + maxPivotDistance;
+            meshLocalRadiusSq = MathF.Max(meshLocalRadiusSq, swayRadius * swayRadius);
+        }
+
         // Degenerate (no vertices) → collapse the AABB to the origin so consumers see min == max and
         // fall back to the sphere rather than an inverted box.
         if (aabbMin.X > aabbMax.X)
@@ -903,6 +928,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
 
         var submeshes = new List<CachedSubmesh12>(decoded.Submeshes.Count);
+        var softParticleSources = new HashSet<NifSoftParticleSource>();
         // Authored positions + triangle indices of WaterShaderProperty submeshes (caves/pools/
         // reflecting pools), captured so the dedicated water renderer can transform and draw their
         // real geometry. FNV WATER000 consumes source positions directly; reducing them to an AABB
@@ -935,6 +961,22 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             }
             try
             {
+                var softParticle = NifSoftParticlePolicy.Resolve(new NifSoftParticleCandidate(
+                    modelPath,
+                    sub.AlphaBlend,
+                    sub.DepthWritingBlend,
+                    sub.IsDecal,
+                    sub.IsParticleCloud,
+                    sub.IsBillboard,
+                    sub.HasEffectFalloff,
+                    sub.SoftParticleFalloffDepth,
+                    sub.SrcBlendMode,
+                    sub.DstBlendMode));
+                if (softParticle.Enabled)
+                {
+                    softParticleSources.Add(softParticle.Source);
+                }
+
                 GpuTextureCache12.Entry diffuse;
                 if (string.IsNullOrEmpty(sub.DiffuseTexturePath))
                 {
@@ -964,6 +1006,13 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     : null;
                 var gradientMap = !string.IsNullOrEmpty(sub.GradientMapTexturePath)
                     ? _textureCache.GetOrUpload(sub.GradientMapTexturePath!)
+                    : null;
+                System.Diagnostics.Debug.Assert(
+                    gradientMap is null || string.IsNullOrEmpty(sub.Lighting30GlowMapTexturePath),
+                    "FO4 gradient and classic Lighting30 glow maps cannot share TexIndices.w.");
+                var lighting30GlowMap = sub.IsLighting30 && gradientMap is null &&
+                                        !string.IsNullOrEmpty(sub.Lighting30GlowMapTexturePath)
+                    ? _textureCache.GetOrUpload(sub.Lighting30GlowMapTexturePath!)
                     : null;
                 // FO4 environment cubemap (nearly always the shared mipblur_defaultoutside1.dds —
                 // one texture serving thousands of materials). The env shader term stays off until
@@ -995,6 +1044,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     Normal = normal,
                     SpecularMap = specularMap,
                     GradientMap = gradientMap,
+                    Lighting30GlowMap = lighting30GlowMap,
                     GradientMapV = sub.GradientMapV,
                     EnvMap = envMap,
                     EnvMapScale = sub.EnvironmentMapScale,
@@ -1011,8 +1061,14 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     SrcBlendMode = sub.SrcBlendMode,
                     DstBlendMode = sub.DstBlendMode,
                     MaterialAlpha = sub.MaterialAlpha,
+                    MaterialAlphaController = sub.MaterialAlphaController,
+                    PhysicsLiteSway = sub.PhysicsLiteSway,
                     DoubleSided = sub.DoubleSided,
                     IsEmissive = sub.IsEmissive,
+                    IsLighting30 = sub.IsLighting30,
+                    Lighting30Emission = new Vector4(
+                        sub.Lighting30EmissionColor,
+                        sub.Lighting30EmissionMultiplier),
                     LocalBoundsCenter = sub.LocalBoundsCenter,
                     IsBillboard = sub.IsBillboard,
                     BillboardFrontAxis = sub.IsBillboard
@@ -1037,6 +1093,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     EffectTint = sub.EffectTint == default ? Vector3.One : sub.EffectTint,
                     EffectFalloffParams = sub.EffectFalloffParams,
                     HasEffectFalloff = sub.HasEffectFalloff,
+                    SoftParticle = softParticle,
                     UvScrollVelocity = sub.UvScrollVelocity,
                     Skin = sub.Skin,
                     RestPoseVertices = sub.Skin is not null ? sub.Vertices : null
@@ -1074,6 +1131,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 ["vertices"] = totalVertexCount,
                 ["indices"] = totalIndexCount,
                 ["submeshes"] = submeshes.Count,
+                ["fnvPhysicsLiteSubmeshes"] = submeshes.Count(static sub => sub.PhysicsLiteSway is not null),
+                ["softParticleSubmeshes"] = submeshes.Count(static sub => sub.SoftParticle.Enabled),
+                ["softParticleSources"] = softParticleSources.Select(static source => source.ToString()).ToArray(),
                 ["elapsedMs"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
             });
         }

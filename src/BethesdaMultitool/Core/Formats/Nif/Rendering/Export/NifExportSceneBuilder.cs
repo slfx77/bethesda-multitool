@@ -159,6 +159,7 @@ internal static class NifExportSceneBuilder
             ShaderMetadata = source.ShaderMetadata,
             IsEmissive = source.IsEmissive,
             UseVertexColors = source.UseVertexColors,
+            UseVertexAlphaForOpacity = source.UseVertexAlphaForOpacity,
             IsDoubleSided = source.IsDoubleSided,
             HasAlphaBlend = source.HasAlphaBlend,
             HasAlphaTest = source.HasAlphaTest,

@@ -157,6 +157,13 @@ internal sealed class FlythroughCameraController
     /// <summary>Clearance kept between the eye and a ceiling on jump contact (world units).</summary>
     public float CeilingHeadroom { get; set; } = 8f;
 
+    /// <summary>
+    ///     Optional continuous horizontal collision resolver for walk mode. Receives the current eye
+    ///     position and requested XY displacement and returns the allowed displacement (normally the
+    ///     full move, a wall-clamped move, or a tangent slide). Fly mode deliberately bypasses it.
+    /// </summary>
+    public Func<Vector3, Vector2, Vector2>? HorizontalMovementResolver { get; set; }
+
     public void OnKeyDown(VirtualKey key) => _keysDown.Add(key);
     public void OnKeyUp(VirtualKey key) => _keysDown.Remove(key);
 
@@ -243,7 +250,20 @@ internal sealed class FlythroughCameraController
         }
 
         if (move != Vector3.Zero)
-            _camera.Position += Vector3.Normalize(move) * step;
+        {
+            var displacement = Vector3.Normalize(move) * step;
+            if (_mode == CameraMode.Walk && HorizontalMovementResolver is { } resolveHorizontal)
+            {
+                var allowed = resolveHorizontal(
+                    _camera.Position,
+                    new Vector2(displacement.X, displacement.Y));
+                _camera.Position += new Vector3(allowed.X, allowed.Y, 0f);
+            }
+            else
+            {
+                _camera.Position += displacement;
+            }
+        }
     }
 
     private static Vector3 ProjectToGround(Vector3 v)

@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool;
 
@@ -299,6 +300,7 @@ internal static class WorldMapHitTester
     internal static PlacedReference? HitTestMapMarker(
         Vector2 worldPos, List<PlacedReference> filteredMarkers,
         HashSet<PlacedObjectCategory> hiddenCategories, float zoom,
+        GameProfile profile,
         WorldSpatialIndex? spatialIndex = null)
     {
         if (filteredMarkers.Count == 0 || hiddenCategories.Contains(PlacedObjectCategory.MapMarker))
@@ -308,7 +310,9 @@ internal static class WorldMapHitTester
 
         PlacedReference? closest = null;
         var closestDistSq = float.MaxValue;
-        var hitRadius = 20f / zoom;
+        var metrics = MapMarkerMetrics.Resolve(profile, zoom);
+        var usableZoom = float.IsFinite(zoom) && zoom > 0f ? zoom : 0.000001f;
+        var hitRadius = metrics.HitRadiusPixels / usableZoom;
         var hitRadiusSq = hitRadius * hitRadius;
 
         var candidates = filteredMarkers;
@@ -359,7 +363,9 @@ internal static class WorldMapHitTester
         if (mode == WorldMapControl.ViewMode.WorldOverview)
         {
             // Check map markers first (they're drawn on top)
-            var marker = HitTestMapMarker(worldPos, filteredMarkers, hiddenCategories, zoom, spatialIndex);
+            var marker = HitTestMapMarker(
+                worldPos, filteredMarkers, hiddenCategories, zoom,
+                GameProfiles.For(data.Game), spatialIndex);
             if (marker != null)
             {
                 return ClickResult.InspectObject(marker);
@@ -418,7 +424,9 @@ internal static class WorldMapHitTester
         bool hideDisabledActors, float zoom)
     {
         // Check map markers first
-        var marker = HitTestMapMarker(worldPos, filteredMarkers, hiddenCategories, zoom, spatialIndex);
+        var marker = HitTestMapMarker(
+            worldPos, filteredMarkers, hiddenCategories, zoom,
+            GameProfiles.For(data.Game), spatialIndex);
         if (marker != null)
         {
             var markerName = marker.MarkerName ?? "Unknown";
@@ -426,7 +434,7 @@ internal static class WorldMapHitTester
             // via the FO3/FNV MapMarkerType enum name.
             var raw = marker.MarkerType.HasValue ? (int)marker.MarkerType.Value : 0;
             var markerType = MapMarkerCatalog.Resolve(data.Game, raw).DisplayName;
-            return new HoverResult($"Marker: {markerName} ({markerType})", null, true);
+            return new HoverResult($"Marker: {markerName} ({markerType})", marker, true);
         }
 
         // Check placed objects

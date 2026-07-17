@@ -52,13 +52,14 @@ internal interface IWaterRenderer : IWorldRenderer
         IReadOnlyList<uint?>? normalMapBindlessIndices);
 
     /// <summary>Sets the scene-depth source for this frame so the shader can compute the real
-    /// water-column depth fade (FNV WATER000's depth-map path) instead of the view-angle proxy.
-    /// <paramref name="depthBindlessIndex" /> is the R32_FLOAT SRV of the scene depth buffer in the
-    /// shared bindless heap; <c>0xFFFFFFFF</c> (or depth unavailable) reverts to the proxy + the
-    /// hardware-depth-test PSO. <paramref name="near" />/<paramref name="far" /> linearize the
-    /// sampled depth. The host must transition the depth resource to PIXEL_SHADER_RESOURCE (and
-    /// unbind the DSV) before <see cref="IWorldRenderer.Render" /> when a valid index is passed.</summary>
-    void SetSceneDepth(uint depthBindlessIndex, float near, float far);
+    /// water-column depth fade instead of the view-angle proxy. <paramref name="depthBindlessIndex" />
+    /// is an R32_FLOAT Texture2D or Texture2DMS SRV in the shared bindless heap; <c>0xFFFFFFFF</c>
+    /// (or depth unavailable) reverts to the proxy + hardware-depth-test PSO.
+    /// <paramref name="near" />/<paramref name="far" /> linearize the sampled depth and
+    /// <paramref name="sampleCount" /> selects the matching SRV declaration. The host must transition
+    /// the depth resource to DEPTH_READ | PIXEL_SHADER_RESOURCE (and unbind the DSV) before
+    /// <see cref="IWorldRenderer.Render" /> when a valid index is passed.</summary>
+    void SetSceneDepth(uint depthBindlessIndex, float near, float far, int sampleCount = 1);
 
     /// <summary>
     ///     Supplies an optional TextureCube SRV for the opt-in FO4/FO76 cubemap technique. Null keeps

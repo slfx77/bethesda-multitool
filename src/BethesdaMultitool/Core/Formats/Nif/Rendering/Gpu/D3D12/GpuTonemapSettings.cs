@@ -74,16 +74,17 @@ internal readonly record struct GpuTonemapSettings
     public float EyeAdaptSpeed { get; init; }
 
     /// <summary>
-    ///     IMGS HDR: emissive-material brightness multiplier (hdrData[3]). Applied by the SCENE pass to
-    ///     self-illuminated shapes (rides the atmosphere CB, not the tonemap constants); shipped FNV
-    ///     values: 1.0 interior / 1.2 exterior. Authored zero is preserved; inactive paths upload 1.
+    ///     IMGS HDR: Lighting30 material-emittance/glow brightness multiplier (hdrData[3]). The recovered
+    ///     FNV engine reads it only from Lighting30Shader::SetupGeometryConstants_Emittance; NoLighting
+    ///     effects do not consume it. The reference Lighting30 path reads it from the atmosphere CB.
+    ///     Shipped FNV values are 1.0 interior / 1.2 exterior.
     /// </summary>
     public float EmissiveMult { get; init; }
 
     /// <summary>
-    ///     Resolves the scene-pass emissive multiplier without conflating an authored zero with a
-    ///     missing value. Disabling either HDR itself or imagespace modifiers restores the neutral
-    ///     multiplier because the engine applies this global only in its HDR/self-emittance path.
+    ///     Resolves the recovered Lighting30 material-emittance multiplier without conflating an authored
+    ///     zero with a missing value. Disabling either HDR itself or imagespace modifiers restores the
+    ///     neutral multiplier because the engine applies this global only in its HDR emittance path.
     /// </summary>
     internal static float ResolveEmissiveMult(
         float familyDefault, float? authoredValue, bool hdrEnabled, bool imagespaceModifiersEnabled) =>

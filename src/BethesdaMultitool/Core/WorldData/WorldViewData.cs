@@ -234,8 +234,8 @@ internal sealed class WorldViewData
         new Dictionary<uint, ClimateRecord>();
 
     /// <summary>
-    ///     Image Space (IMGS) records keyed by FormID. The active cell's XCIM (interiors) or the
-    ///     worldspace's INAM resolves through here to the engine HDR + cinematic parameters the
+    ///     Image Space (IMGS) records keyed by FormID. The active camera/interior cell's XCIM or the
+    ///     worldspace's usable INAM resolves through here to the engine HDR + cinematic parameters the
     ///     viewer's tonemap stage reproduces (FO3/FNV; defaults 0x160/0x161 when unset).
     /// </summary>
     public IReadOnlyDictionary<uint, ImageSpaceRecord> ImageSpacesByFormId { get; init; } =

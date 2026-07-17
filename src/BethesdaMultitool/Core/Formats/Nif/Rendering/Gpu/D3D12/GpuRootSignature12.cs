@@ -13,7 +13,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         <item>1: root CBV at <c>b1</c> — per-draw uniforms (world matrix + flags). VS + PS.</item>
 ///         <item>2: root CBV at <c>b2</c> — per-mode/debug uniforms. VS + PS.</item>
 ///         <item>3: legacy descriptor table for <c>t0..t7, space0</c> — water and transition SRVs. VS + PS.</item>
-///         <item>4: unbounded descriptor table for <c>t0.., space1</c> — bindless textures. VS + PS.</item>
+///         <item>4: aliased unbounded descriptor table for <c>t0..</c> in spaces 1/2/3 —
+///         bindless Texture2D, TextureCube, and Texture2DMS views. VS + PS.</item>
 ///         <item>5: root SRV at <c>t8, space0</c> — reference instance structured buffer. VS.</item>
 ///         <item>6: root CBV at <c>b3</c> — shared scene atmosphere. VS + PS.</item>
 ///         <item>7: root SRV at <c>t9, space0</c> — placed point-light buffer. PS.</item>
@@ -147,8 +148,21 @@ internal sealed class GpuRootSignature12 : IDisposable
             Flags = DescriptorRangeFlags.DescriptorsVolatile,
             OffsetInDescriptorsFromTableStart = 0,
         };
+        // Third alias over the same bindless slots for multisampled scene depth. A depth slot is
+        // addressed through `Texture2DMS<float> depthTexturesMsaa[] : register(t0, space3)` only
+        // when its per-draw binding says sampleCount > 1; ordinary 2D and cube descriptors never
+        // index this declaration.
+        var bindlessDepthMsaa = new DescriptorRange1
+        {
+            RangeType = DescriptorRangeType.ShaderResourceView,
+            NumDescriptors = uint.MaxValue,
+            BaseShaderRegister = 0,
+            RegisterSpace = 3,
+            Flags = DescriptorRangeFlags.DescriptorsVolatile,
+            OffsetInDescriptorsFromTableStart = 0,
+        };
         var bindlessTable = new RootParameter1(
-            new RootDescriptorTable1(bindlessTextures, bindlessCubemaps),
+            new RootDescriptorTable1(bindlessTextures, bindlessCubemaps, bindlessDepthMsaa),
             ShaderVisibility.All);
 
         // Slot 5: reference instance structured buffer root SRV. It lives at t8, space 0 so

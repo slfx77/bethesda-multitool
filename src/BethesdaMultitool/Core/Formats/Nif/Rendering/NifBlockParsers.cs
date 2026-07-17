@@ -404,6 +404,20 @@ internal static class NifBlockParsers
         return NifRenderPropertyReader.ReadMaterialEmissive(data, nif, propertyRefs);
     }
 
+    /// <summary>
+    ///     Raw material emission plus its independent multiplier. Lighting30 applies the multiplier
+    ///     only while HDR is active, so its renderer path cannot use <see cref="ReadMaterialEmissive" />
+    ///     (which intentionally returns their product for full-bright NoLighting materials).
+    /// </summary>
+    internal static (float R, float G, float B, float Mult)? ReadMaterialEmissionSource(
+        byte[] data, NifInfo nif, List<int> propertyRefs)
+    {
+        var info = NifRenderPropertyReader.ReadMaterialProperty(data, nif, propertyRefs);
+        return info.HasMaterial
+            ? (info.EmissiveR, info.EmissiveG, info.EmissiveB, info.EmissiveMult)
+            : null;
+    }
+
     internal static byte[] ReadVertexColors(byte[] data, int offset, int numVerts, bool be)
     {
         return NifGeometryDataReader.ReadVertexColors(data, offset, numVerts, be);
