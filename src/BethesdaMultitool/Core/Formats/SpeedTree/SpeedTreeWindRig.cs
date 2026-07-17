@@ -25,6 +25,10 @@ namespace BethesdaMultitool.Core.Formats.SpeedTree;
 /// </summary>
 public sealed class SpeedTreeWindRig
 {
+    // Profiler captures replay a constant-current-weather history from rest at this fixed cadence.
+    // This is a deterministic capture convention, not a claim about the retail engine's frame rate.
+    internal const double CanonicalReplayStepSeconds = 1.0 / 60.0;
+
     // ffrequencies[4][2] — byte-read from both FalloutNV binaries (360 0x832458D0 / PC 0x119B8CC)
     // AND byte-identical in Oblivion.exe (0x00B12538).
     private static readonly (float Sin, float Cos)[] Frequencies =
@@ -117,5 +121,47 @@ public sealed class SpeedTreeWindRig
         RustleAmount = s * SpeedTreeWindProfile.SwayFactor(p.RustleAmountSwayInfluence, sway);
         _rockTime += dt * p.RockTimeScale * SpeedTreeWindProfile.SwayFactor(p.RockSpeedSwayInfluence, sway);
         _rustleTime += dt * p.RustleTimeScale * SpeedTreeWindProfile.SwayFactor(p.RustleSpeedSwayInfluence, sway);
+    }
+
+    /// <summary>
+    ///     Rebuilds a profiler-only wind pose from rest under one constant wind strength. Live wind
+    ///     remains history-driven through <see cref="Tick" />; this canonical 60 Hz replay exists only
+    ///     so a pinned capture time is independent of the variable-duration live settle that preceded it.
+    /// </summary>
+    internal void ResetAndReplayConstantWind(float strength, float timeSeconds)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(timeSeconds);
+        if (!float.IsFinite(timeSeconds))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(timeSeconds), timeSeconds, "Replay time must be finite.");
+        }
+
+        Array.Clear(_matrixTimes);
+        for (var i = 0; i < _windMatrices.Length; i++)
+        {
+            _windMatrices[i] = Matrix4x4.Identity;
+        }
+
+        _foldStrength = 0f;
+        _rockTime = 0f;
+        _rustleTime = 0f;
+        _lastTimeSeconds = float.NaN;
+        RockAmount = 0f;
+        RustleAmount = 0f;
+
+        Tick(strength, 0f);
+        for (var replayTime = CanonicalReplayStepSeconds;
+             replayTime < timeSeconds;
+             replayTime += CanonicalReplayStepSeconds)
+        {
+            Tick(strength, (float)replayTime);
+        }
+
+        if (timeSeconds > 0f)
+        {
+            // Land on the exact requested float even when it is not a whole canonical frame.
+            Tick(strength, timeSeconds);
+        }
     }
 }

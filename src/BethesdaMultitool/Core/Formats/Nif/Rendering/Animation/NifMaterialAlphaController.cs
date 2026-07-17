@@ -18,7 +18,7 @@ internal sealed record NifMaterialAlphaController(
     NifAlphaControllerClock ControllerClock)
 {
     /// <summary>
-    ///     Samples the authored material-alpha multiplier. Values are bounded to the legal material
+    ///     Samples the authored target-property alpha value. Values are bounded to the legal material
     ///     opacity range so malformed animation data cannot amplify a transparent draw.
     /// </summary>
     internal float Sample(float rendererTimeSeconds)
@@ -34,16 +34,16 @@ internal sealed record NifMaterialAlphaController(
     }
 
     /// <summary>
-    ///     Applies this controller to a submesh's static material alpha. Turning animation off parks
-    ///     the sequence at its authored time-zero frame, matching the renderer's UV/keyframe policy.
+    ///     Resolves the alpha value written to the target <c>NiMaterialProperty</c>. The controller
+    ///     REPLACES that property's stored alpha; it is not a multiplier for the static value loaded
+    ///     from the NIF. FNV's recovered <c>NiAlphaController::Update</c> (0x82DCB390) writes the
+    ///     interpolator result directly to target + 0x3C and increments the target revision at + 0x44.
+    ///     This distinction is load-bearing for <c>SandDust02</c>: its two storm-sheet materials start
+    ///     at alpha zero and are made visible solely by their controller keys. Turning animation off
+    ///     parks the sequence at its authored time-zero frame, matching the renderer's other clocks.
     /// </summary>
-    internal float Apply(float materialAlpha, float rendererTimeSeconds, bool animationsEnabled)
-    {
-        var baseAlpha = float.IsFinite(materialAlpha)
-            ? Math.Clamp(materialAlpha, 0f, 8f)
-            : 1f;
-        return baseAlpha * Sample(animationsEnabled ? rendererTimeSeconds : 0f);
-    }
+    internal float ResolveTargetAlpha(float rendererTimeSeconds, bool animationsEnabled) =>
+        Sample(animationsEnabled ? rendererTimeSeconds : 0f);
 
     private float SampleKeys(float time)
     {

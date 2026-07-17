@@ -138,4 +138,93 @@ public sealed class SpeedTreeWindRigTests
         Assert.True(fnv.RockPhase > oblivion.RockPhase * 1.3f,
             $"FNV {fnv.RockPhase} vs Oblivion {oblivion.RockPhase}");
     }
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(10f)]
+    public void ResetAndReplayConstantWind_IsIndependentOfPriorLiveHistory(float captureTime)
+    {
+        const float strength = 50f / 255f;
+        var dirty = TickedRig(SpeedTreeWindProfile.FalloutNewVegas, 0.8f, frames: 900);
+        dirty.Tick(0.05f, 45f);
+        dirty.ResetAndReplayConstantWind(strength, captureTime);
+
+        var clean = new SpeedTreeWindRig { Profile = SpeedTreeWindProfile.FalloutNewVegas };
+        clean.ResetAndReplayConstantWind(strength, captureTime);
+
+        AssertSameState(clean, dirty);
+    }
+
+    [Fact]
+    public void ResetAndReplayConstantWind_TenSecondsAdvancesBeyondInitialPose()
+    {
+        const float strength = 50f / 255f;
+        var rig = new SpeedTreeWindRig { Profile = SpeedTreeWindProfile.FalloutNewVegas };
+        rig.ResetAndReplayConstantWind(strength, 0f);
+        var initialMatrices = Enumerable.Range(0, 4).Select(rig.WindMatrix).ToArray();
+        var initialRockPhase = rig.RockPhase;
+        var initialRustlePhase = rig.RustlePhase;
+
+        rig.ResetAndReplayConstantWind(strength, 10f);
+
+        Assert.True(rig.RockPhase > initialRockPhase);
+        Assert.True(rig.RustlePhase > initialRustlePhase);
+        Assert.Contains(Enumerable.Range(0, 4), index => rig.WindMatrix(index) != initialMatrices[index]);
+    }
+
+    [Fact]
+    public void Tick_LargeGapStillUsesOneHundredMillisecondLiveStep()
+    {
+        const float strength = 0.25f;
+        var largeGap = new SpeedTreeWindRig { Profile = SpeedTreeWindProfile.FalloutNewVegas };
+        var clampedGap = new SpeedTreeWindRig { Profile = SpeedTreeWindProfile.FalloutNewVegas };
+        largeGap.Tick(strength, 0f);
+        clampedGap.Tick(strength, 0f);
+
+        largeGap.Tick(strength, 10f);
+        clampedGap.Tick(strength, 0.1f);
+
+        AssertSameState(clampedGap, largeGap);
+    }
+
+    [Fact]
+    public void PerspectiveCaptureUsesSeparateReplayRigWithoutResettingLiveWind()
+    {
+        var root = FindRepoRoot();
+        var renderer = File.ReadAllText(Path.Combine(
+            root, "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
+            "Camera", "D3D12", "ReferenceRenderer12.cs"));
+        var capture = File.ReadAllText(Path.Combine(
+            root, "src", "BethesdaMultitool", "App", "Controls",
+            "WorldView3DControl.SceneCapture.cs"));
+
+        Assert.Contains("_windRig.Tick(_windStrength", renderer, StringComparison.Ordinal);
+        Assert.Contains("_captureWindRig.ResetAndReplayConstantWind", renderer, StringComparison.Ordinal);
+        Assert.DoesNotContain("_windRig.ResetAndReplayConstantWind", renderer, StringComparison.Ordinal);
+        Assert.Contains("_references?.SetWindForCapture(", capture, StringComparison.Ordinal);
+    }
+
+    private static void AssertSameState(SpeedTreeWindRig expected, SpeedTreeWindRig actual)
+    {
+        Assert.Equal(expected.RockAmount, actual.RockAmount);
+        Assert.Equal(expected.RockPhase, actual.RockPhase);
+        Assert.Equal(expected.RustleAmount, actual.RustleAmount);
+        Assert.Equal(expected.RustlePhase, actual.RustlePhase);
+        for (var i = 0; i < 4; i++)
+        {
+            Assert.Equal(expected.WindMatrix(i), actual.WindMatrix(i));
+        }
+    }
+
+    private static string FindRepoRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null &&
+               !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName ?? throw new DirectoryNotFoundException("Repository root not found.");
+    }
 }

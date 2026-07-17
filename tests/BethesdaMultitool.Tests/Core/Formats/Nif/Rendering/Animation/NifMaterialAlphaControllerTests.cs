@@ -12,7 +12,7 @@ public class NifMaterialAlphaControllerTests
         @"TestOutput\fnv-opacity-audit\meshes\effects\nv\sanddust\sanddust02.nif";
 
     [Fact]
-    public void RetailSandDust02_RecoversAuthoredLayerOpacityInsteadOfFullOpacity()
+    public void RetailSandDust02_ZeroAlphaStormSheetsResolveToControllerTargets()
     {
         var path = SampleFileFixture.FindSamplePath(RetailSandDust02);
         Assert.SkipUnless(path is not null,
@@ -63,6 +63,33 @@ public class NifMaterialAlphaControllerTests
         Assert.Equal(
             ["ParticleCloud|PCloud01|69", "sStorm03:0|sStorm03:0|51", "sStorm04:0|sStorm04:0|58"],
             boundTargets);
+
+        // Exact end-to-end acceptance oracle. The two sheet materials initialize their stored alpha
+        // to zero. Retail NiAlphaController::Update replaces that field with the interpolator result;
+        // multiplying the two values would make both sheets permanently invisible while the particle
+        // cloud alone could still make an aggregate image-difference gate pass.
+        var controlledSubmeshes = model.Submeshes
+            .Where(static submesh =>
+                submesh.MaterialAlphaController is not null && submesh.ShapeName is not null)
+            .ToDictionary(static submesh => submesh.ShapeName!, StringComparer.Ordinal);
+        var storm03Submesh = controlledSubmeshes["sStorm03:0"];
+        var storm04Submesh = controlledSubmeshes["sStorm04:0"];
+        var particleSubmesh = controlledSubmeshes["ParticleCloud"];
+        Assert.Equal(0f, storm03Submesh.MaterialAlpha);
+        Assert.Equal(0f, storm04Submesh.MaterialAlpha);
+        Assert.Equal(1f, particleSubmesh.MaterialAlpha);
+        Assert.Equal(0.5f, storm03Submesh.MaterialAlphaController!.ResolveTargetAlpha(
+            2.3333f, animationsEnabled: true), 3);
+        Assert.Equal(0.25f, storm04Submesh.MaterialAlphaController!.ResolveTargetAlpha(
+            2.3333f, animationsEnabled: true), 3);
+        Assert.Equal(0.05f, particleSubmesh.MaterialAlphaController!.ResolveTargetAlpha(
+            2.3333f, animationsEnabled: true), 3);
+        Assert.All(controlledSubmeshes.Values, static submesh =>
+        {
+            Assert.True(submesh.HasAlphaBlend);
+            Assert.Equal((byte)6, submesh.SrcBlendMode);
+            Assert.Equal((byte)7, submesh.DstBlendMode);
+        });
     }
 
     [Fact]
@@ -95,8 +122,8 @@ public class NifMaterialAlphaControllerTests
         Assert.Equal(0f, particles.Sample(0f));
         Assert.Equal(0f, storm03.Sample(45f));
         Assert.InRange(storm03.Sample(46f), 0.20f, 0.23f);
-        Assert.Equal(0.4f, storm03.Apply(0.8f, 2.3333f, animationsEnabled: true), 3);
-        Assert.Equal(0f, storm03.Apply(0.8f, 2.3333f, animationsEnabled: false));
+        Assert.Equal(0.5f, storm03.ResolveTargetAlpha(2.3333f, animationsEnabled: true), 3);
+        Assert.Equal(0f, storm03.ResolveTargetAlpha(2.3333f, animationsEnabled: false));
     }
 
     [Fact]
