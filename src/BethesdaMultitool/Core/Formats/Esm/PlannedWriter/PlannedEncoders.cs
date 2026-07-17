@@ -98,6 +98,7 @@ public static class PlannedEncoders
         // plan's emit set. End-to-end parity for records that reference engine-hardcoded
         // FormIDs or master-child FormIDs (player ref, placed refs) needs additional plan
         // plumbing — synthetic tests with no outgoing refs still pass byte-for-byte.
+        yield return new PlannedImadEncoder();
         yield return new PlannedScptEncoder();
         yield return new PlannedPerkEncoder();
         yield return new PlannedContEncoder();

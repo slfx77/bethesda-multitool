@@ -46,6 +46,7 @@ public sealed class RuntimeStructReader
     private readonly RuntimeGlobalReader _globals;
     private readonly RuntimeHeadPartReader _headParts;
     private readonly RuntimeIdleAnimationReader _idleAnimations;
+    private readonly RuntimeImageSpaceModifierReader _imageSpaceModifiers;
     private readonly RuntimeImpactDataReader _impactData;
     private readonly RuntimeIngredientReader _ingredients;
     private readonly RuntimeItemReader _items;
@@ -145,6 +146,7 @@ public sealed class RuntimeStructReader
         _menuIcons = new RuntimeMenuIconReader(_context);
         _loadScreenTypes = new RuntimeLoadScreenTypeReader(_context);
         _idleAnimations = new RuntimeIdleAnimationReader(_context);
+        _imageSpaceModifiers = new RuntimeImageSpaceModifierReader(_context, useProtoOffsets);
         _cameraPaths = new RuntimeCameraPathReader(_context);
         _impactData = new RuntimeImpactDataReader(_context);
         _audioLocationControllers = new RuntimeAudioLocationControllerReader(_context);
@@ -436,6 +438,19 @@ public sealed class RuntimeStructReader
     public WaterRecord? ReadRuntimeWater(RuntimeEditorIdEntry entry)
     {
         return _water.ReadRuntimeWater(entry);
+    }
+
+    #endregion
+
+    #region Image Space Modifiers
+
+    /// <summary>
+    ///     Reconstructs a complete runtime IMAD ordered stream, or returns null when either
+    ///     known TESImageSpaceModifier layout cannot be validated without missing data.
+    /// </summary>
+    public ImageSpaceModifierRecord? ReadRuntimeImageSpaceModifier(RuntimeEditorIdEntry entry)
+    {
+        return _imageSpaceModifiers.ReadRuntimeImageSpaceModifier(entry);
     }
 
     #endregion

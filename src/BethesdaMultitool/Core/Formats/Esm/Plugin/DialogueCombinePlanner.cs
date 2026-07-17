@@ -16,7 +16,8 @@ internal sealed record DialogueCombinePlan(
     IReadOnlySet<uint> RetailCoveredSpeakers,
     int DuplicateInfosCollapsed,
     int SystemInfosSuppressed,
-    int CutInfosRehomed);
+    int CutInfosRehomed,
+    IReadOnlyList<DialogueTopicIdentity> TopicIdentities);
 
 /// <summary>
 ///     Classifies prototype dialogue before FormID allocation. Shared INFOs become
@@ -56,6 +57,8 @@ internal static class DialogueCombinePlanner
         IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
         var deduplicatedInfos = DeduplicateInfos(infos, out var duplicateInfosCollapsed);
+        var topicIdentities = DialogueTopicIdentityClassifier.Classify(
+            topics, deduplicatedInfos, classifier, masterIndex);
         var newTopics = topics
             .Where(topic => !classifier.IsOverride(topic.FormId))
             .GroupBy(static topic => topic.FormId)
@@ -159,7 +162,8 @@ internal static class DialogueCombinePlanner
             retailCoveredSpeakers,
             duplicateInfosCollapsed,
             suppressed,
-            rehomed);
+            rehomed,
+            topicIdentities);
     }
 
     /// <summary>
@@ -238,6 +242,8 @@ internal static class DialogueCombinePlanner
 
     private static DialogueRecord MergeDuplicate(DialogueRecord first, DialogueRecord next)
     {
+        var firstScope = GetIdentityScopeEvidence(first);
+        var nextScope = GetIdentityScopeEvidence(next);
         var mergedResponses = DialogueInfoOverlayWriter.IndexPrototypeResponses(first.Responses);
         foreach (var (number, response) in DialogueInfoOverlayWriter.IndexPrototypeResponses(next.Responses))
         {
@@ -252,6 +258,34 @@ internal static class DialogueCombinePlanner
         return first with
         {
             TopicFormId = first.TopicFormId is > 0 ? first.TopicFormId : next.TopicFormId,
+            RawParentTopicFormIds = first.RawParentTopicFormIds
+                .Concat(next.RawParentTopicFormIds)
+                .Where(static formId => formId != 0)
+                .Distinct()
+                .Order()
+                .ToList(),
+            IdentityScopeCaptureCount = firstScope.CaptureCount + nextScope.CaptureCount,
+            IdentityScopeTopicFormIds = firstScope.TopicFormIds
+                .Concat(nextScope.TopicFormIds)
+                .Distinct()
+                .Order()
+                .ToList(),
+            IdentityScopeObservedMissingTopic =
+                firstScope.ObservedMissingTopic || nextScope.ObservedMissingTopic,
+            IdentityScopeQuestFormIds = firstScope.QuestFormIds
+                .Concat(nextScope.QuestFormIds)
+                .Distinct()
+                .Order()
+                .ToList(),
+            IdentityScopeObservedMissingQuest =
+                firstScope.ObservedMissingQuest || nextScope.ObservedMissingQuest,
+            IdentityScopeHardSpeakerFormIds = firstScope.HardSpeakerFormIds
+                .Concat(nextScope.HardSpeakerFormIds)
+                .Distinct()
+                .Order()
+                .ToList(),
+            IdentityScopeObservedMissingHardSpeaker =
+                firstScope.ObservedMissingHardSpeaker || nextScope.ObservedMissingHardSpeaker,
             QuestFormId = first.QuestFormId is > 0 ? first.QuestFormId : next.QuestFormId,
             SpeakerFormId = first.SpeakerFormId is > 0 ? first.SpeakerFormId : next.SpeakerFormId,
             SpeakerFactionFormId = first.SpeakerFactionFormId is > 0
@@ -279,6 +313,42 @@ internal static class DialogueCombinePlanner
             HasResultScript = first.HasResultScript || next.HasResultScript
         };
     }
+
+    private static IdentityScopeEvidence GetIdentityScopeEvidence(DialogueRecord info)
+    {
+        if (info.IdentityScopeCaptureCount > 0)
+        {
+            return new IdentityScopeEvidence(
+                info.IdentityScopeCaptureCount,
+                info.IdentityScopeTopicFormIds,
+                info.IdentityScopeObservedMissingTopic,
+                info.IdentityScopeQuestFormIds,
+                info.IdentityScopeObservedMissingQuest,
+                info.IdentityScopeHardSpeakerFormIds,
+                info.IdentityScopeObservedMissingHardSpeaker);
+        }
+
+        var topic = info.TopicFormId.GetValueOrDefault();
+        var quest = info.QuestFormId.GetValueOrDefault();
+        var hardSpeaker = DialogueSpeakerBinding.GetExactSpeaker(info).GetValueOrDefault();
+        return new IdentityScopeEvidence(
+            1,
+            topic == 0 ? [] : [topic],
+            topic == 0,
+            quest == 0 ? [] : [quest],
+            quest == 0,
+            hardSpeaker == 0 ? [] : [hardSpeaker],
+            hardSpeaker == 0);
+    }
+
+    private sealed record IdentityScopeEvidence(
+        int CaptureCount,
+        IReadOnlyList<uint> TopicFormIds,
+        bool ObservedMissingTopic,
+        IReadOnlyList<uint> QuestFormIds,
+        bool ObservedMissingQuest,
+        IReadOnlyList<uint> HardSpeakerFormIds,
+        bool ObservedMissingHardSpeaker);
 
     private static bool TryCreateRehomedCut(
         DialogueRecord source,

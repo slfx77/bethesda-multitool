@@ -53,18 +53,25 @@ public static class SubrecordSchemaProcessor
         }
 
         // IMAD DNAM (244 bytes) structure:
-        // - Bytes 0-3: uint32 'animatable' flag - ALREADY little-endian on Xbox!
-        // - Bytes 4-7: float 'duration' (needs BE->LE swap)
-        // - Bytes 8+: uint32 counts (need BE->LE swap)
-        // Xbox 360 stores the first uint32 in LE for some reason (hardware optimization?).
-        // The default FloatArray would swap ALL bytes, corrupting the already-LE first field.
+        // - Bytes 0-3: bAnimatable byte + three padding bytes (preserve byte order)
+        // - Bytes 4-199, 204-223, and 228-243: numeric DWORDs (need BE->LE swap)
+        // - Bytes 200-203: radial-target bool + padding (byte fields; preserve)
+        // - Bytes 224-227: DoF-target bool + mode + padding (byte fields; preserve)
+        // This is a runtime struct with both numeric and packed byte fields; treating every
+        // four-byte slot as a numeric DWORD corrupts the packed fields.
         if (recordType == "IMAD" && signature == "DNAM" && data.Length == 244)
         {
             var dnam = data.ToArray();
-            // Skip bytes 0-3 (already little-endian on Xbox!)
-            // Swap bytes 4+ as 4-byte values
+            // Skip bytes 0-3 (bAnimatable + padding).
+            // Swap numeric DWORDs only. ImageSpaceModifierData::Endian deliberately skips
+            // the two packed byte-field quartets at C8 and E0.
             for (var i = 4; i < 244; i += 4)
             {
+                if (i is 200 or 224)
+                {
+                    continue;
+                }
+
                 Swap4Bytes(dnam, i);
             }
 

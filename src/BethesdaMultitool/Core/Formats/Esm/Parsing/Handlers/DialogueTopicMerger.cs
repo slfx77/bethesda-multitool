@@ -273,10 +273,10 @@ internal sealed class DialogueTopicMerger(RecordParserContext context) : RecordH
     }
 
     /// <summary>
-    ///     Link INFO records to their parent DIAL topics using the GRUP-based TopicToInfoMap.
-    ///     The scanner builds this map from Type 7 GRUP headers which definitively encode
-    ///     the DIAL->INFO parent-child relationship in the ESM file structure.
-    ///     Falls back to file offset ordering if the map is empty (e.g., memory dump scans).
+    ///     Preserve raw type-7 Topic Children ancestry alongside runtime topic attribution.
+    ///     A unique raw parent fills a missing <see cref="DialogueRecord.TopicFormId" />, but
+    ///     never overwrites a populated runtime value. Multiple raw parents remain explicit
+    ///     ambiguity rather than being collapsed by dictionary or scan order.
     /// </summary>
     internal void LinkInfoToTopicsByGroupOrder(
         List<DialogueRecord> dialogues,
@@ -289,13 +289,6 @@ internal sealed class DialogueTopicMerger(RecordParserContext context) : RecordH
             return;
         }
 
-        // Build FormID -> dialogue list index for updating
-        var dialogueByFormId = new Dictionary<uint, int>();
-        for (var i = 0; i < dialogues.Count; i++)
-        {
-            dialogueByFormId.TryAdd(dialogues[i].FormId, i);
-        }
-
         // Build DIAL FormID -> topic list index for quest propagation and response-count derivation.
         var topicByFormId = new Dictionary<uint, int>();
         for (var i = 0; i < topics.Count; i++)
@@ -303,7 +296,35 @@ internal sealed class DialogueTopicMerger(RecordParserContext context) : RecordH
             topicByFormId.TryAdd(topics[i].FormId, i);
         }
 
-        var linked = 0;
+        var rawParentsByInfo = new Dictionary<uint, HashSet<uint>>();
+        foreach (var (dialFormId, infoFormIds) in topicToInfoMap)
+        {
+            if (dialFormId == 0)
+            {
+                continue;
+            }
+
+            foreach (var infoFormId in infoFormIds)
+            {
+                if (infoFormId == 0)
+                {
+                    continue;
+                }
+
+                if (!rawParentsByInfo.TryGetValue(infoFormId, out var parents))
+                {
+                    parents = [];
+                    rawParentsByInfo[infoFormId] = parents;
+                }
+
+                parents.Add(dialFormId);
+            }
+        }
+
+        var rawOnlyLinked = 0;
+        var rawRuntimeAgreements = 0;
+        var rawRuntimeConflicts = 0;
+        var ambiguousRawParents = 0;
         var questLinked = 0;
 
         foreach (var (dialFormId, infoFormIds) in topicToInfoMap)
@@ -314,44 +335,62 @@ internal sealed class DialogueTopicMerger(RecordParserContext context) : RecordH
             {
                 topics[topicIndex] = topics[topicIndex] with { ResponseCount = infoFormIds.Count };
             }
+        }
 
-            foreach (var infoFormId in infoFormIds)
+        for (var index = 0; index < dialogues.Count; index++)
+        {
+            var dialogue = dialogues[index];
+            if (!rawParentsByInfo.TryGetValue(dialogue.FormId, out var rawParentSet))
             {
-                if (!dialogueByFormId.TryGetValue(infoFormId, out var idx))
-                {
-                    continue;
-                }
-
-                var dialogue = dialogues[idx];
-                var updated = dialogue;
-
-                // Set TopicFormId if not already assigned
-                if (!dialogue.TopicFormId.HasValue || dialogue.TopicFormId.Value == 0)
-                {
-                    updated = updated with { TopicFormId = dialFormId };
-                    linked++;
-                }
-
-                // Propagate QuestFormId from the DIAL topic if the INFO lacks one
-                if ((!dialogue.QuestFormId.HasValue || dialogue.QuestFormId.Value == 0)
-                    && topicByFormId.TryGetValue(dialFormId, out var parentTopicIndex)
-                    && topics[parentTopicIndex] is { } topic
-                    && topic.QuestFormId is > 0)
-                {
-                    updated = updated with { QuestFormId = topic.QuestFormId };
-                    questLinked++;
-                }
-
-                if (updated != dialogue)
-                {
-                    dialogues[idx] = updated;
-                }
+                continue;
             }
+
+            var rawParents = rawParentSet.Order().ToList();
+            var updated = dialogue with { RawParentTopicFormIds = rawParents };
+            if (rawParents.Count > 1)
+            {
+                ambiguousRawParents++;
+                dialogues[index] = updated;
+                continue;
+            }
+
+            var rawParent = rawParents[0];
+            var resolvedFromRaw = false;
+            if (dialogue.TopicFormId is null or 0)
+            {
+                updated = updated with { TopicFormId = rawParent };
+                resolvedFromRaw = true;
+                rawOnlyLinked++;
+            }
+            else if (dialogue.TopicFormId == rawParent)
+            {
+                rawRuntimeAgreements++;
+            }
+            else
+            {
+                rawRuntimeConflicts++;
+            }
+
+            // Preserve the pre-existing runtime model on agreement or disagreement. Quest
+            // propagation remains part of the raw-only fallback, matching the legacy ESM
+            // path without allowing raw evidence to mutate an already-attributed INFO.
+            if (resolvedFromRaw
+                && updated.QuestFormId is null or 0
+                && updated.TopicFormId is { } resolvedParent
+                && topicByFormId.TryGetValue(resolvedParent, out var parentTopicIndex)
+                && topics[parentTopicIndex].QuestFormId is > 0)
+            {
+                updated = updated with { QuestFormId = topics[parentTopicIndex].QuestFormId };
+                questLinked++;
+            }
+
+            dialogues[index] = updated;
         }
 
         Logger.Instance.Debug(
-            $"  [Semantic] GRUP-based linking: linked {linked} INFOs to parent DIALs, " +
-            $"{questLinked} quest propagations " +
+            $"  [Semantic] Raw type-7 parent provenance: {rawOnlyLinked} raw-only INFO link(s), " +
+            $"{rawRuntimeAgreements} runtime/raw agreement(s), {rawRuntimeConflicts} conflict(s), " +
+            $"{ambiguousRawParents} ambiguous raw parent set(s), {questLinked} quest propagation(s) " +
             $"(from {topicToInfoMap.Count} topics, {dialogues.Count} INFOs)");
     }
 

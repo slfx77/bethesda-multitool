@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using Xunit;
@@ -44,19 +45,47 @@ public sealed class ImageSpaceModifierParsingTests
     public void Dnam_PreservesAsymmetricXboxEndianLayout(bool bigEndian)
     {
         var bytes = new byte[244];
-        // DNAM flags are already LE in both source forms.
-        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0, 4), 0x01020304);
+        // DNAM byte 0 is bAnimatable; the remaining three bytes are padding.
+        bytes[0] = 1;
         WriteSingle(bytes.AsSpan(4, 4), 2.5f, bigEndian);
         WriteUInt32(bytes.AsSpan(8, 4), 7, bigEndian);
+        bytes[200] = 1; // packed radial-target bool; never DWORD-swapped
+        bytes[224] = 1; // packed DoF target + mode; never DWORD-swapped
+        bytes[225] = 0x15;
         WriteUInt32(bytes.AsSpan(240, 4), 0xA1B2C3D4, bigEndian);
 
         var data = MiscEnvironmentHandler.ReadImageSpaceModifierData(bytes, bigEndian);
 
-        Assert.Equal(0x01020304u, data.AnimatableFlag);
+        Assert.Equal(1u, data.AnimatableFlag);
         Assert.Equal(2.5f, data.Duration);
         Assert.Equal(59, data.RawPayload.Count);
         Assert.Equal(7u, data.RawPayload[0]);
+        Assert.Equal(1u, data.RawPayload[48]);
+        Assert.Equal(0x00001501u, data.RawPayload[54]);
         Assert.Equal(0xA1B2C3D4u, data.RawPayload[^1]);
+    }
+
+    [Fact]
+    public void Dnam_XboxToPcConversion_SwapsNumericDwordsButPreservesPackedByteFields()
+    {
+        var xbox = new byte[244];
+        BinaryPrimitives.WriteUInt32LittleEndian(xbox.AsSpan(0, 4), 1);
+        BinaryPrimitives.WriteSingleBigEndian(xbox.AsSpan(4, 4), 3.5f);
+        BinaryPrimitives.WriteUInt32BigEndian(xbox.AsSpan(8, 4), 2);
+        xbox[200] = 1;
+        xbox[224] = 1;
+        xbox[225] = 0x2A;
+        BinaryPrimitives.WriteUInt32BigEndian(xbox.AsSpan(228, 4), 3);
+
+        var pc = SubrecordSchemaProcessor.ConvertWithSchema("DNAM", xbox, "IMAD");
+
+        Assert.NotNull(pc);
+        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(pc.AsSpan(0, 4)));
+        Assert.Equal(3.5f, BinaryPrimitives.ReadSingleLittleEndian(pc.AsSpan(4, 4)));
+        Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(pc.AsSpan(8, 4)));
+        Assert.Equal(new byte[] { 1, 0, 0, 0 }, pc[200..204]);
+        Assert.Equal(new byte[] { 1, 0x2A, 0, 0 }, pc[224..228]);
+        Assert.Equal(3u, BinaryPrimitives.ReadUInt32LittleEndian(pc.AsSpan(228, 4)));
     }
 
     [Theory]

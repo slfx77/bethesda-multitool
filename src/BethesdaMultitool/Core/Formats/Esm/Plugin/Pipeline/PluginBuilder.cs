@@ -1433,12 +1433,16 @@ public sealed class PluginBuilder
                 new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies.DiagnosticKeepMasterDispositionPolicy(
                     inputs.Options.DiagnosticKeepMasterFormIds),
                 new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies.ScriptDispositionPolicy(),
+                new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies.ImageSpaceModifierDispositionPolicy(),
                 new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies.RuntimeStatePolicy(),
                 new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies.DefaultDispositionPolicy(),
             });
         var degradationPolicy = new BethesdaMultitool.Core.Formats.Esm.Planner.References.DegradationPolicy();
         degradationPolicy.SetDefaultForType(
             "SCPT",
+            BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
+        degradationPolicy.SetDefaultForType(
+            "IMAD",
             BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
         degradationPolicy.SetDefaultForType(
             "INFO",
@@ -1459,6 +1463,7 @@ public sealed class PluginBuilder
             new BethesdaMultitool.Core.Formats.Esm.Planner.References.IRecordReferenceWalker[]
             {
                 new BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers.ScriptReferenceWalker(),
+                new BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers.ImageSpaceModifierReferenceWalker(),
                 new BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers.PackageReferenceWalker(),
                 new BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers.InfoReferenceWalker(),
                 new BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers.NpcReferenceWalker(),
@@ -5679,6 +5684,10 @@ public sealed class PluginBuilder
         // later means the script encoder has no allocated target yet and preserves the slot
         // count only by writing a null SCRO.
         yield return ("MESG", records.Messages);
+        // IMAD must precede scripts: new SCPT SCRO tables may invoke a captured-new
+        // imagespace modifier, and legacy routing validates those refs against records
+        // already emitted in this pass.
+        yield return ("IMAD", records.ImageSpaceModifiers);
         // PACK must precede NPC_ so the NPC encoder can validate its PKID list against the
         // set of (master ∪ just-emitted) PACK FormIDs and drop dangling refs. Dangling PKIDs
         // were the leading suspect for the "every NPC plays the crucified idle" regression —

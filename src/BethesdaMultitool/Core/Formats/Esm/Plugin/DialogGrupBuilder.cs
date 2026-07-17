@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
+using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
@@ -97,6 +98,7 @@ internal static class DialogGrupBuilder
         var combinePlan = DialogueCombinePlanner.Build(
             topics, infos, classifier, masterDialogueIndex, masterFormIds,
             additionalValidFormIds, remapTable);
+        ReportIdentityTelemetry(combinePlan.TopicIdentities, sink);
         var newTopics = combinePlan.NewTopics.ToList();
         var newInfos = combinePlan.NewInfos.ToList();
         var sharedInfoOverlays = combinePlan.SharedInfoOverlays
@@ -1550,6 +1552,94 @@ internal static class DialogGrupBuilder
 
         return kept;
     }
+
+    private const int IdentityEvidencePreviewLimit = 8;
+    private const int IdentityConflictPreviewLimit = 4;
+    private const int IdentityConflictTextLimit = 192;
+
+    internal static void ReportIdentityTelemetry(
+        IReadOnlyList<DialogueTopicIdentity> identities,
+        IConversionProgressSink sink)
+    {
+        var exactTopicAnchors = identities.Count(static identity =>
+            identity.Kind == DialogueTopicIdentityKind.MasterAnchor);
+        var sharedChildTopicAnchors = identities.Count(static identity =>
+            identity.Kind == DialogueTopicIdentityKind.SharedChildAnchor);
+        var distinctPrototypeTopics = identities.Count(static identity =>
+            identity.Kind == DialogueTopicIdentityKind.PrototypeDistinct);
+        var ambiguousTopicIdentities = identities.Count(static identity =>
+            identity.Kind == DialogueTopicIdentityKind.Ambiguous);
+        var orphanRawParentClaims = identities.Count(static identity =>
+            identity.IsOrphanRawParentClaim);
+        var conflictedTopicIdentities = identities.Count(static identity =>
+            identity.Conflicts.Count > 0);
+        // A Decision event is intentionally visible in non-verbose corpus runs. This is
+        // diagnostic-only, but an explicit zero is still required to distinguish an empty
+        // dialogue capture from a converter that never ran the structural classifier.
+        sink.Decision("Classifying dialog identity",
+            $"Classified DIAL identity as {InvariantCount(exactTopicAnchors)} exact master anchor(s), " +
+            $"{InvariantCount(sharedChildTopicAnchors)} shared-child structural anchor(s), " +
+            $"{InvariantCount(distinctPrototypeTopics)} prototype-distinct, and " +
+            $"{InvariantCount(ambiguousTopicIdentities)} ambiguous; classification is diagnostic-only. " +
+            $"Provenance includes {InvariantCount(orphanRawParentClaims)} orphan raw-parent claim(s) and " +
+            $"{InvariantCount(conflictedTopicIdentities)} conflicted identity record(s).",
+            code: "dialogue.identity.summary");
+        foreach (var identity in identities.OrderBy(static identity => identity.PrototypeDialFormId))
+        {
+            var master = identity.MasterDialFormId is { } masterDial
+                ? $"0x{masterDial:X8}"
+                : "none";
+            var evidence = identity.EvidenceInfoFormIds
+                .Where(static formId => formId != 0)
+                .Distinct()
+                .Order()
+                .ToList();
+            var conflicts = identity.Conflicts
+                .Where(static conflict => !string.IsNullOrWhiteSpace(conflict))
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToList();
+            sink.Decision(
+                "Classifying dialog identity",
+                $"kind={identity.Kind}; master={master}; orphanRawParent={identity.IsOrphanRawParentClaim}; " +
+                $"evidenceINFOCount={InvariantCount(evidence.Count)}; " +
+                $"evidenceINFOPreview={FormatEvidencePreview(evidence)}; " +
+                $"conflictCount={InvariantCount(conflicts.Count)}; " +
+                $"conflictPreview={FormatConflictPreview(conflicts)}; reason={identity.Reason}",
+                formType: "DIAL",
+                formId: identity.PrototypeDialFormId,
+                code: IdentityEventCode(identity.Kind));
+        }
+    }
+
+    private static string FormatEvidencePreview(IReadOnlyList<uint> evidence) => evidence.Count == 0
+        ? "none"
+        : string.Join(",", evidence
+            .Take(IdentityEvidencePreviewLimit)
+            .Select(static formId => $"0x{formId:X8}"));
+
+    private static string FormatConflictPreview(IReadOnlyList<string> conflicts) => conflicts.Count == 0
+        ? "none"
+        : string.Join(" | ", conflicts
+            .Take(IdentityConflictPreviewLimit)
+            .Select(static conflict => TruncateIdentityConflict(conflict)));
+
+    private static string TruncateIdentityConflict(string conflict) =>
+        conflict.Length <= IdentityConflictTextLimit
+            ? conflict
+            : conflict[..(IdentityConflictTextLimit - 3)] + "...";
+
+    private static string InvariantCount(int value) =>
+        value.ToString("N0", CultureInfo.InvariantCulture);
+
+    private static string IdentityEventCode(DialogueTopicIdentityKind kind) => kind switch
+    {
+        DialogueTopicIdentityKind.MasterAnchor => "dialogue.identity.master-anchor",
+        DialogueTopicIdentityKind.SharedChildAnchor => "dialogue.identity.shared-child-anchor",
+        DialogueTopicIdentityKind.PrototypeDistinct => "dialogue.identity.prototype-distinct",
+        DialogueTopicIdentityKind.Ambiguous => "dialogue.identity.ambiguous",
+        _ => "dialogue.identity.unknown",
+    };
 
     private static long WriteGrupHeader(Stream stream, byte[] label, int groupType)
     {

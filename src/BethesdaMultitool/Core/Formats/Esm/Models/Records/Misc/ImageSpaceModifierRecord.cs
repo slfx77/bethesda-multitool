@@ -44,18 +44,24 @@ public record ImageSpaceModifierRecord
     public long Offset { get; init; }
 
     public bool IsBigEndian { get; init; }
+
+    /// <summary>
+    ///     True when the ordered stream was reconstructed from a validated live
+    ///     TESImageSpaceModifier rather than read from an ESM record byte stream.
+    /// </summary>
+    public bool FromRuntime { get; init; }
 }
 
 /// <summary>
 ///     IMAD DNAM payload (244 bytes). Per
 ///     <see cref="BethesdaMultitool.Core.Formats.Esm.Conversion.Schema.SubrecordSchemaProcessor" />:
-///     bytes 0..3 are uint32 already-LE on Xbox 360, bytes 4..243 are 60 little-endian
-///     floats / uint32s that need byte-swapping on Xbox. The PC-output encoder simply
-///     writes the canonical LE form.
+///     bytes 0..3 are bAnimatable plus padding; numeric DWORDs after that are
+///     big-endian, while all packed byte fields at 0..3, 200..203, and 224..227 remain in
+///     byte order. The PC-output encoder writes the canonical LE form.
 /// </summary>
 public record ImageSpaceModifierData
 {
-    /// <summary>Animatable flag (DNAM bytes 0..3, uint32).</summary>
+    /// <summary>Canonical uint projection of bAnimatable (DNAM byte 0; bytes 1..3 are padding).</summary>
     public uint AnimatableFlag { get; init; }
 
     /// <summary>Duration in seconds (DNAM bytes 4..7, float).</summary>

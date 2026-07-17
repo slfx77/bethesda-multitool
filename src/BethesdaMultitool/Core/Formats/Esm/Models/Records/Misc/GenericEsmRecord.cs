@@ -6,7 +6,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 ///     Generic ESM record for types that share a common structure:
 ///     EDID + FULL + MODL + OBND + type-specific subrecords.
 ///     Used for MSTT, TACT, CAMS, ANIO, IPDS, EFSH, RGDL, LSCR,
-///     ASPC, MSET, CHIP, CSNO, DOBJ, ADDN, TREE, IMAD.
+///     ASPC, MSET, CHIP, CSNO, DOBJ, ADDN, TREE.
 /// </summary>
 public record GenericEsmRecord
 {

@@ -1,6 +1,7 @@
 using System.Reflection;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
+using BethesdaMultitool.Tests.Core.Formats.Esm;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Parity;
 
@@ -44,7 +45,9 @@ internal static class SyntheticModelFactory
     private static readonly Dictionary<string, Func<object>> ExplicitOverrides =
         new(StringComparer.Ordinal)
         {
-            // None yet — every currently-registered encoder accepts the minimal fixture.
+            // IMAD's fixed DNAM count table and ordered frame streams are an atomic unit;
+            // an EditorID-only model is intentionally rejected as a phantom target.
+            ["IMAD"] = () => ImageSpaceModifierTestFactory.Complete(TestFormId),
         };
 
     /// <summary>

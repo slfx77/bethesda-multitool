@@ -85,7 +85,7 @@ public static class EsmCoverageAnalyzer
     private static readonly HashSet<string> GenericModeledRecordTypes = new(StringComparer.Ordinal)
     {
         "MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR",
-        "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IMAD",
+        "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE",
         "IDLM", "PWAT", "IMGS", "CLMT", "GRAS", "AMEF"
     };
 
@@ -96,7 +96,7 @@ public static class EsmCoverageAnalyzer
 
     private static readonly HashSet<string> TypedRecordTypes = new(StringComparer.Ordinal)
     {
-        "NPC_", "CREA", "RACE", "FACT", "ECZN",
+        "NPC_", "CREA", "RACE", "FACT", "ECZN", "IMAD",
         "QUST", "DIAL", "INFO", "NOTE", "BOOK", "TERM", "SCPT",
         "WEAP", "ARMO", "AMMO", "ALCH", "MISC", "KEYM", "CONT",
         "PERK", "SPEL", "CELL", "WRLD", "GMST",

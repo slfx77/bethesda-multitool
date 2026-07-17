@@ -74,6 +74,7 @@ public sealed class DmpRecordSource
             ["ACTI"] = c => c.Activators.Select(r => (r.FormId, (object)r)),
             ["DEBR"] = c => c.Debris.Select(r => (r.FormId, (object)r)),
             ["CSTY"] = c => c.CombatStyles.Select(r => (r.FormId, (object)r)),
+            ["IMAD"] = c => c.ImageSpaceModifiers.Select(r => (r.FormId, (object)r)),
             // Tier 3 — complex-ref encoders.
             ["SCPT"] = c => c.Scripts.Select(r => (r.FormId, (object)r)),
             ["PERK"] = c => c.Perks.Select(r => (r.FormId, (object)r)),

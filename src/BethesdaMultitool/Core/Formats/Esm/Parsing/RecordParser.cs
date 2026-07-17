@@ -264,7 +264,11 @@ public sealed class RecordParser
             _dialogue.MergeRuntimeDialogueTopicLinks(dialogues, dialogTopics);
             _dialogue.MergeRuntimeDialogueData(dialogues);
         }
-        else if (_context.Accessor != null)
+
+        // Preserve raw type-7 GRUP ancestry even when runtime TESTopic data is available.
+        // The linker fills only a missing runtime parent and records disagreements or
+        // ambiguous raw snapshots as separate evidence for dialogue-tree reasoning.
+        if (_context.ScanResult.TopicToInfoMap.Count > 0)
         {
             _dialogue.LinkInfoToTopicsByGroupOrder(dialogues, dialogTopics);
         }
@@ -456,7 +460,7 @@ public sealed class RecordParser
         var genericTypes = new[]
         {
             "MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR",
-            "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IMAD",
+            "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE",
             "IDLM", "PWAT",
             // SCOL is parsed via the typed _miscStaticObjects.ParseStaticCollections() path.
             // CLMT is parsed via the typed _miscEnvironment.ParseClimate() path (atmosphere data).

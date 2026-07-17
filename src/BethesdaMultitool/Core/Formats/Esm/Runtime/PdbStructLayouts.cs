@@ -49,6 +49,7 @@ internal static class PdbStructLayouts
         0x46, // INFO — RuntimeDialogueReader
         0x47, // QUST — RuntimeDialogueReader
         0x49, // PACK — RuntimePackageReader
+        0x54, // IMAD — RuntimeImageSpaceModifierReader
         0x55, // FLST — RuntimeCollectionReader
         0x59, // AVIF — RuntimeActorReader
         0x66 // MUSC — RuntimeMusicTypeReader

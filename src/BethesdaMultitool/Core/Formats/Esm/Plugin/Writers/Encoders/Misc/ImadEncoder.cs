@@ -1,13 +1,15 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 
 /// <summary>
 ///     Encodes an Image Space Modifier (IMAD) record. Animated post-processing layer applied
-///     on top of an <see cref="ImageSpaceRecord" />. Missing the encoder strips proto-only
-///     IMADs and causes engine to load an undefined post-processing slot.
-///     fopdoc canonical order: EDID, DNAM(244B), [frame-table subrecords — out of scope].
+///     on top of an <see cref="ImageSpaceRecord" />. New records are serialized from the
+///     ordered captured subrecord stream: the frame-table signatures include control-byte
+///     names and may repeat, so rebuilding them from a signature-keyed projection loses data.
 /// </summary>
 public sealed class ImadEncoder : IRecordEncoder
 {
@@ -15,21 +17,74 @@ public sealed class ImadEncoder : IRecordEncoder
 
     public Type ModelType => typeof(ImageSpaceModifierRecord);
 
-    internal static EncodedRecord EncodeNew(ImageSpaceModifierRecord imad)
+    internal static EncodedRecord EncodeNew(
+        ImageSpaceModifierRecord imad,
+        IReadOnlySet<uint>? validFormIds = null,
+        IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
-        var subs = new List<EncodedSubrecord>();
-        var warnings = new List<string>();
-
-        if (string.IsNullOrEmpty(imad.EditorId))
+        return EncodeOrdered(imad, (signature, sourceFormId) =>
         {
-            warnings.Add($"New IMAD 0x{imad.FormId:X8} has no EditorId — emitting empty EDID.");
+            if (sourceFormId == 0)
+            {
+                return 0u;
+            }
+
+            return FormIdReferenceResolver.Resolve(sourceFormId, validFormIds, remapTable);
+        });
+    }
+
+    /// <summary>
+    ///     Serialize a structurally complete captured stream in source order. The resolver
+    ///     returns a final PC FormID for RDSD/RDSI, or null to drop a dangling sound link.
+    /// </summary>
+    internal static EncodedRecord EncodeOrdered(
+        ImageSpaceModifierRecord imad,
+        Func<string, uint, uint?> resolveSound)
+    {
+        ArgumentNullException.ThrowIfNull(imad);
+        ArgumentNullException.ThrowIfNull(resolveSound);
+
+        var subs = new List<EncodedSubrecord>(imad.OrderedSubrecords.Count);
+        var warnings = new List<string>();
+        if (!ImageSpaceModifierCaptureValidator.IsCompleteNewCapture(imad, out var reason))
+        {
+            warnings.Add(
+                $"New IMAD 0x{imad.FormId:X8} suppressed — incomplete captured stream: {reason}.");
+            return new EncodedRecord { Subrecords = subs, Warnings = warnings };
         }
 
-        subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", imad.EditorId ?? string.Empty));
-
-        if (imad.Data is not null)
+        foreach (var raw in imad.OrderedSubrecords)
         {
-            subs.Add(new EncodedSubrecord("DNAM", EncodeDnam(imad.Data)));
+            if (raw.Signature is "RDSD" or "RDSI")
+            {
+                var sourceFormId = imad.IsBigEndian
+                    ? BinaryPrimitives.ReadUInt32BigEndian(raw.Data)
+                    : BinaryPrimitives.ReadUInt32LittleEndian(raw.Data);
+                var resolved = resolveSound(raw.Signature, sourceFormId);
+                if (resolved is null)
+                {
+                    warnings.Add(
+                        $"New IMAD 0x{imad.FormId:X8} dropped dangling {raw.Signature} "
+                        + $"sound 0x{sourceFormId:X8}.");
+                    continue;
+                }
+
+                var bytes = new byte[4];
+                BinaryPrimitives.WriteUInt32LittleEndian(bytes, resolved.Value);
+                subs.Add(new EncodedSubrecord(raw.Signature, bytes));
+                continue;
+            }
+
+            var converted = imad.IsBigEndian
+                ? SubrecordSchemaProcessor.ConvertWithSchema(raw.Signature, raw.Data, "IMAD")
+                : raw.Data.ToArray();
+            if (converted is null)
+            {
+                throw new InvalidOperationException(
+                    $"Complete IMAD 0x{imad.FormId:X8} has no conversion schema for {raw.Signature}.");
+            }
+
+            subs.Add(new EncodedSubrecord(raw.Signature, converted));
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
@@ -44,7 +99,7 @@ public sealed class ImadEncoder : IRecordEncoder
     {
         const int DnamSize = 244;
         var bytes = new byte[DnamSize];
-        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0, 4), data.AnimatableFlag);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0, 4), data.AnimatableFlag != 0 ? 1u : 0u);
         BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(4, 4), data.Duration);
 
         // Write remaining 59 × 4-byte slots from the raw payload. Trailing slots default

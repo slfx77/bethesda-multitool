@@ -7,8 +7,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 /// <summary>
 ///     Phase 3.2 IMAD encoder coverage. DNAM is the 244-byte mixed-endian payload that
 ///     <see cref="BethesdaMultitool.Core.Formats.Esm.Conversion.Schema.SubrecordSchemaProcessor" />
-///     special-cases (bytes 0..3 already-LE on Xbox, bytes 4..243 swapped). The PC-output
-///     encoder writes the canonical fully-little-endian form; this test pins that form.
+///     special-cases (bytes 0..3 and packed byte quartets 200/224 retain byte order;
+///     numeric DWORDs are swapped). The PC-output encoder writes the canonical form.
 /// </summary>
 public sealed class ImadEncoderDnamTests : SubrecordEncoderTestBase<ImageSpaceModifierData>
 {
@@ -28,7 +28,7 @@ public sealed class ImadEncoderDnamTests : SubrecordEncoderTestBase<ImageSpaceMo
         };
         return new ImageSpaceModifierData
         {
-            AnimatableFlag = 0xABCDEF01u,
+            AnimatableFlag = 1,
             Duration = 2.5f,
             RawPayload = payload
         };
@@ -37,7 +37,7 @@ public sealed class ImadEncoderDnamTests : SubrecordEncoderTestBase<ImageSpaceMo
     protected override byte[] GetExpectedBytes()
     {
         var expected = new byte[244];
-        BinaryPrimitives.WriteUInt32LittleEndian(expected.AsSpan(0, 4), 0xABCDEF01u);
+        BinaryPrimitives.WriteUInt32LittleEndian(expected.AsSpan(0, 4), 1);
         BinaryPrimitives.WriteSingleLittleEndian(expected.AsSpan(4, 4), 2.5f);
         var payload = new uint[]
         {

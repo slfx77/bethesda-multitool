@@ -18,6 +18,37 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 public sealed class DialogueCombineTests
 {
     [Fact]
+    public void DeduplicateInPlace_PreservesAllRawParentCandidates()
+    {
+        const uint infoId = 0x00100001;
+        const uint firstTopic = 0x00100010;
+        const uint secondTopic = 0x00100020;
+        var infos = new List<DialogueRecord>
+        {
+            new()
+            {
+                FormId = infoId,
+                TopicFormId = firstTopic,
+                RawParentTopicFormIds = [firstTopic],
+            },
+            new()
+            {
+                FormId = infoId,
+                TopicFormId = secondTopic,
+                RawParentTopicFormIds = [secondTopic],
+            },
+        };
+
+        var collapsed = DialogueCombinePlanner.DeduplicateInPlace(infos);
+
+        Assert.Equal(1, collapsed);
+        var merged = Assert.Single(infos);
+        Assert.Equal(firstTopic, merged.TopicFormId);
+        Assert.Equal([firstTopic, secondTopic], merged.RawParentTopicFormIds);
+        Assert.True(merged.HasAmbiguousRawParentTopic);
+    }
+
+    [Fact]
     public void DeduplicateInPlace_DirectCapturedTextBeatsPlaceholder()
     {
         var infos = new List<DialogueRecord>
@@ -199,6 +230,7 @@ public sealed class DialogueCombineTests
         {
             FormId = sharedInfo,
             TopicFormId = wrongCapturedDial,
+            RawParentTopicFormIds = [wrongCapturedDial],
             QuestFormId = quest,
             SpeakerFormId = speaker,
             Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Prototype line" }]
@@ -860,6 +892,51 @@ public sealed class DialogueCombineTests
         Assert.Single(plan.NewInfos);
         Assert.Empty(plan.RetailCoveredSpeakers);
         Assert.Equal(0, plan.SystemInfosSuppressed);
+    }
+
+    [Fact]
+    public void CombinePlanner_SameEditorIdWithDifferentFormIdRemainsDistinct()
+    {
+        const uint masterDialId = 0x00103000;
+        const uint masterInfoId = 0x00103001;
+        const uint prototypeDialId = 0x00104000;
+        const uint prototypeInfoId = 0x00104001;
+        const uint questId = 0x00105000;
+        const string reusedEditorId = "VDialogueExampleTopic011";
+        var masterDial = Record("DIAL", masterDialId, 100,
+            TextSub("EDID", reusedEditorId),
+            FormSub("QSTI", questId),
+            Sub("DATA", [0, 0]));
+        var masterInfo = Record("INFO", masterInfoId, 200,
+            FormSub("QSTI", questId),
+            Sub("TRDT", Trdt(1, 0)),
+            TextSub("NAM1", "Retail response"));
+        var masterIndex = MasterDialogueIndex.BuildFromRecordOrder([masterDial, masterInfo]);
+        var prototypeTopic = new DialogTopicRecord
+        {
+            FormId = prototypeDialId,
+            EditorId = reusedEditorId,
+            FullName = "A different prototype player choice",
+            QuestFormId = questId,
+            TopicType = 0
+        };
+        var prototypeInfo = new DialogueRecord
+        {
+            FormId = prototypeInfoId,
+            TopicFormId = prototypeDialId,
+            RawParentTopicFormIds = [prototypeDialId],
+            QuestFormId = questId,
+            Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Prototype response" }]
+        };
+
+        var plan = DialogueCombinePlanner.Build(
+            [prototypeTopic], [prototypeInfo],
+            new NewVsOverrideClassifier([masterDialId, masterInfoId, questId]),
+            masterIndex, [masterDialId, masterInfoId, questId]);
+
+        Assert.Equal(prototypeDialId, Assert.Single(plan.NewTopics).FormId);
+        Assert.Equal(prototypeDialId, Assert.Single(plan.NewInfos).TopicFormId);
+        Assert.Empty(plan.SharedInfoOverlays);
     }
 
     private static ParsedMainRecord Record(

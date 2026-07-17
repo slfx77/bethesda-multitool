@@ -34,6 +34,8 @@ internal static class NewTopLevelRecordEncoderDispatcher
         {
             ["GMST"] = (model, _) => GmstEncoder.EncodeNew((GameSettingRecord)model),
             ["GLOB"] = (model, _) => GlobEncoder.EncodeNew((GlobalRecord)model),
+            ["IMAD"] = (model, context) => ImadEncoder.EncodeNew(
+                (ImageSpaceModifierRecord)model, context.AllValidFormIds, context.RemapTable),
             ["MISC"] = (model, _) => MiscEncoder.EncodeNew((MiscItemRecord)model),
             ["KEYM"] = (model, _) => KeymEncoder.EncodeNew((KeyRecord)model),
             ["ALCH"] = (model, _) => AlchEncoder.EncodeNew((ConsumableRecord)model),

@@ -18,6 +18,61 @@ public record DialogueRecord
     /// <summary>Parent DIAL topic FormID.</summary>
     public uint? TopicFormId { get; init; }
 
+    /// <summary>
+    ///     Distinct parent DIAL FormIDs observed from raw type-7 Topic Children GRUPs for
+    ///     this INFO FormID. Runtime TESTopic attribution and raw TES-file ancestry are
+    ///     intentionally retained as separate evidence: dumps can contain repeated or
+    ///     conflicting snapshots, while runtime structures can carry reconstructed topic
+    ///     links that disagree with the raw record stream.
+    /// </summary>
+    public List<uint> RawParentTopicFormIds { get; init; } = [];
+
+    /// <summary>
+    ///     The raw type-7 parent when exactly one distinct candidate was observed; otherwise
+    ///     null. Consumers must not guess between ambiguous raw parents.
+    /// </summary>
+    public uint? RawParentTopicFormId => RawParentTopicFormIds.Count == 1
+        ? RawParentTopicFormIds[0]
+        : null;
+
+    /// <summary>Whether raw type-7 ancestry names more than one possible parent DIAL.</summary>
+    public bool HasAmbiguousRawParentTopic => RawParentTopicFormIds.Count > 1;
+
+    /// <summary>
+    ///     Whether a unique raw type-7 parent disagrees with the resolved/runtime parent.
+    ///     The converter preserves both values and leaves <see cref="TopicFormId" /> unchanged
+    ///     so later dialogue-tree reasoning can make the decision with full provenance.
+    /// </summary>
+    public bool HasRawRuntimeTopicConflict =>
+        TopicFormId is > 0
+        && RawParentTopicFormId is { } rawParent
+        && rawParent != TopicFormId.Value;
+
+    /// <summary>
+    ///     Number of duplicate INFO snapshots summarized by the diagnostic identity-scope
+    ///     fields below. Zero means this INFO has not passed through duplicate collapsing.
+    ///     These fields are classifier provenance only and are never serialized.
+    /// </summary>
+    public int IdentityScopeCaptureCount { get; init; }
+
+    /// <summary>Distinct nonzero runtime/resolved topic parents seen across duplicate INFOs.</summary>
+    public List<uint> IdentityScopeTopicFormIds { get; init; } = [];
+
+    /// <summary>Whether at least one duplicate INFO lacked a runtime/resolved topic parent.</summary>
+    public bool IdentityScopeObservedMissingTopic { get; init; }
+
+    /// <summary>Distinct nonzero quest scopes seen across duplicate INFOs.</summary>
+    public List<uint> IdentityScopeQuestFormIds { get; init; } = [];
+
+    /// <summary>Whether at least one duplicate INFO lacked a quest scope.</summary>
+    public bool IdentityScopeObservedMissingQuest { get; init; }
+
+    /// <summary>Distinct exact hard speakers seen across duplicate INFOs.</summary>
+    public List<uint> IdentityScopeHardSpeakerFormIds { get; init; } = [];
+
+    /// <summary>Whether at least one duplicate INFO lacked an exact hard-speaker binding.</summary>
+    public bool IdentityScopeObservedMissingHardSpeaker { get; init; }
+
     /// <summary>Parent quest FormID (QSTI subrecord or runtime pOwnerQuest).</summary>
     public uint? QuestFormId { get; init; }
 

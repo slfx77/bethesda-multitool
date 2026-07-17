@@ -1347,7 +1347,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     /// </summary>
     internal List<ImageSpaceModifierRecord> ParseImageSpaceModifiers()
     {
-        return ParseRecordList("IMAD", 512,
+        var modifiers = ParseRecordList("IMAD", 512,
             ParseImageSpaceModifierFromAccessor,
             record => new ImageSpaceModifierRecord
             {
@@ -1356,6 +1356,14 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian,
             });
+
+        // Append only runtime-only forms. A byte-stream IMAD remains the lossless authority
+        // for its FormID and is never overlaid by a reconstructed runtime object.
+        Context.MergeRuntimeRecords(modifiers, 0x54, modifier => modifier.FormId,
+            (reader, entry) => reader.ReadRuntimeImageSpaceModifier(entry),
+            "image space modifiers");
+
+        return modifiers;
     }
 
     private ImageSpaceModifierRecord? ParseImageSpaceModifierFromAccessor(DetectedMainRecord record, byte[] buffer)
@@ -1459,22 +1467,25 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     }
 
     /// <summary>
-    ///     IMAD DNAM's first DWORD is already little-endian in Xbox records; the remaining fields use
-    ///     record endianness. This asymmetry is mirrored by SubrecordSchemaProcessor's converter.
+    ///     IMAD DNAM mixes numeric values with packed byte fields. The bAnimatable quartet at 0,
+    ///     radial-target quartet at 200, and DoF target/mode quartet at 224 retain byte order;
+    ///     numeric fields use record endianness.
     /// </summary>
     internal static ImageSpaceModifierData ReadImageSpaceModifierData(ReadOnlySpan<byte> data, bool isBigEndian)
     {
         var payload = new List<uint>(Math.Max(0, (data.Length - 8) / 4));
         for (var offset = 8; offset + 4 <= data.Length; offset += 4)
         {
-            payload.Add(isBigEndian
+            // Runtime ImageSpaceModifierData::Endian leaves the packed radial-target
+            // (C8..CB) and DoF target/mode (E0..E3) byte quartets untouched.
+            payload.Add(isBigEndian && offset is not (200 or 224)
                 ? BinaryPrimitives.ReadUInt32BigEndian(data.Slice(offset, 4))
                 : BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(offset, 4)));
         }
 
         return new ImageSpaceModifierData
         {
-            AnimatableFlag = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(0, 4)),
+            AnimatableFlag = data[0] != 0 ? 1u : 0u,
             Duration = ReadFloat(data, 4, isBigEndian),
             RawPayload = payload,
         };

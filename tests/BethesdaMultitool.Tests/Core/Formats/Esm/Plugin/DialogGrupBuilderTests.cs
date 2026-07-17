@@ -17,6 +17,100 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 public sealed class DialogGrupBuilderTests
 {
     [Fact]
+    public void BuildDialogSection_ReportsExplicitZeroIdentityTelemetryWhenSectionIsEmpty()
+    {
+        var sink = new RecordingSink();
+
+        var result = DialogGrupBuilder.BuildDialogSection(
+            [],
+            [],
+            new NewVsOverrideClassifier([]),
+            new FormIdAllocator(),
+            [],
+            new Dictionary<uint, ParsedMainRecord>(),
+            new ConversionPipelineStats(),
+            sink);
+
+        Assert.Empty(result.DialogSection);
+        var identityEvent = Assert.Single(sink.Events,
+            static evt => evt.Phase == "Classifying dialog identity");
+        Assert.Equal(ConversionEventSeverity.Decision, identityEvent.Severity);
+        Assert.Contains("0 exact master anchor(s)", identityEvent.Message, StringComparison.Ordinal);
+        Assert.Contains("0 ambiguous", identityEvent.Message, StringComparison.Ordinal);
+        Assert.Contains("0 orphan raw-parent claim(s)", identityEvent.Message, StringComparison.Ordinal);
+        Assert.Contains("0 conflicted identity record(s)", identityEvent.Message, StringComparison.Ordinal);
+        Assert.Contains("diagnostic-only", identityEvent.Message, StringComparison.Ordinal);
+        Assert.Equal("dialogue.identity.summary", identityEvent.Code);
+    }
+
+    [Fact]
+    public void BuildDialogSection_ReportsAuditablePerFormIdIdentityEvent()
+    {
+        const uint prototypeDial = 0x00123456;
+        var sink = new RecordingSink();
+
+        _ = DialogGrupBuilder.BuildDialogSection(
+            [new DialogTopicRecord { FormId = prototypeDial, TopicType = 0 }],
+            [],
+            new NewVsOverrideClassifier([]),
+            new FormIdAllocator(),
+            [],
+            new Dictionary<uint, ParsedMainRecord>(),
+            new ConversionPipelineStats(),
+            sink);
+
+        var summary = Assert.Single(sink.Events,
+            static evt => evt.Code == "dialogue.identity.summary");
+        Assert.Equal(ConversionEventSeverity.Decision, summary.Severity);
+        var identity = Assert.Single(sink.Events,
+            static evt => evt.Code == "dialogue.identity.prototype-distinct");
+        Assert.Equal("DIAL", identity.FormType);
+        Assert.Equal(prototypeDial, identity.FormId);
+        Assert.Contains("kind=PrototypeDistinct", identity.Message, StringComparison.Ordinal);
+        Assert.Contains("evidenceINFOCount=0", identity.Message, StringComparison.Ordinal);
+        Assert.Contains("evidenceINFOPreview=none", identity.Message, StringComparison.Ordinal);
+        Assert.Contains("conflictCount=0", identity.Message, StringComparison.Ordinal);
+        Assert.Contains("conflictPreview=none", identity.Message, StringComparison.Ordinal);
+        Assert.Contains("reason=", identity.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReportIdentityTelemetry_BoundsEvidenceAndConflictPreviews()
+    {
+        const uint prototypeDial = 0x00123457;
+        var evidence = Enumerable.Range(1, 12)
+            .Select(static value => 0x00130000u + (uint)value)
+            .ToList();
+        var conflicts = Enumerable.Range(1, 6)
+            .Select(value => $"conflict-{value:D2}-" + new string('x', 300))
+            .ToList();
+        var identity = new DialogueTopicIdentity(
+            prototypeDial,
+            DialogueTopicIdentityKind.Ambiguous,
+            null,
+            evidence,
+            "Bounded telemetry fixture.")
+        {
+            Conflicts = conflicts,
+        };
+        var sink = new RecordingSink();
+
+        DialogGrupBuilder.ReportIdentityTelemetry([identity], sink);
+
+        var identityEvent = Assert.Single(sink.Events,
+            static evt => evt.Code == "dialogue.identity.ambiguous");
+        Assert.Equal(prototypeDial, identityEvent.FormId);
+        Assert.Contains("evidenceINFOCount=12", identityEvent.Message, StringComparison.Ordinal);
+        Assert.Contains("evidenceINFOPreview=0x00130001", identityEvent.Message, StringComparison.Ordinal);
+        Assert.Contains("0x00130008", identityEvent.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("0x00130009", identityEvent.Message, StringComparison.Ordinal);
+        Assert.Contains("conflictCount=6", identityEvent.Message, StringComparison.Ordinal);
+        Assert.Contains("conflict-04-", identityEvent.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("conflict-05-", identityEvent.Message, StringComparison.Ordinal);
+        Assert.True(identityEvent.Message.Length < 1_200, identityEvent.Message);
+    }
+
+    [Fact]
     public void BuildDialogSection_EmitsNewInfoUnderMasterDialAnchor()
     {
         const uint masterGoodbyeDial = 0x000000D4;
@@ -1021,5 +1115,15 @@ public sealed class DialogGrupBuilderTests
         }
 
         return count;
+    }
+
+    private sealed class RecordingSink : IConversionProgressSink
+    {
+        public List<ConversionProgressEvent> Events { get; } = [];
+
+        public void OnPhaseStart(string phase, int? totalItems) { }
+        public void OnEvent(ConversionProgressEvent evt) => Events.Add(evt);
+        public void OnPhaseEnd(string phase, ConversionPipelineStats partialStats) { }
+        public void OnComplete(ConversionPipelineStats stats) { }
     }
 }
