@@ -1,0 +1,143 @@
+; Fallout: New Vegas PC-final legacy PS1 basic-bump shader oracle.
+; MemDebug pass IDs 700/701 are inside BSSM_UNUSEDPASSES_FIRST..LAST (673..755), and the
+; captured retail BSSM_SV_2_A / PS 3.0 configuration selects GetRenderPasses_2x. These equations
+; are retained for package audit only; they are not evidence that retail submits this PS1 family.
+;
+; Stage-local identities are from the MemDebug PDB symbol table; instructions are disassembled
+; from Data/Shaders/shaderpackage003.sdp with tools/disasm_shader.py. VS and PS package numbers
+; are independent indices: PS 1010 is fog, while VS 1012 and PS 1013 are vertex-color variants.
+;
+;   PS 1009 = SLS_PS1_PPAMBDIFFUSETEXTUREDIR
+;   PS 1010 = SLS_PS1_PPAMBDIFFUSETEXTUREDIR_F   (fog)
+;   PS 1011 = SLS_PS1_PPAMBDIFFUSETEXTUREDIR_A   (material alpha)
+;   PS 1012 = SLS_PS1_PPAMBDIFFUSETEXTUREDIR_AF  (material alpha + fog)
+;   PS 1013 = SLS_PS1_PPAMBDIFFUSETEXTUREDIR_Vc  (vertex color)
+;   PS 1014 = SLS_PS1_PPAMBDIFFUSETEXTUREDIR_VcF (vertex color + fog)
+;   PS 1015 = SLS_PS1_PPAMBDIFFUSETEXTUREDIR_VcA (vertex color + material alpha)
+;   PS 1016 = SLS_PS1_PPAMBDIFFUSETEXTUREDIR_VcAF
+;   VS 1010 = SLS_VS1_PPAMBDIFFUSETEXTUREDIR
+;   VS 1011 = SLS_VS1_PPAMBDIFFUSETEXTUREDIR_F   (fog)
+;   VS 1012 = SLS_VS1_PPAMBDIFFUSETEXTUREDIR_Vc  (vertex color)
+;
+; Direct disassembly of PS 1011/1012/1015/1016 shows that A/AF changes only output alpha to
+; BaseMap.a * AmbientColor.w. Vc/VcF/VcA/VcAF declares vertex color as xyz; authored vertex alpha
+; is not a coverage input anywhere in this family.
+
+; === SLS1009.pso (532 bytes) ===
+; Constants: AmbientColor=c1, BaseMap=s0, NormalMap=s1, PSLightColor=c3
+ps_2_1
+def c0, -0.500000, 0.000000, 0.000000, 0.000000
+dcl_u00 a0.xy
+dcl_u00 a1.xy
+dcl_u00 a3.xyz
+dcl_2d s0/*BaseMap*/
+dcl_2d s1/*NormalMap*/
+texld r0, a0, s0/*BaseMap*/
+texld r1, a1, s1/*NormalMap*/
+add r1.xyz, r1, c0.xxxx
+add r1.xyz, r1, r1
+add r2.xyz, a3, c0.xxxx
+add r2.xyz, r2, r2
+dp3 r1.x, r1, r2
+mov r2.xyz, c3/*PSLightColor*/
+mad r1.xyz, r1.xxxx, r2, c1/*AmbientColor*/
+mul r0.xyz, r0, r1
+mov oC0, r0
+end
+
+; === SLS1010.pso (584 bytes) ===
+; Constants: AmbientColor=c1, BaseMap=s0, NormalMap=s1, PSLightColor=c3
+ps_2_1
+def c0, -0.500000, 0.000000, 0.000000, 0.000000
+dcl_u00 a0.xy
+dcl_u00 a1.xy
+dcl_u00 a3.xyz
+dcl_u00 v0
+dcl_2d s0/*BaseMap*/
+dcl_2d s1/*NormalMap*/
+texld r0, a0, s0/*BaseMap*/
+texld r1, a1, s1/*NormalMap*/
+add r1.xyz, r1, c0.xxxx
+add r1.xyz, r1, r1
+add r2.xyz, a3, c0.xxxx
+add r2.xyz, r2, r2
+dp3 r1.x, r1, r2
+mov r2.xyz, c3/*PSLightColor*/
+mad r1.xyz, r1.xxxx, r2, c1/*AmbientColor*/
+mul r2.xyz, r0, r1
+mad r1.xyz, r1, -r0, v0
+mad r0.xyz, v0.wwww, r1, r2
+mov oC0, r0
+end
+
+; === SLS1013.pso (560 bytes) ===
+; Constants: AmbientColor=c1, BaseMap=s0, NormalMap=s1, PSLightColor=c3
+ps_2_1
+def c0, -0.500000, 0.000000, 0.000000, 0.000000
+dcl_u00 a0.xy
+dcl_u00 a1.xy
+dcl_u00 a3.xyz
+dcl_u00 v0.xyz
+dcl_2d s0/*BaseMap*/
+dcl_2d s1/*NormalMap*/
+texld r0, a0, s0/*BaseMap*/
+texld r1, a1, s1/*NormalMap*/
+add r1.xyz, r1, c0.xxxx
+add r1.xyz, r1, r1
+add r2.xyz, a3, c0.xxxx
+add r2.xyz, r2, r2
+dp3 r1.x, r1, r2
+mov r2.xyz, c3/*PSLightColor*/
+mad r1.xyz, r1.xxxx, r2, c1/*AmbientColor*/
+mul r2.xyz, r0, v0
+mul r0.xyz, r1, r2
+mov oC0, r0
+end
+
+; === SLS1010.vso (452 bytes) ===
+; Constants: LightData=c25, ModelViewProj=c0..c3
+vs_2_0
+def c4, 0.500000, 0.000000, 0.000000, 0.000000
+dcl_position0 v0
+dcl_tangent0 v1
+dcl_binormal0 v2
+dcl_normal0 v3
+dcl_texcoord0 v4
+dp4 rast0.x, c0/*ModelViewProj[0]*/, v0
+dp4 rast0.y, c1/*ModelViewProj[1]*/, v0
+dp4 rast0.z, c2/*ModelViewProj[2]*/, v0
+dp4 rast0.w, c3/*ModelViewProj[3]*/, v0
+dp3 r0.x, v1, c25/*LightData*/
+dp3 r0.y, v2, c25/*LightData*/
+dp3 r0.z, v3, c25/*LightData*/
+mad o3.xyz, r0, c4.xxxx, c4.xxxx
+mov o0.xy, v4
+mov o1.xy, v4
+mov o2.xy, v4
+end
+
+; === SLS1012.vso (476 bytes) ===
+; Constants: LightData=c25, ModelViewProj=c0..c3
+vs_2_0
+def c4, 0.500000, 0.000000, 0.000000, 0.000000
+dcl_position0 v0
+dcl_tangent0 v1
+dcl_binormal0 v2
+dcl_normal0 v3
+dcl_texcoord0 v4
+dcl_color0 v5
+dp4 rast0.x, c0/*ModelViewProj[0]*/, v0
+dp4 rast0.y, c1/*ModelViewProj[1]*/, v0
+dp4 rast0.z, c2/*ModelViewProj[2]*/, v0
+dp4 rast0.w, c3/*ModelViewProj[3]*/, v0
+dp3 r0.x, v1, c25/*LightData*/
+dp3 r0.y, v2, c25/*LightData*/
+dp3 r0.z, v3, c25/*LightData*/
+mad o3.xyz, r0, c4.xxxx, c4.xxxx
+mov o0.xy, v4
+mov o1.xy, v4
+mov o2.xy, v4
+mov aout0, v5
+end
+
+; === SLS1021.pso (section terminator) ===

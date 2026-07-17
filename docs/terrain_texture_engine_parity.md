@@ -257,6 +257,236 @@ so the Xbox PDB enum names can be used to label the PC records.
   `v0`. `SLS1009.pso` is the basic bump-lit texture path with `BaseMap` and
   `NormalMap`.
 
+### Legacy PS1 PP-Lighting Basic Diffuse-Bump
+
+- The tracked PC-final oracle is `docs/fnv_basic_sls_shader_disassembly.txt`.
+  Shader-package numbers are stage-local: PS 1009 is the base
+  `PPAMBDIFFUSETEXTUREDIR` permutation, PS 1010 is its fog permutation, and PS
+  1013 is its vertex-color permutation. The matching vertex-color vertex shader
+  is VS 1012. Treating PS 1010's fog interpolation as a material vertex-alpha
+  combine was incorrect. This bytecode is a legacy-tier equation oracle, not the
+  shipped PC retail material route.
+- The MemDebug pass enum brackets IDs 673 through 755 with
+  `BSSM_UNUSEDPASSES_FIRST`/`BSSM_UNUSEDPASSES_LAST`; SLS1009 and SLS1013 map to
+  unused IDs 700 and 701. `BSShaderPPLightingProperty::GetRenderPasses` selects
+  `GetRenderPasses_1x` only when the global shader tier equals 1 and selects
+  `GetRenderPasses_2x` for every tier above 1. The captured retail
+  `RendererInfo.txt` reports `BSSM_SV_2_A`, PS version 300, and 3.0 Lighting
+  enabled, directly excluding the PS1 pass builder from that run.
+- The recovered vertex shader performs raw `dp3` operations between the authored
+  tangent/bitangent/normal basis and its object-space light vector, then packs
+  the result with `lightTs * 0.5 + 0.5`. The viewer's world-space equivalent
+  removes only uniform placement scale. It does not normalize the three basis
+  vectors, because their authored magnitudes are part of the interpolator.
+  Decoded scene-node transforms now rotate/remove uniform scale while preserving
+  each source vector's magnitude; this contract is persisted by decoded-mesh
+  cache v60.
+- The pixel shader unpacks both `NormalMap.rgb` and the interpolated light vector
+  with `(x - 0.5) * 2`, performs a raw signed `dp3`, and computes
+  `shade = AmbientColor + dp3 * PSLightColor` without normalization, saturation,
+  a shadow sample, or a placed-light loop. SLS1009 outputs
+  `BaseMap * shade`; SLS1013 outputs `BaseMap * vertexRgb * shade`. The A/AF
+  variants only multiply output alpha by `AmbientColor.w`; vertex alpha is not
+  an input to this family. The viewer retains its single common `ApplyFog`
+  stage rather than replaying the SLS1010 fog permutation as another material
+  combine.
+- The retained audit classifier is deliberately narrow: ordinary static BS34
+  `BSShaderPPLightingProperty` shader-type-1 geometry needs effective diffuse
+  and normal paths plus finite, usable UV/T/B/N data at every decoded vertex.
+  Alternate-texture overrides are evaluated first; shader type 29, raw
+  skinned/single-pass flags, and specular/environment/parallax/glow/effect/LOD
+  or malformed neighboring families fail closed. The decoded identity and
+  vertex-color discriminator are persisted in cache v62. The classifier never
+  activates the dormant PS1 family; the active ADT policy consumes it only
+  behind the independent frame/draw gates below.
+- A complete PC-final `Fallout - Meshes.bsa` census parsed 14,881/14,881 NIFs
+  with zero errors and classified 4,696 audit candidates: 538 SLS1009 and 4,158
+  SLS1013 identities across 1,772 assets. All candidate properties are BS34,
+  whose layout structurally omits per-material Ambient/Diffuse RGB; all have
+  zero emission and MaterialAlpha 1.0. The v60 transform audit has zero eligible
+  rows above `1e-5` raw-vs-baked basis-length error, with a maximum of
+  `2.3841858e-7`. These census counts describe the decoded classifier, not
+  active-route submissions; runtime gates additionally reject alpha paths and
+  other unsupported frame state.
+- The legacy point pass is PS `SLS1001` / VS `SLS1003`. It unpacks the normal
+  and a tangent-space cube-normal lookup, applies `dp3_sat`, multiplies the light
+  color, then multiplies separate `AttMapXY` and `AttMapZ` samples. This differs
+  from the viewer's analytic `saturate(1-d^2/r^2)` forward-light term, but it is
+  also inside the unused PS1 family and must not be layered onto retail output.
+
+### Active Retail PP-Lighting ADT Base
+
+- The bounded shipped-tier route now implemented is pass ID 193 (`BSSM_ADT`),
+  package013 `SLS2000`, for the zero-local-light base permutation. Eligibility
+  requires FNV with lighting enabled and the ordinary static BS34/type-1
+  classifier above; shader type 29 and raw skinned/single-pass inputs fail
+  closed.
+- Submission additionally requires zero uploaded placed lights, no projected
+  sun shadow or fog, no alpha blend/test, material alpha exactly 1, and no
+  material-alpha controller. Any failed gate stays on the combined viewer
+  fallback. Telemetry distinguishes frame gates
+  (`per-geometry-local-light-selection-unrecovered`,
+  `projected-shadow-permutation-unrecovered`,
+  `per-vertex-fog-interpolator-unrecovered`) from per-draw
+  `outside-active-adt-base-subset`; dormant SLS1009/SLS1013 counters remain
+  zero.
+- `SLS2000` normalizes both decoded `NormalMap.rgb` and the complete authored
+  T/B/N-transformed directional-light vector, preserves their raw signed dot,
+  and computes `shade = max(AmbientColor.rgb + PSLightColor.rgb * dot, 0)`
+  component-wise. RGB is `BaseMap.rgb * shade`, optionally multiplied by vertex
+  RGB when `Toggles.x` selects that branch. This route has no bump scale, shadow
+  sample, local-light loop, directional ambient cube, emission term, or
+  `AmbientColor.w` factor.
+- Decoder cache v63 retains the v62 strict material/vertex-color discriminator
+  and additionally persists each submesh's stable source-shape block index.
+  Warm v62 entries are invalidated because they cannot identify a shape for
+  property-associated light observations. Profiler scenario `fnv-active-adt-base` pins
+  the mixed Primm facade and passes 24/24 assertions, covering base and
+  `Toggles.x` submissions, alpha-tested fallback neighbors, dormant legacy
+  counters, zero locals, isolated post-processing/fog/shadows, and facade
+  signal.
+
+### Active Retail PP-Lighting Local-Light Oracles
+
+- Active pass selection is also recovered for the first grouped local-light
+  tiers. One property-associated local selects ID220 (`BSSM_ADT2`),
+  SLS2008/SLS2011; two or three select ID143 (`BSSM_ADT4`), SLS2022/SLS2031.
+  Both are opaque first passes with alpha blend/test off, depth writes on, and
+  the retail greater-equal depth comparison. The viewer records these as CPU
+  oracles only: `FnvActiveLocalLightOracle.RuntimeSupported` is false and no
+  production draw can select either pass.
+- ID220 maps the object-space point delta to
+  `q.xyz = 0.5 * ((P - X) / radius) + 0.5`, with `q.w = 0.5`, and evaluates
+  `a = 1 - Att(q.xy).r - Att(float2(q.z, 0.5)).r`. Its aggregate is
+  `Ambient + SunColor * dot(N,Lsun) + LocalColor * dot(N,Llocal) * a`.
+  The sun projection is normalized in SLS2008 before interpolation and consumed
+  directly by SLS2011. The point direction is normalized before the authored
+  T/B/N projection and again after interpolation. Both dots and `a` remain
+  signed; only the complete aggregate is clamped component-wise at zero.
+- ID143 instead has SLS2022 interpolate object position `X`; SLS2031 computes
+  `qi = (Pi - X) / Ri` per pixel and uses the analytic signed attenuation
+  `ai = 1 - dot(qi, qi)`. Its sun projection is likewise normalized in the
+  vertex shader and not renormalized after interpolation. Each local direction
+  is normalized in object space before the authored T/B/N projection, then
+  normalized again after interpolation. Each local term is
+  `LocalColor[i] * dot(N,Li) * ai`, accumulated with ambient and sun before the
+  one final clamp. `EmittanceColor.w` is the slot gate: values greater than
+  1/2/3 enable local slots 0/1/2; shipped ID143 uses 3 for two locals and 4 for
+  three. Disabled-slot CPU diagnostics return explicit zero sentinels rather
+  than claiming literal dormant shader intermediates.
+- The PC-final ID220 attenuation source is reconstructed as a 128x128 byte
+  table. For integer texel `(x,y)`,
+  `d2 = min((abs(x-63.5)/63.5)^2 + (abs(y-63.5)/63.5)^2, 1)` and each RGB byte
+  is `floor(255*d2)`. The center four texels are 0, `(32,63)` is 62,
+  `(31,47)` is 84, and the edge/corners are 255. The CPU oracle generates these
+  source texels but deliberately does not claim a bit-exact live sampler:
+  clamp/clamp and filter mode 6 are identified, while final maximum-anisotropy
+  policy and direct Xenon content/inversion evidence remain open.
+- The Xbox geometry-bound influence equation is recovered. For local lights,
+  `delta = NiLight.worldTranslate + globalSceneOffset - bound.center`,
+  `surfaceDistance = length(delta) - bound.radius`, and the light is within the
+  bound when `surfaceDistance < NiLight+0x10C`; the corresponding luminance
+  score is `surfaceDistance / (NiLight+0x10C)`. The field at `+0x10C` is kept
+  deliberately unnamed: its runtime writer/meaning has not yet been proven,
+  even though both recovered functions consume it exactly this way. All
+  recovered association callers use bound scale 1.
+- Candidate collection applies that bound predicate without a pre-attachment
+  cap. Its preliminary qsort is descending by cached score, but each lighting
+  property's final `ResortLights` pass re-evaluates the submitted geometry
+  bound and performs a stable ascending insertion sort—lower scores are
+  promoted and equal scores retain attached-list order. The active non-shadow
+  traversal then preserves that order while requiring frustum-cull byte not
+  `0xFF`, NiLight flag bit 0 clear, and `bCastShadow != 1`.
+  `RenderPass::SetLights` snapshots the resulting pointers in argument order;
+  the two/three-light cap belongs to later pass construction, not association.
+- `FnvRetailLightAssociationOracle` now pins the exact equation, strict boundary,
+  stable final order, no-cap behavior, and active filter as a CPU-only oracle.
+  `RuntimeSupported` remains false: the viewer still lacks the retail candidate
+  sources, the `NiLight+0x10C` writer/semantic, and proven world-light,
+  scene-offset, and geometry-bound inputs needed to reproduce membership.
+- Decoder/cache v63 now carries `SourceBlockIndex` through to the CPU-side
+  cached submesh. A separate telemetry-only association contract keys
+  `(geometry REFR FormID, source-shape block index)` and structurally separates
+  unknown, proven-empty, and known-ordered emitter REFR lists. It accepts any
+  positive list length without truncation, cannot drive rendering, and has no
+  production consumer. The camera-nearest frame-global viewer list is expressly
+  not evidence for this contract.
+
+### Classic PP-Lighting Environment Mapping
+
+- `BSShaderFlags` bit 7 is the FO3/FNV environment-mapping route. It is not the
+  FO4/FO76 BGSM `_s` convention. The classic texture set uses slot 4 for the
+  cubemap and optional slot 5 for a custom mask.
+- PC-final `SLS2057.pso` (`SLS_PS2_ENVMAP`) samples the normal map, transforms
+  the unpacked tangent-space normal, and reflects the eye vector into the cube.
+  Its mask is `lerp(normalMap.a, customMask.r, EnvToggles.w)`, followed by
+  multiplication by `EnvToggles.z` (the authored `EnvMapScale`). The resulting
+  cube RGB is also multiplied by `AmbientColor.w`; the vertex-color permutation
+  additionally modulates it by vertex color. There is no FO4 `_s.G` smoothness,
+  geometry/Fresnel approximation, or explicit cube-mip selection in this pass.
+- `SLS1032.pso`/`SLS1033.pso` confirm the same normal-alpha/custom-red mask
+  selection in the PS1 environment family. PDB enum names make the direction
+  split explicit: ordinary bit 7 selects `SLS2057` (`SLS_PS2_ENVMAP`); bit 21
+  `BSSP_FLAG_WINDOWREFLECT` selects `SLS2058` (`SLS_PS2_ENVMAP_W`), whose first
+  eye-vector normalize is negated; bit 17 `BSSP_FLAG_EYEREFLECT` selects the
+  separate `SLS2059` (`SLS_PS2_ENVMAP_EYE`) material family and is excluded from
+  the classic world-material route implemented here.
+- A complete PC-final `Fallout - Meshes.bsa` census found 42,317
+  `BSShaderPPLightingProperty` blocks. 4,379 bit-7 properties occur in 1,655 of
+  14,881 NIFs; 4,148 populate slot 4, 3,607 populate slot 5, and 3,486 populate
+  both. The Helios One solar-reflector row is the focused retail fixture: it
+  authors `textures\effects\chrome_e.dds`,
+  `textures\architecture\helios_one\Solar_Reflector_M.dds`, and scale 1.
+  Of the bit-7 properties, 745 across 483 meshes also set bit 21 and therefore
+  use the window reflection sign. All 23 bit-17 eye properties also carry bit 7;
+  the explicit eye exclusion prevents them from being misrouted as world metal.
+- The reference D3D12 path now carries classic cube/mask/scale as a distinct
+  extraction, persistent-cache, residency, and shader payload. That payload was
+  introduced in decoder v54 and remains present in the current v62 format.
+  Slot-5 red replaces normal alpha only for this route. FO4 retains its existing
+  BGSM cube plus `_s.R/_s.G`, smoothness mip, and geometry-term behavior.
+  Packed `TextureState` uses bits 6/7 for classic route/custom mask and bit 9 for
+  the window direction; bit 8 remains reserved for the classic parallax route.
+
+### Classic PP-Lighting Simple Parallax
+
+- The safe FO3/FNV simple-parallax route is narrowly identified by a
+  `BSShaderPPLightingProperty` with `BSShaderFlags` bit 11 set, a populated
+  texture-set slot 3, and bit 28 clear. Bit 28 is the distinct parallax-
+  occlusion (POM) family and is deliberately excluded: its PC shader performs a
+  multi-sample height walk and consumes the serialized POM parameters, so it is
+  not interchangeable with the simple offset.
+- PC-final `SM3004.pso` samples the height map once at the original material UV,
+  computes `offset = height * 0.04 - 0.02`, transforms the unnormalized
+  eye-minus-world vector by individually normalized tangent, bitangent, and
+  normal rows, normalizes that tangent-space view vector, and uses
+  `materialUv = originalUv + viewTS.xy * offset`. Diffuse/alpha and the normal
+  map are then sampled at `materialUv`. The equation has no serialized scale
+  multiplier.
+- PDB names keep the two routes separate (`bParallax` versus
+  `bParallaxOcclusion`) and identify the tail fields as
+  `fParallaxOccMaxPasses` and `fParallaxOccScale`. The decoder records those
+  fields only as audit evidence for the excluded POM family; the simple route
+  does not feed them to the shader.
+- A complete PC-final `Fallout - Meshes.bsa` census found 481 bit-11 properties
+  with slot 3 across 255 of 14,881 NIFs: 464 are simple and 17 also set bit 28
+  for POM. All 481 author four maximum passes; 467 store scale 1 and 14 store
+  scale 20. None overlap the classic environment route through bit 7, slot 4,
+  or slot 5. Thus none of the audited height maps competes with a classic slot-5
+  mask for `TexIndices.z`; the remaining union occupant, FO4 `_s`, belongs to
+  the separate external BGSM material family and cannot occur on these classic
+  PP-lighting properties. Focused fixtures cover the Silver Rush simple
+  material, a sulfur-cave material that also enables ordinary FNV specular, and
+  the retaining-wall stair POM material that must remain excluded.
+- The reference D3D12 path carries the height map through extraction, decoder
+  v55 persistent cache, texture residency/readiness/release, and the shared
+  reference pixel shader. Packed `TextureState` bit 8 selects parallax, while
+  `TexIndices.z` is a state-discriminated union of the classic height map,
+  classic environment mask, and FO4 specular map. Extraction requires usable
+  UV/TBN data and the shader retains a per-pixel degenerate-basis guard. Both
+  direct/blended and instanced reference draws use the same shifted diffuse,
+  alpha, normal, and applicable specular sampling path.
+
 ## Viewer Implications
 
 - The 2D renderer now uses weighted diffuse accumulation for BTXT/ATXT samples,
@@ -282,14 +512,15 @@ so the Xbox PDB enum names can be used to label the PC records.
 - The 2D terrain texture layer should be treated as a diffuse/albedo preview. It
   intentionally omits lighting, LAND normals, terrain detail maps, and water or
   atmospheric lighting effects.
-- The world-view REFR/NIF shader path now binds one diffuse texture plus an
-  optional texture-set slot-`1` normal map. It uses uploaded tangents and
-  bitangents, flips the normal-map green channel for DirectX convention, and
-  scales the tangent-space XY perturbation by `0.35`, matching the existing
-  NPC/offscreen renderer convention. It remains a simplified viewer shader:
-  alpha-test, vertex-color multiply, bump-mapped simple Lambert lighting, but no
-  glow maps, specular maps, environment maps, shader-specific pass families, or
-  exact PC shader-family lighting.
+- The world-view REFR/NIF shader path now includes the bounded FNV active
+  ID193/`BSSM_ADT`/`SLS2000` base route in addition to classic Lighting30
+  emission, FNV specular, environment mapping, and simple parallax.
+  SLS1009/SLS1013 remain audit-only; materials outside the active ADT gates stay
+  on the combined viewer fallback. Classic environment mapping uses the
+  recovered slot-5-red/normal-alpha mask equation above; simple parallax uses
+  the recovered one-sample SM3004 UV equation, while POM remains unsupported.
+  This is not a claim of full PS2/PS3 multi-pass parity: the viewer remains a
+  combined shader rather than a literal D3D9 pass replay.
 - The NPC/offscreen NIF renderer remains more advanced than the world-view REFR
   path for character-focused rendering: it has tint/emissive/FaceGen/eye
   approximations and more lighting terms. Those are useful viewer behavior, but
@@ -301,10 +532,10 @@ so the Xbox PDB enum names can be used to label the PC records.
 - The engine evidence supports keeping normal maps and vertex colors in the 3D
   viewer. PC shader disassembly supports a direct normal decode of
   `(sample - 0.5) * 2` and simple diffuse times vertex-color multiplication for
-  ordinary textured vertex-color passes. The current viewer's normal-map
-  strength, DirectX green-channel flip, and simple Lambert lighting remain
-  approximations until the relevant PC shader families and render states are
-  implemented.
+  ordinary textured vertex-color passes. Outside the recovered active ADT
+  branch, normal-map strength and combined Lambert lighting remain viewer
+  approximations. The active branch instead uses the exact unscaled `SLS2000`
+  decode/equation above and performs no green-channel flip.
 - The current zoom buckets and viewport-limited 2D texture builds are viewer
   performance policy, not engine behavior.
 - The zoomed-out NavMesh cell-summary overlay and 2D water tint overlay are also
@@ -325,10 +556,28 @@ so the Xbox PDB enum names can be used to label the PC records.
   selection/render-state parity becomes necessary.
 - The fixed landscape stage resources at `0x832B3774`, `0x832B377C`, and
   `0x832B3780` still need identity tracing.
-- Exact PC vertex-color combine, normal-map math, detail-map math, noise
-  contribution, specular/glow/environment behavior, and final lighting should be
-  taken from PC shader bytecode first, then tied back to material/pass selection
-  with Xbox-symbol decompilation and PC executable checks where needed.
+- FNV active local-light runtime routing remains open even though the ID220/143
+  CPU equations, PC attenuation source table, bound-influence equation, and
+  property-side sort/traversal order above are recovered. The zero-light gate currently sees the
+  frame-global uploaded placed-light count because the viewer does not yet
+  reconstruct each property's retail candidate set or provide the proven
+  `NiLight+0x10C`, world-light, scene-offset, and geometry-bound inputs needed
+  to evaluate its influence membership. Consequently any visible uploaded local light forces
+  every classifier candidate to fail closed with
+  `per-geometry-local-light-selection-unrecovered`, including geometry not
+  associated with that light; this is a conservative false negative. Recover
+  those association inputs, prepared local color, batch splitting, and the final
+  sampler policy before enabling positive local-light routes. The stable
+  source-shape identity and tri-state observation model are groundwork only;
+  neither is connected to production routing.
+  Projected-shadow and per-vertex-fog permutations also remain deliberately
+  fallback-only.
+- Remaining terrain vertex-color variants, detail-map math, noise contribution,
+  and final multi-pass lighting should be taken from PC shader bytecode first,
+  then tied back to material/pass selection with Xbox-symbol decompilation and
+  PC executable checks where needed. The bounded classic world-material
+  specular, environment, and simple-parallax routes above now have direct
+  PC-bytecode evidence. SLS1009/SLS1013 remain legacy-tier audit evidence only.
 - `tools/ShaderProbe` now extracts Xbox shader records and their printable
   metadata. Xenos microcode disassembly would still be useful for cross-platform
   comparison, but it is optional for PC parity as long as the PC D3D9 shader
