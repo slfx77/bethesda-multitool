@@ -145,6 +145,14 @@ internal static class RendererProfilerTrace
         {
             Add("waterPipeline", stats.WaterPipeline);
         }
+        if (stats.WaterTechnique is not null)
+        {
+            Add("waterTechnique", stats.WaterTechnique);
+        }
+        if (stats.WaterTelemetryUnavailableReason is not null)
+        {
+            Add("waterFallbackReason", stats.WaterTelemetryUnavailableReason);
+        }
         Add("wireframeDraws", stats.WireframeDraws);
         Add("refCellsVisited", stats.ReferenceCellsVisited);
         Add("refCandidates", stats.ReferenceCandidates);
@@ -175,6 +183,29 @@ internal static class RendererProfilerTrace
         Add("refInstances", stats.ReferenceInstances);
         Add("refInstancedDraws", stats.ReferenceInstancedDraws);
         Add("refBlendedDraws", stats.ReferenceBlendedDraws);
+        Add("refFnvSls1009Draws", stats.ReferenceFnvSls1009Draws);
+        Add("refFnvSls1009Instances", stats.ReferenceFnvSls1009Instances);
+        Add("refFnvSls1013Draws", stats.ReferenceFnvSls1013Draws);
+        Add("refFnvSls1013Instances", stats.ReferenceFnvSls1013Instances);
+        Add("refPlacedLightCount", stats.ReferencePlacedLightCount);
+        Add("refFnvClassicBasicLightingEnabled", stats.ReferenceFnvClassicBasicLightingEnabled);
+        Add("refFnvClassicBasicFallbackDraws", stats.ReferenceFnvClassicBasicFallbackDraws);
+        Add("refFnvClassicBasicFallbackInstances", stats.ReferenceFnvClassicBasicFallbackInstances);
+        if (stats.ReferenceFnvClassicBasicFallbackReason is not null)
+        {
+            Add("refFnvClassicBasicFallbackReason", stats.ReferenceFnvClassicBasicFallbackReason);
+        }
+        Add("refFnvActiveAdtBaseDraws", stats.ReferenceFnvActiveAdtBaseDraws);
+        Add("refFnvActiveAdtBaseInstances", stats.ReferenceFnvActiveAdtBaseInstances);
+        Add("refFnvActiveAdtBaseVertexColorDraws", stats.ReferenceFnvActiveAdtBaseVertexColorDraws);
+        Add("refFnvActiveAdtBaseVertexColorInstances", stats.ReferenceFnvActiveAdtBaseVertexColorInstances);
+        Add("refFnvActiveAdtBaseEnabled", stats.ReferenceFnvActiveAdtBaseEnabled);
+        Add("refFnvActiveAdtBaseFallbackDraws", stats.ReferenceFnvActiveAdtBaseFallbackDraws);
+        Add("refFnvActiveAdtBaseFallbackInstances", stats.ReferenceFnvActiveAdtBaseFallbackInstances);
+        if (stats.ReferenceFnvActiveAdtBaseFallbackReason is not null)
+        {
+            Add("refFnvActiveAdtBaseFallbackReason", stats.ReferenceFnvActiveAdtBaseFallbackReason);
+        }
         Add("refSceneDepthBlendedDraws", stats.ReferenceSceneDepthBlendedDraws);
         Add("refSoftParticleDraws", stats.ReferenceSoftParticleDraws);
         Add("refSoftParticleAuthoredDraws", stats.ReferenceSoftParticleAuthoredDraws);

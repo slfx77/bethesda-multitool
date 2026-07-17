@@ -86,6 +86,75 @@ public sealed class RendererProfilerOptionsTests
     }
 
     [Fact]
+    public void CloudMotionScenario_PinsRetailPostStackWithoutUnrelatedShadows()
+    {
+        Assert.True(RendererProfilerScenarioCatalog.TryCreate(
+            RendererProfilerScenarioCatalog.FnvCloudMotion, out var plan));
+
+        Assert.Equal(2, plan!.Steps.Count);
+        Assert.All(plan.Steps, step =>
+        {
+            var postProcess = Assert.IsType<RendererProfilerScenarioPostProcessSettings>(
+                step.PostProcessSettings);
+            Assert.True(postProcess.HdrEnabled);
+            Assert.True(postProcess.BloomEnabled);
+            Assert.True(postProcess.ImagespaceEnabled);
+            Assert.True(postProcess.FogEnabled);
+            Assert.False(postProcess.ShadowsEnabled);
+            Assert.True(step.ClearAdaptedLightBeforeCapture);
+        });
+    }
+
+    [Fact]
+    public void SunlightDimmerScenario_IsolatesTheRecoveredConsumerGates()
+    {
+        Assert.True(RendererProfilerScenarioCatalog.TryCreate(
+            RendererProfilerScenarioCatalog.FnvSunlightDimmer, out var plan));
+
+        var steps = plan!.Steps;
+        Assert.Equal(3, steps.Count);
+        Assert.All(steps, step =>
+        {
+            Assert.Equal("NVWastelandClear", step.WeatherEditorId);
+            Assert.Equal(12f, step.GameHour);
+            var postProcess = Assert.IsType<RendererProfilerScenarioPostProcessSettings>(
+                step.PostProcessSettings);
+            Assert.False(postProcess.BloomEnabled);
+            Assert.True(postProcess.FogEnabled);
+        });
+        var enabled = Assert.IsType<RendererProfilerScenarioPostProcessSettings>(steps[0].PostProcessSettings);
+        var imagespaceOff = Assert.IsType<RendererProfilerScenarioPostProcessSettings>(
+            steps[1].PostProcessSettings);
+        var hdrOff = Assert.IsType<RendererProfilerScenarioPostProcessSettings>(steps[2].PostProcessSettings);
+        Assert.True(enabled.HdrEnabled);
+        Assert.True(enabled.ImagespaceEnabled);
+        Assert.True(imagespaceOff.HdrEnabled);
+        Assert.False(imagespaceOff.ImagespaceEnabled);
+        Assert.False(hdrOff.HdrEnabled);
+        Assert.True(hdrOff.ImagespaceEnabled);
+    }
+
+    [Fact]
+    public void AdaptationHistoryScenario_PinsRetailBoundaryAndExplicitClear()
+    {
+        Assert.True(RendererProfilerScenarioCatalog.TryCreate(
+            RendererProfilerScenarioCatalog.FnvAdaptationHistory, out var plan));
+
+        Assert.Equal(3, plan!.Steps.Count);
+        var west = plan.Steps[0];
+        var east = plan.Steps[1];
+        var cleared = plan.Steps[2];
+        Assert.Equal(24575.5f, west.CameraPosition.X);
+        Assert.Equal(24576.5f, east.CameraPosition.X);
+        Assert.Equal(east.CameraPosition, cleared.CameraPosition);
+        Assert.False(west.ClearAdaptedLightBeforeCapture);
+        Assert.False(east.ClearAdaptedLightBeforeCapture);
+        Assert.True(cleared.ClearAdaptedLightBeforeCapture);
+        Assert.Equal(west.PostProcessSettings, east.PostProcessSettings);
+        Assert.Equal(east.PostProcessSettings, cleared.PostProcessSettings);
+    }
+
+    [Fact]
     public void TryParse_ScenarioWithoutOutputGetsTimestampedArtifactDirectory()
     {
         WithInput(input =>

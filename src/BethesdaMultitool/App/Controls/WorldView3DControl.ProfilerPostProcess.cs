@@ -1,4 +1,6 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool;
 
@@ -16,7 +18,10 @@ internal sealed record WorldView3DProfilerPostProcessState(
     bool EffectiveBloomEnabled,
     string TonemapMode,
     string? BaseImageSpaceEditorId,
-    string BaseImageSpaceSource);
+    string BaseImageSpaceSource,
+    float ResolvedSunlightScale,
+    float SceneSunlightScale,
+    bool ShadowsEnabled);
 
 /// <summary>Retail placed-reference identity retained alongside a profiler scenario fixture.</summary>
 internal sealed record WorldView3DProfilerFixture(
@@ -41,17 +46,20 @@ public sealed partial class WorldView3DControl
         bool hdrEnabled,
         bool bloomEnabled,
         bool imagespaceEnabled,
-        bool fogEnabled)
+        bool fogEnabled,
+        bool shadowsEnabled = true)
     {
         _hdrEnabled = hdrEnabled;
         _bloomEnabled = bloomEnabled;
         _imagespaceModifiersEnabled = imagespaceEnabled;
         _showFog = fogEnabled;
+        _showShadows = shadowsEnabled;
 
         SettingsPanel.HdrToggle.IsOn = hdrEnabled;
         SettingsPanel.BloomToggle.IsOn = bloomEnabled;
         SettingsPanel.ImagespaceToggle.IsOn = imagespaceEnabled;
         LightingPanel.FogEnabled = fogEnabled;
+        LightingPanel.ShadowsEnabled = shadowsEnabled;
     }
 
     /// <summary>Read back both the private gates and the effective tonemap immediately before capture.</summary>
@@ -60,6 +68,12 @@ public sealed partial class WorldView3DControl
         get
         {
             var tonemap = ResolveTonemapSettings();
+            var hdrActive = _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
+            var sceneSunlightScale = GpuTonemapSettings.ResolveSceneSunlightScale(
+                tonemap,
+                _data?.Game ?? BethesdaGame.Unknown,
+                hdrActive,
+                isInterior: _selectedInterior is not null);
             return new WorldView3DProfilerPostProcessState(
                 _hdrEnabled,
                 _bloomEnabled,
@@ -69,7 +83,10 @@ public sealed partial class WorldView3DControl
                 tonemap.BloomEnabled,
                 tonemap.Mode.ToString(),
                 _tonemapBaseImageSpaceEditorId,
-                _tonemapBaseImageSpaceSource);
+                _tonemapBaseImageSpaceSource,
+                tonemap.SunlightScale,
+                sceneSunlightScale,
+                _showShadows);
         }
     }
 

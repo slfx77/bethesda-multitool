@@ -110,12 +110,15 @@ internal sealed partial class MainWindow
                         fixture.BaseEditorId,
                         expectedFixture.BaseEditorId,
                         StringComparison.OrdinalIgnoreCase) ||
+                    (expectedFixture.CellFormId is { } expectedCellFormId &&
+                     fixture.CellFormId != expectedCellFormId) ||
                     Vector3.Distance(fixture.Position, expectedFixture.PlacementPosition) > 0.01f ||
                     Vector3.Distance(fixture.RotationRadians, expectedFixture.PlacementRotationRadians) > 0.0001f)
                 {
                     throw new InvalidOperationException(
                         $"Fixture REFR 0x{fixture.ReferenceFormId:X8} did not match its retail ESM transform: " +
-                        $"baseEditorId='{fixture.BaseEditorId ?? "(none)"}', position={fixture.Position}, " +
+                        $"baseEditorId='{fixture.BaseEditorId ?? "(none)"}', " +
+                        $"cellFormId=0x{fixture.CellFormId:X8}, position={fixture.Position}, " +
                         $"rotation={fixture.RotationRadians}.");
                 }
 
@@ -137,6 +140,47 @@ internal sealed partial class MainWindow
                         fixture.RotationRadians.Z,
                     },
                     ["scale"] = fixture.Scale,
+                });
+            }
+
+            if (plan.SyntheticWaterFixture is { } expectedWaterFixture)
+            {
+                if (plan.Steps.Any(step =>
+                        !float.IsFinite(step.CameraPosition.Z) ||
+                        step.CameraPosition.Z <= expectedWaterFixture.PlaneHeight))
+                {
+                    throw new InvalidOperationException(
+                        $"Synthetic WATER001 fixture plane {expectedWaterFixture.PlaneHeight} is not " +
+                        "strictly below every scenario camera.");
+                }
+
+                var waterFixture = _owner._worldView.Profiler_ApplyFnvWater001SyntheticFixture(
+                    plan.WorldspaceEditorId,
+                    expectedWaterFixture.SourceCellFormId,
+                    expectedWaterFixture.GridX,
+                    expectedWaterFixture.GridY,
+                    expectedWaterFixture.WaterFormId,
+                    expectedWaterFixture.PlaneHeight) ?? throw new InvalidOperationException(
+                    $"Synthetic WATER001 source CELL 0x{expectedWaterFixture.SourceCellFormId:X8} " +
+                    $"grid ({expectedWaterFixture.GridX},{expectedWaterFixture.GridY}) / WATR " +
+                    $"0x{expectedWaterFixture.WaterFormId:X8} did not match the loaded retail " +
+                    $"worldspace or had no opaque LAND below plane {expectedWaterFixture.PlaneHeight}.");
+
+                RendererProfilerTrace.Event("scenario-water-fixture", new Dictionary<string, object?>
+                {
+                    ["scenario"] = plan.Name,
+                    ["worldspace"] = plan.WorldspaceEditorId,
+                    ["sourceCellFormId"] = $"0x{waterFixture.SourceCellFormId:X8}",
+                    ["gridX"] = waterFixture.GridX,
+                    ["gridY"] = waterFixture.GridY,
+                    ["waterFormId"] = $"0x{waterFixture.WaterFormId:X8}",
+                    ["waterEditorId"] = waterFixture.WaterEditorId,
+                    ["planeHeight"] = waterFixture.PlaneHeight,
+                    ["terrainMinimumHeight"] = waterFixture.TerrainMinimumHeight,
+                    ["terrainMaximumHeight"] = waterFixture.TerrainMaximumHeight,
+                    ["terrainSamplesBelowPlane"] = waterFixture.TerrainSamplesBelowPlane,
+                    ["generatedWaterCellCount"] = 1,
+                    ["opaqueSceneSource"] = "retail-land-and-references",
                 });
             }
 
@@ -176,7 +220,8 @@ internal sealed partial class MainWindow
                     requestedPostProcess.HdrEnabled,
                     requestedPostProcess.BloomEnabled,
                     requestedPostProcess.ImagespaceEnabled,
-                    requestedPostProcess.FogEnabled);
+                    requestedPostProcess.FogEnabled,
+                    requestedPostProcess.ShadowsEnabled);
             }
 
             var currentPose = _owner._worldView.Profiler_CameraPose;
@@ -224,6 +269,11 @@ internal sealed partial class MainWindow
             _owner._worldView.Visibility = Visibility.Collapsed;
             await Task.Delay(250, cancellationToken);
 
+            if (step.ClearAdaptedLightBeforeCapture)
+            {
+                _owner._worldView.RequestClearAdaptedLight();
+            }
+
             // Read the existing private gates and effective tonemap once more immediately before
             // capture. This detects an async UI/atmosphere refresh overwriting a requested toggle
             // after the live-settle validation.
@@ -247,9 +297,12 @@ internal sealed partial class MainWindow
                     $"Step '{step.Id}' returned {bgra.Length:N0} bytes; expected {expectedByteCount:N0}.");
             }
 
-            var snapshot = _owner._worldView.Profiler_LastCaptureScenarioSnapshot ??
-                           throw new InvalidOperationException(
-                               $"Step '{step.Id}' captured pixels but produced no structural snapshot.");
+            var snapshot = (_owner._worldView.Profiler_LastCaptureScenarioSnapshot ??
+                            throw new InvalidOperationException(
+                                $"Step '{step.Id}' captured pixels but produced no structural snapshot.")) with
+            {
+                SceneSampleCount = _owner._worldView.Profiler_SceneSampleCount,
+            };
             var path = Path.Combine(_outputDirectory, $"{stepIndex:D2}-{step.Id}.png");
             PngWriter.SaveRgba(BgraToRgba(bgra), width, height, path);
             var pixelSha256 = CaptureImageFingerprint.Compute(bgra);
@@ -297,7 +350,10 @@ internal sealed partial class MainWindow
                 state.EffectiveBloomEnabled,
                 state.TonemapMode,
                 state.BaseImageSpaceEditorId,
-                state.BaseImageSpaceSource);
+                state.BaseImageSpaceSource,
+                state.ResolvedSunlightScale,
+                state.SceneSunlightScale,
+                state.ShadowsEnabled);
         }
 
         private static void ValidateAppliedPostProcess(
@@ -312,18 +368,21 @@ internal sealed partial class MainWindow
             var togglesMatch = applied.HdrEnabled == requested.HdrEnabled &&
                                applied.BloomEnabled == requested.BloomEnabled &&
                                applied.ImagespaceEnabled == requested.ImagespaceEnabled &&
-                               applied.FogEnabled == requested.FogEnabled;
+                               applied.FogEnabled == requested.FogEnabled &&
+                               applied.ShadowsEnabled == requested.ShadowsEnabled;
             var effectiveBloomExpected = requested.HdrEnabled && requested.BloomEnabled;
             if (!togglesMatch || applied.EffectiveHdrEnabled != requested.HdrEnabled ||
                 applied.EffectiveBloomEnabled != effectiveBloomExpected)
             {
                 throw new InvalidOperationException(
                     $"Step '{step.Id}' post-process state was overwritten or could not take effect. " +
-                    $"Requested HDR/Bloom/Imagespace/Fog=" +
+                    $"Requested HDR/Bloom/Imagespace/Fog/Shadows=" +
                     $"{requested.HdrEnabled}/{requested.BloomEnabled}/" +
-                    $"{requested.ImagespaceEnabled}/{requested.FogEnabled}; " +
+                    $"{requested.ImagespaceEnabled}/{requested.FogEnabled}/" +
+                    $"{requested.ShadowsEnabled}; " +
                     $"applied={applied.HdrEnabled}/{applied.BloomEnabled}/" +
-                    $"{applied.ImagespaceEnabled}/{applied.FogEnabled}; " +
+                    $"{applied.ImagespaceEnabled}/{applied.FogEnabled}/" +
+                    $"{applied.ShadowsEnabled}; " +
                     $"effective HDR/Bloom={applied.EffectiveHdrEnabled}/{applied.EffectiveBloomEnabled} " +
                     $"mode={applied.TonemapMode} baseImagespace=" +
                     $"{applied.BaseImageSpaceEditorId ?? "(none)"} ({applied.BaseImageSpaceSource}).");
@@ -368,6 +427,32 @@ internal sealed partial class MainWindow
             fields["animationClockSeconds"] = result.Step.AnimationTimeSeconds;
             fields["worldspace"] = result.Snapshot.WorldspaceEditorId;
             fields["weather"] = result.Snapshot.WeatherEditorId;
+            fields["fnvSls1009Draws"] = result.Snapshot.FnvSls1009Draws;
+            fields["fnvSls1009Instances"] = result.Snapshot.FnvSls1009Instances;
+            fields["fnvSls1013Draws"] = result.Snapshot.FnvSls1013Draws;
+            fields["fnvSls1013Instances"] = result.Snapshot.FnvSls1013Instances;
+            fields["placedLightCount"] = result.Snapshot.PlacedLightCount;
+            fields["fnvClassicBasicLightingEnabled"] =
+                result.Snapshot.FnvClassicBasicLightingEnabled;
+            fields["fnvClassicBasicFallbackDraws"] =
+                result.Snapshot.FnvClassicBasicFallbackDraws;
+            fields["fnvClassicBasicFallbackInstances"] =
+                result.Snapshot.FnvClassicBasicFallbackInstances;
+            fields["fnvClassicBasicFallbackReason"] =
+                result.Snapshot.FnvClassicBasicFallbackReason;
+            fields["fnvActiveAdtBaseDraws"] = result.Snapshot.FnvActiveAdtBaseDraws;
+            fields["fnvActiveAdtBaseInstances"] = result.Snapshot.FnvActiveAdtBaseInstances;
+            fields["fnvActiveAdtBaseVertexColorDraws"] =
+                result.Snapshot.FnvActiveAdtBaseVertexColorDraws;
+            fields["fnvActiveAdtBaseVertexColorInstances"] =
+                result.Snapshot.FnvActiveAdtBaseVertexColorInstances;
+            fields["fnvActiveAdtBaseEnabled"] = result.Snapshot.FnvActiveAdtBaseEnabled;
+            fields["fnvActiveAdtBaseFallbackDraws"] =
+                result.Snapshot.FnvActiveAdtBaseFallbackDraws;
+            fields["fnvActiveAdtBaseFallbackInstances"] =
+                result.Snapshot.FnvActiveAdtBaseFallbackInstances;
+            fields["fnvActiveAdtBaseFallbackReason"] =
+                result.Snapshot.FnvActiveAdtBaseFallbackReason;
             fields["gameHour"] = result.Snapshot.GameHour;
             fields["gameDay"] = result.Snapshot.GameDay;
             fields["brightPixelCount"] = result.ImageStatistics.BrightPixelCount;
@@ -375,6 +460,37 @@ internal sealed partial class MainWindow
             fields["meanLuminance"] = result.ImageStatistics.MeanLuminance;
             fields["luminanceP95"] = result.ImageStatistics.LuminanceP95;
             fields["luminanceP99"] = result.ImageStatistics.LuminanceP99;
+            fields["tonemapHistoryKey"] = $"0x{result.Snapshot.TonemapHistoryKey:X16}";
+            fields["tonemapHistoryReset"] = result.Snapshot.TonemapHistoryReset;
+            fields["tonemapHistoryResetReason"] = result.Snapshot.TonemapHistoryResetReason;
+            fields["sunriseBegin"] = result.Snapshot.ClimateTiming.SunriseBeginHour;
+            fields["sunriseEnd"] = result.Snapshot.ClimateTiming.SunriseEndHour;
+            fields["sunsetBegin"] = result.Snapshot.ClimateTiming.SunsetBeginHour;
+            fields["sunsetEnd"] = result.Snapshot.ClimateTiming.SunsetEndHour;
+            fields["atmosphericColorBand"] = new Dictionary<string, object?>
+            {
+                ["fromBand"] = result.Snapshot.AtmosphericColorBand.FromBand,
+                ["toBand"] = result.Snapshot.AtmosphericColorBand.ToBand,
+                ["toWeight"] = result.Snapshot.AtmosphericColorBand.ToWeight,
+            };
+            fields["tonemapTargetLum"] = result.Snapshot.Tonemap.TargetLum;
+            fields["tonemapTint"] = new[]
+            {
+                result.Snapshot.Tonemap.TintR,
+                result.Snapshot.Tonemap.TintG,
+                result.Snapshot.Tonemap.TintB,
+                result.Snapshot.Tonemap.TintAmount,
+            };
+            fields["weatherImageSpaceContributions"] = result.Snapshot.WeatherImageSpaceContributions
+                .Select(static contribution => new Dictionary<string, object?>
+                {
+                    ["band"] = contribution.Band,
+                    ["modifierFormId"] = contribution.ModifierFormId,
+                    ["modifierFormIdHex"] = $"0x{contribution.ModifierFormId:X8}",
+                    ["modifierEditorId"] = contribution.ModifierEditorId,
+                    ["weight"] = contribution.Weight,
+                    ["timelineTime"] = contribution.TimelineTime,
+                }).ToArray();
             fields["imageRegions"] = RegionFields(result.ImageRegions);
             if (result.AppliedPostProcessSettings is { } postProcess)
             {
@@ -382,6 +498,7 @@ internal sealed partial class MainWindow
                 fields["bloomEnabled"] = postProcess.BloomEnabled;
                 fields["imagespaceEnabled"] = postProcess.ImagespaceEnabled;
                 fields["fogEnabled"] = postProcess.FogEnabled;
+                fields["shadowsEnabled"] = postProcess.ShadowsEnabled;
                 fields["effectiveHdrEnabled"] = postProcess.EffectiveHdrEnabled;
                 fields["effectiveBloomEnabled"] = postProcess.EffectiveBloomEnabled;
                 fields["tonemapMode"] = postProcess.TonemapMode;
@@ -439,6 +556,21 @@ internal sealed partial class MainWindow
                 var y0 = ScaleRegionEdge(238, 540, height);
                 var y1 = ScaleRegionEdge(300, 540, height);
                 return [AnalyzeImageRegion("moon-window", bgra, width, height, x0, y0, x1, y1)];
+            }
+
+            if (string.Equals(
+                    plan.Name,
+                    RendererProfilerScenarioCatalog.FnvActiveAdtBase,
+                    StringComparison.Ordinal))
+            {
+                // The catalog pose centers the complete 512x350-unit mixed-route facade at a
+                // 650-unit standoff. This window encloses that projected AABB with modest margin at
+                // the 960x540 reference size and scales for diagnostic captures at other sizes.
+                var x0 = ScaleRegionEdge(260, 960, width);
+                var x1 = ScaleRegionEdge(700, 960, width);
+                var y0 = ScaleRegionEdge(120, 540, height);
+                var y1 = ScaleRegionEdge(430, 540, height);
+                return [AnalyzeImageRegion("active-adt-facade", bgra, width, height, x0, y0, x1, y1)];
             }
 
             return [];

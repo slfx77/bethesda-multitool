@@ -149,8 +149,9 @@ internal sealed record RendererProfilerOptions
           --profile-interval-ms <n>   Aggregate profile interval. Default: 2000.
           --duration-seconds <n>      Exit automatically after the viewer has loaded.
           --scenario <name>           Run a deterministic same-process acceptance scenario and exit.
-                                      Names: fnv-water-night-matrix, fnv-cloud-motion, fnv-celestial,
-                                      fnv-prospector-neon-bloom.
+                                      Names: fnv-water-night-matrix, fnv-water001-synthetic,
+                                      fnv-cloud-motion, fnv-celestial, fnv-prospector-neon-bloom, fnv-sunlight-dimmer,
+                                      fnv-adaptation-history, fnv-weather-imagespace-bands, fnv-active-adt-base.
           --scenario-output <dir>     Scenario artifact directory. Defaults beside the timestamped profile log.
           --stress-scene <name>       Sets FALLOUT_VIEWER_STRESS_SCENE. Default: WastelandNV; use none to disable.
           --worldspace <name>         Select this worldspace at load (EditorID/FullName; in-process FALLOUT_VIEWER_WORLDSPACE).

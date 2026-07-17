@@ -50,7 +50,10 @@ internal sealed record RendererProfilerScenarioAppliedPostProcessSettings(
     bool EffectiveBloomEnabled,
     string TonemapMode,
     string? BaseImageSpaceEditorId,
-    string BaseImageSpaceSource);
+    string BaseImageSpaceSource,
+    float ResolvedSunlightScale,
+    float SceneSunlightScale,
+    bool ShadowsEnabled = true);
 
 internal sealed record RendererProfilerScenarioStepResult(
     RendererProfilerScenarioStep Step,

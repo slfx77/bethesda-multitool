@@ -56,7 +56,8 @@ internal static class RendererProfilerScenarioAssertions
                     applied.HdrEnabled == requestedPostProcess.HdrEnabled &&
                     applied.BloomEnabled == requestedPostProcess.BloomEnabled &&
                     applied.ImagespaceEnabled == requestedPostProcess.ImagespaceEnabled &&
-                    applied.FogEnabled == requestedPostProcess.FogEnabled,
+                    applied.FogEnabled == requestedPostProcess.FogEnabled &&
+                    applied.ShadowsEnabled == requestedPostProcess.ShadowsEnabled,
                     requestedPostProcess, applied);
                 StepAdd("state.post-process-effective",
                     applied is not null &&
@@ -103,6 +104,9 @@ internal static class RendererProfilerScenarioAssertions
             case RendererProfilerScenarioCatalog.FnvWaterNightMatrix:
                 EvaluateWaterNight(results, Add);
                 break;
+            case RendererProfilerScenarioCatalog.FnvWater001Synthetic:
+                EvaluateWater001Synthetic(results, Add);
+                break;
             case RendererProfilerScenarioCatalog.FnvCloudMotion:
                 EvaluateCloudMotion(results, Add);
                 break;
@@ -111,6 +115,18 @@ internal static class RendererProfilerScenarioAssertions
                 break;
             case RendererProfilerScenarioCatalog.FnvProspectorNeonBloom:
                 EvaluateProspectorNeonBloom(results, Add);
+                break;
+            case RendererProfilerScenarioCatalog.FnvSunlightDimmer:
+                EvaluateSunlightDimmer(results, Add);
+                break;
+            case RendererProfilerScenarioCatalog.FnvAdaptationHistory:
+                EvaluateAdaptationHistory(results, Add);
+                break;
+            case RendererProfilerScenarioCatalog.FnvWeatherImageSpaceBands:
+                EvaluateWeatherImageSpaceBands(results, Add);
+                break;
+            case RendererProfilerScenarioCatalog.FnvActiveAdtBase:
+                EvaluateActiveAdtBase(results, Add);
                 break;
         }
 
@@ -140,25 +156,58 @@ internal static class RendererProfilerScenarioAssertions
                 snapshot.WaterDraws, "The Lake Mead fixture issued water draw calls.");
             add("water.pipeline", !string.IsNullOrWhiteSpace(snapshot.WaterPipeline), i, result.Step.Id,
                 "non-empty", snapshot.WaterPipeline, "The capture reported its selected water pipeline.");
+            add("water.technique", !string.IsNullOrWhiteSpace(snapshot.WaterTechnique), i, result.Step.Id,
+                "non-empty", snapshot.WaterTechnique,
+                "The capture reported the selected water shader and scene-input route.");
+            var expectedFallbackTechnique =
+                $"FnvWater003RtFree-scene-depth-{SceneDepthRoute(snapshot.SceneSampleCount)}";
+            add("water.retail-mixed-context-fallback-technique",
+                string.Equals(snapshot.WaterTechnique, expectedFallbackTechnique, StringComparison.Ordinal),
+                i, result.Step.Id, expectedFallbackTechnique, snapshot.WaterTechnique,
+                "The retail four-cell Lake Mead view remains a WATER003 fallback proof; it must not " +
+                "silently enter WATER001 under a heterogeneous visible WATR set.");
+            add("water.retail-mixed-context-fallback-reason",
+                string.Equals(snapshot.WaterFallbackReason, "mixed-visible-water-types", StringComparison.Ordinal),
+                i, result.Step.Id, "mixed-visible-water-types", snapshot.WaterFallbackReason,
+                "The fixed retail view contains multiple effective WATR identities and must report " +
+                "that exact bounded WATER001 rejection.");
             add("water.maps-resolved",
                 snapshot.WaterMapsResolved.Count > 0 && snapshot.WaterMapsResolved.All(static resolved => resolved),
                 i, result.Step.Id, "all true", snapshot.WaterMapsResolved.ToArray(),
                 "Every authored water texture map used by the fixture resolved.");
+            add("water.record-source",
+                string.Equals(snapshot.WaterRecordSource, "cell-xcwt", StringComparison.Ordinal),
+                i, result.Step.Id, "cell-xcwt", snapshot.WaterRecordSource,
+                "The current camera CELL's authored XCWT supplied the water material.");
+            add("water.record-form-id", snapshot.WaterRecordFormId == 0x001009CA,
+                i, result.Step.Id, "0x001009CA", snapshot.WaterRecordFormId is { } waterFormId
+                    ? $"0x{waterFormId:X8}"
+                    : null,
+                "The fixed WastelandNV camera CELL resolves NVCleanWater, not WRLD NAM2 Potomac.");
+            add("water.record-editor-id",
+                string.Equals(snapshot.WaterRecordEditorId, "NVCleanWater", StringComparison.Ordinal),
+                i, result.Step.Id, "NVCleanWater", snapshot.WaterRecordEditorId,
+                "The retained WATR index agrees with the CELL XCWT FormID.");
+            add("water.record-cell-form-id", snapshot.WaterRecordCellFormId == 0x000DDCF8,
+                i, result.Step.Id, "0x000DDCF8", snapshot.WaterRecordCellFormId is { } waterCellFormId
+                    ? $"0x{waterCellFormId:X8}"
+                    : null,
+                "The exact fnv-water-night-matrix camera CELL supplied the selection context.");
             var waterBand = result.ImageRegions?.FirstOrDefault(static region =>
                 string.Equals(region.RegionId, "water-band", StringComparison.Ordinal));
             add("water.band-telemetry", waterBand is not null, i, result.Step.Id,
                 "water-band region statistics", waterBand,
-                "The fixed camera's unobstructed Potomac band produced direct pixel telemetry.");
+                "The fixed camera's unobstructed water band produced direct pixel telemetry.");
             if (waterBand is not null && string.Equals(result.Step.Id, "night", StringComparison.Ordinal))
             {
-                // Calibrated from the exact recovered WATER003 no-RT composite: Potomac's c4
+                // Calibrated from the exact recovered WATER003 no-RT composite: authored c4
                 // ReflectionColor is not multiplied by the full-RT FresnelRI.w reflectivity term.
                 add("water.night-band-visible-luminance", waterBand.MedianLuminance >= 10,
                     i, result.Step.Id, ">= 10", waterBand.MedianLuminance,
                     "The authored night reflection must survive the FNV cinematic contrast pivot.");
                 add("water.night-band-visible-green", waterBand.MedianGreen >= 12,
                     i, result.Step.Id, ">= 12", waterBand.MedianGreen,
-                    "Potomac's green authored reflection channel must remain visibly non-black.");
+                    "NVCleanWater's green authored reflection channel must remain visibly non-black.");
             }
         }
 
@@ -182,6 +231,75 @@ internal static class RendererProfilerScenarioAssertions
             }
         }
     }
+
+    private static void EvaluateWater001Synthetic(
+        IReadOnlyList<RendererProfilerScenarioStepResult> results,
+        Action<string, bool, int?, string?, object?, object?, string> add)
+    {
+        for (var i = 0; i < results.Count; i++)
+        {
+            var result = results[i];
+            var snapshot = result.Snapshot;
+            var expectedTechnique =
+                $"FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-" +
+                SceneDepthRoute(snapshot.SceneSampleCount);
+            var expectedPlacedNifTechnique =
+                expectedTechnique +
+                $"+FnvWater003RtFree-scene-depth-{SceneDepthRoute(snapshot.SceneSampleCount)}-placed-nif";
+            var exactCellRoute = string.Equals(snapshot.WaterTechnique, expectedTechnique, StringComparison.Ordinal) ||
+                                 string.Equals(
+                                     snapshot.WaterTechnique,
+                                     expectedPlacedNifTechnique,
+                                     StringComparison.Ordinal);
+
+            add("water001.draws", snapshot.WaterDraws > 0, i, result.Step.Id, "> 0",
+                snapshot.WaterDraws,
+                "The one-cell synthetic visibility set issued a generated water draw.");
+            add("water001.pipeline", !string.IsNullOrWhiteSpace(snapshot.WaterPipeline), i, result.Step.Id,
+                "non-empty", snapshot.WaterPipeline,
+                "The capture reported the selected FNV water pipeline.");
+            add("water001.technique", exactCellRoute, i, result.Step.Id, expectedTechnique,
+                snapshot.WaterTechnique,
+                "The generated CELL packet used WATER001 with an opaque snapshot and the actual " +
+                $"{snapshot.SceneSampleCount}x scene-depth resource.");
+            add("water001.main-depth-approximation",
+                string.Equals(
+                    snapshot.WaterFallbackReason,
+                    "selective-content-mask-approximated-by-main-depth",
+                    StringComparison.Ordinal),
+                i, result.Step.Id,
+                "selective-content-mask-approximated-by-main-depth",
+                snapshot.WaterFallbackReason,
+                "Telemetry must disclose that the available main scene depth approximates retail's " +
+                "selective refraction-content mask.");
+            add("water001.maps-resolved",
+                snapshot.WaterMapsResolved.Count > 0 &&
+                snapshot.WaterMapsResolved.All(static resolved => resolved),
+                i, result.Step.Id, "all true", snapshot.WaterMapsResolved.ToArray(),
+                "Every authored NVCleanWater texture used by the positive fixture resolved.");
+            add("water001.record-source",
+                string.Equals(snapshot.WaterRecordSource, "cell-xcwt", StringComparison.Ordinal),
+                i, result.Step.Id, "cell-xcwt", snapshot.WaterRecordSource,
+                "The material remains the source CELL's retail XCWT, not a synthetic WATR.");
+            add("water001.record-form-id", snapshot.WaterRecordFormId == 0x001009CA,
+                i, result.Step.Id, "0x001009CA", snapshot.WaterRecordFormId is { } waterFormId
+                    ? $"0x{waterFormId:X8}"
+                    : null,
+                "The homogeneous packet and selected material both resolve retail NVCleanWater.");
+            add("water001.record-editor-id",
+                string.Equals(snapshot.WaterRecordEditorId, "NVCleanWater", StringComparison.Ordinal),
+                i, result.Step.Id, "NVCleanWater", snapshot.WaterRecordEditorId,
+                "The retained WATR index agrees with the fixture's FormID.");
+            add("water001.record-cell-form-id", snapshot.WaterRecordCellFormId == 0x000DDCF8,
+                i, result.Step.Id, "0x000DDCF8", snapshot.WaterRecordCellFormId is { } waterCellFormId
+                    ? $"0x{waterCellFormId:X8}"
+                    : null,
+                "The exact retail Lake Mead CELL supplied the material and opaque LAND authority.");
+        }
+    }
+
+    private static string SceneDepthRoute(int sampleCount) =>
+        sampleCount > 1 ? $"msaa{sampleCount}x" : "1x";
 
     private static void EvaluateCloudMotion(
         IReadOnlyList<RendererProfilerScenarioStepResult> results,
@@ -350,6 +468,106 @@ internal static class RendererProfilerScenarioAssertions
         }
     }
 
+    private static void EvaluateActiveAdtBase(
+        IReadOnlyList<RendererProfilerScenarioStepResult> results,
+        Action<string, bool, int?, string?, object?, object?, string> add)
+    {
+        var result = results.FirstOrDefault(static candidate => candidate.Step.Id == "retail-mixed");
+        if (result is null)
+        {
+            return;
+        }
+
+        var snapshot = result.Snapshot;
+        add("fnv-active-adt.placed-lights-zero", snapshot.PlacedLightCount == 0,
+            0, result.Step.Id, 0, snapshot.PlacedLightCount,
+            "ID193 is the retail zero-local-light pass; any uploaded local-light list must fail closed.");
+        add("fnv-active-adt.legacy-tier-disabled", !snapshot.FnvClassicBasicLightingEnabled,
+            0, result.Step.Id, false, snapshot.FnvClassicBasicLightingEnabled,
+            "Retail selects the active PS2/PS3 builder; dormant SLS1009/SLS1013 remains disabled.");
+        add("fnv-active-adt.route-submitted",
+            snapshot.FnvActiveAdtBaseEnabled &&
+            snapshot.FnvActiveAdtBaseDraws > 0 &&
+            snapshot.FnvActiveAdtBaseInstances > 0,
+            0, result.Step.Id,
+            new { Enabled = true, Draws = "> 0", Instances = "> 0" },
+            new
+            {
+                Enabled = snapshot.FnvActiveAdtBaseEnabled,
+                Draws = snapshot.FnvActiveAdtBaseDraws,
+                Instances = snapshot.FnvActiveAdtBaseInstances,
+            },
+            "The visible fixture must submit the recovered active ID193/BSSM_ADT/SLS2000 route.");
+        add("fnv-active-adt.vertex-color-route-submitted",
+            snapshot.FnvActiveAdtBaseVertexColorDraws > 0 &&
+            snapshot.FnvActiveAdtBaseVertexColorInstances > 0 &&
+            snapshot.FnvActiveAdtBaseVertexColorDraws <= snapshot.FnvActiveAdtBaseDraws &&
+            snapshot.FnvActiveAdtBaseVertexColorInstances <= snapshot.FnvActiveAdtBaseInstances,
+            0, result.Step.Id,
+            new { Draws = "> 0 and <= active draws", Instances = "> 0 and <= active instances" },
+            new
+            {
+                Draws = snapshot.FnvActiveAdtBaseVertexColorDraws,
+                Instances = snapshot.FnvActiveAdtBaseVertexColorInstances,
+                ActiveDraws = snapshot.FnvActiveAdtBaseDraws,
+                ActiveInstances = snapshot.FnvActiveAdtBaseInstances,
+            },
+            "The pinned opaque block 21 must exercise SLS2000 Toggles.x vertex-RGB modulation.");
+        add("fnv-active-adt.mixed-subset-fallback-bounded",
+            snapshot.FnvActiveAdtBaseFallbackDraws > 0 &&
+            snapshot.FnvActiveAdtBaseFallbackInstances > 0 &&
+            snapshot.FnvActiveAdtBaseFallbackReason == "outside-active-adt-base-subset",
+            0, result.Step.Id,
+            new { Draws = "> 0", Instances = "> 0", Reason = "outside-active-adt-base-subset" },
+            new
+            {
+                snapshot.FnvActiveAdtBaseFallbackDraws,
+                snapshot.FnvActiveAdtBaseFallbackInstances,
+                snapshot.FnvActiveAdtBaseFallbackReason,
+            },
+            "The mixed fixture includes classified alpha-tested neighbors; they must remain on the combined fallback while opaque type-1 geometry submits ID193.");
+        add("fnv-active-adt.legacy-routes-dormant",
+            snapshot.FnvSls1009Draws == 0 &&
+            snapshot.FnvSls1009Instances == 0 &&
+            snapshot.FnvSls1013Draws == 0 &&
+            snapshot.FnvSls1013Instances == 0,
+            0, result.Step.Id, "all legacy PS1 route counters are zero",
+            new
+            {
+                snapshot.FnvSls1009Draws,
+                snapshot.FnvSls1009Instances,
+                snapshot.FnvSls1013Draws,
+                snapshot.FnvSls1013Instances,
+            },
+            "No shipped-tier parity claim may be inferred from the dormant SLS1009/SLS1013 bytecode oracle.");
+
+        var postProcess = result.AppliedPostProcessSettings;
+        add("fnv-active-adt.post-process-isolated",
+            postProcess is
+            {
+                HdrEnabled: false,
+                BloomEnabled: false,
+                ImagespaceEnabled: false,
+                FogEnabled: false,
+                ShadowsEnabled: false,
+                EffectiveHdrEnabled: false,
+                EffectiveBloomEnabled: false,
+            },
+            0, result.Step.Id,
+            "HDR/Bloom/imagespace/fog/shadows disabled",
+            postProcess,
+            "The retail fixture is captured without post-process, fog, or the unrecovered projected-shadow permutation.");
+
+        var facade = result.ImageRegions?.FirstOrDefault(static region =>
+            region.RegionId == "active-adt-facade");
+        add("fnv-active-adt.facade-signal",
+            facade is { PixelCount: > 0, SignalPixelCount: > 0 },
+            0, result.Step.Id,
+            "a non-empty centered facade window with luminance signal",
+            facade,
+            "The deterministic camera keeps the mixed-route facade in the analyzed center window.");
+    }
+
     private static void EvaluateProspectorNeonBloom(
         IReadOnlyList<RendererProfilerScenarioStepResult> results,
         Action<string, bool, int?, string?, object?, object?, string> add)
@@ -488,6 +706,260 @@ internal static class RendererProfilerScenarioAssertions
         };
     }
 
+    private static void EvaluateSunlightDimmer(
+        IReadOnlyList<RendererProfilerScenarioStepResult> results,
+        Action<string, bool, int?, string?, object?, object?, string> add)
+    {
+        var enabled = results.FirstOrDefault(static result => result.Step.Id == "hdr-imagespace-on");
+        var imagespaceOff = results.FirstOrDefault(static result => result.Step.Id == "imagespace-off");
+        var hdrOff = results.FirstOrDefault(static result => result.Step.Id == "hdr-off");
+        if (enabled is null || imagespaceOff is null || hdrOff is null)
+        {
+            return;
+        }
+
+        var stableScene = SameSceneState(enabled, imagespaceOff) &&
+                          SameSceneState(enabled, hdrOff) &&
+                          SameCamera(enabled.CameraPose, imagespaceOff.CameraPose) &&
+                          SameCamera(enabled.CameraPose, hdrOff.CameraPose);
+        add("sunlight-dimmer.scene-state-stable", stableScene, null, null,
+            "identical camera/weather/hour/day/animation/atmosphere/scene structure",
+            new
+            {
+                Enabled = enabled.CameraPose,
+                ImagespaceOff = imagespaceOff.CameraPose,
+                HdrOff = hdrOff.CameraPose,
+            },
+            "Only the declared post-process gates may change across this retail Wasteland matrix.");
+
+        AddScaleAssertion(enabled, stepIndex: 0, expectedResolved: 1.21f, expectedScene: 1.21f);
+        AddScaleAssertion(imagespaceOff, stepIndex: 1, expectedResolved: 1f, expectedScene: 1f);
+        AddScaleAssertion(hdrOff, stepIndex: 2, expectedResolved: 1.3f, expectedScene: 1f);
+
+        void AddScaleAssertion(
+            RendererProfilerScenarioStepResult result,
+            int stepIndex,
+            float expectedResolved,
+            float expectedScene)
+        {
+            var settings = result.AppliedPostProcessSettings;
+            var matches = settings is not null &&
+                          Near(settings.ResolvedSunlightScale, expectedResolved) &&
+                          Near(settings.SceneSunlightScale, expectedScene);
+            add("sunlight-dimmer.effective-scale", matches,
+                stepIndex, result.Step.Id,
+                new { Resolved = expectedResolved, Scene = expectedScene },
+                settings is null
+                    ? null
+                    : new
+                    {
+                        Resolved = settings.ResolvedSunlightScale,
+                        Scene = settings.SceneSunlightScale,
+                        settings.BaseImageSpaceEditorId,
+                        settings.BaseImageSpaceSource,
+                    },
+                "Retail NVDefaultExterior and NVWastelandIS resolve scene SunlightDimmer only for exterior HDR.");
+        }
+    }
+
+    private static void EvaluateAdaptationHistory(
+        IReadOnlyList<RendererProfilerScenarioStepResult> results,
+        Action<string, bool, int?, string?, object?, object?, string> add)
+    {
+        var west = results.FirstOrDefault(static result => result.Step.Id == "west-worldspace");
+        var east = results.FirstOrDefault(static result => result.Step.Id == "east-cell");
+        var cleared = results.FirstOrDefault(static result => result.Step.Id == "east-explicit-clear");
+        if (west is null || east is null || cleared is null)
+        {
+            return;
+        }
+
+        add("adaptation-history.source-transition",
+            string.Equals(west.AppliedPostProcessSettings?.BaseImageSpaceSource,
+                "worldspace-inam", StringComparison.Ordinal) &&
+            string.Equals(east.AppliedPostProcessSettings?.BaseImageSpaceSource,
+                "cell-xcim", StringComparison.Ordinal),
+            null, null,
+            new { West = "worldspace-inam", East = "cell-xcim" },
+            new
+            {
+                West = west.AppliedPostProcessSettings?.BaseImageSpaceSource,
+                East = east.AppliedPostProcessSettings?.BaseImageSpaceSource,
+            },
+            "The retail one-unit boundary crossing must exercise WRLD INAM then CELL XCIM selection.");
+
+        add("adaptation-history.routine-key-stable",
+            west.Snapshot.TonemapHistoryKey == east.Snapshot.TonemapHistoryKey,
+            null, null, $"0x{west.Snapshot.TonemapHistoryKey:X16}",
+            $"0x{east.Snapshot.TonemapHistoryKey:X16}",
+            "Routine CELL/image-space source changes must preserve the recovered adapted-light history.");
+        add("adaptation-history.routine-no-reset",
+            !east.Snapshot.TonemapHistoryReset && east.Snapshot.TonemapHistoryResetReason is null,
+            1, east.Step.Id, new { Reset = false, Reason = (string?)null },
+            new { Reset = east.Snapshot.TonemapHistoryReset, Reason = east.Snapshot.TonemapHistoryResetReason },
+            "The reused offscreen target must not reset when only the camera CELL/source changes.");
+
+        add("adaptation-history.explicit-key-changes",
+            east.Snapshot.TonemapHistoryKey != cleared.Snapshot.TonemapHistoryKey,
+            2, cleared.Step.Id, $"different from 0x{east.Snapshot.TonemapHistoryKey:X16}",
+            $"0x{cleared.Snapshot.TonemapHistoryKey:X16}",
+            "A real ClearAdaptedLight request advances the semantic history generation.");
+        add("adaptation-history.explicit-reset",
+            cleared.Snapshot.TonemapHistoryReset &&
+            string.Equals(cleared.Snapshot.TonemapHistoryResetReason, "history-key",
+                StringComparison.Ordinal),
+            2, cleared.Step.Id, new { Reset = true, Reason = "history-key" },
+            new
+            {
+                Reset = cleared.Snapshot.TonemapHistoryReset,
+                Reason = cleared.Snapshot.TonemapHistoryResetReason,
+            },
+            "With a stable target and adaptive mode, explicit clear must be the sole reset reason.");
+    }
+
+    private static void EvaluateWeatherImageSpaceBands(
+        IReadOnlyList<RendererProfilerScenarioStepResult> results,
+        Action<string, bool, int?, string?, object?, object?, string> add)
+    {
+        var morning = results.FirstOrDefault(static result => result.Step.Id == "morning-shoulder");
+        var noon = results.FirstOrDefault(static result => result.Step.Id == "noon");
+        var afternoon = results.FirstOrDefault(static result => result.Step.Id == "afternoon-shoulder");
+        if (morning is null || noon is null || afternoon is null)
+        {
+            return;
+        }
+
+        AssertStep(morning, 0, expectedTargetLum: 4.4f,
+            expectedTint: (0.7768509f, 0.6247225f, 0.2386268f, 0.33f),
+            expectedSunlightScale: 1.155f,
+            expectedAtmosphericColorBand: ("Day", "HighNoon", 0.5f),
+            expectedContributions:
+            [
+                ("Day", 0x00164BA6u, "NVJacobstownIS", 0.5f),
+                ("HighNoon", 0x000CEE18u, "NVWastelandIS", 0.5f),
+            ]);
+        AssertStep(noon, 1, expectedTargetLum: 7.4f,
+            expectedTint: (0.6848657f, 0.5938973f, 0.3221909f, 0.33f),
+            expectedSunlightScale: 1.1f,
+            expectedAtmosphericColorBand: ("Day", "HighNoon", 1f),
+            expectedContributions:
+            [
+                ("Day", 0x00164BA6u, "NVJacobstownIS", 1f),
+            ]);
+        AssertStep(afternoon, 2, expectedTargetLum: 4.4f,
+            expectedTint: (0.7768509f, 0.6247225f, 0.2386268f, 0.33f),
+            expectedSunlightScale: 1.155f,
+            expectedAtmosphericColorBand: ("HighNoon", "Day", 0.5f),
+            expectedContributions:
+            [
+                ("Day", 0x00164BA6u, "NVJacobstownIS", 0.5f),
+                ("HighNoon", 0x000CEE18u, "NVWastelandIS", 0.5f),
+            ]);
+
+        void AssertStep(
+            RendererProfilerScenarioStepResult result,
+            int stepIndex,
+            float expectedTargetLum,
+            (float R, float G, float B, float Amount) expectedTint,
+            float expectedSunlightScale,
+            (string From, string To, float ToWeight) expectedAtmosphericColorBand,
+            IReadOnlyList<(string Band, uint FormId, string EditorId, float Weight)> expectedContributions)
+        {
+            var timing = result.Snapshot.ClimateTiming;
+            add("weather-imagespace.climate-timing",
+                Near(timing.SunriseBeginHour, 6f) &&
+                Near(timing.SunriseEndHour, 8f) &&
+                Near(timing.SunsetBeginHour, 18f) &&
+                Near(timing.SunsetEndHour, 20f),
+                stepIndex, result.Step.Id,
+                new { SunriseBegin = 6f, SunriseEnd = 8f, SunsetBegin = 18f, SunsetEnd = 20f },
+                timing,
+                "The exact band weights require retail NVDefaultClimate timing 6/8/18/20.");
+
+            var atmosphericBand = result.Snapshot.AtmosphericColorBand;
+            add("weather-imagespace.atmospheric-color-band",
+                string.Equals(atmosphericBand.FromBand, expectedAtmosphericColorBand.From,
+                    StringComparison.Ordinal) &&
+                string.Equals(atmosphericBand.ToBand, expectedAtmosphericColorBand.To,
+                    StringComparison.Ordinal) &&
+                Near(atmosphericBand.ToWeight, expectedAtmosphericColorBand.ToWeight),
+                stepIndex, result.Step.Id,
+                expectedAtmosphericColorBand,
+                atmosphericBand,
+                "PNAM/NAM0 uses Day→HighNoon→Day and must remain distinct from the inverse IMAD clock.");
+
+            var postProcess = result.AppliedPostProcessSettings;
+            add("weather-imagespace.base-imagespace",
+                postProcess is not null &&
+                string.Equals(postProcess.BaseImageSpaceEditorId, "NVDefaultExterior",
+                    StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(postProcess.BaseImageSpaceSource, "worldspace-inam",
+                    StringComparison.Ordinal),
+                stepIndex, result.Step.Id,
+                new { EditorId = "NVDefaultExterior", Source = "worldspace-inam" },
+                postProcess is null
+                    ? null
+                    : new
+                    {
+                        EditorId = postProcess.BaseImageSpaceEditorId,
+                        Source = postProcess.BaseImageSpaceSource,
+                    },
+                "WastelandNV INAM must provide the base grade for the forced weather fixture.");
+
+            var actualContributions = result.Snapshot.WeatherImageSpaceContributions;
+            var contributionsMatch = actualContributions.Count == expectedContributions.Count &&
+                                     expectedContributions.All(expected =>
+                                         actualContributions.Any(actual =>
+                                             string.Equals(actual.Band, expected.Band,
+                                                 StringComparison.Ordinal) &&
+                                             actual.ModifierFormId == expected.FormId &&
+                                             string.Equals(actual.ModifierEditorId, expected.EditorId,
+                                                 StringComparison.OrdinalIgnoreCase) &&
+                                             Near(actual.Weight, expected.Weight) &&
+                                             actual.TimelineTime is { } timeline && Near(timeline, 0f)));
+            add("weather-imagespace.imad-contributions", contributionsMatch,
+                stepIndex, result.Step.Id,
+                expectedContributions,
+                actualContributions,
+                "Retail Sky::UpdateHDRValues must select the semantic Day/HighNoon adapters and exact weights.");
+
+            var tonemap = result.Snapshot.Tonemap;
+            var tonemapMatches = Near(tonemap.TargetLum, expectedTargetLum) &&
+                                 Near(tonemap.TintR, expectedTint.R) &&
+                                 Near(tonemap.TintG, expectedTint.G) &&
+                                 Near(tonemap.TintB, expectedTint.B) &&
+                                 Near(tonemap.TintAmount, expectedTint.Amount);
+            add("weather-imagespace.resolved-tonemap", tonemapMatches,
+                stepIndex, result.Step.Id,
+                new
+                {
+                    TargetLum = expectedTargetLum,
+                    Tint = new[] { expectedTint.R, expectedTint.G, expectedTint.B, expectedTint.Amount },
+                },
+                new
+                {
+                    tonemap.TargetLum,
+                    Tint = new[] { tonemap.TintR, tonemap.TintG, tonemap.TintB, tonemap.TintAmount },
+                },
+                "Weather tint is accumulated as raw weighted RGBA, then premultiplied once as a manager aggregate.");
+
+            add("weather-imagespace.sunlight-scale",
+                postProcess is not null &&
+                Near(postProcess.ResolvedSunlightScale, expectedSunlightScale) &&
+                Near(postProcess.SceneSunlightScale, expectedSunlightScale),
+                stepIndex, result.Step.Id,
+                new { Resolved = expectedSunlightScale, Scene = expectedSunlightScale },
+                postProcess is null
+                    ? null
+                    : new
+                    {
+                        Resolved = postProcess.ResolvedSunlightScale,
+                        Scene = postProcess.SceneSunlightScale,
+                    },
+                "The same adapter weights must reach the recovered exterior-HDR SunlightDimmer consumer.");
+        }
+    }
+
     private static bool SameSceneState(
         RendererProfilerScenarioStepResult left,
         RendererProfilerScenarioStepResult right)
@@ -508,8 +980,14 @@ internal static class RendererProfilerScenarioAssertions
             a.MoonPhaseLengthDays != b.MoonPhaseLengthDays ||
             a.WaterDraws != b.WaterDraws ||
             !string.Equals(a.WaterPipeline, b.WaterPipeline, StringComparison.Ordinal) ||
+            !string.Equals(a.WaterTechnique, b.WaterTechnique, StringComparison.Ordinal) ||
+            !string.Equals(a.WaterFallbackReason, b.WaterFallbackReason, StringComparison.Ordinal) ||
             a.WaterNoisePrepassUsed != b.WaterNoisePrepassUsed ||
             !a.WaterMapsResolved.SequenceEqual(b.WaterMapsResolved) ||
+            a.WaterRecordFormId != b.WaterRecordFormId ||
+            !string.Equals(a.WaterRecordEditorId, b.WaterRecordEditorId, StringComparison.Ordinal) ||
+            !string.Equals(a.WaterRecordSource, b.WaterRecordSource, StringComparison.Ordinal) ||
+            a.WaterRecordCellFormId != b.WaterRecordCellFormId ||
             a.CloudLayers.Count != b.CloudLayers.Count)
         {
             return false;

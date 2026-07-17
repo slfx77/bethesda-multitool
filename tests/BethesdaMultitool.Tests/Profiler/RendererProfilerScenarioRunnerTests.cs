@@ -90,7 +90,123 @@ public sealed class RendererProfilerScenarioRunnerTests
         Assert.Equal(plan!.Steps.Count, result.CompletedStepCount);
         Assert.Contains(result.Assertions,
             assertion => assertion.AssertionId == "water.draws" && !assertion.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "water.record-source" && assertion.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "water.record-form-id" && assertion.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "water.record-editor-id" && assertion.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "water.record-cell-form-id" && assertion.Passed);
         Assert.Equal(plan.Steps.Count, host.Calls.Count(call => call.StartsWith("step:", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Catalog_Water001SyntheticPinsOneRetailCellBelowTheCamera()
+    {
+        Assert.True(RendererProfilerScenarioCatalog.TryCreate(
+            RendererProfilerScenarioCatalog.FnvWater001Synthetic, out var plan));
+
+        Assert.Null(plan!.Fixture);
+        var fixture = Assert.IsType<RendererProfilerScenarioSyntheticWaterFixture>(
+            plan.SyntheticWaterFixture);
+        Assert.Equal(0x000DDCF8u, fixture.SourceCellFormId);
+        Assert.Equal((19, 12), (fixture.GridX, fixture.GridY));
+        Assert.Equal(0x001009CAu, fixture.WaterFormId);
+        Assert.Equal(2600f, fixture.PlaneHeight);
+
+        var step = Assert.Single(plan.Steps);
+        Assert.Equal("positive", step.Id);
+        Assert.Equal(new Vector3(79872f, 51200f, 3400f), step.CameraPosition);
+        Assert.True(step.CameraPosition.Z > fixture.PlaneHeight);
+        Assert.Equal(-65f, step.CameraPitchDegrees);
+        Assert.Equal(0f, step.CameraYawDegrees);
+        Assert.True(step.ClearAdaptedLightBeforeCapture);
+        var postProcess = Assert.IsType<RendererProfilerScenarioPostProcessSettings>(step.PostProcessSettings);
+        Assert.True(postProcess.HdrEnabled);
+        Assert.False(postProcess.BloomEnabled);
+        Assert.True(postProcess.ImagespaceEnabled);
+        Assert.True(postProcess.FogEnabled);
+    }
+
+    [Theory]
+    [InlineData(1, "FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-1x")]
+    [InlineData(4, "FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-msaa4x")]
+    [InlineData(4,
+        "FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-msaa4x" +
+        "+FnvWater003RtFree-scene-depth-msaa4x-placed-nif")]
+    public async Task RunAsync_Water001SyntheticRequiresExactRouteAndApproximationDisclosure(
+        int sceneSampleCount,
+        string expectedTechnique)
+    {
+        Assert.True(RendererProfilerScenarioCatalog.TryCreate(
+            RendererProfilerScenarioCatalog.FnvWater001Synthetic, out var plan));
+        var host = new FakeHost
+        {
+            Transform = result => result with
+            {
+                Snapshot = result.Snapshot with
+                {
+                    SceneSampleCount = sceneSampleCount,
+                    WaterTechnique = expectedTechnique,
+                },
+            },
+        };
+
+        var result = await RunInTemporaryDirectory(plan!, host, new FakeEvents());
+
+        Assert.True(result.Passed, string.Join(", ", result.Assertions
+            .Where(static assertion => !assertion.Passed)
+            .Select(static assertion => assertion.AssertionId)));
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "water001.technique" && assertion.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "water001.main-depth-approximation" && assertion.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "water001.record-cell-form-id" && assertion.Passed);
+    }
+
+    [Fact]
+    public async Task RunAsync_WaterNightMatrixPinsRetailMixedWaterTypeFallback()
+    {
+        Assert.True(RendererProfilerScenarioCatalog.TryCreate(
+            RendererProfilerScenarioCatalog.FnvWaterNightMatrix, out var plan));
+
+        var result = await RunInTemporaryDirectory(plan!, new FakeHost(), new FakeEvents());
+
+        Assert.True(result.Passed, string.Join(", ", result.Assertions
+            .Where(static assertion => !assertion.Passed)
+            .Select(static assertion => assertion.AssertionId)));
+        Assert.Equal(2, result.Assertions.Count(assertion =>
+            assertion.AssertionId == "water.retail-mixed-context-fallback-technique" && assertion.Passed));
+        Assert.Equal(2, result.Assertions.Count(assertion =>
+            assertion.AssertionId == "water.retail-mixed-context-fallback-reason" && assertion.Passed));
+    }
+
+    [Fact]
+    public async Task RunAsync_Water001SyntheticRejectsWater003Fallback()
+    {
+        Assert.True(RendererProfilerScenarioCatalog.TryCreate(
+            RendererProfilerScenarioCatalog.FnvWater001Synthetic, out var plan));
+        var host = new FakeHost
+        {
+            Transform = result => result with
+            {
+                Snapshot = result.Snapshot with
+                {
+                    WaterTechnique = "FnvWater003RtFree-scene-depth-msaa4x",
+                    WaterFallbackReason = "mixed-visible-water-types",
+                },
+            },
+        };
+
+        var result = await RunInTemporaryDirectory(plan!, host, new FakeEvents());
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "water001.technique" && !assertion.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "water001.main-depth-approximation" && !assertion.Passed);
     }
 
     [Fact]
@@ -184,6 +300,69 @@ public sealed class RendererProfilerScenarioRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_SunlightDimmerPinsRetailResolvedAndEffectiveScales()
+    {
+        Assert.True(RendererProfilerScenarioCatalog.TryCreate(
+            RendererProfilerScenarioCatalog.FnvSunlightDimmer, out var plan));
+
+        var result = await RunInTemporaryDirectory(plan!, new FakeHost(), new FakeEvents());
+
+        Assert.True(result.Passed, string.Join(", ", result.Assertions
+            .Where(static assertion => !assertion.Passed)
+            .Select(static assertion => assertion.AssertionId)));
+        var scaleAssertions = result.Assertions
+            .Where(static assertion => assertion.AssertionId == "sunlight-dimmer.effective-scale")
+            .ToArray();
+        Assert.Equal(3, scaleAssertions.Length);
+        Assert.All(scaleAssertions, static assertion => Assert.True(assertion.Passed));
+    }
+
+    [Fact]
+    public async Task RunAsync_AdaptationHistorySeparatesRoutineTransitionFromExplicitClear()
+    {
+        Assert.True(RendererProfilerScenarioCatalog.TryCreate(
+            RendererProfilerScenarioCatalog.FnvAdaptationHistory, out var plan));
+
+        var result = await RunInTemporaryDirectory(plan!, new FakeHost(), new FakeEvents());
+
+        Assert.True(result.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "adaptation-history.source-transition" &&
+                         assertion.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "adaptation-history.routine-no-reset" &&
+                         assertion.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "adaptation-history.explicit-reset" &&
+                         assertion.Passed);
+    }
+
+    [Fact]
+    public async Task RunAsync_WeatherImageSpaceBandsPinsInverseRetailClocksAndResolvedGrade()
+    {
+        Assert.True(RendererProfilerScenarioCatalog.TryCreate(
+            RendererProfilerScenarioCatalog.FnvWeatherImageSpaceBands, out var plan));
+        Assert.Equal([10f, 12f, 15f], plan!.Steps.Select(static step => step.GameHour));
+        Assert.All(plan.Steps, static step =>
+        {
+            Assert.Equal("NVColoradoRiverWeather", step.WeatherEditorId);
+            Assert.True(step.ClearAdaptedLightBeforeCapture);
+        });
+
+        var result = await RunInTemporaryDirectory(plan, new FakeHost(), new FakeEvents());
+
+        Assert.True(result.Passed, string.Join(", ", result.Assertions
+            .Where(static assertion => !assertion.Passed)
+            .Select(static assertion => assertion.AssertionId)));
+        Assert.Equal(3, result.Assertions.Count(static assertion =>
+            assertion.AssertionId == "weather-imagespace.atmospheric-color-band" && assertion.Passed));
+        Assert.Equal(3, result.Assertions.Count(static assertion =>
+            assertion.AssertionId == "weather-imagespace.imad-contributions" && assertion.Passed));
+        Assert.Equal(3, result.Assertions.Count(static assertion =>
+            assertion.AssertionId == "weather-imagespace.resolved-tonemap" && assertion.Passed));
+    }
+
+    [Fact]
     public async Task RunAsync_DuplicateStepIdsFailBeforeHostPreparation()
     {
         var step = new RendererProfilerScenarioStep(
@@ -199,6 +378,127 @@ public sealed class RendererProfilerScenarioRunnerTests
         Assert.Equal(1, result.ExitCode);
         Assert.Empty(host.Calls);
         Assert.Equal("scenario.unique-step-ids", Assert.Single(result.Assertions).AssertionId);
+    }
+
+    [Fact]
+    public void Catalog_ActiveAdtBasePinsRetailMixedFixtureAndFacadeCamera()
+    {
+        Assert.True(RendererProfilerScenarioCatalog.TryCreate(
+            RendererProfilerScenarioCatalog.FnvActiveAdtBase, out var plan));
+
+        var fixture = Assert.IsType<RendererProfilerScenarioFixture>(plan!.Fixture);
+        Assert.Equal(0x000A6826u, fixture.ReferenceFormId);
+        Assert.Equal(0x00176233u, fixture.BaseFormId);
+        Assert.Equal(0x000E1A03u, fixture.CellFormId);
+        Assert.Equal("urbangatedwallstrStone01NV", fixture.BaseEditorId);
+        Assert.Equal(
+            @"architecture\urban\civicspace\gatedwall\urbangatedwallstrstone01_nv.nif",
+            fixture.ModelPath);
+        Assert.Equal(new Vector3(-55889.066f, -47042.832f, 5753.3906f), fixture.PlacementPosition);
+        Assert.InRange(MathF.Abs(fixture.PlacementRotationRadians.Z - MathF.PI), 0f, 0.0001f);
+
+        var step = Assert.Single(plan.Steps);
+        Assert.Equal("retail-mixed", step.Id);
+        Assert.True(Vector3.Distance(
+            new Vector3(-55889.066f, -46366.82f, 5978.201f),
+            step.CameraPosition) < 0.02f);
+        Assert.InRange(step.CameraPitchDegrees, -4.399f, -4.398f);
+        Assert.InRange(step.CameraYawDegrees, 179.999f, 180.001f);
+        Assert.Equal("NVWastelandClear", step.WeatherEditorId);
+        Assert.Equal(12f, step.GameHour);
+        Assert.True(step.ClearAdaptedLightBeforeCapture);
+        var postProcess = Assert.IsType<RendererProfilerScenarioPostProcessSettings>(
+            step.PostProcessSettings);
+        Assert.False(postProcess.HdrEnabled);
+        Assert.False(postProcess.BloomEnabled);
+        Assert.False(postProcess.ImagespaceEnabled);
+        Assert.False(postProcess.FogEnabled);
+        Assert.False(postProcess.ShadowsEnabled);
+    }
+
+    [Fact]
+    public void Catalog_LegacySlsNameNormalizesToActiveAdtBase()
+    {
+        Assert.True(RendererProfilerScenarioCatalog.TryNormalizeName(
+            RendererProfilerScenarioCatalog.FnvSls1009Sls1013Alias, out var normalized));
+        Assert.Equal(RendererProfilerScenarioCatalog.FnvActiveAdtBase, normalized);
+        Assert.DoesNotContain(
+            RendererProfilerScenarioCatalog.FnvSls1009Sls1013Alias,
+            RendererProfilerScenarioCatalog.Names);
+    }
+
+    [Fact]
+    public async Task RunAsync_ActiveAdtBaseFixtureSubmitsActiveAndVertexColorRoutes()
+    {
+        Assert.True(RendererProfilerScenarioCatalog.TryCreate(
+            RendererProfilerScenarioCatalog.FnvActiveAdtBase, out var plan));
+
+        var result = await RunInTemporaryDirectory(plan!, new FakeHost(), new FakeEvents());
+
+        Assert.True(result.Passed, string.Join(", ", result.Assertions
+            .Where(static assertion => !assertion.Passed)
+            .Select(static assertion => assertion.AssertionId)));
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "fnv-active-adt.legacy-tier-disabled" && assertion.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "fnv-active-adt.legacy-routes-dormant" && assertion.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "fnv-active-adt.route-submitted" && assertion.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId ==
+                "fnv-active-adt.vertex-color-route-submitted" && assertion.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId ==
+                "fnv-active-adt.mixed-subset-fallback-bounded" && assertion.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "fnv-active-adt.facade-signal" && assertion.Passed);
+    }
+
+    [Fact]
+    public async Task RunAsync_ActiveAdtBaseRejectsLegacyRouteActivation()
+    {
+        Assert.True(RendererProfilerScenarioCatalog.TryCreate(
+            RendererProfilerScenarioCatalog.FnvActiveAdtBase, out var plan));
+        var host = new FakeHost
+        {
+            Transform = result => result with
+            {
+                Snapshot = result.Snapshot with
+                {
+                    FnvSls1013Draws = 1,
+                    FnvSls1013Instances = 1,
+                },
+            },
+        };
+
+        var result = await RunInTemporaryDirectory(plan!, host, new FakeEvents());
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "fnv-active-adt.legacy-routes-dormant" && !assertion.Passed);
+    }
+
+    [Fact]
+    public async Task RunAsync_ActiveAdtBaseRejectsNonIsolatedPlacedLights()
+    {
+        Assert.True(RendererProfilerScenarioCatalog.TryCreate(
+            RendererProfilerScenarioCatalog.FnvActiveAdtBase, out var plan));
+        var host = new FakeHost
+        {
+            Transform = result => result with
+            {
+                Snapshot = result.Snapshot with
+                {
+                    PlacedLightCount = 3,
+                },
+            },
+        };
+
+        var result = await RunInTemporaryDirectory(plan!, host, new FakeEvents());
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Assertions,
+            assertion => assertion.AssertionId == "fnv-active-adt.placed-lights-zero" && !assertion.Passed);
     }
 
     [Fact]
@@ -425,6 +725,75 @@ public sealed class RendererProfilerScenarioRunnerTests
                 velocity,
                 WeatherCloudTransitionResolver.OffsetAtTime(velocity, step.AnimationTimeSeconds)),
         };
+        var isHistoryScenario = plan.Name == RendererProfilerScenarioCatalog.FnvAdaptationHistory;
+        var isWeatherImageSpaceScenario =
+            plan.Name == RendererProfilerScenarioCatalog.FnvWeatherImageSpaceBands;
+        var isWaterNightScenario = plan.Name == RendererProfilerScenarioCatalog.FnvWaterNightMatrix;
+        var isWater001Scenario = plan.Name == RendererProfilerScenarioCatalog.FnvWater001Synthetic;
+        var isActiveAdtScenario = plan.Name == RendererProfilerScenarioCatalog.FnvActiveAdtBase;
+        var isWaterScenario = isWaterNightScenario || isWater001Scenario;
+        var sceneSampleCount = string.Equals(
+            Environment.GetEnvironmentVariable("FALLOUT_VIEWER_SCENE_SAMPLES"),
+            "1",
+            StringComparison.Ordinal)
+            ? 1
+            : 4;
+        var sceneDepthRoute = sceneSampleCount > 1 ? $"msaa{sceneSampleCount}x" : "1x";
+        var waterTechnique = isWater001Scenario
+            ? $"FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-{sceneDepthRoute}"
+            : isWaterNightScenario
+                ? $"FnvWater003RtFree-scene-depth-{sceneDepthRoute}"
+                : null;
+        var waterFallbackReason = isWater001Scenario
+            ? "selective-content-mask-approximated-by-main-depth"
+            : isWaterNightScenario
+                ? "mixed-visible-water-types"
+                : null;
+        var historyKey = isHistoryScenario && step.ClearAdaptedLightBeforeCapture
+            ? 0x200UL
+            : 0x100UL;
+        var historyReset = isHistoryScenario && (stepIndex == 0 || step.ClearAdaptedLightBeforeCapture);
+        var historyResetReason = !historyReset
+            ? null
+            : step.ClearAdaptedLightBeforeCapture
+                ? "history-key"
+                : "history-key,target-resource,target-size,target-format";
+        var climateTiming = new AtmosphereState.ClimateTiming(6f, 8f, 18f, 20f);
+        var atmosphericColorBand = AtmosphereState.SelectWeatherBandBlend(
+            step.GameHour,
+            climateTiming,
+            plan.ExpectedGame,
+            hasModernTransitions: false,
+            hasAuthoredHighNoon: true);
+        IReadOnlyList<RendererProfilerWeatherImageSpaceContributionSnapshot> weatherContributions = [];
+        var tonemap = new RendererProfilerTonemapSnapshot(
+            0.6f, 0.7768509f, 0.6247225f, 0.2386268f, 0.33f);
+        if (isWeatherImageSpaceScenario)
+        {
+            if (step.Id == "noon")
+            {
+                weatherContributions =
+                [
+                    new RendererProfilerWeatherImageSpaceContributionSnapshot(
+                        "Day", 0x00164BA6, "NVJacobstownIS", 1f, 0f),
+                ];
+                tonemap = new RendererProfilerTonemapSnapshot(
+                    7.4f, 0.6848657f, 0.5938973f, 0.3221909f, 0.33f);
+            }
+            else
+            {
+                weatherContributions =
+                [
+                    new RendererProfilerWeatherImageSpaceContributionSnapshot(
+                        "Day", 0x00164BA6, "NVJacobstownIS", 0.5f, 0f),
+                    new RendererProfilerWeatherImageSpaceContributionSnapshot(
+                        "HighNoon", 0x000CEE18, "NVWastelandIS", 0.5f, 0f),
+                ];
+                tonemap = new RendererProfilerTonemapSnapshot(
+                    4.4f, 0.7768509f, 0.6247225f, 0.2386268f, 0.33f);
+            }
+        }
+
         var snapshot = new RendererProfilerScenarioSnapshot(
             plan.ExpectedGame,
             plan.WorldspaceEditorId,
@@ -443,7 +812,42 @@ public sealed class RendererProfilerScenarioRunnerTests
             4,
             "FNV",
             true,
-            [true, true]);
+            [true, true],
+            isWaterScenario ? 0x001009CAu : null,
+            isWaterScenario ? "NVCleanWater" : null,
+            isWaterScenario ? "cell-xcwt" : "unavailable",
+            isWaterScenario ? 0x000DDCF8u : null,
+            historyKey,
+            historyReset,
+            historyResetReason,
+            new RendererProfilerClimateTimingSnapshot(6f, 8f, 18f, 20f),
+            new RendererProfilerAtmosphericColorBandSnapshot(
+                atmosphericColorBand.From.ToString(),
+                atmosphericColorBand.To.ToString(),
+                atmosphericColorBand.ToWeight),
+            weatherContributions,
+            tonemap,
+            waterTechnique,
+            waterFallbackReason,
+            sceneSampleCount,
+            FnvSls1009Draws: 0,
+            FnvSls1009Instances: 0,
+            FnvSls1013Draws: 0,
+            FnvSls1013Instances: 0,
+            PlacedLightCount: 0,
+            FnvClassicBasicLightingEnabled: false,
+            FnvClassicBasicFallbackDraws: 0,
+            FnvClassicBasicFallbackInstances: 0,
+            FnvClassicBasicFallbackReason: null,
+            FnvActiveAdtBaseDraws: isActiveAdtScenario ? 1 : 0,
+            FnvActiveAdtBaseInstances: isActiveAdtScenario ? 3 : 0,
+            FnvActiveAdtBaseVertexColorDraws: isActiveAdtScenario ? 1 : 0,
+            FnvActiveAdtBaseVertexColorInstances: isActiveAdtScenario ? 2 : 0,
+            FnvActiveAdtBaseEnabled: isActiveAdtScenario,
+            FnvActiveAdtBaseFallbackDraws: isActiveAdtScenario ? 2 : 0,
+            FnvActiveAdtBaseFallbackInstances: isActiveAdtScenario ? 3 : 0,
+            FnvActiveAdtBaseFallbackReason:
+                isActiveAdtScenario ? "outside-active-adt-base-subset" : null);
         var statistics = new RendererProfilerScenarioImageStatistics(
             10,
             10,
@@ -457,6 +861,32 @@ public sealed class RendererProfilerScenarioRunnerTests
             220,
             step.PostProcessSettings?.BloomEnabled == true ? 0.52 : 0.5);
         var requested = step.PostProcessSettings;
+        var isSunlightScenario = plan.Name == RendererProfilerScenarioCatalog.FnvSunlightDimmer;
+        float resolvedSunlightScale;
+        if (isWeatherImageSpaceScenario)
+        {
+            resolvedSunlightScale = step.Id == "noon" ? 1.1f : 1.155f;
+        }
+        else if (!isSunlightScenario)
+        {
+            resolvedSunlightScale = 1.21f;
+        }
+        else if (requested is { HdrEnabled: false })
+        {
+            resolvedSunlightScale = 1.3f;
+        }
+        else
+        {
+            resolvedSunlightScale = requested is { ImagespaceEnabled: false } ? 1f : 1.21f;
+        }
+
+        var sceneSunlightScale = isSunlightScenario &&
+                                 requested is not { HdrEnabled: true, ImagespaceEnabled: true }
+            ? 1f
+            : resolvedSunlightScale;
+        var baseImageSpaceSource = isHistoryScenario && step.Id != "west-worldspace"
+            ? "cell-xcim"
+            : "worldspace-inam";
         var applied = new RendererProfilerScenarioAppliedPostProcessSettings(
             requested?.HdrEnabled ?? true,
             requested?.BloomEnabled ?? true,
@@ -466,7 +896,10 @@ public sealed class RendererProfilerScenarioRunnerTests
             requested is null || (requested.HdrEnabled && requested.BloomEnabled),
             "EngineFo3Fnv",
             "NVDefaultExterior",
-            "worldspace-inam");
+            baseImageSpaceSource,
+            resolvedSunlightScale,
+            sceneSunlightScale,
+            requested?.ShadowsEnabled ?? true);
         var difference = stepIndex == 0
             ? null
             : new RendererProfilerScenarioImageDifferenceStatistics(
@@ -520,6 +953,23 @@ public sealed class RendererProfilerScenarioRunnerTests
                             4 => 0,
                             _ => 20,
                         }),
+                ],
+            RendererProfilerScenarioCatalog.FnvActiveAdtBase =>
+                [
+                    new RendererProfilerScenarioImageRegionStatistics(
+                        "active-adt-facade",
+                        2,
+                        2,
+                        6,
+                        6,
+                        36,
+                        90,
+                        90,
+                        90,
+                        90,
+                        90d / 255d,
+                        48,
+                        30),
                 ],
             _ => null,
         };
