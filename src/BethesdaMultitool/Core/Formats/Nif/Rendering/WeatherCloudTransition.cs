@@ -67,12 +67,34 @@ internal static class WeatherCloudTransitionResolver
         var weight = outgoingWeather is null
             ? 1f
             : Math.Clamp(currentWeatherWeight, 0f, 1f);
-        var currentVelocity = WeatherCloudMotion.Resolve(currentWeather, currentLayer, sourceLayerIndex, game);
-        var outgoingVelocity = WeatherCloudMotion.Resolve(
-            outgoingWeather, outgoingLayer, sourceLayerIndex, game);
-        var velocity = outgoingWeather is null
-            ? currentVelocity
-            : Vector2.Lerp(outgoingVelocity, currentVelocity, weight);
+        Vector2 velocity;
+        if (game == BethesdaGame.FalloutNewVegas && outgoingWeather is not null)
+        {
+            // FNV Clouds::Update blends the current/outgoing ONAM scalar first. Sky::UpdateWind
+            // independently blends the two DATA wind bytes, and Clouds multiplies those two blended
+            // values. Blending already wind-scaled endpoint velocities is a different polynomial and
+            // can run too fast (2x at the synthetic 0->255 midpoint).
+            var currentSpeed = WeatherCloudMotion.ResolveBeforeLegacyWind(
+                currentWeather, currentLayer, sourceLayerIndex, game);
+            var outgoingSpeed = WeatherCloudMotion.ResolveBeforeLegacyWind(
+                outgoingWeather, outgoingLayer, sourceLayerIndex, game);
+            var blendedSpeed = Vector2.Lerp(outgoingSpeed, currentSpeed, weight);
+            var blendedWind = BlendSample(
+                WeatherCloudMotion.ResolveLegacyWind(currentWeather),
+                WeatherCloudMotion.ResolveLegacyWind(outgoingWeather),
+                weight);
+            velocity = blendedSpeed * blendedWind;
+        }
+        else
+        {
+            var currentVelocity = WeatherCloudMotion.Resolve(
+                currentWeather, currentLayer, sourceLayerIndex, game);
+            var outgoingVelocity = WeatherCloudMotion.Resolve(
+                outgoingWeather, outgoingLayer, sourceLayerIndex, game);
+            velocity = outgoingWeather is null
+                ? currentVelocity
+                : Vector2.Lerp(outgoingVelocity, currentVelocity, weight);
+        }
 
         return new WeatherCloudTransition(
             currentLayer,

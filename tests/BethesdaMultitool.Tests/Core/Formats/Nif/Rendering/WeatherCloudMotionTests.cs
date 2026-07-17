@@ -118,6 +118,62 @@ public sealed class WeatherCloudMotionTests
     }
 
     [Fact]
+    public void Resolve_FnvEmptyOnamUsesRetailByte33DefaultForExistingCloudSource()
+    {
+        var weather = new WeatherRecord
+        {
+            Data = new WeatherData { WindSpeed = 255 },
+            CloudLayers =
+            [
+                new WeatherCloudLayer
+                {
+                    SourceIndex = 3,
+                    Texture = @"sky\clouds.dds",
+                },
+            ],
+        };
+
+        var resolved = WeatherCloudMotion.Resolve(
+            weather,
+            weather.CloudLayers[0],
+            sourceLayerIndex: 3,
+            game: BethesdaGame.FalloutNewVegas);
+
+        // Retail PC TESWeather::GetCloudSpeed initializes its byte accumulator to 0x33 when
+        // the weather has no ONAM array: (51 / 255) * fWeatherCloudSpeedMax(.1) * full wind.
+        Assert.Equal(0.02f, resolved.X, 7);
+        Assert.Equal(0f, resolved.Y);
+    }
+
+    [Fact]
+    public void Resolve_FnvNonEmptyOnamOutOfRangeReusesSlotZeroInsteadOfByte33Default()
+    {
+        var weather = new WeatherRecord
+        {
+            Data = new WeatherData { WindSpeed = 255 },
+            CloudSpeedsX = [102f / 255f],
+            CloudLayers =
+            [
+                new WeatherCloudLayer
+                {
+                    SourceIndex = 3,
+                    Texture = @"sky\clouds.dds",
+                },
+            ],
+        };
+
+        var resolved = WeatherCloudMotion.Resolve(
+            weather,
+            weather.CloudLayers[0],
+            sourceLayerIndex: 3,
+            game: BethesdaGame.FalloutNewVegas);
+
+        // Retail bounds handling selects ONAM[0] when count > 0 and index >= count.
+        Assert.Equal(0.04f, resolved.X, 7);
+        Assert.NotEqual(0.02f, resolved.X);
+    }
+
+    [Fact]
     public void Resolve_MissingWeatherOrOutOfRangeLayer_RemainsStill()
     {
         Assert.Equal(Vector2.Zero, WeatherCloudMotion.Resolve(null, null, 0));

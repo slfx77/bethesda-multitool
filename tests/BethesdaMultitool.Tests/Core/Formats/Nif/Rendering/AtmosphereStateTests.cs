@@ -10,8 +10,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     Locks the public contract of <see cref="AtmosphereState.Resolve" /> — the shared atmosphere
 ///     model the lighting / sky / water shaders read. Grounded in the engine decompile (atmosphere P2b):
 ///     the sun intensity is the daylight fraction (0 below the horizon, flat across the day), and the
-///     WTHR NAM0 bands cross-fade only within the sunrise/sunset windows and are held steady between
-///     them. These invariants (noon sun high + bright, night sun down + dark, lighting-off zeroes the
+///     WTHR NAM0 bands cross-fade within the sunrise/sunset windows; FNV's optional HighNoon slot also
+///     peaks at the engine's fixed 12:00 member. These invariants (noon sun high + bright, night sun down + dark, lighting-off zeroes the
 ///     sun, FNAM drives fog, unit sun direction, hour wraps) must hold.
 /// </summary>
 public sealed class AtmosphereStateTests
@@ -632,13 +632,33 @@ public sealed class AtmosphereStateTests
     [Fact]
     public void Resolve_SolarNoon_PicksAuthoredHighNoonPeak()
     {
-        // CleanTiming: solar noon = (srB + ssE)/2 = (5+19)/2 = 12 → exactly the High Noon color.
+        // Sky::Sky stores the fixed 12:00 color pivot independently of the climate windows.
         var w = WeatherWithAmbient6(
             new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
             new WeatherRgba(50, 40, 30, 255), new WeatherRgba(5, 5, 8, 255),
             new WeatherRgba(90, 120, 150, 255), new WeatherRgba(2, 3, 4, 255));
         var a = AtmosphereState.Resolve(12f, w, CleanTiming);
         AssertColor(90, 120, 150, a.AmbientColor);
+    }
+
+    [Fact]
+    public void Resolve_ClassicHighNoonPeak_UsesFixedTwelve_NotDaylightMidpoint()
+    {
+        // Mojave-style 6/8/18/20 has a daylight midpoint of 13:00. Retail FillColorBlend still
+        // reaches the authored HighNoon color at the fixed Sky member 12:00.
+        var asymmetricTiming = new AtmosphereState.ClimateTiming(6f, 8f, 18f, 20f);
+        var w = WeatherWithAmbient6(
+            new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
+            new WeatherRgba(50, 40, 30, 255), new WeatherRgba(5, 5, 8, 255),
+            new WeatherRgba(90, 120, 150, 255), new WeatherRgba(2, 3, 4, 255));
+
+        var atTwelve = AtmosphereState.Resolve(
+            12f, w, asymmetricTiming, game: BethesdaGame.FalloutNewVegas);
+        var atThirteen = AtmosphereState.Resolve(
+            13f, w, asymmetricTiming, game: BethesdaGame.FalloutNewVegas);
+
+        AssertColor(90, 120, 150, atTwelve.AmbientColor);
+        Assert.NotEqual(atTwelve.AmbientColor, atThirteen.AmbientColor);
     }
 
     [Fact]
@@ -734,18 +754,18 @@ public sealed class AtmosphereStateTests
     }
 
     [Fact]
-    public void Resolve_ZeroPeaks_KeepSolidDayAndNight()
+    public void Resolve_ZeroHighNoon_IsStillAuthored_WhileMidnightIsNotAColorEndpoint()
     {
-        // All-zero HighNoon/Midnight = unauthored → identical to the 4-band record at noon and midnight.
+        // Retail FillColorBlend reads a present HighNoon slot even when every byte is zero. Midnight
+        // remains stored metadata and never replaces the Night color outside the daylight span.
         var four = WeatherWithAmbient(new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
             new WeatherRgba(50, 40, 30, 255), new WeatherRgba(5, 5, 8, 255));
         var six = WeatherWithAmbient6(new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
             new WeatherRgba(50, 40, 30, 255), new WeatherRgba(5, 5, 8, 255),
             new WeatherRgba(0, 0, 0, 0), new WeatherRgba(0, 0, 0, 0));
 
-        Assert.Equal(
-            AtmosphereState.Resolve(12f, four, CleanTiming).AmbientColor,
-            AtmosphereState.Resolve(12f, six, CleanTiming).AmbientColor);
+        AssertColor(200, 210, 220, AtmosphereState.Resolve(12f, four, CleanTiming).AmbientColor);
+        AssertColor(0, 0, 0, AtmosphereState.Resolve(12f, six, CleanTiming).AmbientColor);
         Assert.Equal(
             AtmosphereState.Resolve(0f, four, CleanTiming).AmbientColor,
             AtmosphereState.Resolve(0f, six, CleanTiming).AmbientColor);
@@ -984,5 +1004,19 @@ public sealed class AtmosphereStateTests
         Assert.Equal(expectedFrom, blend.From);
         Assert.Equal(expectedTo, blend.To);
         Assert.Equal(expectedWeight, blend.ToWeight, 6);
+    }
+
+    [Fact]
+    public void SelectWeatherBandBlend_ClassicHighNoonPeaksAtFixedTwelve()
+    {
+        var asymmetricTiming = new AtmosphereState.ClimateTiming(6f, 8f, 18f, 20f);
+
+        var blend = AtmosphereState.SelectWeatherBandBlend(
+            12f, asymmetricTiming, BethesdaGame.FalloutNewVegas,
+            hasModernTransitions: false, hasAuthoredHighNoon: true);
+
+        Assert.Equal(AtmosphereState.WeatherBandKind.Day, blend.From);
+        Assert.Equal(AtmosphereState.WeatherBandKind.HighNoon, blend.To);
+        Assert.Equal(1f, blend.ToWeight, 6);
     }
 }

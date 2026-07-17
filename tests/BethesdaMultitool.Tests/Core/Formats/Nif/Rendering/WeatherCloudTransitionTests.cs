@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -143,6 +144,47 @@ public sealed class WeatherCloudTransitionTests
         Assert.Equal(new Vector2(0.006f, -0.001f), result.ScrollVelocity);
     }
 
+    [Theory]
+    [InlineData(0f, 0f)]
+    [InlineData(0.5f, 0.025f)]
+    [InlineData(1f, 0.1f)]
+    public void Resolve_FnvBlendsOnamAndWindBeforeMultiplication(
+        float currentWeatherWeight,
+        float expectedVelocity)
+    {
+        var current = LegacyWeather(speedByte: 255, windByte: 255);
+        var outgoing = LegacyWeather(speedByte: 0, windByte: 0);
+
+        var result = WeatherCloudTransitionResolver.Resolve(
+            current,
+            outgoing,
+            sourceLayerIndex: 0,
+            currentWeatherWeight: currentWeatherWeight,
+            game: BethesdaGame.FalloutNewVegas);
+
+        // PC retail Clouds::Update / Sky::UpdateWind oracle:
+        // .1 * lerp(0, 1, w) * lerp(0, 1, w). At w=.5 this is .025 UV/s;
+        // the old blend-of-products was .05 UV/s and therefore moved 2x too fast.
+        Assert.Equal(expectedVelocity, result.ScrollVelocity.X, 7);
+        Assert.Equal(0f, result.ScrollVelocity.Y);
+    }
+
+    [Fact]
+    public void Resolve_FnvStaticWeatherKeepsRecoveredEndpointRate()
+    {
+        var current = LegacyWeather(speedByte: 65, windByte: 50);
+
+        var result = WeatherCloudTransitionResolver.Resolve(
+            current,
+            outgoingWeather: null,
+            sourceLayerIndex: 0,
+            currentWeatherWeight: 0.25f,
+            game: BethesdaGame.FalloutNewVegas);
+
+        Assert.Equal(0.004998078f, result.ScrollVelocity.X, 7);
+        Assert.Equal(1f, result.CurrentWeatherWeight);
+    }
+
     private static WeatherRecord Weather(int sourceIndex, string texture, float u, float v) => new()
     {
         CloudLayers =
@@ -153,6 +195,21 @@ public sealed class WeatherCloudTransitionTests
                 Texture = texture,
                 SpeedU = u,
                 SpeedV = v,
+            },
+        ],
+    };
+
+    private static WeatherRecord LegacyWeather(byte speedByte, byte windByte) => new()
+    {
+        Data = new WeatherData { WindSpeed = windByte },
+        CloudSpeedsX = [speedByte / 255f],
+        CloudLayers =
+        [
+            new WeatherCloudLayer
+            {
+                SourceIndex = 0,
+                Texture = @"sky\clouds.dds",
+                SpeedU = speedByte / 255f,
             },
         ],
     };
