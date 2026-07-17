@@ -14,9 +14,17 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 ///     flag bits sit at different positions than the <see cref="DialogueRecord" /> model's FNV layout
 ///     (remapped in <see cref="RemapInfoFlags" />). PC plugins are little-endian.
 /// </summary>
-internal static class OblivionDialogueExtractor
+internal sealed class OblivionDialogueExtractor : IDialogueExtractor
 {
-    public static DialogTopicRecord BuildTopic(uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs)
+    public static readonly OblivionDialogueExtractor Instance = new();
+
+    private OblivionDialogueExtractor()
+    {
+    }
+
+    /// <remarks>Oblivion dialogue text is inline (no localized-string tables), so the context is unused.</remarks>
+    public DialogTopicRecord BuildTopic(
+        uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs, RecordParserContext context)
     {
         string? fullName = null;
         byte topicType = 0;
@@ -48,8 +56,10 @@ internal static class OblivionDialogueExtractor
         };
     }
 
-    public static DialogueRecord BuildInfo(
-        uint formId, string? editorId, uint? topicFormId, ushort infoIndex, IReadOnlyList<RawSubrecord> subs)
+    /// <inheritdoc cref="BuildTopic" />
+    public DialogueRecord BuildInfo(
+        uint formId, string? editorId, uint? topicFormId, ushort infoIndex,
+        IReadOnlyList<RawSubrecord> subs, RecordParserContext context)
     {
         uint? questFormId = null;
         uint? previousInfo = null;

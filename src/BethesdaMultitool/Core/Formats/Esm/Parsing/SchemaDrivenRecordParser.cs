@@ -207,23 +207,11 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
     }
 
     private DialogTopicRecord BuildTopic(uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs) =>
-        _context.Game switch
-        {
-            BethesdaGame.Skyrim => SkyrimDialogueExtractor.BuildTopic(formId, editorId, subs, _context),
-            BethesdaGame.Fallout4 or BethesdaGame.Fallout76 =>
-                Fallout4DialogueExtractor.BuildTopic(formId, editorId, subs, _context),
-            _ => OblivionDialogueExtractor.BuildTopic(formId, editorId, subs)
-        };
+        DialogueExtractors.For(_context.Game).BuildTopic(formId, editorId, subs, _context);
 
     private DialogueRecord BuildInfo(
         uint formId, string? editorId, uint? topic, ushort index, IReadOnlyList<RawSubrecord> subs) =>
-        _context.Game switch
-        {
-            BethesdaGame.Skyrim => SkyrimDialogueExtractor.BuildInfo(formId, editorId, topic, index, subs, _context),
-            BethesdaGame.Fallout4 or BethesdaGame.Fallout76 =>
-                Fallout4DialogueExtractor.BuildInfo(formId, editorId, topic, index, subs, _context),
-            _ => OblivionDialogueExtractor.BuildInfo(formId, editorId, topic, index, subs)
-        };
+        DialogueExtractors.For(_context.Game).BuildInfo(formId, editorId, topic, index, subs, _context);
 
     private static Dictionary<string, RecordDef> BuildIndex(IReadOnlyList<RecordDef> schema)
     {

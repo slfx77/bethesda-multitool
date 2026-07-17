@@ -22,15 +22,21 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 ///         PC plugins are little-endian.
 ///     </para>
 /// </summary>
-internal static class Fallout4DialogueExtractor
+internal sealed class Fallout4DialogueExtractor : IDialogueExtractor
 {
+    public static readonly Fallout4DialogueExtractor Instance = new();
+
+    private Fallout4DialogueExtractor()
+    {
+    }
+
     // FO4 condition function indices (wbDefinitionsFO4 — same as Skyrim/FNV).
     private const ushort GetIsRace = 69;
     private const ushort GetInFaction = 71;
     private const ushort GetIsId = 72;
     private const ushort GetIsVoiceType = 426;
 
-    public static DialogTopicRecord BuildTopic(
+    public DialogTopicRecord BuildTopic(
         uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs, RecordParserContext context)
     {
         string? fullName = null;
@@ -71,7 +77,7 @@ internal static class Fallout4DialogueExtractor
         };
     }
 
-    public static DialogueRecord BuildInfo(
+    public DialogueRecord BuildInfo(
         uint formId, string? editorId, uint? topicFormId, ushort infoIndex,
         IReadOnlyList<RawSubrecord> subs, RecordParserContext context)
     {

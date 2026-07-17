@@ -22,8 +22,14 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 ///         Parameter #1@12 sit at the same offsets Oblivion uses. PC plugins are little-endian.
 ///     </para>
 /// </summary>
-internal static class SkyrimDialogueExtractor
+internal sealed class SkyrimDialogueExtractor : IDialogueExtractor
 {
+    public static readonly SkyrimDialogueExtractor Instance = new();
+
+    private SkyrimDialogueExtractor()
+    {
+    }
+
     // Skyrim condition function indices (wbDefinitionsTES5 — same low indices as FNV/Oblivion, plus
     // GetIsVoiceType for generic voiced dialogue).
     private const ushort GetIsRace = 69;
@@ -31,7 +37,7 @@ internal static class SkyrimDialogueExtractor
     private const ushort GetIsId = 72;
     private const ushort GetIsVoiceType = 426;
 
-    public static DialogTopicRecord BuildTopic(
+    public DialogTopicRecord BuildTopic(
         uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs, RecordParserContext context)
     {
         string? fullName = null;
@@ -73,7 +79,7 @@ internal static class SkyrimDialogueExtractor
         };
     }
 
-    public static DialogueRecord BuildInfo(
+    public DialogueRecord BuildInfo(
         uint formId, string? editorId, uint? topicFormId, ushort infoIndex,
         IReadOnlyList<RawSubrecord> subs, RecordParserContext context)
     {
