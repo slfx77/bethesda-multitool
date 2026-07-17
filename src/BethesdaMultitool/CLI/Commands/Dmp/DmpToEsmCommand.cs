@@ -44,6 +44,11 @@ public static class DmpToEsmCommand
         {
             Description = "Emit per-record decision events (very chatty)"
         };
+        var eventLogJsonlOpt = new Option<string?>("--event-log-jsonl")
+        {
+            Description = "Write every structured conversion event plus final stats as JSON Lines. " +
+                          "Intended for reproducible corpus certification."
+        };
         var secondaryDataOpt = new Option<string[]>("--secondary-data")
         {
             Description = "Repeatable: secondary data folder to pull missing assets from, in priority order " +
@@ -126,6 +131,7 @@ public static class DmpToEsmCommand
         command.Options.Add(compressOpt);
         command.Options.Add(validateOpt);
         command.Options.Add(verboseOpt);
+        command.Options.Add(eventLogJsonlOpt);
         command.Options.Add(secondaryDataOpt);
         command.Options.Add(secondaryData360Opt);
         command.Options.Add(packAssetsOpt);
@@ -224,6 +230,7 @@ public static class DmpToEsmCommand
             var compress = parseResult.GetValue(compressOpt);
             var validate = parseResult.GetValue(validateOpt);
             var verbose = parseResult.GetValue(verboseOpt);
+            var eventLogJsonl = parseResult.GetValue(eventLogJsonlOpt);
             var secondaryData = parseResult.GetValue(secondaryDataOpt) ?? [];
             var secondaryData360 = parseResult.GetValue(secondaryData360Opt) ?? [];
             var packAssets = parseResult.GetValue(packAssetsOpt);
@@ -251,7 +258,7 @@ public static class DmpToEsmCommand
             var plannerTypesArgs = parseResult.GetValue(plannerTypesOpt) ?? [];
             var plannerTypes = ResolvePlannerTypes(plannerTypesArgs);
 
-            await RunAsync(dmp, pcEsm, output, author, description, compress, validate, verbose,
+            await RunAsync(dmp, pcEsm, output, author, description, compress, validate, verbose, eventLogJsonl,
                 secondaryData, secondaryData360, packAssets, writeMissingList, dialogueAudioCsv, overrideVanilla,
                 disableRefrEditorIdRemap, replaceCellTemporaries, recoverGaps, emitMasterCellNavmAugmentation,
                 recoverLeveledSpawns, diagSkipCellNavm, diagSkipCellNewRefs, cellAuthorityPath,
@@ -271,6 +278,7 @@ public static class DmpToEsmCommand
         bool compress,
         bool validate,
         bool verbose,
+        string? eventLogJsonlPath,
         string[] secondaryDataFolders,
         string[] secondaryDataFolders360,
         string? packAssetsBsaPath,
@@ -422,7 +430,13 @@ public static class DmpToEsmCommand
         AnsiConsole.WriteLine();
 
         var registry = RecordEncoderRegistry.CreateDefault();
-        var sink = new ConsoleProgressSink(verbose);
+        var consoleSink = new ConsoleProgressSink(verbose);
+        using var jsonlSink = string.IsNullOrWhiteSpace(eventLogJsonlPath)
+            ? null
+            : new JsonlConversionProgressSink(eventLogJsonlPath);
+        IConversionProgressSink sink = jsonlSink is null
+            ? consoleSink
+            : new TeeProgressSink(consoleSink, jsonlSink);
         var pipeline = new PluginConversionPipeline(registry, sink);
 
         var result = await pipeline.BuildAsync(inputs, ct);
@@ -888,6 +902,35 @@ public static class DmpToEsmCommand
             AnsiConsole.MarkupLine(
                 $"[red]✗ Asset packing failed:[/] {Markup.Escape(result.ErrorMessage ?? "(unknown)")}");
             Environment.Exit(1);
+        }
+    }
+
+    private sealed class TeeProgressSink(
+        IConversionProgressSink first,
+        IConversionProgressSink second) : IConversionProgressSink
+    {
+        public void OnPhaseStart(string phase, int? totalItems)
+        {
+            first.OnPhaseStart(phase, totalItems);
+            second.OnPhaseStart(phase, totalItems);
+        }
+
+        public void OnEvent(ConversionProgressEvent evt)
+        {
+            first.OnEvent(evt);
+            second.OnEvent(evt);
+        }
+
+        public void OnPhaseEnd(string phase, ConversionPipelineStats partialStats)
+        {
+            first.OnPhaseEnd(phase, partialStats);
+            second.OnPhaseEnd(phase, partialStats);
+        }
+
+        public void OnComplete(ConversionPipelineStats stats)
+        {
+            first.OnComplete(stats);
+            second.OnComplete(stats);
         }
     }
 

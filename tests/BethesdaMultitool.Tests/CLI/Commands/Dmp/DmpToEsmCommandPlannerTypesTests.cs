@@ -20,6 +20,7 @@ public sealed class DmpToEsmCommandPlannerTypesTests
             "sample.dmp",
             "--pc-esm", "FalloutNV.esm",
             "--output", "diagnostic.esm",
+            "--event-log-jsonl", "diagnostic.events.jsonl",
             "--planner-types", "all",
             "--diag-keep-master-formid", "0x0012795D",
             "--diag-keep-master-formid", "0x000000C8",
