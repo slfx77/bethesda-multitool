@@ -136,5 +136,9 @@ public class GameProfilesTests
         // Morrowind has no map markers (glyph-only default, never reached).
         Assert.False(GameProfiles.For(BethesdaGame.Morrowind).HasMapMarkers);
     }
+
+    [Fact]
+    public void DefaultGame_IsFalloutNewVegas()
+        => Assert.Equal(BethesdaGame.FalloutNewVegas, GameProfiles.DefaultGame);
 }
 

@@ -17,7 +17,7 @@ internal static class DialogueConditionDisplayFormatter
         DialogueCondition condition,
         Func<uint, string> resolveFormName,
         Func<uint, string>? resolveEditorId = null,
-        BethesdaGame game = BethesdaGame.FalloutNewVegas)
+        BethesdaGame game = GameProfiles.DefaultGame)
     {
         var table = ConditionFunctionTable.For(game);
         var functionName = table.GetName(condition.FunctionIndex);
@@ -73,7 +73,7 @@ internal static class DialogueConditionDisplayFormatter
     public static bool IsFormReference(
         DialogueCondition condition,
         int paramIndex,
-        BethesdaGame game = BethesdaGame.FalloutNewVegas)
+        BethesdaGame game = GameProfiles.DefaultGame)
     {
         var table = ConditionFunctionTable.For(game);
         var function = table.Get(condition.FunctionIndex);

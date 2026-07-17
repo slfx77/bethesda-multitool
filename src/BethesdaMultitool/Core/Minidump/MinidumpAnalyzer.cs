@@ -121,7 +121,7 @@ public sealed class MinidumpAnalyzer
             // build/version axis is needed beyond knowing the game is FNV.
             if (scanResult.Game == BethesdaGame.Unknown)
             {
-                scanResult.Game = BethesdaGame.FalloutNewVegas;
+                scanResult.Game = GameProfiles.DefaultGame;
             }
         }
 

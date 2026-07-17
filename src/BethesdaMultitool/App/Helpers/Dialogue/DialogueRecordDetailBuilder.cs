@@ -28,7 +28,7 @@ internal static class DialogueRecordDetailBuilder
         string? topicEditorId = null,
         Func<uint, string>? resolveEditorId = null,
         Func<uint, uint, string?>? resolveQuestVariable = null,
-        BethesdaGame game = BethesdaGame.FalloutNewVegas)
+        BethesdaGame game = GameProfiles.DefaultGame)
     {
         var rows = new List<DetailRow>();
 
@@ -248,7 +248,7 @@ internal static class DialogueRecordDetailBuilder
         InfoDialogueNode sourceInfo,
         Func<uint, string> resolveFormName,
         Func<uint, string>? resolveEditorId = null,
-        BethesdaGame game = BethesdaGame.FalloutNewVegas)
+        BethesdaGame game = GameProfiles.DefaultGame)
     {
         var rows = new List<DetailRow>();
 

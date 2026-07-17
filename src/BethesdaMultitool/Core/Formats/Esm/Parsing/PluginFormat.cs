@@ -19,7 +19,7 @@ public readonly record struct PluginFormat(
     BethesdaGame Game)
 {
     /// <summary>The 24-byte TES4 layout shared by FO3/FNV/Skyrim/FO4/Starfield. Default for callers.</summary>
-    public static readonly PluginFormat Fnv = FromProfile(GameProfiles.For(BethesdaGame.FalloutNewVegas));
+    public static readonly PluginFormat Fnv = FromProfile(GameProfiles.For(GameProfiles.DefaultGame));
 
     /// <summary>The 20-byte TES4 layout used by Oblivion (no VCS/version trailer).</summary>
     public static readonly PluginFormat Oblivion = FromProfile(GameProfiles.For(BethesdaGame.Oblivion));
@@ -66,7 +66,7 @@ public readonly record struct PluginFormat(
         if (HasHedrAt(data, 24, bigEndian))
         {
             var version = ReadHedrVersion(data, 24, bigEndian);
-            var game = version is { } v ? GameProfiles.ResolveByHedrVersion(v) : BethesdaGame.FalloutNewVegas;
+            var game = version is { } v ? GameProfiles.ResolveByHedrVersion(v) : GameProfiles.DefaultGame;
             return FromProfile(GameProfiles.For(game));
         }
 

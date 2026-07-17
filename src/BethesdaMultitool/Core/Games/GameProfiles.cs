@@ -8,6 +8,13 @@ namespace BethesdaMultitool.Core.Games;
 /// </summary>
 public static class GameProfiles
 {
+    /// <summary>
+    ///     The app-wide fallback game when detection fails or a caller has no game context
+    ///     (the tool was originally FNV-only). Use this instead of a literal
+    ///     <see cref="BethesdaGame.FalloutNewVegas" /> so the convention stays greppable.
+    /// </summary>
+    public const BethesdaGame DefaultGame = BethesdaGame.FalloutNewVegas;
+
     // Engine-default landscape textures (the SDefaultLandDiffuseTexture ini value). FO3/FNV share the
     // FNV path, which is also the fallback for games without a verified default (Starfield).
     private const string FalloutDiffuse = @"textures\landscape\DirtWasteland01.dds";
