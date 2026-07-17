@@ -172,7 +172,7 @@ public sealed class EsmPlanner
                 .ToImmutableHashSet();
         }
 
-        var (ordered, diagnostics) = PlanValidator.Validate(records);
+        var (ordered, diagnostics) = PlanValidator.Validate(records, RuntimeStateRecordPolicy.EngineFormIds);
         var validPackageFormIds = PackagePlanSanitizer.BuildValidPackageFormIds(masterRecords, ordered);
         var packageDiagnostics = BuildPackageReferenceDiagnostics(ordered, validPackageFormIds);
         var indexByFormId = ImmutableDictionary.CreateBuilder<uint, int>();

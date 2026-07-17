@@ -13,9 +13,10 @@ public static class PlanValidator
     ///     diagnostics surfaced along the way.
     /// </summary>
     public static (ImmutableArray<RecordPlan> Records, ImmutableArray<PlanDiagnostic> Diagnostics) Validate(
-        ImmutableArray<RecordPlan> records)
+        ImmutableArray<RecordPlan> records,
+        IReadOnlySet<uint>? externallyLiveFormIds = null)
     {
-        var propagated = DropPropagator.Propagate(records);
+        var propagated = DropPropagator.Propagate(records, externallyLiveFormIds);
         var diagnostics = ResolutionInvariantChecker.Check(propagated).ToImmutableArray();
 
         var emitted = ImmutableArray.CreateBuilder<RecordPlan>(propagated.Length);

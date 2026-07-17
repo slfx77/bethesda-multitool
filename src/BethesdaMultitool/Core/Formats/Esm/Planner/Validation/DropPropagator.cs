@@ -12,15 +12,21 @@ public static class DropPropagator
 {
     /// <summary>
     ///     Walks <paramref name="records" /> once and re-marks any reference whose final
-    ///     FormID belongs to a skipped record. The output replaces the input;
-    ///     <c>PlanValidator</c> calls this before topological ordering.
+    ///     FormID belongs to a skipped record. FormIDs supplied through
+    ///     <paramref name="externallyLiveFormIds" /> remain valid even when their captured
+    ///     runtime-state record is skipped, because the engine owns those identities.
+    ///     The output replaces the input; <c>PlanValidator</c> calls this before
+    ///     topological ordering.
     /// </summary>
-    public static ImmutableArray<RecordPlan> Propagate(ImmutableArray<RecordPlan> records)
+    public static ImmutableArray<RecordPlan> Propagate(
+        ImmutableArray<RecordPlan> records,
+        IReadOnlySet<uint>? externallyLiveFormIds = null)
     {
         var skippedFormIds = new HashSet<uint>();
         foreach (var record in records)
         {
-            if (record.Disposition == RecordDisposition.Skip)
+            if (record.Disposition == RecordDisposition.Skip
+                && !(externallyLiveFormIds?.Contains(record.FormId) ?? false))
             {
                 skippedFormIds.Add(record.FormId);
             }
