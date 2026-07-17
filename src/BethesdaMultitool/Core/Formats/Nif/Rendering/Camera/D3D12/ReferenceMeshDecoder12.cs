@@ -7,6 +7,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
@@ -127,6 +128,7 @@ internal sealed class ReferenceMeshDecoder12
                 new Dictionary<int, PhysicsLiteSwayDescriptor>();
 
             NifRenderableModel? model;
+            NifInfo? nif = null;
             if (lookupPath.EndsWith(".spt", StringComparison.OrdinalIgnoreCase))
             {
                 // SpeedTree tree: the .spt is a procedural recipe, not a NIF. Parse it and generate
@@ -207,7 +209,6 @@ internal sealed class ReferenceMeshDecoder12
                     isBigEndian = sourceInfo.IsBigEndian;
                 }
 
-                NifInfo? nif;
                 if (isBigEndian)
                 {
                     var converted = NifConverter.Convert(nifData);
@@ -268,8 +269,8 @@ internal sealed class ReferenceMeshDecoder12
                     // opaque instancing never shares one external-emittance color across refs.
                     externalEmittanceColor: externalEmittanceColor);
 
-                // FNV physics-lite is source-graph data, resolved before SourceBlockIndex is dropped
-                // by the persistent/GPU payload. The parser is deliberately profile-gated to retail
+                // FNV physics-lite is source-graph data, resolved while the full source graph is
+                // available. The parser is deliberately profile-gated to retail
                 // 20.2.0.7 / BS34 and returns no routes when ordinary transform animation exists.
                 if (FnvHavokConstraintParser.IsPhysicsLiteCandidate(nif))
                 {
@@ -366,8 +367,8 @@ internal sealed class ReferenceMeshDecoder12
                 // texture × emissive (× mult) — e.g. BarrelPile03's goo is a white gradient sheet
                 // × green (0.05, 1, 0) × 2; without the tint it draws clipped white. Animated
                 // (controller) emissive wins over the static material color; no material = white.
-                // An ALL-ZERO emissive is treated as unauthored (the FNV WTHR "IsAuthored"
-                // convention): shipped no-lighting shapes with a black material emissive still
+                // An ALL-ZERO emissive is treated as unauthored for this material policy: shipped
+                // no-lighting shapes with a black material emissive still
                 // render in-engine — SuperMutantBedding01's multiplicative shadow plane SHARES its
                 // mattress's material (emissive 0,0,0) and would otherwise multiply the frame to
                 // black — so black cannot be a modulator; fall back to no tint.
@@ -393,9 +394,16 @@ internal sealed class ReferenceMeshDecoder12
                 // strength before zeroing disabled specular.
                 var hasEnvMap = !string.IsNullOrEmpty(sub.EnvironmentMapTexturePath) &&
                                 sub.EnvironmentMapScale > 0f;
+                var isTallGrass = string.Equals(
+                    sub.ShaderMetadata?.PropertyType,
+                    "TallGrassShaderProperty",
+                    StringComparison.Ordinal);
+                var localBounds = NifLocalBoundsResolver.Resolve(sub);
 
                 submeshes.Add(new DecodedSubmesh12(
-                    GpuMeshUploader.BuildVertices(sub),
+                    // Keep the authored alpha only in this explicit reference-renderer route.
+                    // The TallGrass VS consumes it as wind weight, then writes coverage alpha 1.
+                    GpuMeshUploader.BuildVertices(sub, preserveAuthoredVertexAlpha: isTallGrass),
                     sub.Triangles,
                     diffusePath,
                     hasBump ? normalPath : null,
@@ -410,7 +418,8 @@ internal sealed class ReferenceMeshDecoder12
                     alphaState.MaterialAlpha,
                     sub.IsDoubleSided,
                     sub.IsEmissive,
-                    ComputeLocalBoundsCenter(sub.Positions),
+                    localBounds.Center,
+                    localBounds.Radius,
                     sub.IsBillboard,
                     specularColor,
                     sub.MaterialGlossiness,
@@ -459,7 +468,19 @@ internal sealed class ReferenceMeshDecoder12
                     Lighting30EmissionColor: sub.Lighting30EmissionColor is { } lighting30Emission
                         ? new Vector3(lighting30Emission.R, lighting30Emission.G, lighting30Emission.B)
                         : Vector3.Zero,
-                    Lighting30EmissionMultiplier: sub.Lighting30EmissionMultiplier));
+                    Lighting30EmissionMultiplier: sub.Lighting30EmissionMultiplier,
+                    IsTallGrass: isTallGrass,
+                    ClassicEnvironmentMapTexturePath: sub.ClassicEnvironmentMapTexturePath,
+                    ClassicEnvironmentMaskTexturePath: sub.ClassicEnvironmentMaskTexturePath,
+                    ClassicEnvironmentMapScale: sub.ClassicEnvironmentMapScale,
+                    ClassicEnvironmentMapUsesWindowReflection:
+                        sub.ClassicEnvironmentMapUsesWindowReflection,
+                    ClassicParallaxHeightMapTexturePath:
+                        sub.ClassicParallaxHeightMapTexturePath,
+                    ClassicBasicShaderMode: nif is not null
+                        ? FnvClassicBasicShaderPolicy.Resolve(nif, sub, diffusePath, normalPath)
+                        : FnvClassicBasicShaderMode.None,
+                    SourceBlockIndex: sub.SourceBlockIndex));
             }
 
             if (submeshes.Count == 0)
@@ -513,6 +534,7 @@ internal sealed class ReferenceMeshDecoder12
                 sub.DoubleSided,
                 sub.IsEmissive,
                 sub.LocalBoundsCenter,
+                sub.LocalBoundsRadius,
                 sub.IsBillboard,
                 sub.SpecularColor,
                 sub.Glossiness,
@@ -542,7 +564,15 @@ internal sealed class ReferenceMeshDecoder12
                 sub.IsLighting30,
                 sub.Lighting30GlowMapTexturePath,
                 sub.Lighting30EmissionColor,
-                sub.Lighting30EmissionMultiplier));
+                sub.Lighting30EmissionMultiplier,
+                sub.IsTallGrass,
+                sub.ClassicEnvironmentMapTexturePath,
+                sub.ClassicEnvironmentMaskTexturePath,
+                sub.ClassicEnvironmentMapScale,
+                sub.ClassicEnvironmentMapUsesWindowReflection,
+                sub.ClassicParallaxHeightMapTexturePath,
+                sub.ClassicBasicShaderMode,
+                sub.SourceBlockIndex));
         }
 
         return new ReferenceDecodedMeshPayload12(
@@ -572,6 +602,7 @@ internal sealed class ReferenceMeshDecoder12
                 sub.DoubleSided,
                 sub.IsEmissive,
                 sub.LocalBoundsCenter,
+                sub.LocalBoundsRadius,
                 sub.IsBillboard,
                 sub.SpecularColor,
                 sub.Glossiness,
@@ -601,7 +632,19 @@ internal sealed class ReferenceMeshDecoder12
                 IsLighting30: sub.IsLighting30,
                 Lighting30GlowMapTexturePath: sub.Lighting30GlowMapTexturePath,
                 Lighting30EmissionColor: sub.Lighting30EmissionColor,
-                Lighting30EmissionMultiplier: sub.Lighting30EmissionMultiplier));
+                Lighting30EmissionMultiplier: sub.Lighting30EmissionMultiplier,
+                IsTallGrass: sub.IsTallGrass,
+                ClassicEnvironmentMapTexturePath: sub.ClassicEnvironmentMapTexturePath,
+                ClassicEnvironmentMaskTexturePath: sub.ClassicEnvironmentMaskTexturePath,
+                ClassicEnvironmentMapScale: sub.ClassicEnvironmentMapScale,
+                ClassicEnvironmentMapUsesWindowReflection:
+                    sub.ClassicEnvironmentMapUsesWindowReflection,
+                ClassicParallaxHeightMapTexturePath:
+                    sub.ClassicParallaxHeightMapTexturePath,
+                ClassicBasicShaderMode:
+                    sub.ClassicBasicShaderMode,
+                SourceBlockIndex:
+                    sub.SourceBlockIndex));
         }
 
         return new DecodedNifMesh12(
@@ -687,19 +730,6 @@ internal sealed class ReferenceMeshDecoder12
         return hash;
     }
 
-    private static Vector3 ComputeLocalBoundsCenter(float[] positions)
-    {
-        var min = new Vector3(float.PositiveInfinity);
-        var max = new Vector3(float.NegativeInfinity);
-        for (var i = 0; i + 2 < positions.Length; i += 3)
-        {
-            var p = new Vector3(positions[i], positions[i + 1], positions[i + 2]);
-            min = Vector3.Min(min, p);
-            max = Vector3.Max(max, p);
-        }
-
-        return Vector3.Multiply(min + max, 0.5f);
-    }
 }
 #endif
 

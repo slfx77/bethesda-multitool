@@ -14,7 +14,9 @@ internal static class GpuMeshUploader
     /// <summary>
     ///     Converts a <see cref="RenderableSubmesh" /> to a GPU vertex array.
     /// </summary>
-    public static GpuVertex[] BuildVertices(RenderableSubmesh sub)
+    public static GpuVertex[] BuildVertices(
+        RenderableSubmesh sub,
+        bool preserveAuthoredVertexAlpha = false)
     {
         var vertexCount = sub.VertexCount;
         var vertices = new GpuVertex[vertexCount];
@@ -33,7 +35,7 @@ internal static class GpuMeshUploader
             if (sub.UVs != null && uvi + 1 < sub.UVs.Length)
                 vertices[i].TexCoord = new Vector2(sub.UVs[uvi], sub.UVs[uvi + 1]);
 
-            if (NifVertexColorPolicy.HasVertexColorData(sub) &&
+            if ((NifVertexColorPolicy.HasVertexColorData(sub) || preserveAuthoredVertexAlpha) &&
                 sub.VertexColors != null &&
                 ci + 3 < sub.VertexColors.Length)
             {
@@ -42,7 +44,11 @@ internal static class GpuMeshUploader
                     color.R / 255f,
                     color.G / 255f,
                     color.B / 255f,
-                    color.A / 255f);
+                    // The ordinary upload path keeps policy-normalized coverage alpha. The
+                    // reference renderer opts into the raw channel only for an explicitly
+                    // identified TallGrassShaderProperty, whose VS consumes it as wind weight
+                    // and resets the outgoing coverage alpha before any pixel shader sees it.
+                    preserveAuthoredVertexAlpha ? sub.VertexColors[ci + 3] / 255f : color.A / 255f);
             }
             else
             {

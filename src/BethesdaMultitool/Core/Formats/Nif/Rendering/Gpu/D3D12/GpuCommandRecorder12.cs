@@ -129,6 +129,47 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     }
 
     /// <summary>
+    ///     Closes and discards the currently recorded command list without submitting it. This is the
+    ///     recovery path for a CPU-side recording failure: because none of the recorded barriers or
+    ///     draws reach the queue, GPU resources retain the states established by the preceding
+    ///     successfully submitted frame. The frame slot still advances so the next BeginFrame waits
+    ///     the other slot's prior fence; this preserves the frame-count deletion queue's safety proof.
+    /// </summary>
+    /// <remarks>
+    ///     Call only before <see cref="EndFrame" /> starts submission. Resources whose disposal was
+    ///     tied to the abandoned list are released immediately because the GPU can never reference
+    ///     them.
+    /// </remarks>
+    /// <returns>True when an open frame was abandoned; false when no frame was open.</returns>
+    public bool AbortFrame()
+    {
+        if (!_frameOpen) return false;
+
+        try
+        {
+            _commandList.Close();
+        }
+        finally
+        {
+            try
+            {
+                foreach (var resource in _currentFrameRetirements)
+                {
+                    resource.Dispose();
+                }
+            }
+            finally
+            {
+                _currentFrameRetirements.Clear();
+                _frameIndex = (_frameIndex + 1) % FramesInFlight;
+                _frameOpen = false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     ///     Closes the command list, submits it to the device's direct queue, signals the
     ///     frame fence so <see cref="BeginFrame" /> on this slot N frames hence can detect
     ///     completion, then rotates <see cref="FrameIndex" /> to the next slot.

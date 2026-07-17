@@ -189,7 +189,35 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // entries have no root-local hinge pivot/axis and would silently keep hanging fixtures static.
     // Bumped 51→52: classic FO3/FNV Lighting30 shader identity, raw material emission/multiplier,
     // and classified glow-map path now persist per submesh. Warm v51 entries silently omit neon glow.
-    internal const int DecoderVersion = 52;
+    // Bumped 52→53: the payload now identifies TallGrassShaderProperty submeshes. Their existing
+    // VertexColor.w stores raw authored wind weight in the reference cache; the specialized VS
+    // resets coverage alpha after consuming it. Warm v52 entries contain policy-normalized alpha.
+    // Bumped 53→54: classic FO3/FNV environment mapping now persists its separate slot-4 cube,
+    // optional slot-5 red-channel mask, authored EnvMapScale, and bit-21/SLS2058 window direction.
+    // Warm v53 entries silently drop the retail SLS environment pass and make metal/glass matte.
+    // Bumped 54→55: classic simple-parallax materials now persist their policy-gated slot-3
+    // height-map path. Warm v54 entries silently flatten bit-11 rubble/cave/architecture materials.
+    // Bumped 55→56: persist the transformed authored NiBound radius beside its center. Warm v55
+    // entries cannot reproduce the engine's sphere-surface specular LOD distance.
+    // Bumped 56→57: persist the strict PC-final basic bump shader mode (SLS1009 or SLS1013).
+    // Warm v56 entries cannot distinguish the vertex-color permutation or prove that
+    // neighboring specular/environment/parallax/glow/effect families were excluded.
+    // Bumped 57→58: SLS1009/1013 eligibility now requires finite UV and usable N/T/B data at every
+    // vertex plus valid triangle indices. Warm v57 entries can retain a mode selected from one good
+    // vertex even when another vertex would poison the recovered guard-free shader interpolation.
+    // Bumped 58→59: the exact static SLS route now excludes internally skinned meshes until their
+    // distinct retail VSS is recovered, and resolves eligibility against effective MODS/TXST paths.
+    // Warm v58 entries can misclassify both skinned geometry and alternate-texture variants.
+    // Bumped 59→60: baked rigid/uniform node transforms now preserve the authored N/T/B vector
+    // magnitudes consumed by the retail raw-dp3 vertex shader. Warm v59 entries normalize those
+    // streams on transformed meshes and can materially change basic-bump illumination.
+    // Bumped 60→61: baked particle-cloud emissive state now follows the attached shader property.
+    // Warm v60 entries can keep standard-alpha BSShaderNoLighting dust incorrectly scene-lit.
+    // Bumped 61→62: the active FNV ID193 classifier now rejects shader type 29 and raw flags1
+    // Skinned/SinglePass. Warm v61 entries can retain the earlier broader audit-only identity.
+    // Bumped 62→63: persist each decoded submesh's stable source-shape block index. Warm v62
+    // entries cannot identify the source shape for property-associated light observations.
+    internal const int DecoderVersion = 63;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -508,6 +536,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     {
         ValidateRange(submesh.Vertices.Length, 0, MaxVerticesPerSubmesh, nameof(submesh.Vertices));
         ValidateRange(submesh.Indices.Length, 0, MaxIndicesPerSubmesh, nameof(submesh.Indices));
+        ValidateRange(submesh.SourceBlockIndex, -1, int.MaxValue, nameof(submesh.SourceBlockIndex));
 
         writer.Write(submesh.Vertices.Length);
         foreach (var vertex in submesh.Vertices)
@@ -540,6 +569,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(submesh.DoubleSided);
         writer.Write(submesh.IsEmissive);
         WriteVector3(writer, submesh.LocalBoundsCenter);
+        writer.Write(submesh.LocalBoundsRadius);
         writer.Write(submesh.IsBillboard);
         WriteVector3(writer, submesh.SpecularColor);
         writer.Write(submesh.Glossiness);
@@ -591,6 +621,14 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         WriteNullableString(writer, submesh.Lighting30GlowMapTexturePath, MaxStringBytes);
         WriteVector3(writer, submesh.Lighting30EmissionColor);
         writer.Write(submesh.Lighting30EmissionMultiplier);
+        writer.Write(submesh.IsTallGrass);
+        WriteNullableString(writer, submesh.ClassicEnvironmentMapTexturePath, MaxStringBytes);
+        WriteNullableString(writer, submesh.ClassicEnvironmentMaskTexturePath, MaxStringBytes);
+        writer.Write(submesh.ClassicEnvironmentMapScale);
+        writer.Write(submesh.ClassicEnvironmentMapUsesWindowReflection);
+        WriteNullableString(writer, submesh.ClassicParallaxHeightMapTexturePath, MaxStringBytes);
+        writer.Write((byte)submesh.ClassicBasicShaderMode);
+        writer.Write(submesh.SourceBlockIndex);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -623,7 +661,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             throw new InvalidDataException("Invalid alpha render mode in decoded mesh cache.");
         }
 
-        return new ReferenceDecodedSubmeshPayload12(
+        var payload = new ReferenceDecodedSubmeshPayload12(
             vertices,
             indices,
             diffuseTexturePath,
@@ -640,6 +678,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             reader.ReadBoolean(),
             reader.ReadBoolean(),
             ReadVector3(reader),
+            reader.ReadSingle(),
             reader.ReadBoolean(),
             ReadVector3(reader),
             reader.ReadSingle(),
@@ -669,7 +708,26 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             reader.ReadBoolean(),
             ReadNullableString(reader, MaxStringBytes),
             ReadVector3(reader),
-            reader.ReadSingle());
+            reader.ReadSingle(),
+            reader.ReadBoolean(),
+            ReadNullableString(reader, MaxStringBytes),
+            ReadNullableString(reader, MaxStringBytes),
+            reader.ReadSingle(),
+            reader.ReadBoolean(),
+            ReadNullableString(reader, MaxStringBytes),
+            (FnvClassicBasicShaderMode)reader.ReadByte(),
+            reader.ReadInt32());
+        if (!Enum.IsDefined(payload.ClassicBasicShaderMode))
+        {
+            throw new InvalidDataException("Invalid FNV classic basic shader mode in decoded mesh cache.");
+        }
+
+        if (payload.SourceBlockIndex < -1)
+        {
+            throw new InvalidDataException("Invalid source shape block index in decoded mesh cache.");
+        }
+
+        return payload;
     }
 
     private static void WritePhysicsLiteSway(
@@ -934,6 +992,7 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     bool DoubleSided,
     bool IsEmissive,
     Vector3 LocalBoundsCenter,
+    float LocalBoundsRadius,
     bool IsBillboard,
     Vector3 SpecularColor = default,
     float Glossiness = 0f,
@@ -972,4 +1031,20 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     bool IsLighting30 = false,
     string? Lighting30GlowMapTexturePath = null,
     Vector3 Lighting30EmissionColor = default,
-    float Lighting30EmissionMultiplier = 1f);
+    float Lighting30EmissionMultiplier = 1f,
+    // TallGrassShaderProperty identity (v53+). VertexColor.w is its raw wind weight.
+    bool IsTallGrass = false,
+    // Classic FO3/FNV PP-lighting environment pass (v54+), distinct from FO4 BGSM _s semantics.
+    string? ClassicEnvironmentMapTexturePath = null,
+    string? ClassicEnvironmentMaskTexturePath = null,
+    float ClassicEnvironmentMapScale = 0f,
+    bool ClassicEnvironmentMapUsesWindowReflection = false,
+    // Classic simple-parallax height map (v55+); bit-28 POM is excluded before persistence.
+    string? ClassicParallaxHeightMapTexturePath = null,
+    // Audit-only PC-final SLS1009/SLS1013 identity (v57+), with all-vertex validity in v58,
+    // static/effective-path scope in v59, authored transformed-basis magnitudes in v60, and raw
+    // type-1/non-skinned/non-single-pass scope in v62. Active retail ADT reuses it only as its
+    // strict ordinary-material/vertex-color discriminator.
+    FnvClassicBasicShaderMode ClassicBasicShaderMode = FnvClassicBasicShaderMode.None,
+    // Stable source shape provenance (v63+); -1 means unavailable.
+    int SourceBlockIndex = -1);

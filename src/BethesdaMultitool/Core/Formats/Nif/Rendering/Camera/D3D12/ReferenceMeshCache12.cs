@@ -91,6 +91,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // ground-snap, so it shares the LruCache single-threaded contract with _meshLru. Positions-only is
     // a fraction of the GPU footprint, so a large byte budget keeps far more meshes warm than residency.
     private readonly LruCache<string, CollisionMesh> _collisionLru;
+    // Immutable model paths whose decoded payload produced no authoritative or safe fallback soup.
+    // Render-thread only, like _collisionLru. This prevents walk warmup from repeatedly spending its
+    // bounded per-frame slots on permanent-null effect cards.
+    private readonly HashSet<string> _collisionKnownEmpty = new(StringComparer.OrdinalIgnoreCase);
     private readonly ReferenceDecodedMeshDiskCache12? _persistentDecodedCache;
     // Disk-persist handoff: decode workers enqueue (path, mesh) and free their slot immediately;
     // payload serialization + the atomic file write run on the single background writer below
@@ -202,6 +206,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         return false;
     }
 
+    /// <summary>True after this immutable model decoded successfully but produced no walk collision.</summary>
+    public bool IsCollisionKnownEmpty(string modelPath) =>
+        !_disposed && _collisionKnownEmpty.Contains(
+            ReferenceMeshDecoder12.NormalizeModelPath(modelPath));
+
     /// <summary>
     ///     Collision-overlay cold path. Promotes an already-queued plain-model decode to the supplied
     ///     nearest-instance priority <em>before</em> <see cref="GetOrUpload" /> starts queued work, then
@@ -214,6 +223,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         if (_disposed) return null;
 
         var normalizedPath = ReferenceMeshDecoder12.NormalizeModelPath(modelPath);
+        if (_collisionKnownEmpty.Contains(normalizedPath)) return null;
         if (_meshLru.TryPeek(normalizedPath, out var node) && node.DecodeQueued)
         {
             // GetOrUpload normally starts the queue before re-offering an existing node's latest
@@ -449,6 +459,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
 
         // Render-thread cache (no onEvicted); the host has already idled the GPU + stopped the loop.
+        _collisionKnownEmpty.Clear();
         _collisionLru.Dispose();
 
         // Frees the arena's UPLOAD blocks. The host calls WaitForGpuIdle before disposing this cache,
@@ -961,17 +972,22 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             }
             try
             {
-                var softParticle = NifSoftParticlePolicy.Resolve(new NifSoftParticleCandidate(
-                    modelPath,
-                    sub.AlphaBlend,
-                    sub.DepthWritingBlend,
-                    sub.IsDecal,
-                    sub.IsParticleCloud,
-                    sub.IsBillboard,
-                    sub.HasEffectFalloff,
-                    sub.SoftParticleFalloffDepth,
-                    sub.SrcBlendMode,
-                    sub.DstBlendMode));
+                // GRASS2000 reuses the direct-draw uSoftParticle slot as WindData. Enforce the
+                // material-route union here so a TallGrass mesh can never retain an authored or
+                // heuristic soft-particle classification and feed conflicting constants later.
+                var softParticle = sub.IsTallGrass
+                    ? NifSoftParticleSettings.Disabled
+                    : NifSoftParticlePolicy.Resolve(new NifSoftParticleCandidate(
+                        modelPath,
+                        sub.AlphaBlend,
+                        sub.DepthWritingBlend,
+                        sub.IsDecal,
+                        sub.IsParticleCloud,
+                        sub.IsBillboard,
+                        sub.HasEffectFalloff,
+                        sub.SoftParticleFalloffDepth,
+                        sub.SrcBlendMode,
+                        sub.DstBlendMode));
                 if (softParticle.Enabled)
                 {
                     softParticleSources.Add(softParticle.Source);
@@ -1020,6 +1036,31 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 var envMap = !string.IsNullOrEmpty(sub.EnvironmentMapTexturePath) && sub.EnvironmentMapScale > 0f
                     ? _textureCache.GetOrUpload(sub.EnvironmentMapTexturePath!)
                     : null;
+                // FO3/FNV classic PP-lighting environment pass. Slot 5 is its own red-channel mask,
+                // not FO4's _s texture; keep both cache entries and packed-state routes separate.
+                var classicEnvMap = !string.IsNullOrEmpty(sub.ClassicEnvironmentMapTexturePath) &&
+                                    sub.ClassicEnvironmentMapScale > 0f
+                    ? _textureCache.GetOrUpload(sub.ClassicEnvironmentMapTexturePath!)
+                    : null;
+                var classicEnvMask = classicEnvMap is not null &&
+                                     !string.IsNullOrEmpty(sub.ClassicEnvironmentMaskTexturePath)
+                    ? _textureCache.GetOrUpload(sub.ClassicEnvironmentMaskTexturePath!)
+                    : null;
+                var classicParallaxHeightMap =
+                    !string.IsNullOrEmpty(sub.ClassicParallaxHeightMapTexturePath)
+                        ? _textureCache.GetOrUpload(sub.ClassicParallaxHeightMapTexturePath!)
+                        : null;
+                System.Diagnostics.Debug.Assert(
+                    envMap is null || classicEnvMap is null,
+                    "FO4 and classic FO3/FNV environment-map routes are mutually exclusive.");
+                System.Diagnostics.Debug.Assert(
+                    specularMap is null || classicEnvMask is null,
+                    "FO4 specular and classic environment masks cannot share TexIndices.z.");
+                System.Diagnostics.Debug.Assert(
+                    (specularMap is null ? 0 : 1) +
+                    (classicEnvMask is null ? 0 : 1) +
+                    (classicParallaxHeightMap is null ? 0 : 1) <= 1,
+                    "Specular, classic environment-mask, and classic height maps cannot share TexIndices.z.");
 
                 var vertexByteOffset = CheckedByteSize(vertexStarts[i], vertexStride);
                 var vertexByteSize = CheckedByteSize(sub.Vertices.Length, vertexStride);
@@ -1049,6 +1090,12 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     EnvMap = envMap,
                     EnvMapScale = sub.EnvironmentMapScale,
                     EnvMapSmoothness = sub.EnvironmentMapSmoothness,
+                    ClassicEnvMap = classicEnvMap,
+                    ClassicEnvMask = classicEnvMask,
+                    ClassicParallaxHeightMap = classicParallaxHeightMap,
+                    ClassicEnvMapScale = sub.ClassicEnvironmentMapScale,
+                    ClassicEnvMapUsesWindowReflection =
+                        sub.ClassicEnvironmentMapUsesWindowReflection,
                     AlphaState = BuildAlphaState(sub),
                     RenderState = BuildRenderState(sub),
                     Specular = BuildSpecular(sub),
@@ -1065,11 +1112,15 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     PhysicsLiteSway = sub.PhysicsLiteSway,
                     DoubleSided = sub.DoubleSided,
                     IsEmissive = sub.IsEmissive,
+                    IsTallGrass = sub.IsTallGrass,
                     IsLighting30 = sub.IsLighting30,
+                    ClassicBasicShaderMode = sub.ClassicBasicShaderMode,
                     Lighting30Emission = new Vector4(
                         sub.Lighting30EmissionColor,
                         sub.Lighting30EmissionMultiplier),
+                    SourceBlockIndex = sub.SourceBlockIndex,
                     LocalBoundsCenter = sub.LocalBoundsCenter,
+                    LocalBoundsRadius = sub.LocalBoundsRadius,
                     IsBillboard = sub.IsBillboard,
                     BillboardFrontAxis = sub.IsBillboard
                         ? NifBillboardFacing.ResolveFrontAxis(sub.Vertices, sub.Indices)
@@ -1167,10 +1218,17 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     /// </summary>
     private void StoreCollisionMesh(string modelPath, DecodedNifMesh12 decoded)
     {
-        var collision = BuildCollisionMesh(decoded);
-        if (collision is null) return;
+        var normalizedPath = ReferenceMeshDecoder12.NormalizeModelPath(modelPath);
+        var collision = BuildCollisionMesh(normalizedPath, decoded);
+        if (collision is null)
+        {
+            _collisionKnownEmpty.Add(normalizedPath);
+            return;
+        }
+
+        _collisionKnownEmpty.Remove(normalizedPath);
         // Set evicts over-budget tail entries (plain drop — collision payloads are GC-reclaimed).
-        _collisionLru.Set(ReferenceMeshDecoder12.NormalizeModelPath(modelPath), collision);
+        _collisionLru.Set(normalizedPath, collision);
     }
 
     /// <summary>
@@ -1180,15 +1238,19 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     ///     matches <c>RenderableReference.WorldMatrix</c> (both come from the <c>treatRootsAsIdentity</c>
     ///     decode). Returns <c>null</c> when nothing solid remains.
     /// </summary>
-    private static CollisionMesh? BuildCollisionMesh(DecodedNifMesh12 decoded)
+    private static CollisionMesh? BuildCollisionMesh(string modelPath, DecodedNifMesh12 decoded)
     {
         // Prefer the NIF's Havok (bhk*) collision mesh when present — it's the gapless physics surface,
         // so walk mode rides plank bridges / catwalks instead of falling through the visual-mesh gaps.
         if (decoded.CollisionTriangles is { Length: >= 3 } havokTris &&
             decoded.CollisionPositions is { Length: > 0 } havokPos)
         {
-            return new CollisionMesh(havokPos, havokTris);
+            return new CollisionMesh(havokPos, havokTris, CollisionMeshSource.AuthoredHavok);
         }
+
+        // Never infer solidity from an effect's visual geometry. Some effects-folder assets do
+        // carry real bhk collision, which is why this gate deliberately follows the Havok branch.
+        if (!WalkCollisionFallbackPolicy.AllowsVisualMeshFallback(modelPath)) return null;
 
         var positions = new List<Vector3>();
         var triangles = new List<int>();
@@ -1205,7 +1267,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
 
         if (triangles.Count < 3) return null;
-        return new CollisionMesh(positions.ToArray(), triangles.ToArray());
+        return new CollisionMesh(
+            positions.ToArray(),
+            triangles.ToArray(),
+            CollisionMeshSource.VisualFallback);
     }
 
     private static Vector4 BuildAlphaState(DecodedSubmesh12 sub)

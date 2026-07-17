@@ -141,6 +141,21 @@ internal sealed class CachedNifMesh12 : IDisposable
             {
                 _textureCache.Release(envMap);
             }
+
+            if (submesh.ClassicEnvMap is { } classicEnvMap)
+            {
+                _textureCache.Release(classicEnvMap);
+            }
+
+            if (submesh.ClassicEnvMask is { } classicEnvMask)
+            {
+                _textureCache.Release(classicEnvMask);
+            }
+
+            if (submesh.ClassicParallaxHeightMap is { } classicParallaxHeightMap)
+            {
+                _textureCache.Release(classicParallaxHeightMap);
+            }
         }
     }
 }

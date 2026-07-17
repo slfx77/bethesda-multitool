@@ -40,6 +40,7 @@ internal sealed record DecodedSubmesh12(
     bool DoubleSided,
     bool IsEmissive,
     Vector3 LocalBoundsCenter,
+    float LocalBoundsRadius,
     bool IsBillboard,
     // NiMaterialProperty specular: highlight tint + Phong exponent, gated to where the shader enables
     // it (1A). Carried through the decode + persistent cache so it can drive a GPU specular term.
@@ -110,5 +111,25 @@ internal sealed record DecodedSubmesh12(
     bool IsLighting30 = false,
     string? Lighting30GlowMapTexturePath = null,
     Vector3 Lighting30EmissionColor = default,
-    float Lighting30EmissionMultiplier = 1f);
+    float Lighting30EmissionMultiplier = 1f,
+    // Exact FO3/FNV property identity. The FNV placement policy separately gates wind/hard-end;
+    // this marker exists so the VS can consume raw vertex alpha and restore coverage alpha.
+    bool IsTallGrass = false,
+    // Classic FO3/FNV PP-lighting environment pass (v54+). Slot 5 is a red-channel custom mask;
+    // when absent, the shader uses the normal map's alpha. The final bool preserves bit-21/SLS2058
+    // window direction. Kept separate from FO4 BGSM _s data.
+    string? ClassicEnvironmentMapTexturePath = null,
+    string? ClassicEnvironmentMaskTexturePath = null,
+    float ClassicEnvironmentMapScale = 0f,
+    bool ClassicEnvironmentMapUsesWindowReflection = false,
+    // Classic simple parallax (v55+). Policy has already excluded bit-28 POM and unusable UV/TBN.
+    string? ClassicParallaxHeightMapTexturePath = null,
+    // Audit-only PC-final SLS1009/SLS1013 identity (v57+), with all-vertex validity in v58,
+    // static/effective material scope in v59, transformed-basis preservation in v60, and raw
+    // type-1/non-skinned/non-single-pass scope in v62. Active retail ADT reuses it only as a strict
+    // ordinary-material/vertex-color discriminator behind its own FNV draw gate.
+    FnvClassicBasicShaderMode ClassicBasicShaderMode = FnvClassicBasicShaderMode.None,
+    // Stable source-shape provenance (v63+). This is CPU-only identity for diagnostics and future
+    // property-associated light observations; -1 means the source block is unavailable.
+    int SourceBlockIndex = -1);
 #endif

@@ -57,6 +57,27 @@ internal sealed class CachedSubmesh12
     public float EnvMapSmoothness { get; init; }
 
     /// <summary>
+    ///     FO3/FNV PP-lighting environment cubemap (texture-set slot 4). This drives the classic
+    ///     additive SLS pass and is intentionally distinct from <see cref="EnvMap" />.
+    /// </summary>
+    public GpuTextureCache12.Entry? ClassicEnvMap { get; init; }
+
+    /// <summary>Optional classic slot-5 custom environment mask (red channel).</summary>
+    public GpuTextureCache12.Entry? ClassicEnvMask { get; init; }
+
+    /// <summary>
+    ///     FO3/FNV simple-parallax height map. It shares TexIndices.z with the FO4 specular map and
+    ///     classic environment mask; explicit material-state bits make those routes exclusive.
+    /// </summary>
+    public GpuTextureCache12.Entry? ClassicParallaxHeightMap { get; init; }
+
+    /// <summary>Authored classic BSShaderProperty EnvMapScale.</summary>
+    public float ClassicEnvMapScale { get; init; }
+
+    /// <summary>Classic bit-21/SLS2058 window-reflection direction instead of SLS2057.</summary>
+    public bool ClassicEnvMapUsesWindowReflection { get; init; }
+
+    /// <summary>
     ///     Per-draw env-map constants (uEnvMap): x = cube bindless slot, y = scale, z = smoothness,
     ///     w = <see cref="NifD3D12BlendOperation" /> (consumed by the fog/output-range term).
     ///     x stays −1 until the entry is RESIDENT as a TextureCube — cold placeholders are 2D SRVs,
@@ -64,10 +85,21 @@ internal sealed class CachedSubmesh12
     ///     Deliberately NOT cached: per-frame CB fills re-read it so promotion lands (same pattern
     ///     as the bindless indices on frozen batches).
     /// </summary>
-    public Vector4 EnvMapState =>
-        EnvMap is { IsResident: true, IsCubemap: true } env
-            ? new Vector4(env.BindlessIndex, EnvMapScale, EnvMapSmoothness, (float)BlendOperation)
-            : new Vector4(-1f, 0f, 0f, (float)BlendOperation);
+    public Vector4 EnvMapState
+    {
+        get
+        {
+            System.Diagnostics.Debug.Assert(
+                EnvMap is null || ClassicEnvMap is null,
+                "FO4 and classic FO3/FNV environment-map routes are mutually exclusive.");
+            var env = ClassicEnvMap ?? EnvMap;
+            var scale = ClassicEnvMap is not null ? ClassicEnvMapScale : EnvMapScale;
+            var smoothness = ClassicEnvMap is not null ? 0f : EnvMapSmoothness;
+            return env is { IsResident: true, IsCubemap: true }
+                ? new Vector4(env.BindlessIndex, scale, smoothness, (float)BlendOperation)
+                : new Vector4(-1f, 0f, 0f, (float)BlendOperation);
+        }
+    }
 
     /// <summary>
     ///     Destination blend factor ONE (NIF blend byte 0; 10 = GL src-alpha-saturate approximates
@@ -104,6 +136,14 @@ internal sealed class CachedSubmesh12
             System.Diagnostics.Debug.Assert(
                 GradientMap is null || Lighting30GlowMap is null,
                 "FO4 gradient and classic Lighting30 glow maps cannot share TexIndices.w.");
+            System.Diagnostics.Debug.Assert(
+                SpecularMap is null || ClassicEnvMask is null,
+                "FO4 specular and classic environment masks cannot share TexIndices.z.");
+            System.Diagnostics.Debug.Assert(
+                (SpecularMap is null ? 0 : 1) +
+                (ClassicEnvMask is null ? 0 : 1) +
+                (ClassicParallaxHeightMap is null ? 0 : 1) <= 1,
+                "Specular, classic environment-mask, and classic height maps cannot share TexIndices.z.");
 
             var state = new Vector4(
                 Normal.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ ? 1f : 0f,
@@ -113,13 +153,21 @@ internal sealed class CachedSubmesh12
                 IsSpeedTreeBranch ? -1f : IsLeafBillboard ? (AlphaTest ? 2f : 1f) : 0f,
                 // Exact integer flags carried in a float constant: bit 0 = sample TexIndices.z for
                 // the spec mask, bits 1/2 = clamp U/V, bit 3 = TexIndices.w is a Lighting30 glow
-                // map, bit 4 = classic Lighting30 material route. All values are <= 31 and exactly
+                // map, bit 4 = classic Lighting30 material route, bit 5 = TallGrassShaderProperty,
+                // bit 6 = classic FO3/FNV environment pass, bit 7 = TexIndices.z is its custom mask,
+                // bit 9 = classic bit-21/SLS2058 window-reflection direction (bit 8 is parallax).
+                // All values are <= 1023 and exactly
                 // representable; shaders decode with integer bit tests.
                 (SpecularMap is not null ? 1f : 0f) +
                 (ClampTextureU ? 2f : 0f) +
                 (ClampTextureV ? 4f : 0f) +
                 (Lighting30GlowMap is not null ? 8f : 0f) +
-                (IsLighting30 ? 16f : 0f),
+                (IsLighting30 ? 16f : 0f) +
+                (IsTallGrass ? 32f : 0f) +
+                (ClassicEnvMap is not null && ClassicEnvMapScale > 0f ? 64f : 0f) +
+                (ClassicEnvMask is not null ? 128f : 0f) +
+                (ClassicParallaxHeightMap is not null ? 256f : 0f) +
+                (ClassicEnvMapUsesWindowReflection ? 512f : 0f),
                 GradientMap is not null ? GradientMapV : -1f); // .w >= 0 = palette row for TexIndices.w
             if (TexturesReady)
             {
@@ -131,9 +179,12 @@ internal sealed class CachedSubmesh12
         }
     }
     public bool TexturesReady => Diffuse.IsReady && Normal.IsReady &&
-                                 SpecularMap is not { IsReady: false } && GradientMap is not { IsReady: false } &&
-                                 Lighting30GlowMap is not { IsReady: false } &&
-                                 EnvMap is not { IsReady: false };
+                                  SpecularMap is not { IsReady: false } && GradientMap is not { IsReady: false } &&
+                                  Lighting30GlowMap is not { IsReady: false } &&
+                                  EnvMap is not { IsReady: false } &&
+                                  ClassicEnvMap is not { IsReady: false } &&
+                                  ClassicEnvMask is not { IsReady: false } &&
+                                  ClassicParallaxHeightMap is not { IsReady: false };
     public required bool HasBump { get; init; }
     public required NifAlphaRenderMode AlphaRenderMode { get; init; }
     public required bool AlphaBlend { get; init; }
@@ -156,15 +207,35 @@ internal sealed class CachedSubmesh12
     public required bool DoubleSided { get; init; }
     public required bool IsEmissive { get; init; }
 
+    /// <summary>
+    ///     Exact TallGrassShaderProperty identity. VertexColor.w is raw authored wind weight for
+    ///     these cached vertices; the reference VS restores outgoing coverage alpha to one.
+    /// </summary>
+    public bool IsTallGrass { get; init; }
+
     /// <summary>True for the classic scene-lit Lighting30 material path (never full-bright).</summary>
     public bool IsLighting30 { get; init; }
+
+    /// <summary>
+    ///     Audit-only PC-final PS1 basic-bump identity, reused as the strict ordinary-material and
+    ///     vertex-color discriminator by the separately gated active-retail FNV ADT policy.
+    /// </summary>
+    public FnvClassicBasicShaderMode ClassicBasicShaderMode { get; init; }
 
     /// <summary>
     ///     Raw selected Lighting30 RGB in xyz and NiMaterial emission multiplier in w. The shader
     ///     applies w and IMGS EmissiveMult only while HDR is active.
     /// </summary>
     public Vector4 Lighting30Emission { get; init; } = new(0f, 0f, 0f, 1f);
+
+    /// <summary>
+    ///     Stable block index of the source shape in the decoded NIF. This remains CPU-only and is
+    ///     not part of the shared mesh or GPU instance identity; -1 means unavailable.
+    /// </summary>
+    public int SourceBlockIndex { get; init; } = -1;
+
     public required Vector3 LocalBoundsCenter { get; init; }
+    public required float LocalBoundsRadius { get; init; }
 
     /// <summary>
     ///     True if this submesh sat under a <c>NiBillboardNode</c> in the source NIF. The renderer

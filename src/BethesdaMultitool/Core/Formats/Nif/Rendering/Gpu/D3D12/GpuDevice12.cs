@@ -21,6 +21,13 @@ internal sealed class GpuDevice12 : IDisposable
 {
     private static readonly Logger Log = Logger.Instance;
 
+    /// <summary>
+    ///     Process-scoped verification override. Set to <c>1</c> before device creation to exercise
+    ///     the renderer's single-sample resource/state path on hardware that normally selects 4x.
+    ///     Unset and unsupported values retain the normal 4x capability probe.
+    /// </summary>
+    internal const string SceneSampleCountEnvironmentVariable = "FALLOUT_VIEWER_SCENE_SAMPLES";
+
     private GpuDevice12(
         ID3D12Device device,
         ID3D12CommandQueue directQueue,
@@ -72,9 +79,10 @@ internal sealed class GpuDevice12 : IDisposable
     ///     Sample count for the live 3D scene's MSAA render target (and every PSO that draws into
     ///     it, plus the top-down overlay target). 4 when 4x MSAA is supported for the scene's color
     ///     (<see cref="Format.B8G8R8A8_UNorm" />) + depth (<see cref="Format.D32_Float" />) formats —
-    ///     the norm at feature level 12_0+ — else 1 (no MSAA). Decided ONCE at device creation so the
-    ///     PSOs (built before any surface exists) and every scene render target agree on the count;
-    ///     a mismatch is a D3D12 validation failure on every draw.
+    ///     the norm at feature level 12_0+ — else 1 (no MSAA). A process may also force 1x for
+    ///     deterministic verification with <c>FALLOUT_VIEWER_SCENE_SAMPLES=1</c>. Decided ONCE at
+    ///     device creation so the PSOs (built before any surface exists) and every scene render
+    ///     target agree on the count; a mismatch is a D3D12 validation failure on every draw.
     /// </summary>
     public int SceneSampleCount { get; }
 
@@ -476,12 +484,22 @@ internal sealed class GpuDevice12 : IDisposable
     /// <summary>
     ///     Probes 4x MSAA support for the scene's color + depth formats by attempting to create
     ///     tiny multisampled committed resources (the only API-certain check across Vortice
-    ///     versions). Returns 4 on success, 1 on failure. 4x MSAA on standard RT/depth formats is
-    ///     mandatory at D3D feature level 11_0+ (this device requires 12_0), so 4 is the norm; the
-    ///     fallback covers exotic adapters. One-time at device creation.
+    ///     versions). Returns 4 on success, 1 on failure or when the process-scoped verification
+    ///     override requests 1x. 4x MSAA on standard RT/depth formats is mandatory at D3D feature
+    ///     level 11_0+ (this device requires 12_0), so 4 is the norm; the fallback covers exotic
+    ///     adapters. One-time at device creation.
     /// </summary>
     private static int ProbeSceneSampleCount(ID3D12Device device)
     {
+        var requested = ResolveRequestedSceneSampleCount(
+            Environment.GetEnvironmentVariable(SceneSampleCountEnvironmentVariable));
+        if (requested == 1)
+        {
+            Log.Info("GpuDevice12: scene MSAA disabled by {0}=1 for this process.",
+                SceneSampleCountEnvironmentVariable);
+            return 1;
+        }
+
         const int desired = 4;
         try
         {
@@ -505,6 +523,16 @@ internal sealed class GpuDevice12 : IDisposable
                 desired, ex.Message);
             return 1;
         }
+    }
+
+    /// <summary>
+    ///     Pure parser kept separate from device creation so the verification override is covered on
+    ///     machines without a D3D12 adapter. Only the exact supported sample counts have meaning;
+    ///     every other value preserves the normal 4x capability probe.
+    /// </summary>
+    internal static int ResolveRequestedSceneSampleCount(string? raw)
+    {
+        return string.Equals(raw?.Trim(), "1", StringComparison.Ordinal) ? 1 : 4;
     }
 
     private static string QueryAdapterDescription(ID3D12Device device)

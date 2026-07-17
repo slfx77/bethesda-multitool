@@ -57,6 +57,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.Equal(7, loaded.SrcBlendMode);
         Assert.Equal(8, loaded.DstBlendMode);
         Assert.Equal(new Vector3(1, 2, 3), loaded.LocalBoundsCenter);
+        Assert.Equal(4.5f, loaded.LocalBoundsRadius);
         Assert.True(loaded.IsBillboard);
         Assert.True(loaded.IsLeafBillboard);
         Assert.True(loaded.IsDecal);
@@ -81,7 +82,51 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.False(loaded.ClampTextureV);
         Assert.Equal(new ushort[] { 0, 1, 2 }, loaded.Indices);
         Assert.Equal(new Vector3(10, 20, 30), loaded.Vertices[0].Position);
-        Assert.Equal(new Vector4(0.1f, 0.2f, 0.3f, 0.4f), loaded.Vertices[0].VertexColor);
+        Assert.Equal(new Vector4(0.1f, 0.2f, 0.3f, 43f / 255f), loaded.Vertices[0].VertexColor);
+        Assert.True(loaded.IsTallGrass);
+        Assert.Equal("textures\\effects\\chrome_e.dds", loaded.ClassicEnvironmentMapTexturePath);
+        Assert.Equal("textures\\foo_m.dds", loaded.ClassicEnvironmentMaskTexturePath);
+        Assert.Equal(1.25f, loaded.ClassicEnvironmentMapScale);
+        Assert.True(loaded.ClassicEnvironmentMapUsesWindowReflection);
+        Assert.Null(loaded.ClassicParallaxHeightMapTexturePath);
+        Assert.Equal(FnvClassicBasicShaderMode.Sls1013VertexColor, loaded.ClassicBasicShaderMode);
+        Assert.Equal(41, loaded.SourceBlockIndex);
+        Assert.Equal(63, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+    }
+
+    [Fact]
+    public void StoreAndTryLoad_RoundTripsClassicParallaxWithoutViolatingTextureIndexUnion()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        var payload = CreatePayload();
+        var source = Assert.Single(payload.Submeshes);
+        payload = payload with
+        {
+            Submeshes =
+            [
+                source with
+                {
+                    ClassicEnvironmentMapTexturePath = null,
+                    ClassicEnvironmentMaskTexturePath = null,
+                    ClassicEnvironmentMapScale = 0f,
+                    ClassicEnvironmentMapUsesWindowReflection = false,
+                    ClassicParallaxHeightMapTexturePath =
+                        "textures\\landscape\\RubblePile05_p.dds"
+                }
+            ]
+        };
+
+        cache.Store(metadata, variantKey: null, payload);
+
+        Assert.True(cache.TryLoad(metadata, variantKey: null, out var entry));
+        var loaded = Assert.Single(Assert.IsType<ReferenceDecodedMeshPayload12>(entry.Mesh).Submeshes);
+        Assert.Null(loaded.ClassicEnvironmentMapTexturePath);
+        Assert.Null(loaded.ClassicEnvironmentMaskTexturePath);
+        Assert.Equal(
+            "textures\\landscape\\RubblePile05_p.dds",
+            loaded.ClassicParallaxHeightMapTexturePath);
     }
 
     [Fact]
@@ -168,7 +213,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
             Position = new Vector3(10, 20, 30),
             Normal = new Vector3(0, 0, 1),
             TexCoord = new Vector2(0.25f, 0.75f),
-            VertexColor = new Vector4(0.1f, 0.2f, 0.3f, 0.4f),
+            VertexColor = new Vector4(0.1f, 0.2f, 0.3f, 43f / 255f),
             Tangent = new Vector3(1, 0, 0),
             Bitangent = new Vector3(0, 1, 0)
         };
@@ -191,6 +236,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
                 true,
                 false,
                 new Vector3(1, 2, 3),
+                4.5f,
                 true,
                 IsLeafBillboard: true,
                 IsDecal: true,
@@ -223,7 +269,14 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
                 IsLighting30: true,
                 Lighting30GlowMapTexturePath: "textures\\foo_g.dds",
                 Lighting30EmissionColor: new Vector3(0.25f, 0.5f, 0.75f),
-                Lighting30EmissionMultiplier: 2.5f)
+                Lighting30EmissionMultiplier: 2.5f,
+                IsTallGrass: true,
+                ClassicEnvironmentMapTexturePath: "textures\\effects\\chrome_e.dds",
+                ClassicEnvironmentMaskTexturePath: "textures\\foo_m.dds",
+                ClassicEnvironmentMapScale: 1.25f,
+                ClassicEnvironmentMapUsesWindowReflection: true,
+                ClassicBasicShaderMode: FnvClassicBasicShaderMode.Sls1013VertexColor,
+                SourceBlockIndex: 41)
         ]);
     }
 
