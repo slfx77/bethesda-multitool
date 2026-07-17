@@ -41,7 +41,10 @@ public sealed class WaterMsaaDepthPipelineSourceTests
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.SceneCapture.cs");
 
         var liveStart = frame.IndexOf("var waterUsesDepth =", StringComparison.Ordinal);
-        var liveEnd = frame.IndexOf("var sceneDepthSampled =", liveStart, StringComparison.Ordinal);
+        var liveEnd = frame.IndexOf(
+            "_gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterEnd);",
+            liveStart,
+            StringComparison.Ordinal);
         Assert.True(liveStart >= 0);
         Assert.True(liveEnd > liveStart);
         var liveRoute = frame[liveStart..liveEnd];
@@ -58,9 +61,9 @@ public sealed class WaterMsaaDepthPipelineSourceTests
         Assert.True(captureStart >= 0);
         Assert.True(captureEnd > captureStart);
         var captureRoute = capture[captureStart..captureEnd];
-        var captureWaterStart = captureRoute.IndexOf("_water.SetSceneDepth(", StringComparison.Ordinal);
-        var captureWaterEnd = captureRoute.IndexOf(");", captureWaterStart, StringComparison.Ordinal);
+        var captureWaterStart = captureRoute.IndexOf("_water?.SetSceneDepth(", StringComparison.Ordinal);
         Assert.True(captureWaterStart >= 0);
+        var captureWaterEnd = captureRoute.IndexOf(");", captureWaterStart, StringComparison.Ordinal);
         Assert.True(captureWaterEnd > captureWaterStart);
         var captureWaterCall = captureRoute[captureWaterStart..(captureWaterEnd + 2)];
         Assert.Contains("target.SampleCount);", captureWaterCall, StringComparison.Ordinal);

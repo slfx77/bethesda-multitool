@@ -10,8 +10,9 @@
 //
 // The engine shader composites: reflection RT, refraction RT, a depth-map water-column factor,
 // a single NNAM normal tap, a Schlick fresnel, a dual sun/sky specular, and distance fog. Our
-// viewer has no reflection/refraction/depth render targets, so we reproduce the engine's RT-free
-// path exactly — which is what the engine itself does when those RTs are disabled:
+// The normal viewer fallback has no reflection/refraction targets, so it reproduces the engine's
+// WATER003 RT-free path exactly. FNV_WATER001 is a separately compiled, conservative approximation
+// that samples a host-owned opaque-scene snapshot; it never changes the fallback permutation:
 //   * reflection  == ReflectionColor          (engine WATER003 no-RT permutation; unlike WATER000's
 //                                                RT path, it does not apply FresnelRI.w reflectivity)
 //   * refraction  == the water body color      (engine blends refraction by depth; we use the body)
@@ -56,6 +57,11 @@ cbuffer Uniforms : register(b0)
     uint4 uModernTechnique; // x = recovered technique ID, y = TextureCube index, z = point-light cap
     float4 uModernParams;   // glossScaleA/B, neutral outputAlpha, neutral alphaTestThreshold
     float4 uModernLightSilt;// retained LightSilt rgb, normal magnitude in w
+    // Bounded FNV WATER001 tail. Appended after the established 416-byte prefix so every existing
+    // WATER003/Oblivion/FO4/Morrowind constant retains its exact register.
+    uint4 uFnvWater001Snapshot; // x = opaque SceneColor Texture2D index, y/z = dimensions,
+                                // w = asuint(horizontal generated-cell plane height)
+    float4 uFnvWater001Surface; // UnderwaterFogNear/Far, AboveWaterFogAmount, DistortionAmount
 };
 
 // Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants,
@@ -117,9 +123,11 @@ Texture2D gWaterTextures[] : register(t0, space1);
 // uRenderOrigin.w selects this declaration only when the host supplied sampleCount > 1.
 Texture2DMS<float> gWaterDepthTexturesMsaa[] : register(t0, space3);
 SamplerState gWaterSampler : register(s0);
+// WATER001's opaque-scene snapshot and FO4's generated LUT/cubemap paths both use the root
+// signature's clamp sampler. Keep it outside the FO4 guard so the FNV permutation can bind it.
+SamplerState gWaterClampSampler : register(s2);
 #if FO4_WATER_ARCHITECTURAL
 TextureCube gWaterCubemaps[] : register(t0, space2);
-SamplerState gWaterClampSampler : register(s2);
 SamplerState gWaterShadowSampler : register(s3);
 
 struct PointLight
@@ -291,6 +299,238 @@ float ModernSpecular(float3 V, float3 N, float3 L, float specPower, float specAm
 }
 #endif
 
+#if FNV_WATER001
+// WATER001 is the no-reflection-RT / refraction+noise+depth+fog retail permutation. The viewer's
+// source is a copy/resolve of opaque scene color, so this remains explicitly an approximation of
+// the engine's selectively populated RefractionMap. CPU preflight restricts it to one horizontal
+// generated-cell plane; every per-pixel reconstruction/projection failure returns the established
+// WATER003 color path (or its normal foreground clip) instead of sampling undefined content.
+
+float3 FnvWater001Perturbation(uint noiseIndex, float2 worldXy, float t)
+{
+    float fUVScale = max(uSurface0.x, 1.0);
+    float fNoiseScale = max(asfloat(uNoiseParams.z), 1.0);
+    float fMacro = 1.0 / fUVScale;
+    float fDetail = fNoiseScale / fUVScale;
+    if (noiseIndex == 0xFFFFFFFFu)
+    {
+        return float3(RipplePerturb(worldXy, t), 0.0);
+    }
+    if (uNormalIndices.w != 0u)
+    {
+        return gWaterTextures[NonUniformResourceIndex(noiseIndex)]
+            .Sample(gWaterSampler, worldXy * fMacro).xyz * 2.0 - 1.0;
+    }
+
+    uint normal1 = uNormalIndices.x == 0xFFFFFFFFu ? noiseIndex : uNormalIndices.x;
+    uint normal2 = uNormalIndices.y == 0xFFFFFFFFu ? normal1 : uNormalIndices.y;
+    uint normal3 = uNormalIndices.z == 0xFFFFFFFFu ? normal1 : uNormalIndices.z;
+    float3 macro = SampleNoiseLayer(normal1, worldXy, fMacro, uLayer1, t)
+                 + SampleNoiseLayer(normal2, worldXy, fMacro, uLayer2, t)
+                 + SampleNoiseLayer(normal3, worldXy, fMacro, uLayer3, t);
+    float3 detail = SampleNoiseLayer(normal1, worldXy, fDetail, uLayer1, t)
+                  + SampleNoiseLayer(normal2, worldXy, fDetail, uLayer2, t)
+                  + SampleNoiseLayer(normal3, worldXy, fDetail, uLayer3, t);
+    return macro + detail;
+}
+
+float4 FnvWater003LocalFallback(
+    PSInput input,
+    float3 perturbation,
+    float3 V,
+    float distXY,
+    float column,
+    float depthT,
+    float3 sunDir,
+    float3 sunCol,
+    float sunGate)
+{
+    // Same manual foreground rejection and shader math as the normal FNV WATER003 route. This
+    // function is compiled only into FNV_WATER001; the standalone WATER003 bytecode below remains
+    // behind the opposite preprocessor branch and is not rewritten by this feature.
+    if (!isfinite(column) || !isfinite(depthT) || !all(isfinite(perturbation)) ||
+        !all(isfinite(V)))
+    {
+        // A nonfinite main-depth sample cannot support either safe foreground rejection or the
+        // WATER003 depth fade. Fail closed instead of relying on undefined clip(NaN) behavior.
+        clip(-1.0);
+        return float4(0.0, 0.0, 0.0, 0.0);
+    }
+    clip(column + asfloat(uDepthParams.w));
+    float noiseFade = saturate((8192.0 - distXY) / 4096.0);
+    float3 n3 = perturbation * depthT;
+    n3.z += 1.0;
+    n3.xy *= noiseFade;
+    float3 N = normalize(n3);
+    float ndotv = saturate(dot(N, V));
+
+    float3 body = lerp(uShallow.rgb, uDeep.rgb, depthT);
+    float3 bodyLightDirection = normalize(float3(sunDir.x, 4.0 * sunDir.y, sunDir.z));
+    body *= saturate(dot(N, bodyLightDirection));
+    float fresnel = saturate(uSurface0.y) +
+        (1.0 - saturate(uSurface0.y)) * pow(1.0 - ndotv, 5.0);
+    float3 color = lerp(body, uReflection.rgb, saturate(fresnel));
+
+    float3 reflectedView = reflect(-V, N);
+    float sunSpec = pow(saturate(dot(reflectedView, sunDir)), max(uSurface0.w, 1.0));
+    float skyGlint = pow(saturate(dot(float2(N.x, N.z), float2(-0.57, 0.82))), 100.0);
+    color += (sunSpec + skyGlint) * sunCol * sunGate;
+    return float4(ApplyFog(color, input.vWorldPos), 1.0);
+}
+
+float FnvWater001SceneFogAmount(float distanceToEye)
+{
+    if (uFogColorFogEnabled.w < 0.5 ||
+        !isfinite(uAtmosphereParams.y) || !isfinite(uAtmosphereParams.z) ||
+        uAtmosphereParams.z <= uAtmosphereParams.y)
+    {
+        return 0.0;
+    }
+    float q = saturate((distanceToEye - uAtmosphereParams.y) /
+        (uAtmosphereParams.z - uAtmosphereParams.y));
+    return pow(q, max(uCameraPosFogPower.w, 0.01));
+}
+
+float4 main(PSInput input) : SV_Target
+{
+    float t = uCamPosTime.w;
+    bool lit = uSunColorLighting.w > 0.5;
+    float3 sunDir = lit ? normalize(uSunDirIntensity.xyz) : kSunDir;
+    float3 sunCol = lit ? uSunColorLighting.rgb : kSunColor;
+    float sunGate = lit ? max(uSunDirIntensity.w, 0.0) : 1.0;
+    uint noiseIndex = uNoiseParams.x;
+
+    float3 eyeVector = uCamPosTime.xyz - input.vWorldPos;
+    float eyeDistance = length(eyeVector);
+    float distXY = length(eyeVector.xy);
+    float3 V = normalize(eyeVector);
+    uint depthIndex = uDepthParams.x;
+    float near = asfloat(uDepthParams.y);
+    float far = asfloat(uDepthParams.z);
+    uint depthSampleCount = max((uint)uRenderOrigin.w, 1u);
+    float sceneNdc = depthIndex == 0xFFFFFFFFu
+        ? 0.0
+        : LoadSceneDepth(depthIndex, (int2)input.Position.xy, depthSampleCount);
+    float sceneDistance = LinearizeDepth(sceneNdc, near, far);
+    float waterDistance = LinearizeDepth(input.Position.z, near, far);
+    float column = sceneDistance - waterDistance;
+    float fallbackDepthT = saturate((column - uSurface1.y) / max(uSurface1.z - uSurface1.y, 1e-3));
+    float3 perturbation = FnvWater001Perturbation(noiseIndex, input.vWorldPos.xy, t);
+
+    uint snapshotIndex = uFnvWater001Snapshot.x;
+    float planeHeight = asfloat(uFnvWater001Snapshot.w);
+    float underwaterFogNear = uFnvWater001Surface.x;
+    float underwaterFogFar = uFnvWater001Surface.y;
+    float aboveWaterFogAmount = uFnvWater001Surface.z;
+    float distortionAmount = uFnvWater001Surface.w;
+
+    // Reconstruct the exact WATERDEPTH writer lanes from the main perspective depth ray:
+    //   P = E + (W-E)*(sceneDist/waterDist)
+    //   D.x = |P-W|/UnderwaterFogFar, D.y = dot(W-P,+Z)/UnderwaterFogFar.
+    // No saturation occurs here; WATER001 applies its recovered distance correction below.
+    bool validDepth = depthIndex != 0xFFFFFFFFu && snapshotIndex != 0xFFFFFFFFu &&
+        sceneNdc > 0.0 && sceneNdc <= 1.0 &&
+        isfinite(sceneDistance) && isfinite(waterDistance) && waterDistance > 0.0 &&
+        sceneDistance > waterDistance && isfinite(underwaterFogFar) && underwaterFogFar > 0.0;
+    float rayScale = sceneDistance / waterDistance;
+    float3 scenePoint = uCamPosTime.xyz + (input.vWorldPos - uCamPosTime.xyz) * rayScale;
+    float2 rawDepth = float2(
+        length(scenePoint - input.vWorldPos) / underwaterFogFar,
+        dot(input.vWorldPos - scenePoint, float3(0.0, 0.0, 1.0)) / underwaterFogFar);
+    validDepth = validDepth && all(isfinite(scenePoint)) && all(isfinite(rawDepth)) &&
+        abs(input.vWorldPos.z - planeHeight) <= 1e-3 && scenePoint.z < planeHeight &&
+        rawDepth.x >= 0.0 && rawDepth.y > 0.0;
+    if (!validDepth)
+    {
+        return FnvWater003LocalFallback(
+            input, perturbation, V, distXY, column, fallbackDepthT, sunDir, sunCol, sunGate);
+    }
+
+    float depthT = saturate((rawDepth.y - uSurface1.y) / (uSurface1.z - uSurface1.y));
+    float noiseFade = saturate((8192.0 - distXY) / 4096.0);
+    float distFade = saturate(distXY / 5000.0);
+    float distortionScale = lerp(4.0, distortionAmount, distFade);
+    float3 normalSource = perturbation * depthT + float3(0.0, 0.0, 1.0);
+    normalSource.xy *= noiseFade;
+    float3 N = normalize(normalSource);
+
+    // WATER001 corrects both lanes toward one as the noise normal fades with distance. This is a
+    // componentwise saturate after interpolation, not a clamp on the reconstructed D values above.
+    float2 correctedDepth = saturate(lerp(float2(1.0, 1.0), rawDepth, noiseFade));
+    float2 deltaXY = rawDepth.y * depthT * distortionScale * N.xy;
+    float3 displacedWorld = input.vWorldPos + float3(deltaXY, 0.0);
+    float4 refractionClip = mul(uViewProj, float4(displacedWorld - uRenderOrigin.xyz, 1.0));
+    bool validProjection = all(isfinite(refractionClip)) && refractionClip.w > 1e-5 &&
+        refractionClip.z >= 0.0 && refractionClip.z <= refractionClip.w;
+    float inverseW = rcp(refractionClip.w);
+    float2 refractionUv = float2(
+        refractionClip.x * inverseW * 0.5 + 0.5,
+        0.5 - refractionClip.y * inverseW * 0.5);
+    float2 snapshotDimensions = float2(uFnvWater001Snapshot.yz);
+    float2 halfTexel = 0.5 / max(snapshotDimensions, float2(1.0, 1.0));
+    validProjection = validProjection && uFnvWater001Snapshot.y > 0u &&
+        uFnvWater001Snapshot.z > 0u && all(isfinite(refractionUv)) &&
+        all(refractionUv >= halfTexel) && all(refractionUv <= 1.0 - halfTexel);
+    if (!validProjection)
+    {
+        return FnvWater003LocalFallback(
+            input, perturbation, V, distXY, column, fallbackDepthT, sunDir, sunCol, sunGate);
+    }
+
+    float3 refractionSample = gWaterTextures[NonUniformResourceIndex(snapshotIndex)]
+        .SampleLevel(gWaterClampSampler, refractionUv, 0).rgb;
+    if (!all(isfinite(refractionSample)))
+    {
+        return FnvWater003LocalFallback(
+            input, perturbation, V, distXY, column, fallbackDepthT, sunDir, sunCol, sunGate);
+    }
+
+    // The opaque snapshot already contains scene distance fog. WATER001 first removes that fog at
+    // the displaced depth, reconstructs the water/body/reflection composite, then reapplies the
+    // ordinary fog at the surface distance (WATER001.pso instructions 53-110).
+    float displacedFog = FnvWater001SceneFogAmount(eyeDistance + correctedDepth.y);
+    float3 refracted = (refractionSample - displacedFog * uFogColorFogEnabled.rgb) /
+        (1.0 - displacedFog + 1e-4);
+
+    float3 body = lerp(uShallow.rgb, uDeep.rgb, correctedDepth.y);
+    float3 bodyLightDirection = normalize(float3(sunDir.x, 4.0 * sunDir.y, sunDir.z));
+    float bodyLight = saturate(dot(N, bodyLightDirection));
+    float3 litBody = body * bodyLight;
+
+    float underwaterFogRange = underwaterFogFar - underwaterFogNear;
+    bool validWaterFog = isfinite(underwaterFogNear) && isfinite(underwaterFogRange) &&
+        underwaterFogRange > 0.0 && isfinite(aboveWaterFogAmount) &&
+        aboveWaterFogAmount >= 0.0 && aboveWaterFogAmount <= 1.0;
+    if (!validWaterFog)
+    {
+        return FnvWater003LocalFallback(
+            input, perturbation, V, distXY, column, fallbackDepthT, sunDir, sunCol, sunGate);
+    }
+    float aboveWaterFog = (1.0 - saturate(
+        underwaterFogFar * (1.0 - correctedDepth.x) / underwaterFogRange)) *
+        aboveWaterFogAmount;
+    float3 transmitted = lerp(refracted, litBody, depthT * aboveWaterFog);
+
+    float ndotv = saturate(dot(N, V));
+    float oneMinusNdotV = 1.0 - ndotv;
+    float fresnel5 = oneMinusNdotV * oneMinusNdotV;
+    fresnel5 *= fresnel5;
+    fresnel5 *= oneMinusNdotV;
+    float fresnel = saturate(uSurface0.y) +
+        (1.0 - saturate(uSurface0.y)) * fresnel5;
+    float3 bodyReflection = lerp(litBody, uReflection.rgb, correctedDepth.x * fresnel);
+    float3 color = lerp(transmitted, bodyReflection, correctedDepth.y);
+
+    float3 reflectedView = reflect(-V, N);
+    float sunSpec = pow(saturate(dot(reflectedView, sunDir)), max(uSurface0.w, 1.0));
+    float skyGlint = pow(saturate(dot(float2(N.x, N.z), float2(-0.57, 0.82))), 100.0);
+    color = saturate(color + (sunSpec + skyGlint) * sunCol * sunGate);
+
+    float finalFog = FnvWater001SceneFogAmount(eyeDistance);
+    color = lerp(color, uFogColorFogEnabled.rgb, finalFog);
+    return float4(color, 1.0);
+}
+#else
 float4 main(PSInput input) : SV_Target
 {
     float t = uCamPosTime.w;
@@ -765,3 +1005,4 @@ float4 main(PSInput input) : SV_Target
 #endif
 #endif // !FO4_WATER
 }
+#endif // FNV_WATER001

@@ -44,6 +44,24 @@ public enum WaterShaderVariant
 }
 
 /// <summary>
+///     How the legacy shared <c>textures\water\water00–31.dds</c> animation binds to the water
+///     surface. Morrowind's fixed-function plane samples the frames as its diffuse; Oblivion's
+///     WATER000 samples them as the global animated NormalMap input (WATR TNAM is per-water detail
+///     content, not this slot). Every other game has no frame cycle.
+/// </summary>
+public enum LegacySurfaceFrameRole
+{
+    /// <summary>No legacy frame cycle — the shader-variant games drive water from WATR/noise inputs.</summary>
+    None,
+
+    /// <summary>Morrowind: frames are the fixed-function diffuse surface.</summary>
+    Diffuse,
+
+    /// <summary>Oblivion: frames are WATER000's global animated NormalMap input.</summary>
+    GlobalNormal,
+}
+
+/// <summary>
 ///     Per-game configuration for the v3 water renderer, mirroring the per-game
 ///     <see cref="SkyMoonProfile" /> pattern. The water shader (<c>water.frag.hlsl</c>) is a faithful
 ///     RT-free port of FNV's <c>WATER000</c> pixel shader; this profile is the single place the
@@ -77,6 +95,14 @@ public sealed record WaterProfile
     /// the fixed-function diffuse surface; Oblivion samples it as WATER000's global NormalMap.
     /// Both shipped INIs specify 12 FPS. Zero means no frame cycle.</summary>
     public float SurfaceFrameFps { get; init; }
+
+    /// <summary>How (and whether) the legacy <c>water00–31.dds</c> frames bind for this game —
+    /// the texture-slot side of <see cref="SurfaceFrameFps" />.</summary>
+    public LegacySurfaceFrameRole LegacyFrames { get; init; } = LegacySurfaceFrameRole.None;
+
+    /// <summary>True when the WATR TNAM detail texture is sampled as a per-water diffuse layer
+    /// (Oblivion only; other games' TNAM is unused by the renderer).</summary>
+    public bool UsesWatrDetailTexture { get; init; }
 
     /// <summary>Surface opacity of the <see cref="WaterShaderVariant.MorrowindWater" /> plane
     /// (<c>[Water] World Alpha</c>). Unused by the shader-variant games (their alpha is derived
@@ -125,6 +151,8 @@ public sealed record WaterProfile
     {
         ShaderVariant = WaterShaderVariant.OblivionWater000,
         SurfaceFrameFps = 12f, // Oblivion_default.ini [Water] uSurfaceFPS=12
+        LegacyFrames = LegacySurfaceFrameRole.GlobalNormal,
+        UsesWatrDetailTexture = true,
     };
 
     /// <summary>
@@ -163,6 +191,7 @@ public sealed record WaterProfile
         NoiseTilingWorldUnits = 819,  // [Water] SurfaceTileCount=10 per 8192 cell — TO-CONFIRM vs oracle
         SurfaceFrameFps = 12f,        // [Water] SurfaceFPS=12
         SurfaceAlpha = 0.75f,         // [Water] World Alpha=0.75
+        LegacyFrames = LegacySurfaceFrameRole.Diffuse,
     };
 
     /// <summary>

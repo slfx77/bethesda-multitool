@@ -76,12 +76,21 @@ public sealed class ModernWaterPipelineTests
     [Fact]
     public void SelectedPipelineSurvivesSnapshotAndProfilerSerialization()
     {
-        var stats = new WorldRenderStats { WaterPipeline = "fo4-modern-0x141" };
+        var stats = new WorldRenderStats
+        {
+            WaterPipeline = "fo4-modern-0x141",
+            WaterTechnique = "FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-1x",
+            WaterTelemetryUnavailableReason = "selective-content-mask-approximated-by-main-depth",
+        };
 
         var snapshot = stats.Snapshot();
         var fields = RendererProfilerTrace.StatsFields("water.", snapshot);
 
         Assert.Equal("fo4-modern-0x141", snapshot.WaterPipeline);
         Assert.Equal("fo4-modern-0x141", Assert.IsType<string>(fields["water.waterPipeline"]));
+        Assert.Equal(stats.WaterTechnique, snapshot.WaterTechnique);
+        Assert.Equal(stats.WaterTechnique, Assert.IsType<string>(fields["water.waterTechnique"]));
+        Assert.Equal(stats.WaterTelemetryUnavailableReason,
+            Assert.IsType<string>(fields["water.waterFallbackReason"]));
     }
 }

@@ -112,4 +112,28 @@ public class WaterProfileTests
         Assert.Equal(new Vector3(0.03f, 0.09f, 0.16f), p.DefaultDeep);
         Assert.Equal(new Vector3(0.22f, 0.32f, 0.40f), p.DefaultReflection);
     }
+
+    /// <summary>
+    ///     Pins the legacy water00–31.dds binding roles the viewer's frame resolution keys on:
+    ///     Morrowind samples the frames as its fixed-function diffuse, Oblivion as WATER000's global
+    ///     NormalMap, and only Oblivion samples WATR TNAM as a per-water detail diffuse. Every other
+    ///     game has no frame cycle (shader-variant water).
+    /// </summary>
+    [Theory]
+    [InlineData(BethesdaGame.Morrowind, LegacySurfaceFrameRole.Diffuse, false)]
+    [InlineData(BethesdaGame.Oblivion, LegacySurfaceFrameRole.GlobalNormal, true)]
+    [InlineData(BethesdaGame.Fallout3, LegacySurfaceFrameRole.None, false)]
+    [InlineData(BethesdaGame.FalloutNewVegas, LegacySurfaceFrameRole.None, false)]
+    [InlineData(BethesdaGame.Skyrim, LegacySurfaceFrameRole.None, false)]
+    [InlineData(BethesdaGame.Fallout4, LegacySurfaceFrameRole.None, false)]
+    [InlineData(BethesdaGame.Fallout76, LegacySurfaceFrameRole.None, false)]
+    [InlineData(BethesdaGame.Starfield, LegacySurfaceFrameRole.None, false)]
+    [InlineData(BethesdaGame.Unknown, LegacySurfaceFrameRole.None, false)]
+    public void LegacyFrameRoles_PinPerGameBindings(
+        BethesdaGame game, LegacySurfaceFrameRole frames, bool usesWatrDetail)
+    {
+        var profile = WaterProfile.ForGame(game);
+        Assert.Equal(frames, profile.LegacyFrames);
+        Assert.Equal(usesWatrDetail, profile.UsesWatrDetailTexture);
+    }
 }

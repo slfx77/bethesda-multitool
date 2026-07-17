@@ -35,8 +35,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     // viewProj(64) + 3 DNAM colors(48) + camPosTime(16) + noiseParams(16) + surface0/1(32)
     // + 3 layers(48) + depthParams(16) + renderOrigin(16) + 3 FO4 float4s(48)
     // + ordered normal indices(16) + 2 Oblivion DATA registers(32)
-    // + 4 opt-in modern-water registers(64) = 416 bytes / 26 registers.
+    // + 4 opt-in modern-water registers(64) = the established 416-byte / 26-register prefix.
+    // WATER001 appends snapshot/plane + recovered refraction registers (32) without moving any
+    // existing offset: 448 bytes / 28 registers.
     private const uint UniformsByteSize = ModernWaterPipeline.FrameUniformByteSize;
+    private const uint FnvWater001UniformByteSize = 2 * 16;
+    private const uint WaterFrameUniformsByteSize = UniformsByteSize + FnvWater001UniformByteSize;
     private const uint FnvNoiseDimension = 256;
 
     // Sentinel meaning "no resolved NNAM normal map" — the shader then uses a procedural ripple
@@ -65,6 +69,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     // profile at draw time.
     private readonly ID3D12PipelineState _pso;
     private readonly ID3D12PipelineState _psoDepthSample;
+    private readonly ID3D12PipelineState _psoFnvWater001DepthSample;
     private readonly ID3D12PipelineState _psoOblivion;
     private readonly ID3D12PipelineState _psoOblivionDepthSample;
     private readonly ID3D12PipelineState _psoFo4;
@@ -80,7 +85,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private ModernWaterResources12? _modernWater;
     private bool _modernWaterInitializationFailed;
     private uint _modernCubeBindlessIndex = NoNormalMap;
-    private BethesdaGame _game = BethesdaGame.FalloutNewVegas;
+    private BethesdaGame _game = GameProfiles.DefaultGame;
 
     // WATER-08: FO3/FNV do not sample three procedural octaves in WATER000. The engine first
     // renders ISNOISESCROLLANDBLEND into a 256x256 scalar tile, then runs
@@ -118,6 +123,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private float _depthNear = 16f;
     private float _depthFar = 1f;
     private int _depthSampleCount = 1;
+    private uint? _fnvWater001SelectedWaterFormId;
+    private uint? _fnvWater001WorldspaceDefaultWaterFormId;
+    private bool _fnvWater001HasWaterTypeContext;
+    private FnvWater001Preflight _fnvWater001PendingPreflight =
+        FnvWater001Preflight.Fallback(FnvWater001FallbackReason.SnapshotUnavailable);
+    private FnvWater001SnapshotDescriptor _fnvWater001Snapshot;
     private readonly long _startTimestamp = Stopwatch.GetTimestamp();
     private global::BethesdaMultitool.WorldSpatialIndex? _spatialIndex;
 
@@ -130,6 +141,11 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private int _instanceCapacity;
     private WaterInstance[] _instanceScratch = [];
     private bool _disposed;
+
+    private readonly record struct FnvWater001SnapshotDescriptor(uint BindlessIndex, uint Width, uint Height)
+    {
+        internal bool IsValid => BindlessIndex != NoNormalMap && Width > 0 && Height > 0;
+    }
 
     public WaterRenderer12(
         GpuDevice12 gpu,
@@ -267,6 +283,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("FO4_WATER", "1"));
         var psMorrowindBytecode = CompileEmbeddedShader(
             "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("MORROWIND_WATER", "1"));
+        var psFnvWater001Bytecode = CompileEmbeddedShader(
+            "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("FNV_WATER001", "1"));
 
         var psoDesc = new GraphicsPipelineStateDescription
         {
@@ -306,6 +324,11 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         psoDesc.DepthStencilFormat = Format.Unknown;
         _depthSamplePsoTemplate = psoDesc;
         _psoDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        // WATER001 always consumes both scene depth and a separate single-sample opaque-scene
+        // snapshot. It therefore has no hardware-depth/DSV permutation: the host has already
+        // unbound the DSV while depth is an SRV, and the shader performs the same manual occlusion.
+        psoDesc.PixelShader = psFnvWater001Bytecode;
+        _psoFnvWater001DepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psOblivionBytecode;
         _psoOblivionDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psFo4Bytecode;
@@ -315,6 +338,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     }
 
     public global::BethesdaMultitool.WorldRenderStats LastStats { get; } = new();
+    public FnvWater001Preflight LastFnvWater001Decision { get; private set; } =
+        FnvWater001Preflight.Fallback(FnvWater001FallbackReason.SnapshotUnavailable);
     public bool DetailedProfilingEnabled { get; set; }
     public bool ModernPipelineEnabled { get; set; }
 
@@ -354,27 +379,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     {
         _worldspaceDefaultWaterHeight = worldspaceDefaultWaterHeight;
         _spatialIndex = spatialIndex;
-        _appearance = appearance;
-        var first = NoNormalMap;
-        if (normalMapBindlessIndices is not null)
-        {
-            for (var i = 0; i < normalMapBindlessIndices.Count; i++)
-            {
-                if (normalMapBindlessIndices[i] is { } resolved)
-                {
-                    first = resolved;
-                    break;
-                }
-            }
-        }
-        _noiseBindlessIndex = first;
-        for (var i = 0; i < _normalBindlessIndices.Length; i++)
-        {
-            _normalBindlessIndices[i] = normalMapBindlessIndices is not null && i < normalMapBindlessIndices.Count
-                ? normalMapBindlessIndices[i] ?? first
-                : first;
-        }
-        RefreshWaterMapTelemetry();
+        SetAppearance(appearance, normalMapBindlessIndices);
         _waterCells.Clear();
 
         if (spatialIndex is not null)
@@ -398,6 +403,61 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         }
 
         EnsureInstanceCapacity(_waterCells.Count);
+    }
+
+    /// <summary>
+    ///     Rebinds only the WATR-derived material and its normal maps. Cell geometry, the spatial
+    ///     index, and instance capacity remain untouched, so camera-cell XCWT changes do not rebuild
+    ///     every visible water tile.
+    /// </summary>
+    public void SetAppearance(
+        BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance? appearance,
+        IReadOnlyList<uint?>? normalMapBindlessIndices)
+    {
+        _appearance = appearance;
+        // WATR identity is supplied separately because WaterAppearance intentionally carries only
+        // decoded visual data. Clear it on every material rebind so WATER001 cannot reuse a stale
+        // camera-cell XCWT/WRLD NAM2 decision.
+        ClearFnvWater001TransientState(clearWaterTypeContext: true);
+        var first = NoNormalMap;
+        if (normalMapBindlessIndices is not null)
+        {
+            for (var i = 0; i < normalMapBindlessIndices.Count; i++)
+            {
+                if (normalMapBindlessIndices[i] is { } resolved)
+                {
+                    first = resolved;
+                    break;
+                }
+            }
+        }
+        _noiseBindlessIndex = first;
+        for (var i = 0; i < _normalBindlessIndices.Length; i++)
+        {
+            _normalBindlessIndices[i] = normalMapBindlessIndices is not null && i < normalMapBindlessIndices.Count
+                ? normalMapBindlessIndices[i] ?? first
+                : first;
+        }
+        RefreshWaterMapTelemetry();
+    }
+
+    /// <summary>
+    ///     Supplies the exact WATR identities needed by the bounded WATER001 preflight. A visible
+    ///     CELL's non-zero XCWT is its effective type; otherwise it inherits
+    ///     <paramref name="worldspaceDefaultWaterFormId" /> (WRLD NAM2). Every visible generated
+    ///     packet must resolve to <paramref name="selectedWaterFormId" /> or the route falls back.
+    /// </summary>
+    public void SetFnvWater001WaterTypeContext(
+        uint? selectedWaterFormId,
+        uint? worldspaceDefaultWaterFormId)
+    {
+        _fnvWater001SelectedWaterFormId = selectedWaterFormId is > 0 ? selectedWaterFormId : null;
+        _fnvWater001WorldspaceDefaultWaterFormId =
+            worldspaceDefaultWaterFormId is > 0 ? worldspaceDefaultWaterFormId : null;
+        _fnvWater001HasWaterTypeContext = true;
+        _fnvWater001PendingPreflight =
+            FnvWater001Preflight.Fallback(FnvWater001FallbackReason.SnapshotUnavailable);
+        _fnvWater001Snapshot = default;
     }
 
     public void SetSceneDepth(uint depthBindlessIndex, float near, float far, int sampleCount = 1)
@@ -427,6 +487,58 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _depthSampleCount = sampleCount;
     }
 
+    /// <summary>
+    ///     Read-only resource preflight for the host. A positive result arms exactly one subsequent
+    ///     <see cref="SetFnvWater001Snapshot" /> call; the renderer repeats the check and consumes the
+    ///     descriptor on the next Render. Pass the same cylinder and perspective state as that draw.
+    /// </summary>
+    public FnvWater001Preflight GetFnvWater001Preflight(
+        VisibilityCylinder cylinder,
+        bool isPerspectiveProjection)
+    {
+        GatherVisibleWater(cylinder);
+        var cells = InspectFnvWater001VisibleCells(_visibleWaterScratch);
+        _fnvWater001PendingPreflight = EvaluateFnvWater001(
+            cells,
+            cylinder.Position.Z,
+            isPerspectiveProjection,
+            requireSnapshot: false,
+            snapshot: default);
+        if (!_fnvWater001PendingPreflight.Candidate)
+        {
+            _fnvWater001Snapshot = default;
+        }
+        return _fnvWater001PendingPreflight;
+    }
+
+    /// <summary>
+    ///     Supplies a one-shot bindless SRV for a separate, single-sample SceneColor-format snapshot
+    ///     captured after opaque terrain/references. The host must never pass the active scene RTV:
+    ///     prepare/copy/resolve and transition the snapshot to PixelShaderResource first, then restore
+    ///     it after water. Null clears the pending descriptor without drawing WATER001.
+    /// </summary>
+    public void SetFnvWater001Snapshot(uint? bindlessIndex, uint width, uint height)
+    {
+        if (bindlessIndex is null)
+        {
+            _fnvWater001Snapshot = default;
+            return;
+        }
+        if (!_fnvWater001PendingPreflight.Candidate)
+        {
+            throw new InvalidOperationException(
+                "A WATER001 opaque snapshot may only be supplied after a positive preflight.");
+        }
+        if (bindlessIndex == NoNormalMap)
+            throw new ArgumentOutOfRangeException(nameof(bindlessIndex), "The null descriptor sentinel is not a snapshot SRV.");
+        if (width == 0)
+            throw new ArgumentOutOfRangeException(nameof(width), width, "Snapshot width must be positive.");
+        if (height == 0)
+            throw new ArgumentOutOfRangeException(nameof(height), height, "Snapshot height must be positive.");
+
+        _fnvWater001Snapshot = new FnvWater001SnapshotDescriptor(bindlessIndex.Value, width, height);
+    }
+
     public void SetModernCubeMap(uint? cubeMapBindlessIndex) =>
         _modernCubeBindlessIndex = cubeMapBindlessIndex ?? NoNormalMap;
 
@@ -438,6 +550,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     {
         _game = game;
         _waterProfile = WaterProfile.ForGame(game);
+        ClearFnvWater001TransientState(clearWaterTypeContext: true);
         // FO3 and FNV share the recovered ISNOISESCROLLANDBLEND -> ISNOISENORMALMAP chain.
         // Skyrim's evolved shader samples its three authored normals independently and must not be
         // routed through this classic single-NNAM prepass merely because its RT-free body math shares
@@ -747,7 +860,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
 
     /// <summary>IWorldRenderer entry — absolute path (zero render origin).</summary>
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder) =>
-        RenderCore(viewProj, cylinder, default, animationTimeSeconds: null);
+        RenderCore(viewProj, cylinder, default, isPerspectiveProjection: false, animationTimeSeconds: null);
 
     /// <summary>Draws the visible cell-water grid + authored NIF water geometry; returns the surface count.</summary>
     /// <param name="renderOrigin">
@@ -758,7 +871,15 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     ///     two-arg overload — a no-op. vWorldPos stays absolute for the PS's noise-UV/view-vector anchoring.
     /// </param>
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder, Vector3 renderOrigin) =>
-        RenderCore(viewProj, cylinder, renderOrigin, animationTimeSeconds: null);
+        RenderCore(viewProj, cylinder, renderOrigin, isPerspectiveProjection: true, animationTimeSeconds: null);
+
+    /// <summary>Live-view entry that repeats the host's projection eligibility at draw time.</summary>
+    internal int Render(
+        Matrix4x4 viewProj,
+        VisibilityCylinder cylinder,
+        Vector3 renderOrigin,
+        bool isPerspectiveProjection) =>
+        RenderCore(viewProj, cylinder, renderOrigin, isPerspectiveProjection, animationTimeSeconds: null);
 
     /// <summary>
     ///     Capture-only deterministic entry point. Uses one authored clock for legacy frame selection,
@@ -777,16 +898,33 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 nameof(animationTimeSeconds), animationTimeSeconds, "Animation time must be finite.");
         }
 
-        return RenderCore(viewProj, cylinder, renderOrigin, animationTimeSeconds);
+        return RenderCore(
+            viewProj,
+            cylinder,
+            renderOrigin,
+            isPerspectiveProjection: true,
+            animationTimeSeconds);
     }
 
     private int RenderCore(
         Matrix4x4 viewProj,
         VisibilityCylinder cylinder,
         Vector3 renderOrigin,
+        bool isPerspectiveProjection,
         float? animationTimeSeconds)
     {
         LastStats.Reset();
+        // The opaque snapshot is valid as a shader resource only for this host-bracketed pass.
+        // Consume it up front so every early return fails closed and no later frame can sample a
+        // resource that the host has transitioned back to CopyDest/ResolveDest.
+        var fnvWater001ArmedPreflight = _fnvWater001PendingPreflight;
+        var fnvWater001Snapshot = _fnvWater001Snapshot;
+        _fnvWater001PendingPreflight =
+            FnvWater001Preflight.Fallback(FnvWater001FallbackReason.SnapshotUnavailable);
+        _fnvWater001Snapshot = default;
+        LastFnvWater001Decision = fnvWater001ArmedPreflight.Candidate
+            ? FnvWater001Preflight.Fallback(FnvWater001FallbackReason.NoVisibleCellWater)
+            : fnvWater001ArmedPreflight;
         var elapsedSeconds = animationTimeSeconds ??
                              (float)Stopwatch.GetElapsedTime(_startTimestamp).TotalSeconds;
         LastStats.WaterAnimationSeconds = elapsedSeconds;
@@ -814,6 +952,17 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         var cellVisible = GatherVisibleWater(cylinder);
         var nifVisible = GatherVisibleNifPlanes(cylinder);
         var visibleSurfaces = cellVisible + nifVisible;
+        var fnvWater001Cells = InspectFnvWater001VisibleCells(_visibleWaterScratch);
+        if (fnvWater001ArmedPreflight.Candidate)
+        {
+            LastFnvWater001Decision = EvaluateFnvWater001(
+                fnvWater001Cells,
+                cylinder.Position.Z,
+                isPerspectiveProjection,
+                requireSnapshot: true,
+                snapshot: fnvWater001Snapshot);
+        }
+        var useFnvWater001 = LastFnvWater001Decision.Candidate;
         LastStats.VisibleCandidates = visibleSurfaces;
         LastStats.VisibleGatherMilliseconds = ElapsedMilliseconds(segmentStarted);
         if (visibleSurfaces == 0)
@@ -873,7 +1022,11 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         segmentStarted = StartTiming();
         // Per-frame CB (b0) — viewProj + DNAM colors + (camera pos, elapsed time) for the
         // procedural ripple/Fresnel/specular shading.
-        if (!_ringBuffer.TryAllocate(frameIndex, UniformsByteSize, out var perFrameAlloc, GpuRingBuffer12.CbAlignment))
+        if (!_ringBuffer.TryAllocate(
+                frameIndex,
+                WaterFrameUniformsByteSize,
+                out var perFrameAlloc,
+                GpuRingBuffer12.CbAlignment))
         {
             // Frame ring slot exhausted by the earlier scene passes (dense whole-map views). Skip
             // the water pass this frame — the next frame retries — instead of throwing, which
@@ -1017,6 +1170,17 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                         W = surface.NormalMagnitude,
                     },
                 },
+                FnvWater001SnapshotIndex = useFnvWater001
+                    ? fnvWater001Snapshot.BindlessIndex
+                    : NoNormalMap,
+                FnvWater001SnapshotWidth = useFnvWater001 ? fnvWater001Snapshot.Width : 0,
+                FnvWater001SnapshotHeight = useFnvWater001 ? fnvWater001Snapshot.Height : 0,
+                FnvWater001PlaneHeight = useFnvWater001 ? LastFnvWater001Decision.PlaneHeight : 0f,
+                FnvWater001Surface = new Vector4(
+                    surface.UnderwaterFogNear,
+                    surface.UnderwaterFogFar,
+                    surface.AboveWaterFogAmount,
+                    surface.RefractionDistortionAmount),
             };
         }
 
@@ -1037,14 +1201,44 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         // DEPTH_READ | PIXEL_SHADER_RESOURCE, so use the no-depth-test PSO (occlusion is done in-shader).
         // Otherwise the DSV is still bound → use the hardware-depth-test PSO.
         var depthSample = _depthBindlessIndex != NoNormalMap;
-        LastStats.WaterTechnique = DescribeTechnique(
-            _game,
-            _waterProfile.ShaderVariant,
-            useModernPipeline,
-            modernTechnique,
-            depthSample,
-            _depthSampleCount);
-        if (useModernPipeline)
+        if (useFnvWater001)
+        {
+            var depthRoute = _depthSampleCount > 1
+                ? $"msaa{_depthSampleCount}x"
+                : "1x";
+            LastStats.WaterTechnique =
+                $"FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-{depthRoute}";
+            if (nifPacketCount > 0)
+            {
+                LastStats.WaterTechnique +=
+                    $"+FnvWater003RtFree-scene-depth-{depthRoute}-placed-nif";
+            }
+            // Retail WATER001 samples a selectively populated refraction target. This bounded route
+            // uses the opaque main-scene snapshot and main depth, so expose that approximation even
+            // when every eligibility gate succeeds.
+            LastStats.WaterTelemetryUnavailableReason =
+                "selective-content-mask-approximated-by-main-depth";
+        }
+        else
+        {
+            LastStats.WaterTechnique = DescribeTechnique(
+                _game,
+                _waterProfile.ShaderVariant,
+                useModernPipeline,
+                modernTechnique,
+                depthSample,
+                _depthSampleCount);
+            if (_game == BethesdaGame.FalloutNewVegas &&
+                _waterProfile.ShaderVariant == WaterShaderVariant.FnvWater000)
+            {
+                LastStats.WaterTelemetryUnavailableReason = LastFnvWater001Decision.ReasonCode;
+            }
+        }
+        if (useFnvWater001)
+        {
+            cmd.SetPipelineState(_psoFnvWater001DepthSample);
+        }
+        else if (useModernPipeline)
         {
             cmd.SetPipelineState(depthSample ? modernResources!.PixelDepthSample : modernResources!.Pixel);
         }
@@ -1065,8 +1259,24 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         // sample the resolved NNAM normal map via NonUniformResourceIndex(uNoiseParams.x).
         cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.BindlessSrvTable, _cbvSrvUavHeap.BindlessHeapStartGpu);
 
-        // Six vertices per packet: a cell quad or one/two authored NIF triangles.
-        cmd.DrawInstanced(6, (uint)instanceCount, 0, 0);
+        // WATER001's reconstructed horizontal plane is valid only for generated cell quads. Draw
+        // those packets first with the refraction permutation, then switch back to the established
+        // WATER003 depth-sampled PSO for every placed-NIF packet (sloped/multi-height authored water).
+        // When WATER001 is ineligible, retain the original one-call WATER003/variant path exactly.
+        if (useFnvWater001)
+        {
+            cmd.DrawInstanced(6, (uint)cellVisible, 0, 0);
+            if (nifPacketCount > 0)
+            {
+                cmd.SetPipelineState(_psoDepthSample);
+                cmd.DrawInstanced(6, (uint)nifPacketCount, 0, (uint)cellVisible);
+            }
+        }
+        else
+        {
+            // Six vertices per packet: a cell quad or one/two authored NIF triangles.
+            cmd.DrawInstanced(6, (uint)instanceCount, 0, 0);
+        }
         LastStats.DrawCallMilliseconds = ElapsedMilliseconds(segmentStarted);
         LastStats.WaterDraws = visibleSurfaces;
         LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
@@ -1128,6 +1338,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _persistentSrvs.Dispose();
         _pso.Dispose();
         _psoDepthSample.Dispose();
+        _psoFnvWater001DepthSample.Dispose();
         _psoOblivion.Dispose();
         _psoOblivionDepthSample.Dispose();
         _psoFo4.Dispose();
@@ -1142,6 +1353,119 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _deletionQueue.EnqueueDispose(new PersistentSlotReturn(_cbvSrvUavHeap, _fnvNoiseNormalBindlessIndex));
         _modernWater?.Dispose(_deletionQueue, _cbvSrvUavHeap);
         _modernWater = null;
+    }
+
+    private readonly record struct FnvWater001VisibleCellContract(
+        int Count,
+        float PlaneHeight,
+        bool MixedPlaneHeights,
+        bool HasEffectiveWaterType,
+        bool MixedWaterTypes,
+        uint? EffectiveWaterFormId);
+
+    private FnvWater001VisibleCellContract InspectFnvWater001VisibleCells(
+        IReadOnlyList<global::BethesdaMultitool.WorldWaterCell> cells)
+    {
+        if (cells.Count == 0)
+        {
+            return new FnvWater001VisibleCellContract(0, 0f, false, false, false, null);
+        }
+
+        var planeHeight = cells[0].Height;
+        var mixedPlaneHeights = false;
+        var hasEffectiveWaterType = true;
+        var mixedWaterTypes = false;
+        uint? commonWaterFormId = null;
+        var hasCommonWaterFormId = false;
+        for (var i = 0; i < cells.Count; i++)
+        {
+            var water = cells[i];
+            // One global plane equation is appended to the frame CB. Exact equality is intentional:
+            // accepting an epsilon-separated surface would make one packet reconstruct against a
+            // different plane than the geometry the pixel came from.
+            if (water.Height != planeHeight)
+            {
+                mixedPlaneHeights = true;
+            }
+
+            var effectiveWaterFormId = water.Cell.WaterFormId is > 0
+                ? water.Cell.WaterFormId
+                : _fnvWater001WorldspaceDefaultWaterFormId;
+            if (effectiveWaterFormId is not > 0)
+            {
+                hasEffectiveWaterType = false;
+                continue;
+            }
+            if (!hasCommonWaterFormId)
+            {
+                commonWaterFormId = effectiveWaterFormId;
+                hasCommonWaterFormId = true;
+            }
+            else if (commonWaterFormId != effectiveWaterFormId)
+            {
+                mixedWaterTypes = true;
+            }
+            if (_fnvWater001SelectedWaterFormId is not > 0 ||
+                effectiveWaterFormId != _fnvWater001SelectedWaterFormId)
+            {
+                mixedWaterTypes = true;
+            }
+        }
+
+        return new FnvWater001VisibleCellContract(
+            cells.Count,
+            planeHeight,
+            mixedPlaneHeights,
+            hasEffectiveWaterType && hasCommonWaterFormId,
+            mixedWaterTypes,
+            commonWaterFormId);
+    }
+
+    private FnvWater001Preflight EvaluateFnvWater001(
+        in FnvWater001VisibleCellContract cells,
+        float cameraHeight,
+        bool isPerspectiveProjection,
+        bool requireSnapshot,
+        in FnvWater001SnapshotDescriptor snapshot)
+    {
+        var surface = _appearance?.Surface ?? WaterSurfaceParams.Default;
+        return FnvWater001Contract.Evaluate(new FnvWater001EligibilityInput(
+            _game,
+            _waterProfile.ShaderVariant,
+            _appearance?.IsLava == true,
+            isPerspectiveProjection,
+            _depthBindlessIndex != NoNormalMap,
+            requireSnapshot,
+            snapshot.IsValid,
+            snapshot.Width,
+            snapshot.Height,
+            cells.Count,
+            _appearance is not null,
+            surface.HasAuthoredClassicRefractionInputs,
+            _fnvWater001HasWaterTypeContext,
+            cells.HasEffectiveWaterType && _fnvWater001SelectedWaterFormId is > 0,
+            cells.MixedWaterTypes,
+            cells.MixedPlaneHeights,
+            cells.PlaneHeight,
+            cameraHeight,
+            surface.DepthFalloffStart,
+            surface.DepthFalloffEnd,
+            surface.UnderwaterFogNear,
+            surface.UnderwaterFogFar,
+            surface.AboveWaterFogAmount,
+            surface.RefractionDistortionAmount,
+            cells.EffectiveWaterFormId));
+    }
+
+    private void ClearFnvWater001TransientState(bool clearWaterTypeContext)
+    {
+        _fnvWater001PendingPreflight =
+            FnvWater001Preflight.Fallback(FnvWater001FallbackReason.SnapshotUnavailable);
+        _fnvWater001Snapshot = default;
+        if (!clearWaterTypeContext) return;
+        _fnvWater001SelectedWaterFormId = null;
+        _fnvWater001WorldspaceDefaultWaterFormId = null;
+        _fnvWater001HasWaterTypeContext = false;
     }
 
     private int GatherVisibleWater(VisibilityCylinder cylinder)
@@ -1392,10 +1716,11 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         }
 
         var uniformSize = Marshal.SizeOf<WaterFrameUniforms>();
-        if (uniformSize != (int)UniformsByteSize)
+        if (uniformSize != (int)WaterFrameUniformsByteSize)
         {
             throw new InvalidOperationException(
-                $"Water constant-buffer layout drifted: CPU={uniformSize} bytes, HLSL={UniformsByteSize} bytes.");
+                $"Water constant-buffer layout drifted: CPU={uniformSize} bytes, " +
+                $"HLSL={WaterFrameUniformsByteSize} bytes.");
         }
 
         const int expectedInstanceSize = 6 * 16;
@@ -1652,6 +1977,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         // technique/cubemap/light-loop controls, recovered gloss scales + neutral unresolved alpha
         // constants, then retained LightSilt/normal magnitude. Appended for legacy layout stability.
         public ModernWaterFrameUniforms Modern;
+        // Bounded FNV WATER001 tail. The uint/float quartet is one raw register matching
+        // uFnvWater001Snapshot: (snapshot SRV, width, height, asuint(horizontal plane height)).
+        public uint FnvWater001SnapshotIndex;
+        public uint FnvWater001SnapshotWidth;
+        public uint FnvWater001SnapshotHeight;
+        public float FnvWater001PlaneHeight;
+        // UnderwaterFogNear/Far, AboveWaterFogAmount, RefractionDistortionAmount.
+        public Vector4 FnvWater001Surface;
     }
 }
 

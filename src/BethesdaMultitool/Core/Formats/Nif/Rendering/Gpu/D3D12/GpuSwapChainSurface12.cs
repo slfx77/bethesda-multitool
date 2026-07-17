@@ -62,6 +62,11 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     // 1-sample HDR resolve dest (MSAA only): the scene MSAA color resolves into this, which the
     // tonemap then samples. Null for the 1-sample path (the scene color is sampled directly).
     private ID3D12Resource? _hdrResolve;
+    // 1-sample opaque-scene snapshot for WATER001 refraction when scene MSAA is disabled. The 4x
+    // path reuses _hdrResolve instead, because it already has the exact required size/format/sample
+    // layout and is idle in ResolveDest until the ordinary final resolve.
+    private ID3D12Resource? _waterOpaqueCopy;
+    private bool _waterOpaqueSnapshotPrepared;
     private readonly GpuTonemapPass12 _tonemap;
     private readonly bool _tonemapEnabled;
     private uint _width;
@@ -116,6 +121,67 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     /// <summary>Number of samples in the scene color and depth targets.</summary>
     public int SampleCount => _sampleCount;
 
+    /// <summary>
+    ///     Stable 1-sample HDR resource used to sample the opaque scene during bounded WATER001
+    ///     refraction. At MSAA 4x this is the existing final-resolve destination; at 1x it is a
+    ///     dedicated copy. The resource changes identity on <see cref="Resize" />, so persistent
+    ///     SRV owners must recreate their descriptor after a resize. The 1x copy is allocated lazily
+    ///     by <see cref="TryEnsureWaterOpaqueSnapshotResource" /> only for an eligible WATER001 frame.
+    /// </summary>
+    public ID3D12Resource? WaterOpaqueSnapshotResource =>
+        _hdrResolve ?? _waterOpaqueCopy;
+
+    /// <summary>
+    ///     Ensures a one-sample snapshot exists without charging every 1x surface for another
+    ///     full-resolution HDR texture. MSAA already owns the compatible resolve target. Allocation
+    ///     failure is a local WATER001 fallback, not a frame or device failure.
+    /// </summary>
+    public bool TryEnsureWaterOpaqueSnapshotResource()
+    {
+        if (_hdrResolve is not null || _waterOpaqueCopy is not null) return true;
+        if (_msaaColor is null || _sampleCount > 1 || _width == 0 || _height == 0) return false;
+
+        try
+        {
+            _waterOpaqueCopy = CreateWaterOpaqueCopy(_device, _width, _height, _sampleCount);
+            return _waterOpaqueCopy is not null;
+        }
+        catch (Exception ex)
+        {
+            _waterOpaqueCopy?.Dispose();
+            _waterOpaqueCopy = null;
+            Log.Warn("GpuSwapChainSurface12: WATER001 opaque snapshot allocation failed: {0}", ex.Message);
+            return false;
+        }
+    }
+
+    /// <summary>True only between a successful <see cref="TryPrepareWaterOpaqueSnapshot" /> and
+    /// <see cref="RestoreWaterOpaqueSnapshot" /> call, while the exposed snapshot is in
+    /// PIXEL_SHADER_RESOURCE state.</summary>
+    public bool IsWaterOpaqueSnapshotPrepared => _waterOpaqueSnapshotPrepared;
+
+    /// <summary>
+    ///     Forgets preparation recorded into a command list that the host is abandoning without
+    ///     submission. No barrier is emitted: the discarded list never changed the GPU resource from
+    ///     its ResolveDest/CopyDest baseline.
+    /// </summary>
+    public void DiscardWaterOpaqueSnapshotPreparation() =>
+        _waterOpaqueSnapshotPrepared = false;
+
+    /// <summary>
+    ///     Releases the lazily allocated 1x copy when host-side descriptor creation fails before any
+    ///     command list can reference it. The MSAA resolve target is surface-owned and is never released
+    ///     by this fallback path.
+    /// </summary>
+    public bool ReleaseDedicatedWaterOpaqueSnapshotResource()
+    {
+        if (_waterOpaqueSnapshotPrepared || _waterOpaqueCopy is null) return false;
+
+        _waterOpaqueCopy.Dispose();
+        _waterOpaqueCopy = null;
+        return true;
+    }
+
     /// <summary>RTV for the scene's MSAA color target (valid only when <see cref="IsMsaa" />). Lives
     /// at RTV-heap slot <see cref="BufferCount" /> (after the per-frame back-buffer RTVs).</summary>
     public CpuDescriptorHandle MsaaColorRtv =>
@@ -157,6 +223,9 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         _msaaColor = null;
         _hdrResolve?.Dispose();
         _hdrResolve = null;
+        _waterOpaqueCopy?.Dispose();
+        _waterOpaqueCopy = null;
+        _waterOpaqueSnapshotPrepared = false;
         _tonemap.Dispose();
         _dsvHeap.Dispose();
         _rtvHeap.Dispose();
@@ -243,7 +312,8 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
             Log.Info("GpuSwapChainSurface12: bound {0}x{1} to SwapChainPanel ({2} buffers, MSAA {3}x)",
                 width, height, BufferCount, sampleCount);
             return new GpuSwapChainSurface12(
-                gpu, swapChain3, rtvHeap, dsvHeap, backBuffers, depthTexture, msaaColor, hdrResolve, sampleCount, width, height);
+                gpu, swapChain3, rtvHeap, dsvHeap, backBuffers, depthTexture, msaaColor, hdrResolve,
+                sampleCount, width, height);
         }
         catch (SharpGenException ex)
         {
@@ -285,6 +355,9 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         _msaaColor = null;
         _hdrResolve?.Dispose();
         _hdrResolve = null;
+        _waterOpaqueCopy?.Dispose();
+        _waterOpaqueCopy = null;
+        _waterOpaqueSnapshotPrepared = false;
 
         _swapChain.ResizeBuffers(BufferCount, width, height, Format.Unknown, SwapChainFlags.None).CheckError();
 
@@ -299,6 +372,69 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     }
 
     /// <summary>
+    ///     Captures the opaque HDR scene into <see cref="WaterOpaqueSnapshotResource" /> and leaves
+    ///     that resource in PIXEL_SHADER_RESOURCE state. The method first unbinds every output-merger
+    ///     target, so the scene color can never remain an active RTV while it is used as a resolve or
+    ///     copy source. It restores the scene color resource to RENDER_TARGET but intentionally leaves
+    ///     the output merger unbound; the caller must bind the scene RTV with the DSV state appropriate
+    ///     for its water pass.
+    /// </summary>
+    /// <returns>False without recording commands when disposed, unavailable, or already prepared.</returns>
+    public bool TryPrepareWaterOpaqueSnapshot(ID3D12GraphicsCommandList cmd)
+    {
+        var sceneColor = _msaaColor;
+        var snapshot = WaterOpaqueSnapshotResource;
+        if (sceneColor is null || snapshot is null || _waterOpaqueSnapshotPrepared)
+        {
+            return false;
+        }
+
+        // Do not let a resource that is still output-merger-bound participate in Resolve/Copy. The
+        // caller explicitly rebinds the scene RTV (and writable/read-only/no DSV) after this method.
+        cmd.UnsetRenderTargets();
+
+        if (_hdrResolve is not null)
+        {
+            cmd.ResourceBarrierTransition(sceneColor, ResourceStates.RenderTarget, ResourceStates.ResolveSource);
+            cmd.ResolveSubresource(snapshot, 0, sceneColor, 0, SceneColorFormat);
+            cmd.ResourceBarrierTransition(snapshot, ResourceStates.ResolveDest, ResourceStates.PixelShaderResource);
+            cmd.ResourceBarrierTransition(sceneColor, ResourceStates.ResolveSource, ResourceStates.RenderTarget);
+        }
+        else
+        {
+            cmd.ResourceBarrierTransition(sceneColor, ResourceStates.RenderTarget, ResourceStates.CopySource);
+            cmd.CopyResource(snapshot, sceneColor);
+            cmd.ResourceBarrierTransition(snapshot, ResourceStates.CopyDest, ResourceStates.PixelShaderResource);
+            cmd.ResourceBarrierTransition(sceneColor, ResourceStates.CopySource, ResourceStates.RenderTarget);
+        }
+
+        _waterOpaqueSnapshotPrepared = true;
+        return true;
+    }
+
+    /// <summary>
+    ///     Ends WATER001 sampling and returns the snapshot to its normal idle state: ResolveDest for
+    ///     the borrowed MSAA HDR resolve, CopyDest for the dedicated 1x copy. The scene color remains
+    ///     in RenderTarget throughout this operation.
+    /// </summary>
+    /// <returns>False without recording commands when no prepared snapshot exists.</returns>
+    public bool RestoreWaterOpaqueSnapshot(ID3D12GraphicsCommandList cmd)
+    {
+        var snapshot = WaterOpaqueSnapshotResource;
+        if (snapshot is null || !_waterOpaqueSnapshotPrepared)
+        {
+            return false;
+        }
+
+        var idleState = _hdrResolve is not null
+            ? ResourceStates.ResolveDest
+            : ResourceStates.CopyDest;
+        cmd.ResourceBarrierTransition(snapshot, ResourceStates.PixelShaderResource, idleState);
+        _waterOpaqueSnapshotPrepared = false;
+        return true;
+    }
+
+    /// <summary>
     ///     Maps the HDR scene color into the current back buffer: (MSAA) resolve the multisampled
     ///     scene color into the 1-sample HDR target, then run the fullscreen tonemap into the back
     ///     buffer's RTV; (1-sample) tonemap the scene color directly. Call after the scene draws and
@@ -310,6 +446,10 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     public void ResolveTo(ID3D12GraphicsCommandList cmd, ID3D12Resource backBuffer)
     {
         if (_msaaColor is null) return;
+
+        // WATER001 borrows _hdrResolve in the MSAA path. Restore its ordinary ResolveDest baseline
+        // defensively so a missed host cleanup cannot make the final resolve use a PSR-state dest.
+        RestoreWaterOpaqueSnapshot(cmd);
 
         // 1. Obtain the 1-sample HDR image the tonemap samples.
         ID3D12Resource hdrSource;
@@ -471,6 +611,27 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
             ResourceDescription.Texture2D(SceneColorFormat, width, height,
                 arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0, ResourceFlags.None),
             ResourceStates.ResolveDest,
+            optimizedClearValue: null);
+    }
+
+    /// <summary>
+    ///     Dedicated 1-sample opaque-scene copy for WATER001 when the scene itself is single-sample.
+    ///     MSAA reuses <see cref="_hdrResolve" /> and therefore needs no additional allocation.
+    /// </summary>
+    private static ID3D12Resource? CreateWaterOpaqueCopy(
+        ID3D12Device device,
+        uint width,
+        uint height,
+        int sampleCount)
+    {
+        if (sampleCount > 1) return null;
+
+        return device.CreateCommittedResource<ID3D12Resource>(
+            HeapProperties.DefaultHeapProperties,
+            HeapFlags.None,
+            ResourceDescription.Texture2D(SceneColorFormat, width, height,
+                arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0, ResourceFlags.None),
+            ResourceStates.CopyDest,
             optimizedClearValue: null);
     }
 }
