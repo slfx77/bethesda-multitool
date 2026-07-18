@@ -428,7 +428,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             !_ringBuffer.TryAllocate(
                 _recorder.FrameIndex, PerModeByteSize, out var perModeAlloc, GpuRingBuffer12.CbAlignment))
         {
-            return 0; // ring exhausted — the cleared cascade reads lit and the next frame retries
+            return 0; // the host disables this cleared cascade and retries without a lit coverage hole
         }
         unsafe
         {

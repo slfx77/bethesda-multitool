@@ -57,7 +57,8 @@ internal sealed class ShadowMapRenderer12 : IDisposable
     public int Resolution { get; }
 
     /// <summary>True once the cascades have been rendered at least once (before that the sampling
-    /// constants must stay disabled).</summary>
+    /// constants must stay disabled). Individual cascades can still be disabled when a refresh
+    /// submitted no casters, allowing the shader to fall through to a populated farther map.</summary>
     public bool HasContent { get; private set; }
 
     public ShadowMapRenderer12(GpuDevice12 gpu, GpuDescriptorHeapAllocator12 cbvSrvUavHeap)
@@ -172,21 +173,45 @@ internal sealed class ShadowMapRenderer12 : IDisposable
     /// <summary>
     ///     Commits a completed render of all cascades: records what the maps now contain so
     ///     <see cref="GetSampleConstants" /> reflects it. The re-render POLICY (pose keys, content
-    ///     throttling, animation ticks) is the host's — see RecordSunShadowPass. Skipping this
-    ///     after a degenerate render (nothing drew) leaves the previous constants in effect; the
-    ///     cleared maps read fully lit either way.
+    ///     throttling, animation ticks) is the host's — see RecordSunShadowPass. A cascade whose
+    ///     <paramref name="cascadeHasDraws" /> entry is false is published disabled, so the scene
+    ///     shaders try the next containing cascade instead of sampling its cleared map as fully lit.
     /// </summary>
-    public void Publish(ReadOnlySpan<SunShadowMath.LightFrustum> frustums, Vector3 renderOrigin)
+    public void Publish(
+        ReadOnlySpan<SunShadowMath.LightFrustum> frustums,
+        Vector3 renderOrigin,
+        ReadOnlySpan<bool> cascadeHasDraws)
     {
+        if (frustums.Length < CascadeCount)
+            throw new ArgumentException($"Expected {CascadeCount} cascade frustums.", nameof(frustums));
+        if (cascadeHasDraws.Length < CascadeCount)
+            throw new ArgumentException(
+                $"Expected {CascadeCount} cascade availability values.", nameof(cascadeHasDraws));
+
         for (var i = 0; i < CascadeCount; i++)
         {
             _renderedViewProj[i] = frustums[i].ViewProj;
             _renderedParams[i] = new Vector4(
-                1f, 1f / Resolution, frustums[i].NormalizedDepthBias, _srvs[i].BindlessIndex);
+                cascadeHasDraws[i] ? 1f : 0f,
+                1f / Resolution,
+                frustums[i].NormalizedDepthBias,
+                _srvs[i].BindlessIndex);
         }
 
         _renderedOrigin = renderOrigin;
         HasContent = true;
+    }
+
+    /// <summary>
+    ///     Updates the availability bit after an in-place animated refresh of one published
+    ///     cascade. Its matrix and descriptor remain unchanged; an empty refresh disables only
+    ///     this map until a later successful refresh repopulates it.
+    /// </summary>
+    public void SetCascadeAvailability(int index, bool hasDraws)
+    {
+        if ((uint)index >= CascadeCount)
+            throw new ArgumentOutOfRangeException(nameof(index));
+        _renderedParams[index].X = hasDraws ? 1f : 0f;
     }
 
     /// <summary>

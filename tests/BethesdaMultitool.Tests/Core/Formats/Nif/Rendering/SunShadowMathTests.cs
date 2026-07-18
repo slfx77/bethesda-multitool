@@ -164,4 +164,47 @@ public sealed class SunShadowMathTests
             NoonishSun, center + new Vector3(SunShadowMath.CenterSnap * 2f, 0f, 0f), 8192f, 7));
         Assert.NotEqual(key, SunShadowMath.BuildKey(NoonishSun, center, 8192f, 8));
     }
+
+    [Fact]
+    public void FrameContract_ProtectsLateShadowAllocations_AndDisablesEmptyCascades()
+    {
+        var frame = ReadSource(
+            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Frame.cs");
+        var shadowMap = ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera",
+            "D3D12", "ShadowMapRenderer12.cs");
+
+        var reserve = frame.IndexOf(
+            "TryReserveTail(ShadowPassRingReservationBytes)", StringComparison.Ordinal);
+        var sceneAllocationsStart = frame.IndexOf("BindAtmosphereConstants(", reserve, StringComparison.Ordinal);
+        var release = frame.IndexOf("ReleaseTailReservation();", sceneAllocationsStart, StringComparison.Ordinal);
+        var shadowPass = frame.IndexOf(
+            "RecordSunShadowPass(cmd, referenceRenderOrigin", release, StringComparison.Ordinal);
+        Assert.True(reserve >= 0 && reserve < sceneAllocationsStart,
+            "the shadow tail must be protected before the first scene constant allocation");
+        Assert.True(sceneAllocationsStart < release && release < shadowPass,
+            "the protected tail must remain unavailable until immediately before shadow replay");
+
+        Assert.Contains("Span<bool> cascadeHasDraws", frame, StringComparison.Ordinal);
+        Assert.Contains("_shadowMap.SetCascadeAvailability(i, drewCascade);", frame, StringComparison.Ordinal);
+        Assert.Contains(
+            "_shadowMap.Publish(frustums, renderOrigin, cascadeHasDraws);",
+            frame,
+            StringComparison.Ordinal);
+        Assert.Contains("cascadeHasDraws[i] ? 1f : 0f", shadowMap, StringComparison.Ordinal);
+    }
+
+    private static string ReadSource(params string[] relativePath) =>
+        File.ReadAllText(Path.Combine(FindRepoRoot(), Path.Combine(relativePath)));
+
+    private static string FindRepoRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName ?? throw new DirectoryNotFoundException("Could not locate repository root.");
+    }
 }
