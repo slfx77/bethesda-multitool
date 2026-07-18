@@ -44,7 +44,9 @@ public sealed partial class WorldView3DControl
         Matrix4x4 InverseWorld);
 
     private readonly record struct ColdGroundCandidate(
-        PlacedReference Placement);
+        PlacedReference Placement,
+        PlacedObjectCategory Category,
+        bool AllowsBoundsFallback);
 
     // Scratch candidate lists (walk-mode is single-threaded on the UI/frame path).
     private readonly List<GroundCandidate> _groundCandidates = new(64);
@@ -253,22 +255,14 @@ public sealed partial class WorldView3DControl
                         continue;
                     }
 
-                    CollisionMesh? collision = null;
-                    if (_referenceMeshCache12 is not null)
-                    {
-                        _referenceMeshCache12.TryGetCollisionMesh(p.ModelPath!, out collision);
-                    }
+                    var resolution = _referenceMeshCache12?.ResolveCollisionMesh(
+                        p.ModelPath!, category) ?? CollisionMeshResolution.Unresolved;
 
                     var ddx = centerX - p.X;
                     var ddy = centerY - p.Y;
                     var distanceSquared = (ddx * ddx) + (ddy * ddy);
-                    if (collision is not null)
+                    if (resolution.Mesh is { } collision)
                     {
-                        if (!WalkCollisionFallbackPolicy.AllowsResolvedCollision(collision, category))
-                        {
-                            continue;
-                        }
-
                         TryAddWarmRaycastCandidate(p, collision, centerX, centerY, reach, into);
                         continue;
                     }
@@ -283,8 +277,7 @@ public sealed partial class WorldView3DControl
                     // path is remembered by the mesh cache so it cannot steal warmup slots forever.
                     var allowsBoundsFallback =
                         WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(p.ModelPath, category);
-                    var allowsWarmup = _referenceMeshCache12 is { } collisionCache &&
-                                       !collisionCache.IsCollisionKnownEmpty(p.ModelPath!);
+                    var allowsWarmup = _referenceMeshCache12 is not null && !resolution.IsResolved;
                     if (!allowsBoundsFallback && !allowsWarmup)
                     {
                         continue;
@@ -304,12 +297,15 @@ public sealed partial class WorldView3DControl
                     }
                     if (distanceSquared > coldRadius * coldRadius) continue;
 
-                    _coldGroundCandidates.Add(new ColdGroundCandidate(p));
+                    _coldGroundCandidates.Add(new ColdGroundCandidate(
+                        p,
+                        category,
+                        allowsBoundsFallback));
                     if (allowsWarmup)
                     {
                         _walkCollisionWarmupCandidates.Add(new CollisionReferenceCandidate(
                             p.ModelPath!, p.FormId, distanceSquared, Matrix4x4.Identity,
-                            candidateSourceOrder));
+                            candidateSourceOrder, category));
                     }
                 }
             }
@@ -338,19 +334,16 @@ public sealed partial class WorldView3DControl
         foreach (var cold in _coldGroundCandidates)
         {
             var p = cold.Placement;
-            CollisionMesh? collision = null;
-            _referenceMeshCache12?.TryGetCollisionMesh(p.ModelPath!, out collision);
-            var category = _data?.CategoryIndex.GetValueOrDefault(
-                p.BaseFormId, PlacedObjectCategory.Unknown) ?? PlacedObjectCategory.Unknown;
-            if (collision is not null &&
-                WalkCollisionFallbackPolicy.AllowsResolvedCollision(collision, category))
+            var resolution = _referenceMeshCache12?.ResolveCollisionMesh(
+                p.ModelPath!, cold.Category) ?? CollisionMeshResolution.Unresolved;
+            if (resolution.Mesh is { } collision)
             {
                 TryAddWarmRaycastCandidate(p, collision, centerX, centerY, reach, into);
                 continue;
             }
 
             if (!includeColdObnd ||
-                !WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(p.ModelPath, category) ||
+                !cold.AllowsBoundsFallback ||
                 p.Bounds is not { IsDegenerate: false })
             {
                 continue;
@@ -391,12 +384,15 @@ public sealed partial class WorldView3DControl
     }
 
     /// <summary>
-    ///     Resolves a model path to its cached walk-mode collision mesh for the debug overlay (null when
-    ///     not warm yet). Reads <see cref="_referenceMeshCache12" /> live because the overlay renderer is
-    ///     constructed before the reference pipeline.
+    ///     Resolves a model path to its cached walk-mode collision state for the debug overlay. Reads
+    ///     <see cref="_referenceMeshCache12" /> live because the overlay renderer is constructed before
+    ///     the reference pipeline.
     /// </summary>
-    private CollisionMesh? ResolveCollisionMesh(string modelPath)
-        => _referenceMeshCache12 is { } cache && cache.TryGetCollisionMesh(modelPath, out var mesh) ? mesh : null;
+    private CollisionMeshResolution ResolveCollisionMesh(
+        string modelPath,
+        PlacedObjectCategory category)
+        => _referenceMeshCache12?.ResolveCollisionMesh(modelPath, category) ??
+           CollisionMeshResolution.Unresolved;
 
     /// <summary>
     ///     Bounded collision-overlay cold path. The overlay calls this for at most two unique nearby
@@ -404,8 +400,12 @@ public sealed partial class WorldView3DControl
     ///     decrease-key decode queue and, when a decoded payload fits the remaining frame upload
     ///     budget, creates the collision mesh immediately as part of the normal upload.
     /// </summary>
-    private CollisionMesh? ResolveOrWarmCollisionMesh(string modelPath, float distanceSquared)
-        => _referenceMeshCache12?.GetOrWarmCollisionMesh(modelPath, distanceSquared);
+    private CollisionMeshResolution ResolveOrWarmCollisionMesh(
+        string modelPath,
+        PlacedObjectCategory category,
+        float distanceSquared)
+        => _referenceMeshCache12?.GetOrWarmCollisionMesh(modelPath, category, distanceSquared) ??
+           CollisionMeshResolution.Unresolved;
 
     /// <summary>
     ///     Walk-mode ceiling lookup for jumps: returns the world Z of the nearest placed-object surface

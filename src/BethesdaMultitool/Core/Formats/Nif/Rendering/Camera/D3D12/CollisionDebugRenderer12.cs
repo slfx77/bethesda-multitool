@@ -2,6 +2,7 @@
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
@@ -50,17 +51,18 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     private readonly List<global::BethesdaMultitool.WorldSpatialCell> _visibleCellScratch = [];
     private readonly List<CollisionReferenceCandidate> _candidateScratch = [];
     private readonly List<CollisionWireframeInstance> _instanceScratch = [];
-    private Func<string, CollisionMesh?>? _collisionResolver;
-    private Func<string, float, CollisionMesh?>? _collisionWarmup;
+    private Func<string, PlacedObjectCategory, CollisionMeshResolution>? _collisionResolver;
+    private Func<string, PlacedObjectCategory, float, CollisionMeshResolution>? _collisionWarmup;
     private IReadOnlyCollection<uint>? _xespDisabledRefs;
+    private IReadOnlyDictionary<uint, PlacedObjectCategory>? _categoryIndex;
     private bool _showDisabled;
     private bool _disposed;
 
     /// <summary>Spatial index for the loaded worldspace; set via <see cref="LoadData" />.</summary>
     public global::BethesdaMultitool.WorldSpatialIndex? SpatialIndex { get; private set; }
 
-    /// <summary>Resolves a model path to its cached walk-mode collision mesh (null when not warm).</summary>
-    public Func<string, CollisionMesh?>? CollisionResolver
+    /// <summary>Resolves a model/category pair to its tri-state walk-mode collision result.</summary>
+    public Func<string, PlacedObjectCategory, CollisionMeshResolution>? CollisionResolver
     {
         get => _collisionResolver;
         set
@@ -75,7 +77,7 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     ///     Offers a cold model path to the reference streaming cache at the supplied squared XY
     ///     distance. At most <see cref="MaxColdWarmupRequestsPerFrame" /> unique paths are offered.
     /// </summary>
-    public Func<string, float, CollisionMesh?>? CollisionWarmup
+    public Func<string, PlacedObjectCategory, float, CollisionMeshResolution>? CollisionWarmup
     {
         get => _collisionWarmup;
         set
@@ -215,10 +217,13 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     }
 
     /// <summary>Binds the loaded worldspace's spatial index (placed-ref source for the overlay).</summary>
-    public void LoadData(global::BethesdaMultitool.WorldSpatialIndex? spatialIndex)
+    public void LoadData(
+        global::BethesdaMultitool.WorldSpatialIndex? spatialIndex,
+        IReadOnlyDictionary<uint, PlacedObjectCategory>? categoryIndex)
     {
         _geometryCache.Invalidate();
         SpatialIndex = spatialIndex;
+        _categoryIndex = categoryIndex;
     }
 
     /// <summary>
@@ -262,8 +267,12 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
                 world.M43 -= renderOrigin.Z;
                 var dx = p.X - cylinder.Position.X;
                 var dy = p.Y - cylinder.Position.Y;
+                var category = _categoryIndex?.GetValueOrDefault(
+                    p.BaseFormId,
+                    PlacedObjectCategory.Unknown) ?? PlacedObjectCategory.Unknown;
                 _candidateScratch.Add(new CollisionReferenceCandidate(
-                    p.ModelPath!, p.FormId, dx * dx + dy * dy, world, candidateSourceOrder));
+                    p.ModelPath!, p.FormId, dx * dx + dy * dy, world, candidateSourceOrder,
+                    category));
             }
         }
 

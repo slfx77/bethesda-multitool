@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
@@ -12,7 +13,8 @@ internal readonly record struct CollisionReferenceCandidate(
     uint FormId,
     float DistanceSquared,
     Matrix4x4 World,
-    int SourceOrder);
+    int SourceOrder,
+    PlacedObjectCategory Category = PlacedObjectCategory.Unknown);
 
 internal readonly record struct CollisionReferencePriorityResult(
     int LineVertexCount,
@@ -40,7 +42,7 @@ internal sealed class CollisionReferencePriorityResolver
     /// </summary>
     public int WarmNearest(
         List<CollisionReferenceCandidate> candidates,
-        Func<string, float, CollisionMesh?> warmup,
+        Func<string, PlacedObjectCategory, float, CollisionMeshResolution> warmup,
         int maxWarmupRequests)
     {
         ArgumentNullException.ThrowIfNull(candidates);
@@ -83,7 +85,7 @@ internal sealed class CollisionReferencePriorityResolver
 
         foreach (var candidate in _warmupSelectionScratch)
         {
-            _ = warmup(candidate.ModelPath, candidate.DistanceSquared);
+            _ = warmup(candidate.ModelPath, candidate.Category, candidate.DistanceSquared);
         }
 
         return _warmupSelectionScratch.Count;
@@ -91,8 +93,8 @@ internal sealed class CollisionReferencePriorityResolver
 
     public CollisionReferencePriorityResult Resolve(
         List<CollisionReferenceCandidate> candidates,
-        Func<string, CollisionMesh?> resolver,
-        Func<string, float, CollisionMesh?>? warmup,
+        Func<string, PlacedObjectCategory, CollisionMeshResolution> resolver,
+        Func<string, PlacedObjectCategory, float, CollisionMeshResolution>? warmup,
         int maxWarmupRequests,
         int maxLineVertices,
         List<CollisionWireframeInstance> destination)
@@ -120,13 +122,17 @@ internal sealed class CollisionReferencePriorityResolver
         {
             if (lineVertexCount >= effectiveMaxLineVertices) break;
 
-            var mesh = resolver(candidate.ModelPath);
-            if (mesh is null && warmup is not null && warmupRequests < maxWarmupRequests &&
+            var resolution = resolver(candidate.ModelPath, candidate.Category);
+            if (!resolution.IsResolved && warmup is not null && warmupRequests < maxWarmupRequests &&
                 _warmupPathScratch.Add(candidate.ModelPath))
             {
                 warmupRequests++;
-                mesh = warmup(candidate.ModelPath, candidate.DistanceSquared);
+                resolution = warmup(
+                    candidate.ModelPath,
+                    candidate.Category,
+                    candidate.DistanceSquared);
             }
+            var mesh = resolution.Mesh;
             if (mesh is null) continue;
 
             var selectedLineVertices = CountValidLineVertices(

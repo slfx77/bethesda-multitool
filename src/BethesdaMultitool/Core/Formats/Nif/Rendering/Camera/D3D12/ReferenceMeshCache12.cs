@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Channels;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
@@ -90,11 +91,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // on the render thread inside UploadDecodedMesh and read on the render thread by the control's
     // ground-snap, so it shares the LruCache single-threaded contract with _meshLru. Positions-only is
     // a fraction of the GPU footprint, so a large byte budget keeps far more meshes warm than residency.
-    private readonly LruCache<string, CollisionMesh> _collisionLru;
-    // Immutable model paths whose decoded payload produced no authoritative or safe fallback soup.
-    // Render-thread only, like _collisionLru. This prevents walk warmup from repeatedly spending its
-    // bounded per-frame slots on permanent-null effect cards.
-    private readonly HashSet<string> _collisionKnownEmpty = new(StringComparer.OrdinalIgnoreCase);
+    private readonly LruCache<string, CollisionCacheEntry> _collisionLru;
     private readonly ReferenceDecodedMeshDiskCache12? _persistentDecodedCache;
     // Disk-persist handoff: decode workers enqueue (path, mesh) and free their slot immediately;
     // payload serialization + the atomic file write run on the single background writer below
@@ -177,7 +174,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 sizeOf: static (_, value) => value.ByteSize,
                 comparer: StringComparer.OrdinalIgnoreCase)
             .RegisterWith(ResourceRegistry.Instance, "reference-decoded");
-        _collisionLru = new LruCache<string, CollisionMesh>(
+        _collisionLru = new LruCache<string, CollisionCacheEntry>(
                 "ReferenceCollisionMeshCache",
                 ResourceCategory.CpuCache,
                 maxBytes: CollisionMeshCacheByteBudget,
@@ -193,23 +190,23 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     ///     cold miss is expected for never-streamed or recently-evicted meshes; the caller falls back
     ///     to the OBND box for that frame.
     /// </summary>
-    public bool TryGetCollisionMesh(string modelPath, out CollisionMesh? collision)
+    public CollisionMeshResolution ResolveCollisionMesh(
+        string modelPath,
+        PlacedObjectCategory category = PlacedObjectCategory.Unknown)
     {
-        collision = null;
-        if (_disposed) return false;
-        if (_collisionLru.TryGet(ReferenceMeshDecoder12.NormalizeModelPath(modelPath), out var mesh))
+        if (_disposed) return CollisionMeshResolution.Unresolved;
+
+        var normalizedPath = ReferenceMeshDecoder12.NormalizeModelPath(modelPath);
+        if (_collisionLru.TryGet(normalizedPath, out var entry))
         {
-            collision = mesh;
-            return true;
+            var result = WalkCollisionFallbackPolicy.IsEffectModel(normalizedPath, category)
+                ? entry.Effects
+                : entry.Ordinary;
+            return CollisionMeshResolution.From(result);
         }
 
-        return false;
+        return CollisionMeshResolution.Unresolved;
     }
-
-    /// <summary>True after this immutable model decoded successfully but produced no walk collision.</summary>
-    public bool IsCollisionKnownEmpty(string modelPath) =>
-        !_disposed && _collisionKnownEmpty.Contains(
-            ReferenceMeshDecoder12.NormalizeModelPath(modelPath));
 
     /// <summary>
     ///     Collision-overlay cold path. Promotes an already-queued plain-model decode to the supplied
@@ -217,13 +214,15 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     ///     gives one decoded mesh a chance to upload within the frame's existing byte/time budgets.
     ///     The caller bounds how many unique paths it offers per frame.
     /// </summary>
-    public CollisionMesh? GetOrWarmCollisionMesh(string modelPath, float priority)
+    public CollisionMeshResolution GetOrWarmCollisionMesh(
+        string modelPath,
+        PlacedObjectCategory category,
+        float priority)
     {
-        if (TryGetCollisionMesh(modelPath, out var collision)) return collision;
-        if (_disposed) return null;
+        var resolution = ResolveCollisionMesh(modelPath, category);
+        if (resolution.IsResolved || _disposed) return resolution;
 
         var normalizedPath = ReferenceMeshDecoder12.NormalizeModelPath(modelPath);
-        if (_collisionKnownEmpty.Contains(normalizedPath)) return null;
         if (_meshLru.TryPeek(normalizedPath, out var node) && node.DecodeQueued)
         {
             // GetOrUpload normally starts the queue before re-offering an existing node's latest
@@ -234,7 +233,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
         var uploadBudget = 1;
         _ = GetOrUpload(normalizedPath, ref uploadBudget, priority);
-        return TryGetCollisionMesh(normalizedPath, out collision) ? collision : null;
+        return ResolveCollisionMesh(normalizedPath, category);
     }
 
     public int Capacity { get; }
@@ -459,7 +458,6 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
 
         // Render-thread cache (no onEvicted); the host has already idled the GPU + stopped the loop.
-        _collisionKnownEmpty.Clear();
         _collisionLru.Dispose();
 
         // Frees the arena's UPLOAD blocks. The host calls WaitForGpuIdle before disposing this cache,
@@ -850,11 +848,12 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 totalIndexCount += sub.Indices.Length;
             }
         }
-        if (totalVertexCount == 0 || totalIndexCount == 0) return null;
-
         // Capture walk-mode collision geometry from the solid submeshes before they are packed for the
-        // GPU. Free here (positions+indices already in hand) and independent of GPU upload success.
+        // GPU. This must precede the empty-render-payload return: collision-only Havok NIFs still need
+        // their authored soup, while a decoded model with neither render nor collision geometry needs
+        // an authoritative resolved-null entry so cold warmup does not retry it forever.
         StoreCollisionMesh(modelPath, decoded);
+        if (totalVertexCount == 0 || totalIndexCount == 0) return null;
 
         var vertices = new GpuMeshUploader.GpuVertex[totalVertexCount];
         var indices = new ushort[totalIndexCount];
@@ -1219,16 +1218,15 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     private void StoreCollisionMesh(string modelPath, DecodedNifMesh12 decoded)
     {
         var normalizedPath = ReferenceMeshDecoder12.NormalizeModelPath(modelPath);
-        var collision = BuildCollisionMesh(normalizedPath, decoded);
-        if (collision is null)
-        {
-            _collisionKnownEmpty.Add(normalizedPath);
-            return;
-        }
+        var effects = BuildCollisionMesh(normalizedPath, PlacedObjectCategory.Effects, decoded);
+        var ordinary = effects.Source == CollisionMeshSource.AuthoredHavok
+            ? effects
+            : BuildCollisionMesh(normalizedPath, PlacedObjectCategory.Unknown, decoded);
 
-        _collisionKnownEmpty.Remove(normalizedPath);
-        // Set evicts over-budget tail entries (plain drop — collision payloads are GC-reclaimed).
-        _collisionLru.Set(normalizedPath, collision);
+        // Resolved-null results live in this same byte-bounded LRU. They are authoritative negative
+        // cache entries, not an unbounded side set, and prevent permanent-null models from stealing
+        // the walk/overlay cold-warmup budget every frame.
+        _collisionLru.Set(normalizedPath, new CollisionCacheEntry(ordinary, effects));
     }
 
     /// <summary>
@@ -1238,39 +1236,43 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     ///     matches <c>RenderableReference.WorldMatrix</c> (both come from the <c>treatRootsAsIdentity</c>
     ///     decode). Returns <c>null</c> when nothing solid remains.
     /// </summary>
-    private static CollisionMesh? BuildCollisionMesh(string modelPath, DecodedNifMesh12 decoded)
+    private static CollisionBuildResult BuildCollisionMesh(
+        string modelPath,
+        PlacedObjectCategory category,
+        DecodedNifMesh12 decoded)
     {
-        // Prefer the NIF's Havok (bhk*) collision mesh when present — it's the gapless physics surface,
-        // so walk mode rides plank bridges / catwalks instead of falling through the visual-mesh gaps.
-        if (decoded.CollisionTriangles is { Length: >= 3 } havokTris &&
-            decoded.CollisionPositions is { Length: > 0 } havokPos)
+        return CollisionMeshBuilder.Build(
+            modelPath,
+            category,
+            decoded.CollisionPositions,
+            decoded.CollisionTriangles,
+            BuildVisualFallback);
+
+        CollisionMesh? BuildVisualFallback()
         {
-            return new CollisionMesh(havokPos, havokTris, CollisionMeshSource.AuthoredHavok);
+            var positions = new List<Vector3>();
+            var triangles = new List<int>();
+            foreach (var sub in decoded.Submeshes)
+            {
+                if (sub.AlphaBlend || sub.IsEmissive) continue;
+                if (string.Equals(
+                        sub.DiffuseTexturePath,
+                        RenderableSubmesh.WaterSurfaceTexturePath,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                if (sub.Vertices.Length == 0 || sub.Indices.Length == 0) continue;
+
+                var baseIndex = positions.Count;
+                foreach (var v in sub.Vertices) positions.Add(v.Position);
+                foreach (var idx in sub.Indices) triangles.Add(baseIndex + idx);
+            }
+
+            return triangles.Count < 3
+                ? null
+                : new CollisionMesh(positions.ToArray(), triangles.ToArray());
         }
-
-        // Never infer solidity from an effect's visual geometry. Some effects-folder assets do
-        // carry real bhk collision, which is why this gate deliberately follows the Havok branch.
-        if (!WalkCollisionFallbackPolicy.AllowsVisualMeshFallback(modelPath)) return null;
-
-        var positions = new List<Vector3>();
-        var triangles = new List<int>();
-        foreach (var sub in decoded.Submeshes)
-        {
-            if (sub.AlphaBlend || sub.IsEmissive) continue;
-            if (string.Equals(sub.DiffuseTexturePath, RenderableSubmesh.WaterSurfaceTexturePath, StringComparison.Ordinal))
-                continue;
-            if (sub.Vertices.Length == 0 || sub.Indices.Length == 0) continue;
-
-            var baseIndex = positions.Count;
-            foreach (var v in sub.Vertices) positions.Add(v.Position);
-            foreach (var idx in sub.Indices) triangles.Add(baseIndex + idx);
-        }
-
-        if (triangles.Count < 3) return null;
-        return new CollisionMesh(
-            positions.ToArray(),
-            triangles.ToArray(),
-            CollisionMeshSource.VisualFallback);
     }
 
     private static Vector4 BuildAlphaState(DecodedSubmesh12 sub)
@@ -1353,6 +1355,17 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
 
         return Math.Clamp(value, min, max);
+    }
+
+    private readonly record struct CollisionCacheEntry(
+        CollisionBuildResult Ordinary,
+        CollisionBuildResult Effects)
+    {
+        // Even resolved-null entries carry dictionary/list/key overhead. Charging a non-zero floor
+        // keeps the negative cache genuinely bounded by CollisionMeshCacheByteBudget.
+        public long ByteSize => Math.Max(
+            128L,
+            (Ordinary.Mesh ?? Effects.Mesh)?.ByteSize ?? 0L);
     }
 
     private sealed class Node(

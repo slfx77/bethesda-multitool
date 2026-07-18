@@ -11,8 +11,7 @@ internal static class WalkCollisionFallbackPolicy
     public static bool AllowsObjectBoundsFallback(
         string? modelPath, PlacedObjectCategory category = PlacedObjectCategory.Unknown)
     {
-        return category != PlacedObjectCategory.Effects &&
-               AllowsVisualMeshFallback(modelPath);
+        return !IsEffectModel(modelPath, category);
     }
 
     /// <summary>
@@ -20,8 +19,20 @@ internal static class WalkCollisionFallbackPolicy
     ///     Authored Havok is checked before this policy and remains authoritative.
     /// </summary>
     public static bool AllowsVisualMeshFallback(string? modelPath)
+        => !IsEffectModel(modelPath);
+
+    /// <summary>
+    ///     True for an explicit effect-category placement, a missing model path, or a model stored
+    ///     beneath the effects folder. Missing paths cannot provide a safe speculative fallback.
+    /// </summary>
+    public static bool IsEffectModel(
+        string? modelPath,
+        PlacedObjectCategory category = PlacedObjectCategory.Unknown)
     {
-        if (string.IsNullOrWhiteSpace(modelPath)) return false;
+        if (category == PlacedObjectCategory.Effects || string.IsNullOrWhiteSpace(modelPath))
+        {
+            return true;
+        }
 
         var normalized = modelPath.Replace('/', '\\').TrimStart('\\');
         if (normalized.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase))
@@ -29,13 +40,6 @@ internal static class WalkCollisionFallbackPolicy
             normalized = normalized[7..];
         }
 
-        return !normalized.StartsWith("effects\\", StringComparison.OrdinalIgnoreCase);
+        return normalized.StartsWith("effects\\", StringComparison.OrdinalIgnoreCase);
     }
-
-    /// <summary>Effect-category placements accept authored physics, never inferred visual soup.</summary>
-    public static bool AllowsResolvedCollision(
-        CollisionMesh collision,
-        PlacedObjectCategory category) =>
-        category != PlacedObjectCategory.Effects ||
-        collision.Source == CollisionMeshSource.AuthoredHavok;
 }

@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using Xunit;
 
@@ -22,10 +23,10 @@ public sealed class CollisionReferencePriorityResolverTests
 
         var result = resolver.Resolve(
             candidates,
-            path =>
+            (path, _) =>
             {
                 calls.Add(path);
-                return mesh;
+                return Resolved(mesh);
             },
             warmup: null,
             maxWarmupRequests: 0,
@@ -62,9 +63,9 @@ public sealed class CollisionReferencePriorityResolverTests
         ];
         var selected = new List<CollisionWireframeInstance>();
 
-        resolver.Resolve(candidates, path => meshes[path], null, 0, 24, selected);
+        resolver.Resolve(candidates, (path, _) => Resolved(meshes[path]), null, 0, 24, selected);
         var firstOrder = selected.Select(static item => (item.Mesh, item.World.Translation.X)).ToArray();
-        resolver.Resolve(candidates, path => meshes[path], null, 0, 24, selected);
+        resolver.Resolve(candidates, (path, _) => Resolved(meshes[path]), null, 0, 24, selected);
 
         Assert.Equal([(meshA, 1f), (meshA, 3f), (meshB, 0f), (meshZ, 0f)], firstOrder);
         Assert.Equal(firstOrder, selected.Select(static item => (item.Mesh, item.World.Translation.X)));
@@ -87,11 +88,13 @@ public sealed class CollisionReferencePriorityResolverTests
 
         var result = resolver.Resolve(
             candidates,
-            static _ => null,
-            (path, priority) =>
+            static (_, _) => CollisionMeshResolution.Unresolved,
+            (path, _, priority) =>
             {
                 warmups.Add((path, priority));
-                return path.Equals("second.nif", StringComparison.Ordinal) ? warmedMesh : null;
+                return path.Equals("second.nif", StringComparison.Ordinal)
+                    ? Resolved(warmedMesh)
+                    : CollisionMeshResolution.Unresolved;
             },
             maxWarmupRequests: 2,
             maxLineVertices: 60,
@@ -118,15 +121,87 @@ public sealed class CollisionReferencePriorityResolverTests
 
         var requests = resolver.WarmNearest(
             candidates,
-            (path, priority) =>
+            (path, _, priority) =>
             {
                 warmups.Add((path, priority));
-                return null;
+                return CollisionMeshResolution.Unresolved;
             },
             maxWarmupRequests: 2);
 
         Assert.Equal(2, requests);
         Assert.Equal([("shared.nif", 1f), ("second.nif", 9f)], warmups);
+    }
+
+    [Fact]
+    public void Resolve_KnownNullSkipsWarmupWithoutConsumingItsBudget()
+    {
+        var resolver = new CollisionReferencePriorityResolver();
+        var warmedMesh = TriangleMesh();
+        var warmups = new List<string>();
+        List<CollisionReferenceCandidate> candidates =
+        [
+            Candidate("known-null.nif", formId: 1, distanceSquared: 1, sourceOrder: 0),
+            Candidate("cold.nif", formId: 2, distanceSquared: 4, sourceOrder: 1),
+        ];
+        var selected = new List<CollisionWireframeInstance>();
+
+        var result = resolver.Resolve(
+            candidates,
+            (path, _) => path == "known-null.nif"
+                ? CollisionMeshResolution.From(CollisionBuildResult.None)
+                : CollisionMeshResolution.Unresolved,
+            (path, _, _) =>
+            {
+                warmups.Add(path);
+                return Resolved(warmedMesh);
+            },
+            maxWarmupRequests: 1,
+            maxLineVertices: 6,
+            selected);
+
+        Assert.Equal(["cold.nif"], warmups);
+        Assert.Equal(1, result.WarmupRequests);
+        Assert.Single(selected);
+        Assert.Same(warmedMesh, selected[0].Mesh);
+    }
+
+    [Fact]
+    public void Resolve_PreservesCandidateCategoryThroughResolverAndWarmup()
+    {
+        var resolver = new CollisionReferencePriorityResolver();
+        var mesh = TriangleMesh();
+        var resolvedCategories = new List<PlacedObjectCategory>();
+        var warmedCategories = new List<PlacedObjectCategory>();
+        List<CollisionReferenceCandidate> candidates =
+        [
+            Candidate(
+                "category-effect.nif",
+                formId: 1,
+                distanceSquared: 1,
+                sourceOrder: 0,
+                category: PlacedObjectCategory.Effects),
+        ];
+        var selected = new List<CollisionWireframeInstance>();
+
+        resolver.Resolve(
+            candidates,
+            (_, category) =>
+            {
+                resolvedCategories.Add(category);
+                return CollisionMeshResolution.Unresolved;
+            },
+            (_, category, _) =>
+            {
+                warmedCategories.Add(category);
+                return Resolved(mesh, CollisionMeshSource.AuthoredHavok);
+            },
+            maxWarmupRequests: 1,
+            maxLineVertices: 6,
+            selected);
+
+        Assert.Equal([PlacedObjectCategory.Effects], resolvedCategories);
+        Assert.Equal([PlacedObjectCategory.Effects], warmedCategories);
+        Assert.Single(selected);
     }
 
     [Fact]
@@ -147,7 +222,13 @@ public sealed class CollisionReferencePriorityResolverTests
         ];
         var selected = new List<CollisionWireframeInstance>();
 
-        var result = resolver.Resolve(candidates, path => meshes[path], null, 0, 6, selected);
+        var result = resolver.Resolve(
+            candidates,
+            (path, _) => Resolved(meshes[path]),
+            null,
+            0,
+            6,
+            selected);
 
         Assert.Single(selected);
         Assert.Same(valid, selected[0].Mesh);
@@ -159,11 +240,23 @@ public sealed class CollisionReferencePriorityResolverTests
         uint formId,
         float distanceSquared,
         int sourceOrder,
-        float worldX = 0)
-        => new(path, formId, distanceSquared, Matrix4x4.CreateTranslation(worldX, 0, 0), sourceOrder);
+        float worldX = 0,
+        PlacedObjectCategory category = PlacedObjectCategory.Unknown)
+        => new(
+            path,
+            formId,
+            distanceSquared,
+            Matrix4x4.CreateTranslation(worldX, 0, 0),
+            sourceOrder,
+            category);
 
     private static CollisionMesh TriangleMesh()
         => new(
             [new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0, 1, 0)],
             [0, 1, 2]);
+
+    private static CollisionMeshResolution Resolved(
+        CollisionMesh mesh,
+        CollisionMeshSource source = CollisionMeshSource.VisualFallback)
+        => CollisionMeshResolution.From(new CollisionBuildResult(mesh, source));
 }

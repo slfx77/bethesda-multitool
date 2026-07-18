@@ -312,9 +312,10 @@ public sealed partial class WorldView3DControl
                 // world ray into the same mesh-local frame and let CollisionMesh's local AABB reject
                 // cheaply before its exact triangle loop. A warm triangle miss is authoritative: do
                 // not resurrect it through the looser OBND/sphere fallback.
-                if (_referenceMeshCache12 is not null &&
-                    _referenceMeshCache12.TryGetCollisionMesh(r.ModelPath, out var collision) &&
-                    collision is not null &&
+                var collisionResolution = _referenceMeshCache12?.ResolveCollisionMesh(
+                    r.ModelPath,
+                    r.Category) ?? CollisionMeshResolution.Unresolved;
+                if (collisionResolution.Mesh is { } collision &&
                     Matrix4x4.Invert(r.WorldMatrix, out var inverseWorld))
                 {
                     var localOrigin = Vector3.Transform(nearWorld, inverseWorld);

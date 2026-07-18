@@ -1,12 +1,77 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
-internal enum CollisionMeshSource
+internal enum CollisionMeshSource : byte
 {
-    Unknown = 0,
+    None = 0,
     AuthoredHavok = 1,
     VisualFallback = 2
+}
+
+/// <summary>
+///     The immutable result of building collision for one model/category policy. A null mesh with
+///     <see cref="CollisionMeshSource.None" /> is a successful, authoritative "no collision" result,
+///     not a cache miss.
+/// </summary>
+internal readonly record struct CollisionBuildResult(
+    CollisionMesh? Mesh,
+    CollisionMeshSource Source)
+{
+    public static CollisionBuildResult None => new(null, CollisionMeshSource.None);
+}
+
+/// <summary>
+///     Tri-state cache lookup: unresolved, resolved with collision, or resolved with no collision.
+///     Keeping resolved-null distinct prevents permanent-null effects from consuming cold warmup
+///     slots every frame.
+/// </summary>
+internal readonly record struct CollisionMeshResolution(
+    bool IsResolved,
+    CollisionMesh? Mesh,
+    CollisionMeshSource Source)
+{
+    public static CollisionMeshResolution Unresolved =>
+        new(false, null, CollisionMeshSource.None);
+
+    public static CollisionMeshResolution From(CollisionBuildResult result) =>
+        new(true, result.Mesh, result.Source);
+}
+
+/// <summary>
+///     Source-priority gate shared by the D3D12 cache and platform-neutral tests. Authored Havok is
+///     always authoritative, including for effect paths/categories. Visual geometry is synthesized
+///     only after the effect policy has rejected presentation-only cards and volumes.
+/// </summary>
+internal static class CollisionMeshBuilder
+{
+    public static CollisionBuildResult Build(
+        string? modelPath,
+        PlacedObjectCategory category,
+        Vector3[]? authoredPositions,
+        int[]? authoredTriangles,
+        Func<CollisionMesh?> visualFallbackFactory)
+    {
+        ArgumentNullException.ThrowIfNull(visualFallbackFactory);
+
+        if (authoredTriangles is { Length: >= 3 } && authoredPositions is { Length: > 0 })
+        {
+            return new CollisionBuildResult(
+                new CollisionMesh(authoredPositions, authoredTriangles),
+                CollisionMeshSource.AuthoredHavok);
+        }
+
+        if (WalkCollisionFallbackPolicy.IsEffectModel(modelPath, category))
+        {
+            return CollisionBuildResult.None;
+        }
+
+        var visual = visualFallbackFactory();
+        return visual is null
+            ? CollisionBuildResult.None
+            : new CollisionBuildResult(visual, CollisionMeshSource.VisualFallback);
+    }
 }
 
 /// <summary>
@@ -37,17 +102,10 @@ internal sealed class CollisionMesh
     /// <summary>Approximate retained-byte size for the byte-budgeted LRU.</summary>
     public long ByteSize { get; }
 
-    /// <summary>Whether the soup came from authored bhk physics or synthesized visual geometry.</summary>
-    public CollisionMeshSource Source { get; }
-
-    public CollisionMesh(
-        Vector3[] positions,
-        int[] triangles,
-        CollisionMeshSource source = CollisionMeshSource.Unknown)
+    public CollisionMesh(Vector3[] positions, int[] triangles)
     {
         Positions = positions;
         Triangles = triangles;
-        Source = source;
 
         var min = new Vector3(float.MaxValue);
         var max = new Vector3(float.MinValue);

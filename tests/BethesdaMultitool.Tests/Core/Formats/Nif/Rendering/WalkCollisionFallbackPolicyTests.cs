@@ -38,23 +38,72 @@ public sealed class WalkCollisionFallbackPolicyTests
     {
         var positions = new[] { Vector3.Zero, Vector3.UnitX, Vector3.UnitY };
         int[] triangles = [0, 1, 2];
-        var authored = new CollisionMesh(
-            positions,
-            triangles,
-            CollisionMeshSource.AuthoredHavok);
-        var inferred = new CollisionMesh(
-            positions,
-            triangles,
-            CollisionMeshSource.VisualFallback);
+        var visualFactoryCalled = false;
 
-        Assert.True(WalkCollisionFallbackPolicy.AllowsResolvedCollision(
-            authored,
-            PlacedObjectCategory.Effects));
-        Assert.False(WalkCollisionFallbackPolicy.AllowsResolvedCollision(
-            inferred,
-            PlacedObjectCategory.Effects));
-        Assert.True(WalkCollisionFallbackPolicy.AllowsResolvedCollision(
-            inferred,
-            PlacedObjectCategory.Landscape));
+        var result = CollisionMeshBuilder.Build(
+            @"effects\box03.nif",
+            PlacedObjectCategory.Effects,
+            positions,
+            triangles,
+            () =>
+            {
+                visualFactoryCalled = true;
+                return new CollisionMesh(positions, triangles);
+            });
+
+        Assert.False(visualFactoryCalled);
+        Assert.NotNull(result.Mesh);
+        Assert.Equal(CollisionMeshSource.AuthoredHavok, result.Source);
+    }
+
+    [Theory]
+    [InlineData(@"effects\NV\NVLimestoneDustStormHalfViz.NIF", false)]
+    [InlineData(@"architecture\some-activator.nif", true)]
+    public void EffectWithoutAuthoredHavok_ResolvesNoneWithoutBuildingVisualFallback(
+        string path,
+        bool explicitEffectCategory)
+    {
+        var visualFactoryCalled = false;
+        var category = explicitEffectCategory
+            ? PlacedObjectCategory.Effects
+            : PlacedObjectCategory.Unknown;
+
+        var result = CollisionMeshBuilder.Build(
+            path,
+            category,
+            authoredPositions: null,
+            authoredTriangles: null,
+            () =>
+            {
+                visualFactoryCalled = true;
+                return new CollisionMesh(
+                    [Vector3.Zero, Vector3.UnitX, Vector3.UnitY],
+                    [0, 1, 2]);
+            });
+
+        Assert.False(visualFactoryCalled);
+        Assert.Null(result.Mesh);
+        Assert.Equal(CollisionMeshSource.None, result.Source);
+        var resolution = CollisionMeshResolution.From(result);
+        Assert.True(resolution.IsResolved);
+        Assert.Null(resolution.Mesh);
+    }
+
+    [Fact]
+    public void OrdinaryModelWithoutHavok_BuildsVisualFallback()
+    {
+        var visual = new CollisionMesh(
+            [Vector3.Zero, Vector3.UnitX, Vector3.UnitY],
+            [0, 1, 2]);
+
+        var result = CollisionMeshBuilder.Build(
+            @"landscape\rocks\cliffs\CliffVerti_C2.NIF",
+            PlacedObjectCategory.Landscape,
+            authoredPositions: null,
+            authoredTriangles: null,
+            () => visual);
+
+        Assert.Same(visual, result.Mesh);
+        Assert.Equal(CollisionMeshSource.VisualFallback, result.Source);
     }
 }

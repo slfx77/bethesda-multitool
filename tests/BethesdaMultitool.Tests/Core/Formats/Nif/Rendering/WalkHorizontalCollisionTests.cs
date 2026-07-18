@@ -210,13 +210,15 @@ public sealed class WalkHorizontalCollisionTests
 
         Assert.Equal(16, extracted.Positions.Length);
         Assert.Equal(51, extracted.Triangles.Length);
-        var collision = new CollisionMesh(
+        var collision = CollisionMeshBuilder.Build(
+            path,
+            PlacedObjectCategory.Effects,
             extracted.Positions,
             extracted.Triangles,
-            CollisionMeshSource.AuthoredHavok);
-        Assert.True(WalkCollisionFallbackPolicy.AllowsResolvedCollision(
-            collision,
-            PlacedObjectCategory.Effects));
+            static () => throw new InvalidOperationException(
+                "Authored Havok must win before the visual fallback."));
+        Assert.NotNull(collision.Mesh);
+        Assert.Equal(CollisionMeshSource.AuthoredHavok, collision.Source);
     }
 
     private static WalkCollisionInstance BuildVerticalWall(float topZ = 200f)
