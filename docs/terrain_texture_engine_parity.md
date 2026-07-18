@@ -385,11 +385,24 @@ so the Xbox PDB enum names can be used to label the PC records.
 - The Xbox geometry-bound influence equation is recovered. For local lights,
   `delta = NiLight.worldTranslate + globalSceneOffset - bound.center`,
   `surfaceDistance = length(delta) - bound.radius`, and the light is within the
-  bound when `surfaceDistance < NiLight+0x10C`; the corresponding luminance
-  score is `surfaceDistance / (NiLight+0x10C)`. The field at `+0x10C` is kept
-  deliberately unnamed: its runtime writer/meaning has not yet been proven,
-  even though both recovered functions consume it exactly this way. All
-  recovered association callers use bound scale 1.
+  bound when `surfaceDistance < effectiveRadius`; the corresponding luminance
+  score is `surfaceDistance / effectiveRadius`. The PDB declares
+  `NiLight+0x10C` as `m_kSpec.r`, but FNV intentionally repurposes all three
+  specular components: `TESObjectLIGH::GenDynamic` (Xbox VA `0x8234C288`)
+  writes the same effective radius to `+0x10C/+0x110/+0x114`.
+  `TESObjectREFR::GetRadius` (VA `0x8239B698`) supplies base LIGH DATA radius
+  plus signed REFR ExtraRadius/XRDS, without multiplying XSCL. All recovered
+  association callers use bound scale 1 and consume the original full float;
+  only the separate `SetLightAttenuation(NiLight*, unsigned int)` copy is
+  truncated to an integer.
+- A full retail `FalloutNV.esm` inventory found 8,376 LIGH REFRs; 6,802 carry
+  XRDS, including 2,259 negative corrections. All negative corrections still
+  produce positive effective radii. REFR `0x0011A1F9`
+  `VFSSouthGateFloodlightREF` is the scale-sensitive gate: base radius 1500,
+  XRDS -500, XSCL 0.84, retail effective radius 1000. The viewer now preserves
+  signed XRDS in parsed, descriptor, direct-world, and runtime/DMP paths and
+  applies the recovered FNV rule; other games retain their existing radius
+  behavior until independently recovered.
 - Candidate collection applies that bound predicate without a pre-attachment
   cap. Its preliminary qsort is descending by cached score, but each lighting
   property's final `ResortLights` pass re-evaluates the submitted geometry
@@ -399,11 +412,21 @@ so the Xbox PDB enum names can be used to label the PC records.
   `0xFF`, NiLight flag bit 0 clear, and `bCastShadow != 1`.
   `RenderPass::SetLights` snapshots the resulting pointers in argument order;
   the two/three-light cap belongs to later pass construction, not association.
+- The ID220/ID143 prepared point-light color is also recovered. Starting from
+  `signedRgb = (Negative ? -1 : 1) * DATA.color / 255`, retail uses
+  `d = HDR ? DATA.fade : min(DATA.fade, 1)` (an upper clamp only), then computes
+  `rgb = signedRgb * d * property.fForcedDarkness * light.fLODDimmer`. A point
+  light is hard-replaced with black whenever `fForcedDarkness < 1`. Output W is
+  the separate `fShadowLODDimmer` and does not scale RGB. Sunlight, interior,
+  minimum/separate ambient, skin, and material modifiers do not enter this
+  local-point RGB path. The CPU oracle pins negative Fade, Negative-light sign,
+  HDR/non-HDR, forced-darkness, and both LOD channels without claiming that the
+  viewer can yet supply the live property/light values.
 - `FnvRetailLightAssociationOracle` now pins the exact equation, strict boundary,
   stable final order, no-cap behavior, and active filter as a CPU-only oracle.
   `RuntimeSupported` remains false: the viewer still lacks the retail candidate
-  sources, the `NiLight+0x10C` writer/semantic, and proven world-light,
-  scene-offset, and geometry-bound inputs needed to reproduce membership.
+  sources and proven world-light, scene-offset, and geometry-bound inputs needed
+  to reproduce membership.
 - Decoder/cache v63 now carries `SourceBlockIndex` through to the CPU-side
   cached submesh. A separate telemetry-only association contract keys
   `(geometry REFR FormID, source-shape block index)` and structurally separates
@@ -411,6 +434,37 @@ so the Xbox PDB enum names can be used to label the PC records.
   positive list length without truncation, cannot drive rendering, and has no
   production consumer. The camera-nearest frame-global viewer list is expressly
   not evidence for this contract.
+
+### Authored Enable State and Effect-Collision Boundaries
+
+- Placed enable state is per REFR. Main-record flag `0x00000800` supplies the
+  placement's own Initially Disabled state; `XESP` supplies an enable-parent
+  REFR and bit 0 requests the opposite parent state. Resolution spans the full
+  loaded cell set, applies every inverse edge, and uses an actual visited set so
+  malformed self/multi-node loops fail disabled without the former depth-16
+  parity artifact. The selected-reference inspector's session-only
+  `Authored / On / Off` override affects rendering, picking, walk collision, and
+  the collision overlay. It does not simulate later quest/script state changes.
+- The renderable Hoover Dam gate is REFR `0x0015E4A5` in `HooverDamExtMid`:
+  MSTT `FXFireMed01`, model `Effects\Ambient\FXFireMed01.NIF`, normally linked
+  to authored-disabled `VHDBattleEffectsMarker` `0x0015D98C`. Authored state
+  hides it, `On` reveals the drawable reference, and `Off` suppresses it. The
+  older `0x0017A277` example was only a SOUN reference with no `MODL` and is not
+  used as renderability evidence.
+- Collision lookup is tri-state—unresolved, resolved mesh, or authoritative
+  resolved-none—and its negative entries live in the existing byte-bounded LRU.
+  Authored Havok always wins, including for an Effects-category placement or an
+  `effects\...` path. Only synthesized visual-triangle and OBND fallbacks are
+  suppressed for effects. A cold effect may therefore decode once to discover
+  real Havok; a decoded visual-only effect does not consume the warmup budget on
+  later frames. The ordinary/effects admission results are stored separately
+  per normalized model path so one placement category cannot poison another.
+- Retail collision fixtures pin both sides: `NVLimestoneDustStormHalfViz.NIF`
+  and `IndFXLightRaysRight01.NIF` contain no authored Havok and remain
+  non-solid, while `effects\box03.nif` retains its authored 16-vertex,
+  17-triangle soup. `CliffVerti_C2.NIF` remains warmup-eligible despite its
+  placements' degenerate OBND and retains its 819-vertex, 1,460-triangle Havok
+  soup.
 
 ### Classic PP-Lighting Environment Mapping
 
@@ -557,19 +611,22 @@ so the Xbox PDB enum names can be used to label the PC records.
 - The fixed landscape stage resources at `0x832B3774`, `0x832B377C`, and
   `0x832B3780` still need identity tracing.
 - FNV active local-light runtime routing remains open even though the ID220/143
-  CPU equations, PC attenuation source table, bound-influence equation, and
-  property-side sort/traversal order above are recovered. The zero-light gate currently sees the
+  CPU equations, PC attenuation source table, bound-influence equation,
+  property-side sort/traversal order, effective radius, and prepared-color
+  equation above are recovered. The zero-light gate currently sees the
   frame-global uploaded placed-light count because the viewer does not yet
   reconstruct each property's retail candidate set or provide the proven
-  `NiLight+0x10C`, world-light, scene-offset, and geometry-bound inputs needed
-  to evaluate its influence membership. Consequently any visible uploaded local light forces
+  world-light, scene-offset, and geometry-bound inputs needed to evaluate its
+  influence membership. Consequently any visible uploaded local light forces
   every classifier candidate to fail closed with
   `per-geometry-local-light-selection-unrecovered`, including geometry not
   associated with that light; this is a conservative false negative. Recover
-  those association inputs, prepared local color, batch splitting, and the final
+  those association inputs, the per-geometry `fForcedDarkness` value, current
+  `ShadowSceneLight.fLODDimmer`/writer semantics, batch splitting, and the final
   sampler policy before enabling positive local-light routes. The stable
-  source-shape identity and tri-state observation model are groundwork only;
-  neither is connected to production routing.
+  source-shape identity, tri-state observation model, association oracle, and
+  prepared-color oracle are groundwork only; none is connected to production
+  routing.
   Projected-shadow and per-vertex-fog permutations also remain deliberately
   fallback-only.
 - Remaining terrain vertex-color variants, detail-map math, noise contribution,
