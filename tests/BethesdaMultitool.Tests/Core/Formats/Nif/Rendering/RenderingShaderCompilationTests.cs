@@ -81,6 +81,7 @@ public sealed class RenderingShaderCompilationTests
             ("tonemap.frag.hlsl", "mainAdapt", "ps_5_1"),
             ("bloom.frag.hlsl", "mainDownsample16", "ps_5_1"),
             ("bloom.frag.hlsl", "main", "ps_5_1"),
+            ("bloom.frag.hlsl", "mainBlur", "ps_5_1"),
             ("reference.vert.hlsl", "main", "vs_5_1"),
             ("reference.frag.hlsl", "main", "ps_5_1"),
             ("shadow.frag.hlsl", "main", "ps_5_1"),
@@ -104,6 +105,17 @@ public sealed class RenderingShaderCompilationTests
         {
             Compile(entryPoint.Name, entryPoint.EntryPoint, entryPoint.Profile, []);
         }
+    }
+
+    [Fact]
+    public void FnvClassicBloomUsesAxisScaleInsteadOfDiagonalTapCoordinates()
+    {
+        var source = ReadEmbeddedShader("bloom.frag.hlsl");
+
+        Assert.Equal(2, source.Split("float2 offset = tapIndex * uBloom1.xy;",
+            StringSplitOptions.None).Length - 1);
+        Assert.DoesNotContain("float2(tapIndex, tapIndex)", source, StringComparison.Ordinal);
+        Assert.Contains("float4 mainBlur(PSInput input)", source, StringComparison.Ordinal);
     }
 
     [Fact]
