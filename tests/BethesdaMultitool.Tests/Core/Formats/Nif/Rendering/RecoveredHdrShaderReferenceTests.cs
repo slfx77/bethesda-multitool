@@ -160,31 +160,66 @@ public sealed class RecoveredHdrShaderReferenceTests
     }
 
     [Fact]
-    public void BrightPassKernel_UsesOneRecoveredDiagonalRowAndPerTapThreshold()
+    public void BrightPassKernel_UsesRecoveredVerticalThenHorizontalPairAndPerTapThreshold()
     {
         Vector3 Sample(int x, int y)
         {
-            if (x != y)
-                return new Vector3(100f); // A square Gaussian would incorrectly include these samples.
-
-            return x switch
-            {
-                -2 => new Vector3(0.2f, 0.4f, 0.7f),
-                -1 => new Vector3(0.35f, 0.5f, 0.9f),
-                0 => new Vector3(0.8f, 0.3f, 0.45f),
-                1 => new Vector3(1.2f, 0.6f, 0.1f),
-                2 => new Vector3(0.5f, 1f, 0.35f),
-                _ => Vector3.Zero
-            };
+            // An axial source is the discriminating regression fixture: the former one-draw
+            // (tap,tap) port never sampled it and instead smeared isolated lights diagonally.
+            return x == 1 && y == 0
+                ? new Vector3(1.2f, 0.6f, 0.1f)
+                : Vector3.Zero;
         }
 
-        var result = BrightPassBlurDiagonal(
+        var result = BrightPassBlurSeparable(
+            radius: 2,
+            sample: Sample,
+            clamp: 0.35f,
+            scale: 1.5f);
+        var formerDiagonal = BrightPassBlurDiagonal(
             radius: 2,
             sample: Sample,
             clamp: 0.35f,
             scale: 1.5f);
 
-        AssertVector(result, new Vector3(0.59538525f, 0.2037339f, 0.29046568f));
+        AssertVector(result, new Vector3(0.12535849f, 0.03687014f, 0f));
+        AssertVector(formerDiagonal, Vector3.Zero);
+    }
+
+    [Fact]
+    public void BrightPassKernel_PointImpulseResponseIsSymmetricAcrossBothAxesAndDiagonals()
+    {
+        Vector3 Sample(int x, int y) => x == 0 && y == 0
+            ? new Vector3(1.2f, 0.6f, 0.1f)
+            : Vector3.Zero;
+
+        Vector3 At(int x, int y) => BrightPassBlurSeparable(
+            radius: 2,
+            sample: Sample,
+            clamp: 0.35f,
+            scale: 1.5f,
+            outputX: x,
+            outputY: y);
+
+        var center = At(0, 0);
+        var left = At(-1, 0);
+        var right = At(1, 0);
+        var up = At(0, -1);
+        var down = At(0, 1);
+        var upLeft = At(-1, -1);
+        var upRight = At(1, -1);
+        var downLeft = At(-1, 1);
+        var downRight = At(1, 1);
+
+        AssertVector(left, right);
+        AssertVector(left, up);
+        AssertVector(left, down);
+        AssertVector(upLeft, upRight);
+        AssertVector(upLeft, downLeft);
+        AssertVector(upLeft, downRight);
+        Assert.True(center.X > left.X);
+        Assert.True(left.X > upLeft.X);
+        Assert.True(upLeft.X > 0f);
     }
 
     [Fact]
@@ -311,6 +346,31 @@ public sealed class RecoveredHdrShaderReferenceTests
         var result = Vector3.Zero;
         for (var offset = -radius; offset <= radius; offset++)
             result += kernel[offset + radius] * BrightPass(sample(offset, offset), clamp, scale);
+        return result;
+    }
+
+    private static Vector3 BrightPassBlurSeparable(
+        int radius,
+        Func<int, int, Vector3> sample,
+        float clamp,
+        float scale,
+        int outputX = 0,
+        int outputY = 0)
+    {
+        var kernel = RecoveredBrightPassKernels[radius - 1];
+
+        Vector3 VerticalAt(int x)
+        {
+            var vertical = Vector3.Zero;
+            for (var y = -radius; y <= radius; y++)
+                vertical += kernel[y + radius] * BrightPass(
+                    sample(outputX + x, outputY + y), clamp, scale);
+            return vertical;
+        }
+
+        var result = Vector3.Zero;
+        for (var x = -radius; x <= radius; x++)
+            result += kernel[x + radius] * VerticalAt(x);
         return result;
     }
 

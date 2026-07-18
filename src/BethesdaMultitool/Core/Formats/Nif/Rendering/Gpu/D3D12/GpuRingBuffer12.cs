@@ -29,6 +29,7 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
     private readonly uint _bytesPerFrame;
     private readonly int _framesInFlight;
     private uint _bumpOffset;
+    private uint _reservedTailBytes;
     private bool _disposed;
 
     public GpuRingBuffer12(GpuDevice12 gpu, int framesInFlight, uint bytesPerFrame)
@@ -72,6 +73,64 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
     public uint CurrentFrameBytes => _bumpOffset;
 
     /// <summary>
+    ///     Bytes protected at the end of the current frame slot. Ordinary allocations stop before
+    ///     this tail until <see cref="ReleaseTailReservation" /> is called. This lets a late pass
+    ///     guarantee its small constant-buffer budget before dense scene draws consume the ring.
+    /// </summary>
+    public uint ReservedTailBytes => _reservedTailBytes;
+
+    /// <summary>Exclusive upper bound currently available to ordinary bump allocations.</summary>
+    public uint AllocationLimitBytes => _bytesPerFrame - _reservedTailBytes;
+
+    /// <summary>
+    ///     Adds a protected tail to the current frame slot without advancing the bump pointer.
+    ///     Returns false, leaving the prior reservation unchanged, when already-recorded allocations
+    ///     leave too little room. Call <see cref="ReleaseTailReservation" /> immediately before the
+    ///     protected pass starts allocating.
+    /// </summary>
+    public bool TryReserveTail(uint size)
+    {
+        if (!TryPlanTailReservation(
+                _bumpOffset, _bytesPerFrame, _reservedTailBytes, size, out var plannedReserved))
+        {
+            return false;
+        }
+
+        _reservedTailBytes = plannedReserved;
+        return true;
+    }
+
+    /// <summary>Makes the protected tail available to subsequent allocations.</summary>
+    public void ReleaseTailReservation()
+    {
+        _reservedTailBytes = 0;
+    }
+
+    internal static bool TryPlanTailReservation(
+        uint currentOffset,
+        uint totalBytes,
+        uint reservedTailBytes,
+        uint additionalBytes,
+        out uint plannedReservedTailBytes)
+    {
+        plannedReservedTailBytes = reservedTailBytes;
+        if (currentOffset > totalBytes || reservedTailBytes > totalBytes ||
+            additionalBytes > totalBytes - reservedTailBytes)
+        {
+            return false;
+        }
+
+        var candidate = reservedTailBytes + additionalBytes;
+        if (currentOffset > totalBytes - candidate)
+        {
+            return false;
+        }
+
+        plannedReservedTailBytes = candidate;
+        return true;
+    }
+
+    /// <summary>
     ///     Returns the underlying <see cref="ID3D12Resource" /> for the current frame's slot.
     ///     Needed by APIs that take a resource + byte offset rather than a raw
     ///     <c>GpuVirtualAddress</c> — notably <see cref="ID3D12GraphicsCommandList.ExecuteIndirect" />
@@ -97,7 +156,8 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
         {
             var aligned = (_bumpOffset + alignment - 1) & ~(alignment - 1);
             throw new InvalidOperationException(
-                $"GpuRingBuffer12: frame slot exhausted (requested {size}B at +{aligned}, slot size {_bytesPerFrame}B). " +
+                $"GpuRingBuffer12: frame slot exhausted (requested {size}B at +{aligned}, " +
+                $"slot size {_bytesPerFrame}B, reserved tail {_reservedTailBytes}B). " +
                 "Increase bytesPerFrame at construction or split this draw across frames.");
         }
         return allocation;
@@ -115,19 +175,53 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
         if ((uint)frameIndex >= (uint)_framesInFlight)
             throw new ArgumentOutOfRangeException(nameof(frameIndex));
 
-        var aligned = (_bumpOffset + alignment - 1) & ~(alignment - 1);
-        if (aligned + size > _bytesPerFrame)
+        if (!TryPlanAllocation(
+                _bumpOffset, _bytesPerFrame, _reservedTailBytes, size, alignment,
+                out var byteOffset, out var nextOffset))
         {
             allocation = default;
             return false;
         }
-        _bumpOffset = aligned + size;
+        _bumpOffset = nextOffset;
 
         allocation = new RingAllocation(
-            CpuPtr: _cpuPointers[frameIndex] + (int)aligned,
-            GpuAddress: _gpuAddresses[frameIndex] + aligned,
+            CpuPtr: _cpuPointers[frameIndex] + checked((int)byteOffset),
+            GpuAddress: _gpuAddresses[frameIndex] + byteOffset,
             Size: size,
-            ByteOffset: aligned);
+            ByteOffset: byteOffset);
+        return true;
+    }
+
+    internal static bool TryPlanAllocation(
+        uint currentOffset,
+        uint totalBytes,
+        uint reservedTailBytes,
+        uint size,
+        uint alignment,
+        out uint byteOffset,
+        out uint nextOffset)
+    {
+        byteOffset = 0;
+        nextOffset = currentOffset;
+        if (alignment == 0 || (alignment & (alignment - 1)) != 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(alignment), "Alignment must be a power of two.");
+        }
+        if (reservedTailBytes > totalBytes)
+        {
+            return false;
+        }
+
+        var allocationLimit = (ulong)(totalBytes - reservedTailBytes);
+        var aligned = ((ulong)currentOffset + alignment - 1) & ~((ulong)alignment - 1);
+        var plannedNext = aligned + size;
+        if (plannedNext > allocationLimit)
+        {
+            return false;
+        }
+
+        byteOffset = checked((uint)aligned);
+        nextOffset = checked((uint)plannedNext);
         return true;
     }
 
@@ -139,6 +233,7 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
     public void ResetFrame()
     {
         _bumpOffset = 0;
+        _reservedTailBytes = 0;
     }
 
     public void Dispose()

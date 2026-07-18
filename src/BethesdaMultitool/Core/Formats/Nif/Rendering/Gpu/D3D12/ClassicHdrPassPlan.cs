@@ -5,7 +5,8 @@ internal enum ClassicHdrPassKind
 {
     Downsample16,
     Adapt,
-    BrightPassBlur,
+    BrightPassBlurVertical,
+    BlurHorizontal,
     Composite,
 }
 
@@ -18,7 +19,8 @@ internal readonly record struct ClassicHdrReductionLevel(
 
 /// <summary>
 ///     Allocation-free description of the recovered classic HDR pass order. DownSample16 is repeated
-///     until both dimensions reach one; the first result is also the BrightPassBlur source. The
+///     until both dimensions reach one; the first result is also the bloom source. The bloom effect
+///     contains one vertical BrightPassBlur draw followed by one horizontal plain-blur draw. The
 ///     authored BlurPasses value is deliberately accepted but does not alter this topology.
 /// </summary>
 internal readonly record struct ClassicHdrPassPlan
@@ -45,8 +47,10 @@ internal readonly record struct ClassicHdrPassPlan
     public bool BloomEnabled { get; }
     public int AdaptDrawCount => 1;
     public int BrightPassBlurDrawCount => BloomEnabled ? 1 : 0;
+    public int BlurDrawCount => BloomEnabled ? 1 : 0;
     public int CompositeDrawCount => 1;
-    public int TotalDrawCount => DownsampleDrawCount + AdaptDrawCount + BrightPassBlurDrawCount + CompositeDrawCount;
+    public int TotalDrawCount =>
+        DownsampleDrawCount + AdaptDrawCount + BrightPassBlurDrawCount + BlurDrawCount + CompositeDrawCount;
 
     public static ClassicHdrPassPlan Create(
         int width,
@@ -123,7 +127,12 @@ internal readonly record struct ClassicHdrPassPlan
 
         if (BloomEnabled && index-- == 0)
         {
-            return ClassicHdrPassKind.BrightPassBlur;
+            return ClassicHdrPassKind.BrightPassBlurVertical;
+        }
+
+        if (BloomEnabled && index-- == 0)
+        {
+            return ClassicHdrPassKind.BlurHorizontal;
         }
 
         return ClassicHdrPassKind.Composite;

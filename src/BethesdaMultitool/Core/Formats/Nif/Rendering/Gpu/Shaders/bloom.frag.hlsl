@@ -1,13 +1,14 @@
 // FNV recovered bloom topology (shared with the other classic paths pending their binary oracles):
-//   HDR scene -> recursive DownSample16 chain to 1x1 for ADAPT; retain the first /4 level for one
-//   BrightPassBlur draw -> composite.
+//   HDR scene -> recursive DownSample16 chain to 1x1 for ADAPT; retain the first /4 level for a
+//   vertical BrightPassBlur draw -> horizontal plain-blur draw -> composite.
 // BlurPasses is stored by the data formats but is not a repeated-pass counter in this shader chain.
 // Bright-pass is applied per BPBLUR tap before its weight:
 //   max(src - BrightClamp, 0) * BrightScale.
 //
-// The shipped BPBLUR3..15 programs consume a single compact row of 3, 5, ... 15 CPU constants.
-// Their recovered tables use the same signed scalar for x and y, so this deliberately samples one
-// diagonal row rather than evaluating a square (2r+1)^2 Gaussian.
+// ImageSpaceEffectBlur::UpdateParams uploads the same compact 3, 5, ... 15-tap offset/weight row to
+// both shaders, but makes it one-dimensional through BlurScale: (0, 1/height) for BPBLUR first and
+// (1/width, 0) for BLUR second. The two rows form the recovered separable 2-D Gaussian. Feeding both
+// scale axes in one draw is not equivalent; it creates the conspicuous diagonal light streaks.
 
 Texture2D    uSource  : register(t0);
 Texture2D    uAvgLum  : register(t1);
@@ -16,7 +17,7 @@ SamplerState uSampler : register(s0);
 cbuffer BloomParams : register(b0)
 {
     float4 uBloom0; // x = BrightClamp, y = BrightScale, z = BPBLUR radius (1..7), w = unused
-    float4 uBloom1; // xy = source texel size, zw = unused
+    float4 uBloom1; // xy = BlurScale (one axis is always zero), zw = unused
     float4 uBloom2;
     float4 uBloom3;
 };
@@ -116,7 +117,7 @@ float4 main(PSInput input) : SV_Target
         if (abs(tapIndex) <= radius)
         {
             float weight = ClassicBrightPassWeight(radius, abs(tapIndex));
-            float2 offset = float2(tapIndex, tapIndex) * uBloom1.xy;
+            float2 offset = tapIndex * uBloom1.xy;
             float3 tap = uSource.SampleLevel(uSampler, input.vUv + offset, 0).rgb;
             sum += weight * max(tap - uBloom0.x, 0.0) * uBloom0.y;
         }
@@ -126,4 +127,28 @@ float4 main(PSInput input) : SV_Target
     // It routes the adapted RGB sum through bloom alpha for ISHDRBLENDINSHADER.
     float3 adapted = uAvgLum.SampleLevel(uSampler, float2(0.5, 0.5), 0).rgb;
     return float4(sum, adapted.r + adapted.g + adapted.b);
+}
+
+float4 mainBlur(PSInput input) : SV_Target
+{
+    int radius = clamp((int)uBloom0.z, 1, 7);
+    float3 sum = 0.0;
+    float lastAlpha = 0.0;
+
+    [loop]
+    for (int tapIndex = -7; tapIndex <= 7; tapIndex++)
+    {
+        if (abs(tapIndex) <= radius)
+        {
+            float weight = ClassicBrightPassWeight(radius, abs(tapIndex));
+            float2 offset = tapIndex * uBloom1.xy;
+            float4 tap = uSource.SampleLevel(uSampler, input.vUv + offset, 0);
+            sum += weight * tap.rgb;
+            lastAlpha = tap.a;
+        }
+    }
+
+    // ISBLUR3..15 filters RGB only. Its output alpha is the final (+radius) sample's alpha; the
+    // preceding BPBLUR made that alpha spatially constant, so the adapted RGB sum is preserved.
+    return float4(sum, lastAlpha);
 }

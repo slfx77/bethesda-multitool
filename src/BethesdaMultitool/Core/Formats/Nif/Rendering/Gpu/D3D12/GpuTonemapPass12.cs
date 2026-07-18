@@ -19,8 +19,9 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///     "too dark" look.
 ///     <para>
 ///         In engine mode the pass also records the recovered bloom chain
-///         (<c>bloom.frag.hlsl</c>): recursive DownSample16 reduction, one diagonal BrightPassBlur
-///         from the retained quarter-resolution level, then <c>bloom·(0.5/denom)</c> composite.
+///         (<c>bloom.frag.hlsl</c>): recursive DownSample16 reduction, vertical BrightPassBlur plus
+///         horizontal plain blur at the retained quarter-resolution level, then
+///         <c>bloom·(0.5/denom)</c> composite.
 ///     </para>
 ///     <para>
 ///         Owns its own root signature (SRV table t0–t2 + 24 root constants b0 + a linear-clamp static
@@ -35,19 +36,21 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 internal sealed class GpuTonemapPass12 : IDisposable
 {
     // SRV ring depth: one call = fixed 3-descriptor groups (t0/t1/t2) for ADAPT, every possible
-    // recursive DownSample16 level, BrightPassBlur, and the main composite. Groups are cycled so a
+    // recursive DownSample16 level, both bloom rows, and the main composite. Groups are cycled so a
     // view is never overwritten while the previous frame's tonemap draw still reads it.
     // framesInFlight (2) × a couple of scene targets is comfortably under 8 ring slots.
     private const int SrvRingSlots = 8;
     private const int SrvsPerCall = 3;
     private const int AdaptGroup = 0;
     private const int DownsampleGroupStart = 1;
-    private const int BloomGroup = DownsampleGroupStart + ClassicHdrPassPlan.MaxReductionLevels;
-    private const int CompositeGroup = BloomGroup + 1;
+    private const int BrightPassBlurGroup = DownsampleGroupStart + ClassicHdrPassPlan.MaxReductionLevels;
+    private const int BlurGroup = BrightPassBlurGroup + 1;
+    private const int CompositeGroup = BlurGroup + 1;
     private const int GroupsPerCall = CompositeGroup + 1;
     private const int ReductionRtvStart = 2;
-    private const int BloomRtvSlot = ReductionRtvStart + ClassicHdrPassPlan.MaxReductionLevels;
-    private const int RtvDescriptorCount = BloomRtvSlot + 1;
+    private const int BrightPassBlurRtvSlot = ReductionRtvStart + ClassicHdrPassPlan.MaxReductionLevels;
+    private const int BlurRtvSlot = BrightPassBlurRtvSlot + 1;
+    private const int RtvDescriptorCount = BlurRtvSlot + 1;
 
     private readonly GpuDevice12 _gpu;
     private readonly ID3D12RootSignature _rootSignature;
@@ -56,6 +59,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
     private readonly ID3D12PipelineState _adaptPso;
     private readonly ID3D12PipelineState _downsamplePso;
     private readonly ID3D12PipelineState _bloomPso;
+    private readonly ID3D12PipelineState _blurPso;
     private readonly ID3D12DescriptorHeap _srvHeap;
     private readonly ID3D12DescriptorHeap _avgRtvHeap;
     // Ping-pong pair of 1×1 adapted-average targets: each engine-mode frame reads the PREVIOUS
@@ -63,9 +67,10 @@ internal sealed class GpuTonemapPass12 : IDisposable
     // then samples the freshly written side. Both start in PixelShaderResource.
     private readonly ID3D12Resource[] _avgTextures = new ID3D12Resource[2];
     // Recursive /4 DownSample16 targets. Level 0 is retained as the BrightPassBlur source; the final
-    // level is 1x1 and feeds ADAPT. The separate bloom target receives the one BPBLUR draw.
+    // level is 1x1 and feeds ADAPT. The two bloom targets hold vertical BPBLUR and horizontal BLUR.
     private readonly ID3D12Resource?[] _reductionTextures =
         new ID3D12Resource?[ClassicHdrPassPlan.MaxReductionLevels];
+    private ID3D12Resource? _brightPassBlurTexture;
     private ID3D12Resource? _bloomTexture;
     private readonly uint _avgRtvDescriptorSize;
     private readonly uint _srvDescriptorSize;
@@ -186,8 +191,8 @@ internal sealed class GpuTonemapPass12 : IDisposable
         adaptPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
         _adaptPso = device.CreateGraphicsPipelineState(adaptPsoDesc);
 
-        // Recovered engine bloom: explicit DownSample16 into target 0, then exactly one compact
-        // BrightPassBlur tap row into target 1. Both reuse the fullscreen VS and root signature.
+        // Recovered engine bloom: explicit DownSample16, then the two rows inside the selected
+        // ImageSpaceEffectBlur effect: vertical BrightPassBlur followed by horizontal plain blur.
         var downsamplePs = CompileEmbeddedShader("bloom.frag.hlsl", "mainDownsample16", "ps_5_1");
         var downsamplePsoDesc = psoDesc;
         downsamplePsoDesc.PixelShader = downsamplePs;
@@ -200,8 +205,14 @@ internal sealed class GpuTonemapPass12 : IDisposable
         bloomPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
         _bloomPso = device.CreateGraphicsPipelineState(bloomPsoDesc);
 
+        var blurPs = CompileEmbeddedShader("bloom.frag.hlsl", "mainBlur", "ps_5_1");
+        var blurPsoDesc = psoDesc;
+        blurPsoDesc.PixelShader = blurPs;
+        blurPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
+        _blurPso = device.CreateGraphicsPipelineState(blurPsoDesc);
+
         // RTV heap: slots 0–1 = adapted-average ping-pong; then every possible reduction level;
-        // final slot = BrightPassBlur output.
+        // final two slots = vertical BrightPassBlur intermediate + horizontal plain-blur output.
         _avgRtvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
         {
             Type = DescriptorHeapType.RenderTargetView,
@@ -259,8 +270,8 @@ internal sealed class GpuTonemapPass12 : IDisposable
         }
 
         // Cycle a fixed group layout per call. ADAPT reads the final reduction + previous history;
-        // DS16 groups form the recursive /4 chain; BPBLUR reads level 0 + the freshly adapted average;
-        // the composite reads HDR + freshly adapted average + bloom.
+        // DS16 groups form the recursive /4 chain; BPBLUR reads level 0 + the fresh adapted average;
+        // BLUR reads the BPBLUR intermediate; the composite reads HDR + adapted average + bloom.
         var slot = _srvCursor;
         _srvCursor = (_srvCursor + 1) % SrvRingSlots;
         var callBase = (nuint)(slot * GroupsPerCall * SrvsPerCall * _srvDescriptorSize);
@@ -351,17 +362,24 @@ internal sealed class GpuTonemapPass12 : IDisposable
             }
         }
 
-        // BPBLUR consumes retained reduction level zero plus the freshly written adapted average. The
-        // descriptor can be created before ADAPT records; the resource is transitioned back to SRV
-        // before this draw executes.
+        // BPBLUR consumes retained reduction level zero plus the freshly written adapted average.
+        // BLUR consumes its intermediate. These descriptors can be created before either draw records;
+        // both resources are transitioned back to SRV before their consumers execute.
         if (bloomActive)
         {
-            var cpuBloom = heapCpu; cpuBloom.Ptr += GroupOffset(BloomGroup);
-            _gpu.Device.CreateShaderResourceView(_reductionTextures[0]!, avgSrvDesc, cpuBloom);
-            cpuBloom.Ptr += _srvDescriptorSize;
-            _gpu.Device.CreateShaderResourceView(_avgTextures[writeIdx], avgSrvDesc, cpuBloom);
-            cpuBloom.Ptr += _srvDescriptorSize;
-            _gpu.Device.CreateShaderResourceView(_avgTextures[writeIdx], avgSrvDesc, cpuBloom);
+            var cpuBrightPass = heapCpu; cpuBrightPass.Ptr += GroupOffset(BrightPassBlurGroup);
+            _gpu.Device.CreateShaderResourceView(_reductionTextures[0]!, avgSrvDesc, cpuBrightPass);
+            cpuBrightPass.Ptr += _srvDescriptorSize;
+            _gpu.Device.CreateShaderResourceView(_avgTextures[writeIdx], avgSrvDesc, cpuBrightPass);
+            cpuBrightPass.Ptr += _srvDescriptorSize;
+            _gpu.Device.CreateShaderResourceView(_avgTextures[writeIdx], avgSrvDesc, cpuBrightPass);
+
+            var cpuBlur = heapCpu; cpuBlur.Ptr += GroupOffset(BlurGroup);
+            _gpu.Device.CreateShaderResourceView(_brightPassBlurTexture!, avgSrvDesc, cpuBlur);
+            cpuBlur.Ptr += _srvDescriptorSize;
+            _gpu.Device.CreateShaderResourceView(_avgTextures[writeIdx], avgSrvDesc, cpuBlur);
+            cpuBlur.Ptr += _srvDescriptorSize;
+            _gpu.Device.CreateShaderResourceView(_avgTextures[writeIdx], avgSrvDesc, cpuBlur);
         }
 
         // Main group: t2 = BPBLUR output, or the avg texture as a benign always-valid filler
@@ -451,9 +469,9 @@ internal sealed class GpuTonemapPass12 : IDisposable
                 _avgTextures[writeIdx], ResourceStates.RenderTarget, ResourceStates.PixelShaderResource);
         }
 
-        // Recovered bloom topology: the retained first DS16 level receives one BPBLUR diagonal row.
-        // The authored BlurPasses scalar is retained by the data contract but is not consumed as an
-        // iteration count; the previous repeated threshold/blur chain amplified the result.
+        // Recovered bloom topology: ImageSpaceEffectHDR invokes one selected ImageSpaceEffectBlur.
+        // That effect records vertical BPBLUR into an intermediate, then horizontal BLUR into its
+        // output. Authored BlurPasses remains retained data and does not repeat this two-draw pair.
         if (bloomActive)
         {
             // ImageSpaceEffectHDR truncates BlurRadius before selecting BPBLUR3..15, then clamps the
@@ -464,19 +482,37 @@ internal sealed class GpuTonemapPass12 : IDisposable
             b[0] = settings.BrightClamp;
             b[1] = settings.BrightScale;
             b[2] = kernelRadius;
-            b[4] = 1f / _bloomWidth;
+            // ImageSpaceEffectBlur::UpdateParams uploads (0, 1/height) to the bright-pass shader.
+            b[4] = 0f;
             b[5] = 1f / _bloomHeight;
             cmd.RSSetViewport(new Viewport(0, 0, _bloomWidth, _bloomHeight, 0f, 1f));
             cmd.RSSetScissorRect(_bloomWidth, _bloomHeight);
             cmd.SetGraphicsRoot32BitConstants(1, 16, b, 0);
+            var brightPassRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
+            brightPassRtv.Ptr += (nuint)(BrightPassBlurRtvSlot * _avgRtvDescriptorSize);
+            var brightPassGpu = heapGpu; brightPassGpu.Ptr += GroupOffset(BrightPassBlurGroup);
+            cmd.SetGraphicsRootDescriptorTable(0, brightPassGpu);
+            cmd.ResourceBarrierTransition(
+                _brightPassBlurTexture!, ResourceStates.PixelShaderResource, ResourceStates.RenderTarget);
+            cmd.OMSetRenderTargets(brightPassRtv);
+            cmd.SetPipelineState(_bloomPso);
+            cmd.DrawInstanced(3, 1, 0, 0);
+            cmd.ResourceBarrierTransition(
+                _brightPassBlurTexture!, ResourceStates.RenderTarget, ResourceStates.PixelShaderResource);
+
+            // The effect's second shader receives (1/width, 0), uses the same exact weight row, and
+            // does not repeat the bright-pass threshold/scale operation.
+            b[4] = 1f / _bloomWidth;
+            b[5] = 0f;
+            cmd.SetGraphicsRoot32BitConstants(1, 16, b, 0);
             var blurRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
-            blurRtv.Ptr += (nuint)(BloomRtvSlot * _avgRtvDescriptorSize);
-            var blurGpu = heapGpu; blurGpu.Ptr += GroupOffset(BloomGroup);
+            blurRtv.Ptr += (nuint)(BlurRtvSlot * _avgRtvDescriptorSize);
+            var blurGpu = heapGpu; blurGpu.Ptr += GroupOffset(BlurGroup);
             cmd.SetGraphicsRootDescriptorTable(0, blurGpu);
             cmd.ResourceBarrierTransition(
                 _bloomTexture!, ResourceStates.PixelShaderResource, ResourceStates.RenderTarget);
             cmd.OMSetRenderTargets(blurRtv);
-            cmd.SetPipelineState(_bloomPso);
+            cmd.SetPipelineState(_blurPso);
             cmd.DrawInstanced(3, 1, 0, 0);
             cmd.ResourceBarrierTransition(
                 _bloomTexture!, ResourceStates.RenderTarget, ResourceStates.PixelShaderResource);
@@ -495,13 +531,15 @@ internal sealed class GpuTonemapPass12 : IDisposable
 
     /// <summary>
     ///     Lazily (re)creates every recursive /4 reduction target plus the quarter-resolution
-    ///     BrightPassBlur output. Dispose-and-recreate on size change is safe: the live path resizes via
-    ///     <see cref="GpuSwapChainSurface12" />'s GPU-idle Resize, and offscreen targets are
-    ///     fixed-size for their lifetime.
+    ///     vertical BrightPassBlur intermediate and horizontal plain-blur output. Dispose-and-recreate
+    ///     on size change is safe: the live path resizes via <see cref="GpuSwapChainSurface12" />'s
+    ///     GPU-idle Resize, and offscreen targets are fixed-size for their lifetime.
     /// </summary>
     private void EnsureClassicTargets(in ClassicHdrPassPlan plan)
     {
         if (_reductionTextures[0] != null
+            && _brightPassBlurTexture != null
+            && _bloomTexture != null
             && _classicSourceWidth == plan.SourceWidth
             && _classicSourceHeight == plan.SourceHeight
             && _reductionLevelCount == plan.DownsampleDrawCount)
@@ -514,6 +552,8 @@ internal sealed class GpuTonemapPass12 : IDisposable
             _reductionTextures[i]?.Dispose();
             _reductionTextures[i] = null;
         }
+        _brightPassBlurTexture?.Dispose();
+        _brightPassBlurTexture = null;
         _bloomTexture?.Dispose();
         _bloomTexture = null;
 
@@ -543,6 +583,21 @@ internal sealed class GpuTonemapPass12 : IDisposable
         var bloomLevel = plan.GetReductionLevel(0);
         _bloomWidth = bloomLevel.TargetWidth;
         _bloomHeight = bloomLevel.TargetHeight;
+        _brightPassBlurTexture = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
+            new HeapProperties(HeapType.Default),
+            HeapFlags.None,
+            ResourceDescription.Texture2D(
+                Format.R16G16B16A16_Float,
+                (uint)_bloomWidth,
+                (uint)_bloomHeight,
+                1, 1, 1, 0,
+                ResourceFlags.AllowRenderTarget),
+            ResourceStates.PixelShaderResource);
+        _brightPassBlurTexture.Name = $"TonemapClassicBrightPassVertical_{_bloomWidth}x{_bloomHeight}";
+        var brightPassRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
+        brightPassRtv.Ptr += (nuint)(BrightPassBlurRtvSlot * _avgRtvDescriptorSize);
+        _gpu.Device.CreateRenderTargetView(_brightPassBlurTexture, null, brightPassRtv);
+
         _bloomTexture = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
             new HeapProperties(HeapType.Default),
             HeapFlags.None,
@@ -553,10 +608,10 @@ internal sealed class GpuTonemapPass12 : IDisposable
                 1, 1, 1, 0,
                 ResourceFlags.AllowRenderTarget),
             ResourceStates.PixelShaderResource);
-        _bloomTexture.Name = $"TonemapClassicBrightPass_{_bloomWidth}x{_bloomHeight}";
-        var bloomRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
-        bloomRtv.Ptr += (nuint)(BloomRtvSlot * _avgRtvDescriptorSize);
-        _gpu.Device.CreateRenderTargetView(_bloomTexture, null, bloomRtv);
+        _bloomTexture.Name = $"TonemapClassicBlurHorizontal_{_bloomWidth}x{_bloomHeight}";
+        var blurRtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
+        blurRtv.Ptr += (nuint)(BlurRtvSlot * _avgRtvDescriptorSize);
+        _gpu.Device.CreateRenderTargetView(_bloomTexture, null, blurRtv);
     }
 
     public void Dispose()
@@ -571,7 +626,9 @@ internal sealed class GpuTonemapPass12 : IDisposable
         {
             _reductionTextures[i]?.Dispose();
         }
+        _brightPassBlurTexture?.Dispose();
         _bloomTexture?.Dispose();
+        _blurPso.Dispose();
         _bloomPso.Dispose();
         _downsamplePso.Dispose();
         _adaptPso.Dispose();

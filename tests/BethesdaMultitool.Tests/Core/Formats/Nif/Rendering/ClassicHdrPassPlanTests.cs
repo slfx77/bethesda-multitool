@@ -6,7 +6,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 public sealed class ClassicHdrPassPlanTests
 {
     [Fact]
-    public void OddSizedTarget_ReducesByFourUntilOneAndRunsOneBloomDraw()
+    public void OddSizedTarget_ReducesByFourUntilOneAndRunsOneSeparableBloomPair()
     {
         var plan = ClassicHdrPassPlan.Create(
             width: 770,
@@ -29,6 +29,7 @@ public sealed class ClassicHdrPassPlanTests
         Assert.Equal(expectedLevels, actualLevels);
         Assert.Equal(1, plan.AdaptDrawCount);
         Assert.Equal(1, plan.BrightPassBlurDrawCount);
+        Assert.Equal(1, plan.BlurDrawCount);
         Assert.Equal(1, plan.CompositeDrawCount);
         Assert.Equal(
             [
@@ -38,7 +39,8 @@ public sealed class ClassicHdrPassPlanTests
                 ClassicHdrPassKind.Downsample16,
                 ClassicHdrPassKind.Downsample16,
                 ClassicHdrPassKind.Adapt,
-                ClassicHdrPassKind.BrightPassBlur,
+                ClassicHdrPassKind.BrightPassBlurVertical,
+                ClassicHdrPassKind.BlurHorizontal,
                 ClassicHdrPassKind.Composite,
             ],
             Enumerable.Range(0, plan.TotalDrawCount).Select(plan.GetPassKind));
@@ -55,9 +57,13 @@ public sealed class ClassicHdrPassPlanTests
         var plan = ClassicHdrPassPlan.Create(768, 480, bloomEnabled: true, authoredBlurPasses);
 
         Assert.Equal(1, plan.BrightPassBlurDrawCount);
+        Assert.Equal(1, plan.BlurDrawCount);
         Assert.Single(
             Enumerable.Range(0, plan.TotalDrawCount)
-                .Where(i => plan.GetPassKind(i) == ClassicHdrPassKind.BrightPassBlur));
+                .Where(i => plan.GetPassKind(i) == ClassicHdrPassKind.BrightPassBlurVertical));
+        Assert.Single(
+            Enumerable.Range(0, plan.TotalDrawCount)
+                .Where(i => plan.GetPassKind(i) == ClassicHdrPassKind.BlurHorizontal));
     }
 
     [Fact]
@@ -69,6 +75,7 @@ public sealed class ClassicHdrPassPlanTests
         Assert.Equal(enabled.DownsampleDrawCount, disabled.DownsampleDrawCount);
         Assert.Equal(1, disabled.AdaptDrawCount);
         Assert.Equal(0, disabled.BrightPassBlurDrawCount);
+        Assert.Equal(0, disabled.BlurDrawCount);
         Assert.Equal(ClassicHdrPassKind.Composite, disabled.GetPassKind(disabled.TotalDrawCount - 1));
     }
 }
