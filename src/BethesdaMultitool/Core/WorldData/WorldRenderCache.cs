@@ -41,7 +41,7 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     ///     Base-FormID → <see cref="PlacedObjectCategory" /> index (the owning
     ///     <see cref="WorldViewData.CategoryIndex" />). Set once at LoadData, before any placement
     ///     list is baked, so each <see cref="RenderableReference" /> carries its category for the
-    ///     renderer's per-category visibility filter (e.g. activators hidden by default). Null until
+    ///     renderer's per-category visibility filter (for example, user-hidden activators). Null until
     ///     set → placements bake with <see cref="PlacedObjectCategory.Unknown" />.
     /// </summary>
     internal IReadOnlyDictionary<uint, PlacedObjectCategory>? CategoryIndex { get; set; }
@@ -280,7 +280,7 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
         {
             var xespDisabled = XespDisabledRefs?.Contains(p.FormId) == true;
             if (lightIndex is not null && lightIndex.TryGetValue(p.BaseFormId, out var light) &&
-                PlacedLight.TryBuild(p, light, xespDisabled) is { } placedLight)
+                PlacedLight.TryBuild(p, light, xespDisabled, Game) is { } placedLight)
             {
                 (placedLights ??= []).Add(placedLight);
             }

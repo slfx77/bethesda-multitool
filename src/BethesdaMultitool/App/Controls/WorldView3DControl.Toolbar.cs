@@ -343,7 +343,7 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    /// <summary>Activator-category visibility toggle. Default off = activators hidden. Updates the
+    /// <summary>Activator-category visibility toggle. Default on. Updates the
     /// per-category filter on the reference renderer (render-time, no cache rebuild).</summary>
     private void SetShowActivators(bool on)
     {

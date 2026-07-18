@@ -35,6 +35,26 @@ public sealed class PlacedReferenceEnableStateResolverTests
     }
 
     [Fact]
+    public void AcyclicChainLongerThanTheFormerDepthLimit_ResolvesTheRootState()
+    {
+        const int edgeCount = 20;
+        var placements = new List<PlacedReference>
+        {
+            Placement(0x100, initiallyDisabled: true)
+        };
+        for (var edge = 1; edge <= edgeCount; edge++)
+        {
+            placements.Add(Placement(
+                0x100u + (uint)edge,
+                parent: placements[^1].FormId));
+        }
+
+        var disabled = Resolve([Cell(0x250, [.. placements])]);
+
+        Assert.Contains(placements[^1].FormId, disabled);
+    }
+
+    [Fact]
     public void CrossCellParent_IsResolvedFromTheCompletePlacementIndex()
     {
         var parent = Placement(0x30, initiallyDisabled: true);
@@ -46,7 +66,7 @@ public sealed class PlacedReferenceEnableStateResolverTests
     }
 
     [Fact]
-    public void MissingParent_FallsBackToTheChildsOwnAuthoredFlag()
+    public void MissingParent_PreservesTheEffectiveOwnAuthoredState()
     {
         var enabledChild = Placement(0x40, parent: 0xDEADBEEF, parentFlags: 1);
         var alreadyDisabledChild = Placement(
@@ -57,9 +77,10 @@ public sealed class PlacedReferenceEnableStateResolverTests
 
         var disabled = Resolve([Cell(0x400, enabledChild, alreadyDisabledChild)]);
 
-        Assert.DoesNotContain(enabledChild.FormId, disabled);
+        Assert.False(enabledChild.IsInitiallyDisabled || disabled.Contains(enabledChild.FormId));
         // Own Initially Disabled is deliberately handled by the caller, not duplicated in this set.
-        Assert.DoesNotContain(alreadyDisabledChild.FormId, disabled);
+        Assert.True(alreadyDisabledChild.IsInitiallyDisabled ||
+                    disabled.Contains(alreadyDisabledChild.FormId));
     }
 
     [Fact]
@@ -101,7 +122,7 @@ public sealed class PlacedReferenceEnableStateResolverTests
         uint formId,
         bool initiallyDisabled = false,
         uint? parent = null,
-        uint? parentFlags = null) => new()
+        byte? parentFlags = null) => new()
     {
         FormId = formId,
         BaseFormId = 0x01000000 + formId,

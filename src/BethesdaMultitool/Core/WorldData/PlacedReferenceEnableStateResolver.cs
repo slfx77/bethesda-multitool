@@ -47,8 +47,8 @@ internal static class PlacedReferenceEnableStateResolver
         var current = placement;
         while (true)
         {
-            // Retail rejects enable-parent loops. Treat malformed self/multi-node loops as disabled
-            // instead of allowing inverse-edge parity or an arbitrary recursion depth to decide.
+            // Treat malformed self/multi-node loops as disabled instead of allowing inverse-edge
+            // parity or an arbitrary recursion depth to decide.
             if (!visited.Add(current.FormId))
             {
                 return true;

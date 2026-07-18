@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
@@ -8,13 +9,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 public sealed class ReferenceEnabledOverrideTests
 {
     [Fact]
-    public void Authored_HooverBattleEffectFollowsInitiallyDisabledXespParent_AndOnRevealsIt()
+    public void Retail_HooverFireMeshFollowsInitiallyDisabledXespParent_AndOverridesVisibility()
     {
-        // Retail FalloutNV.esm fixture (HooverDamExtMid): FXExplosionArtilleryHoover
-        // REFR 0x0017A277 is XESP-slaved to VHDBattleEffectsMarker 0x0015D98C.
-        // The parent carries main-record flags 0x00000C00, including Initially Disabled.
+        // Retail FalloutNV.esm fixture (HooverDamExtMid): the drawable MSTT FXFireMed01
+        // REFR is XESP-slaved to VHDBattleEffectsMarker 0x0015D98C. The parent carries
+        // main-record flags 0x00000C00, including Initially Disabled. The model is present
+        // in Fallout - Meshes.bsa and contains NiTriStrips/NiTriStripsData.
         const uint parentFormId = 0x0015D98C;
-        const uint effectFormId = 0x0017A277;
+        const uint effectFormId = 0x0015E4A5;
         var parent = new PlacedReference
         {
             FormId = parentFormId,
@@ -25,8 +27,12 @@ public sealed class ReferenceEnabledOverrideTests
         var effect = new PlacedReference
         {
             FormId = effectFormId,
-            BaseFormId = 0x0017A294,
-            BaseEditorId = "FXExplosionArtilleryHoover",
+            BaseFormId = 0x00020CE1,
+            BaseEditorId = "FXFireMed01",
+            ModelPath = @"Effects\Ambient\FXFireMed01.NIF",
+            X = 74021.945f,
+            Y = 30128.693f,
+            Z = 4358.886f,
             EnableParentFormId = parentFormId,
             EnableParentFlags = 0,
         };
@@ -44,8 +50,15 @@ public sealed class ReferenceEnabledOverrideTests
 
         var xespDisabledRefs = PlacedReferenceEnableStateResolver.ResolveXespDisabledRefs(cells);
         var store = new ReferenceEnabledOverrideStore();
+        var renderable = RenderableReference.TryBuild(
+            effect,
+            PlacedObjectCategory.Effects,
+            xespDisabled: xespDisabledRefs.Contains(effectFormId));
 
         Assert.Contains(effectFormId, xespDisabledRefs);
+        Assert.NotNull(renderable);
+        Assert.True(renderable.Value.IsInitiallyDisabled);
+        Assert.Equal(effect.ModelPath, renderable.Value.ModelPath);
         Assert.False(store.IsVisible(
             effectFormId,
             isAuthoredDisabled: xespDisabledRefs.Contains(effectFormId),
@@ -57,6 +70,13 @@ public sealed class ReferenceEnabledOverrideTests
             effectFormId,
             isAuthoredDisabled: xespDisabledRefs.Contains(effectFormId),
             showInitiallyDisabled: false));
+
+        store.Set(effectFormId, ReferenceEnabledOverride.Off);
+
+        Assert.False(store.IsVisible(
+            effectFormId,
+            isAuthoredDisabled: xespDisabledRefs.Contains(effectFormId),
+            showInitiallyDisabled: true));
     }
 
     [Fact]
