@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -40,7 +41,7 @@ public sealed class AuthoredSkyArchitectureTests
     }
 
     [Fact]
-    public void DirectionalAmbientUploadPreservesFlatFallbackUntilOptedIn()
+    public void DirectionalAmbientUpload_DefaultsOnForSkyrimWithoutEnablingOtherFamilies()
     {
         var cube = new AtmosphereState.ResolvedAmbientCube(
             new Vector3(1f, 2f, 3f),
@@ -50,11 +51,13 @@ public sealed class AuthoredSkyArchitectureTests
             new Vector3(13f, 14f, 15f),
             new Vector3(16f, 17f, 18f));
 
-        Assert.Null(AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
-            explicitlyEnabled: false, cube));
         Assert.Equal(cube, AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
-            explicitlyEnabled: true, cube));
+            BethesdaGame.Skyrim, explicitlyEnabled: false, cube));
         Assert.Null(AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
-            explicitlyEnabled: true, directionalAmbient: null));
+            BethesdaGame.Fallout4, explicitlyEnabled: false, cube));
+        Assert.Equal(cube, AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
+            BethesdaGame.Fallout4, explicitlyEnabled: true, cube));
+        Assert.Null(AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
+            BethesdaGame.Skyrim, explicitlyEnabled: false, directionalAmbient: null));
     }
 }

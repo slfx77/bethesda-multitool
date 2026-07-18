@@ -176,6 +176,115 @@ public sealed class GameFileSystemTests : IDisposable
     }
 
     /// <summary>
+    ///     Read-path tolerance: a corrupt stored payload in the winning layer must fall through to
+    ///     the next layer's copy rather than propagate — the per-source behavior of the
+    ///     hand-rolled loose→BSA→BA2 chains the VFS replaces. Also pins the documented wrinkle
+    ///     that <c>Exists</c>/<c>TryStat</c> stay stat-first, so they can report a layer whose
+    ///     read falls through.
+    /// </summary>
+    [Fact]
+    public void TryReadAllBytes_CorruptEntry_FallsThroughToNextLayer()
+    {
+        const string sharedPath = "textures\\shared.dds";
+        var goodPayload = PayloadFor(42);
+
+        // aaa.bsa gets a COMPRESSED copy whose payload we then corrupt in place, so extraction
+        // fails; bbb.bsa holds the intact copy.
+        var corruptBsa = WriteBsa("aaa.bsa", [(sharedPath, PayloadFor(41))], compressed: true);
+        WriteBsa("bbb.bsa", [(sharedPath, goodPayload)]);
+
+        var record = BethesdaMultitool.Core.Formats.Bsa.Parsing.BsaParser.Parse(corruptBsa)
+            .AllFiles.Single();
+        using (var stream = new FileStream(corruptBsa, FileMode.Open, FileAccess.ReadWrite))
+        {
+            stream.Position = record.Offset;
+            stream.Write(Enumerable.Repeat((byte)0xFF, 16).ToArray());
+        }
+
+        // Direct read of the corrupt entry: present but unextractable ⇒ Exists true, read null.
+        using (var corruptOnly = GameFileSystem.OpenArchive(corruptBsa))
+        {
+            Assert.True(corruptOnly.Exists(sharedPath));
+            Assert.Null(corruptOnly.TryReadAllBytes(sharedPath));
+        }
+
+        using var layered = GameFileSystem.OpenDataFolder(_root, includeLooseFiles: false);
+        Assert.True(layered.Exists(sharedPath));
+        // Stat-first still reports the alphabetically winning (corrupt) layer…
+        Assert.EndsWith("aaa.bsa", layered.TryStat(sharedPath)!.Source, StringComparison.OrdinalIgnoreCase);
+        // …while the read falls through to the intact copy.
+        Assert.Equal(goodPayload, layered.TryReadAllBytes(sharedPath));
+    }
+
+    /// <summary>
+    ///     A locked loose file must fall through to the archive copy (the loose layer's read
+    ///     tolerance), matching today's hand-rolled chains.
+    /// </summary>
+    [Fact]
+    public void TryReadAllBytes_LockedLooseFile_FallsThroughToArchive()
+    {
+        const string sharedPath = "textures\\locked.dds";
+        var archivePayload = PayloadFor(50);
+        WriteBsa("data.bsa", [(sharedPath, archivePayload)]);
+
+        Directory.CreateDirectory(Path.Combine(_root, "textures"));
+        var loosePath = Path.Combine(_root, "textures", "locked.dds");
+        File.WriteAllBytes(loosePath, PayloadFor(51));
+
+        using var layered = GameFileSystem.OpenDataFolder(_root);
+        using (new FileStream(loosePath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.True(layered.Exists(sharedPath));
+            Assert.Equal(archivePayload, layered.TryReadAllBytes(sharedPath));
+        }
+
+        // Unlocked again: loose shadows the archive as usual.
+        Assert.Equal(PayloadFor(51), layered.TryReadAllBytes(sharedPath));
+    }
+
+    /// <summary>
+    ///     Archive layers open lazily: a file that is not an archive at all mounts fine, logs on
+    ///     first touch, and behaves as an empty layer so resolution falls through.
+    /// </summary>
+    [Fact]
+    public void OpenDataFolder_NonArchiveFile_MountsAsEmptyLayer()
+    {
+        File.WriteAllText(Path.Combine(_root, "junk.bsa"), "THIS IS NOT A BSA — just bytes with the wrong magic.");
+        var payload = PayloadFor(60);
+        WriteBsa("real.bsa", [("meshes\\ok.nif", payload)]);
+
+        using var layered = GameFileSystem.OpenDataFolder(_root, includeLooseFiles: false);
+        Assert.Equal(payload, layered.TryReadAllBytes("meshes/ok.nif"));
+        Assert.False(layered.Exists("meshes/only-in-junk.nif"));
+    }
+
+    /// <summary>
+    ///     Registry-backed mounts stay lazy (no handles until first touch) and share one handle
+    ///     per archive across mounts; disposing the mounts releases everything.
+    /// </summary>
+    [Fact]
+    public void OpenDataFolder_WithRegistry_SharesHandlesAcrossMounts()
+    {
+        const string path = "meshes\\shared.nif";
+        var payload = PayloadFor(70);
+        WriteBsa("solo.bsa", [(path, payload)]);
+        var registry = new ArchiveHandleRegistry();
+
+        var mount1 = GameFileSystem.OpenDataFolder(_root, includeLooseFiles: false, registry: registry);
+        var mount2 = GameFileSystem.OpenDataFolder(_root, includeLooseFiles: false, registry: registry);
+        Assert.Equal(0, registry.OpenHandleCount); // lazy: nothing opened yet
+
+        Assert.Equal(payload, mount1.TryReadAllBytes(path));
+        Assert.Equal(payload, mount2.TryReadAllBytes(path));
+        Assert.Equal(1, registry.OpenHandleCount); // one archive, one shared handle
+
+        mount1.Dispose();
+        Assert.Equal(1, registry.OpenHandleCount); // mount2 still holds its lease
+        mount2.Dispose();
+        Assert.Equal(0, registry.OpenHandleCount);
+    }
+
+    /// <summary>
     ///     Racing FIRST lookups build the lazy path index exactly once and every racer gets
     ///     correct results (the old unsynchronized <c>??=</c> let each racer build its own).
     /// </summary>

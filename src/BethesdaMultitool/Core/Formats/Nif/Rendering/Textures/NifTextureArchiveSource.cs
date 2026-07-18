@@ -7,10 +7,13 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 
 /// <summary>
 ///     Indexed texture archive source used by <see cref="NifTextureResolver" />.
+///     <paramref name="ownedHandle" /> is what Dispose releases: the extractor itself for a
+///     private open, or the registry lease when the extractor is a shared handle.
 /// </summary>
 internal sealed class NifTextureArchiveSource(
     BsaExtractor extractor,
-    Dictionary<string, BsaFileRecord> fileIndex) : INifTextureSource
+    Dictionary<string, BsaFileRecord> fileIndex,
+    IDisposable ownedHandle) : INifTextureSource
 {
     public BsaExtractor Extractor { get; } = extractor;
 
@@ -55,6 +58,6 @@ internal sealed class NifTextureArchiveSource(
 
     public void Dispose()
     {
-        Extractor.Dispose();
+        ownedHandle.Dispose();
     }
 }

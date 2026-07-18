@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Formats.Nif.Parser;
+
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
 /// <summary>
@@ -339,6 +341,13 @@ internal sealed class RenderableSubmesh
     ///     when the caller opts in via <c>NifGeometryExtractor.Extract(collectBillboards: true)</c>.
     /// </summary>
     public bool IsBillboard { get; set; }
+
+    /// <summary>
+    ///     Camera-facing rule authored by the containing <c>NiBillboardNode</c>. Skyrim fire commonly
+    ///     uses <see cref="NifBillboardMode.AlwaysFaceCenter" />, which must pitch as well as yaw;
+    ///     treating every node as rotate-about-up collapses its flame cards into a flat glow.
+    /// </summary>
+    public NifBillboardMode BillboardMode { get; set; } = NifBillboardMode.RotateAboutUp;
 
     /// <summary>
     ///     True for SpeedTree leaf cards: each quad is a camera-facing billboard (SpeedTree RT builds

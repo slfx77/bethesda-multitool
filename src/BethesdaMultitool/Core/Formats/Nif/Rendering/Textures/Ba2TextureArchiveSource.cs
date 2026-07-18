@@ -8,10 +8,13 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 ///     parallel to <see cref="NifTextureArchiveSource" />: same <see cref="INifTextureSource" />
 ///     contract, so the resolver treats BSA- and BA2-sourced textures identically. DX10 entries are
 ///     extracted as full .dds (synthesized header + chunks) by <see cref="Ba2Extractor" />.
+///     <paramref name="ownedHandle" /> is what Dispose releases: the extractor itself for a
+///     private open, or the registry lease when the extractor is a shared handle.
 /// </summary>
 internal sealed class Ba2TextureArchiveSource(
     Ba2Extractor extractor,
-    Dictionary<string, Ba2FileRecord> fileIndex) : INifTextureSource
+    Dictionary<string, Ba2FileRecord> fileIndex,
+    IDisposable ownedHandle) : INifTextureSource
 {
     public DecodedTexture? TryLoad(string path)
     {
@@ -47,6 +50,6 @@ internal sealed class Ba2TextureArchiveSource(
 
     public void Dispose()
     {
-        extractor.Dispose();
+        ownedHandle.Dispose();
     }
 }

@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
+using BethesdaMultitool.Core.Vfs;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 
@@ -39,7 +40,8 @@ internal sealed class AssetRenameService(IConversionProgressSink sink)
         }
 
         sink.Info("AssetRename", $"Indexing baseline: {options.AssetRenameBaselineFolder}");
-        using var baseline = new DataFolderIndex(options.AssetRenameBaselineFolder, false);
+        // Shared handles (see AssetPackingService): the pack phase re-indexes these folders next.
+        using var baseline = new DataFolderIndex(options.AssetRenameBaselineFolder, false, ArchiveHandleRegistry.Shared);
         baseline.Build();
 
         var secondaryIndexes = new List<DataFolderIndex>();
@@ -57,7 +59,7 @@ internal sealed class AssetRenameService(IConversionProgressSink sink)
 
                 sink.Info("AssetRename",
                     $"Indexing secondary: {secondary.Path} (Xbox360={secondary.IsXbox360Format})");
-                var index = new DataFolderIndex(secondary.Path, secondary.IsXbox360Format);
+                var index = new DataFolderIndex(secondary.Path, secondary.IsXbox360Format, ArchiveHandleRegistry.Shared);
                 index.Build();
                 secondaryIndexes.Add(index);
             }

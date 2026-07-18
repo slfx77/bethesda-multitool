@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool;
 
@@ -151,7 +152,8 @@ internal static class PlacedObjectCategoryResolver
         }
         if (!string.IsNullOrEmpty(modelPath) &&
             !RenderableReference.IsMarkerModelPath(modelPath) &&
-            !RenderableReference.IsImposterModelPath(modelPath))
+            !RenderableReference.IsImposterModelPath(
+                modelPath, worldViewData?.Game ?? BethesdaGame.Unknown))
         {
             properties.Add(new EsmPropertyEntry
                 { Name = "Model", Value = modelPath, Category = "Identity" });

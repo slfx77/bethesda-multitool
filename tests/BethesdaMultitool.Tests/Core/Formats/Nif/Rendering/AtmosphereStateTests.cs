@@ -22,6 +22,24 @@ public sealed class AtmosphereStateTests
     private static readonly AtmosphereState.ClimateTiming CleanTiming = new(5f, 7f, 17f, 19f);
 
     [Fact]
+    public void ApplySkyColorScale_ScalesAllFourSkyColorsOnly()
+    {
+        var original = AtmosphereState.Resolve(12f);
+        const float scale = 0.375f;
+
+        var scaled = AtmosphereState.ApplySkyColorScale(original, scale);
+
+        Assert.Equal(original.SkyTopColor * scale, scaled.SkyTopColor);
+        Assert.Equal(original.SkyLowerColor * scale, scaled.SkyLowerColor);
+        Assert.Equal(original.AuthoredHorizonColor * scale, scaled.AuthoredHorizonColor);
+        Assert.Equal(original.SkyHorizonColor * scale, scaled.SkyHorizonColor);
+        Assert.Equal(original.SunColor, scaled.SunColor);
+        Assert.Equal(original.AmbientColor, scaled.AmbientColor);
+        Assert.Equal(original.FogColor, scaled.FogColor);
+        Assert.Equal(original.DirectionalAmbient, scaled.DirectionalAmbient);
+    }
+
+    [Fact]
     public void Resolve_Noon_SunHighAndBright()
     {
         var a = AtmosphereState.Resolve(12f);

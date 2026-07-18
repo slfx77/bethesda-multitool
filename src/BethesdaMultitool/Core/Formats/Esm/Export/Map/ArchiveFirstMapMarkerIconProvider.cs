@@ -165,7 +165,7 @@ internal sealed class ArchiveFirstMapMarkerIconProvider : IDisposable
     private readonly Func<string, byte[]?> _readEmbeddedPng;
     private readonly Dictionary<int, MapMarkerIconPayload?> _archiveCache = new();
     private readonly Dictionary<int, MapMarkerIconPayload?> _embeddedCache = new();
-    private readonly ArchiveReader? _archiveReader;
+    private readonly Vfs.ArchiveLease? _archiveLease;
 
     internal ArchiveFirstMapMarkerIconProvider(
         BethesdaGame game,
@@ -181,8 +181,10 @@ internal sealed class ArchiveFirstMapMarkerIconProvider : IDisposable
 
         try
         {
-            _archiveReader = ArchiveReader.Open(ArchivePath);
-            _readArchiveFile = _archiveReader.ReadFile;
+            // Shared handle: icon sets rebuild repeatedly against the same Interface/Textures
+            // archive, which the viewer often holds open too — the registry dedups the parse.
+            _archiveLease = Vfs.ArchiveHandleRegistry.Shared.Acquire(ArchivePath);
+            _readArchiveFile = _archiveLease.Reader.ReadFile;
         }
         catch
         {
@@ -229,7 +231,7 @@ internal sealed class ArchiveFirstMapMarkerIconProvider : IDisposable
 
     public void Dispose()
     {
-        _archiveReader?.Dispose();
+        _archiveLease?.Dispose();
         _archiveCache.Clear();
         _embeddedCache.Clear();
     }

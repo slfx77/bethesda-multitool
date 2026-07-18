@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Games;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
@@ -274,7 +275,11 @@ public sealed partial class WorldView3DControl
                 var xespDisabled = _data.XespDisabledRefs.Contains(placement.FormId);
                 var category = _data.CategoryIndex.GetValueOrDefault(
                     placement.BaseFormId, PlacedObjectCategory.Unknown);
-                if (RenderableReference.TryBuild(placement, category, xespDisabled: xespDisabled) is not { } r)
+                if (RenderableReference.TryBuild(
+                        placement,
+                        category,
+                        xespDisabled: xespDisabled,
+                        game: _data.Game) is not { } r)
                     continue;
                 if (!_referenceEnabledOverrides.IsVisible(r.FormId, r.IsInitiallyDisabled, _showDisabled)) continue;
                 // Markers are pickable when VISIBLE (the pickable set mirrors the visible set);
@@ -446,7 +451,10 @@ public sealed partial class WorldView3DControl
     private void UpdateHighlightFromSelection()
     {
         if (_selectionHighlight is null) return;
-        if (_selectedReference is not { } placement || RenderableReference.TryBuild(placement) is not { } r)
+        if (_selectedReference is not { } placement ||
+            RenderableReference.TryBuild(
+                placement,
+                game: _data?.Game ?? BethesdaGame.Unknown) is not { } r)
         {
             _selectionHighlight.ClearSelection();
             return;

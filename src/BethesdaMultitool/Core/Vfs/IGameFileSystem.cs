@@ -39,8 +39,10 @@ public interface IGameFileSystem : IDisposable
     GameFileEntry? TryStat(string path);
 
     /// <summary>
-    ///     The full decompressed payload of <paramref name="path" />, or null when absent.
-    ///     Never throws for a missing path; corrupt payloads propagate their format exception.
+    ///     The full decompressed payload of <paramref name="path" />, or null when absent
+    ///     <b>or unextractable</b> (corrupt entry, unsupported codec, locked loose file) — so
+    ///     <see cref="Exists" /> may be true where this returns null, and a layered filesystem
+    ///     falls through to the next layer's copy instead of propagating the failure.
     /// </summary>
     byte[]? TryReadAllBytes(string path);
 

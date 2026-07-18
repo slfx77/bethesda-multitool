@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Games;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
@@ -55,6 +56,7 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     private Func<string, PlacedObjectCategory, float, CollisionMeshResolution>? _collisionWarmup;
     private IReadOnlyCollection<uint>? _xespDisabledRefs;
     private IReadOnlyDictionary<uint, PlacedObjectCategory>? _categoryIndex;
+    private BethesdaGame _game;
     private bool _showDisabled;
     private bool _disposed;
 
@@ -219,11 +221,13 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     /// <summary>Binds the loaded worldspace's spatial index (placed-ref source for the overlay).</summary>
     public void LoadData(
         global::BethesdaMultitool.WorldSpatialIndex? spatialIndex,
-        IReadOnlyDictionary<uint, PlacedObjectCategory>? categoryIndex)
+        IReadOnlyDictionary<uint, PlacedObjectCategory>? categoryIndex,
+        BethesdaGame game = BethesdaGame.Unknown)
     {
         _geometryCache.Invalidate();
         SpatialIndex = spatialIndex;
         _categoryIndex = categoryIndex;
+        _game = game;
     }
 
     /// <summary>
@@ -254,7 +258,7 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
                 if (!_enabledOverrides.IsVisible(p.FormId, authoredDisabled, _showDisabled)) continue;
                 if (p.RecordType is "ACHR" or "ACRE") continue; // skinned actors carry no static collision
                 if (RenderableReference.IsMarkerModelPath(p.ModelPath) ||
-                    RenderableReference.IsImposterModelPath(p.ModelPath) ||
+                    RenderableReference.IsImposterModelPath(p.ModelPath, _game) ||
                     RenderableReference.IsLodDuplicateBaseEditorId(p.BaseEditorId)) continue;
 
                 var world = PlacedReferenceTransform.ComposeWorldMatrix(

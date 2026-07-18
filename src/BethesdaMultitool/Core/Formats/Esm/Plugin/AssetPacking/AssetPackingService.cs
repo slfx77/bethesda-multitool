@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Reporting;
 using BethesdaMultitool.Core.Orchestration;
 using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Core.Utils;
+using BethesdaMultitool.Core.Vfs;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 
@@ -127,7 +128,9 @@ public sealed class AssetPackingService
 
             // 3) Build baseline and secondary folder indexes.
             sink.Info("AssetPacking", $"Indexing baseline data folder: {options.BaselineDataFolder}");
-            using var baseline = new DataFolderIndex(options.BaselineDataFolder, false);
+            // Shared handles: the rename phase indexed these same folders moments earlier; under a
+            // KeepWarm scope (dmp to-esm wraps the conversion) the archive parses are reused.
+            using var baseline = new DataFolderIndex(options.BaselineDataFolder, false, ArchiveHandleRegistry.Shared);
             baseline.Build();
             sink.Info("AssetPacking", $"Baseline indexed {baseline.EntryCount} entries");
             WarnIfTruncated(sink, baseline, "Baseline");
@@ -140,7 +143,7 @@ public sealed class AssetPackingService
                     cancellationToken.ThrowIfCancellationRequested();
                     sink.Info("AssetPacking",
                         $"Indexing secondary folder ({(secondary.IsXbox360Format ? "Xbox 360" : "PC")}): {secondary.Path}");
-                    var idx = new DataFolderIndex(secondary.Path, secondary.IsXbox360Format);
+                    var idx = new DataFolderIndex(secondary.Path, secondary.IsXbox360Format, ArchiveHandleRegistry.Shared);
                     idx.Build();
                     sink.Info("AssetPacking",
                         $"  → {idx.EntryCount} entries");

@@ -156,7 +156,8 @@ public sealed partial class WorldView3DControl
                 {
                     _references.Render(
                         viewProj, cylinder, deferBlended: true, cullViewProj: viewProj,
-                        cameraPosition: shadingEye);
+                        cameraPosition: shadingEye,
+                        cameraForward: Vector3.Normalize(Vector3.Cross(leafUp, leafRight)));
                 }
                 if (opts.ShowWater && _water is not null)
                 {

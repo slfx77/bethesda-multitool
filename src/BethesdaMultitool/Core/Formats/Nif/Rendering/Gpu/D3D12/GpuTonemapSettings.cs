@@ -172,11 +172,45 @@ internal readonly record struct GpuTonemapSettings
         GpuTonemapSettings settings, BethesdaGame game, bool hdrActive, bool isInterior)
     {
         if (!hdrActive) return 1f;
-        if (settings.ModernFamily is not null) return settings.SunlightScale;
+        if (settings.ModernFamily is not null)
+        {
+            return game == BethesdaGame.Skyrim && settings.Mode != GpuTonemapMode.CreationModern
+                ? EncodePhysicalScaleForGammaScene(settings.SunlightScale)
+                : settings.SunlightScale;
+        }
 
         var classicExterior = !isInterior &&
                               (game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas);
         return classicExterior ? settings.SunlightScale : 1f;
+    }
+
+    /// <summary>
+    ///     Resolves the Creation-era non-imagespace sky multiplier separately from the display operator.
+    ///     Skyrim's default fallback scene is gamma-encoded, so a physical linear multiplier must be
+    ///     gamma-encoded before it is applied to the sky colors. CreationModern retains the authored raw
+    ///     value because that diagnostic path owns its own (still incomplete) imagespace equation.
+    /// </summary>
+    internal static float ResolveSceneSkyScale(
+        GpuTonemapSettings settings, BethesdaGame game, bool hdrActive, bool isInterior)
+    {
+        if (!hdrActive || settings.ModernFamily is null) return 1f;
+        if (game == BethesdaGame.Skyrim && settings.Mode != GpuTonemapMode.CreationModern)
+        {
+            return EncodePhysicalScaleForGammaScene(settings.SkyScale);
+        }
+
+        return settings.Mode == GpuTonemapMode.CreationModern ? settings.SkyScale : 1f;
+    }
+
+    /// <summary>
+    ///     The GammaAces input is gamma-encoded and is linearized with pow(color, 2.2) in the composite.
+    ///     Encoding a physical scale by 1/2.2 therefore makes that later linear value change by exactly
+    ///     the authored multiplier instead of accidentally raising the multiplier itself to 2.2.
+    /// </summary>
+    internal static float EncodePhysicalScaleForGammaScene(float authoredScale)
+    {
+        if (!float.IsFinite(authoredScale)) return 1f;
+        return MathF.Pow(MathF.Max(authoredScale, 0f), 1f / 2.2f);
     }
 
     /// <summary>Shipped FNV DefaultImageSpaceExterior (0x161) with neutral exposure.</summary>
@@ -365,8 +399,13 @@ internal readonly record struct GpuTonemapSettings
             BethesdaGame.Oblivion => ForOblivionWeather(null, interior),
             BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas =>
                 interior ? EngineInteriorDefaults : EngineExteriorDefaults,
-            BethesdaGame.Skyrim when ModernPipelineEnabled =>
-                ModernNeutralDefaults(ImageSpaceModernFamily.Skyrim),
+            // Retain Skyrim's semantic family even while GammaAces remains the default display
+            // operator. This lets its non-imagespace SunlightScale/SkyScale resolve independently
+            // without enabling the unrecovered cinematic/exposure pipeline.
+            BethesdaGame.Skyrim => ModernNeutralDefaults(ImageSpaceModernFamily.Skyrim) with
+            {
+                Mode = ModernPipelineEnabled ? GpuTonemapMode.CreationModern : GpuTonemapMode.GammaAces,
+            },
             BethesdaGame.Fallout4 or BethesdaGame.Fallout76 when ModernPipelineEnabled =>
                 ModernNeutralDefaults(ImageSpaceModernFamily.Fallout4),
             _ => GammaAcesDefaults,

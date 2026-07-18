@@ -482,7 +482,7 @@ internal static class NifSceneGraphWalker
     /// <param name="billboardShapes">
     ///     When non-null, shapes that sit under a <c>NiBillboardNode</c> are baked with the billboard
     ///     node's <em>rotation dropped</em> (translation kept) so the renderer can re-aim them at the
-    ///     camera per frame, and their block indices are collected into this set. Null (default) keeps
+    ///     camera per frame, and their block indices are mapped to the authored billboard mode. Null (default) keeps
     ///     the legacy bake — the billboard node's full transform is baked in like any other node — so
     ///     the single-NIF / NPC / export paths are unaffected.
     /// </param>
@@ -490,7 +490,7 @@ internal static class NifSceneGraphWalker
         Dictionary<int, List<int>> nodeChildren, Dictionary<int, Matrix4x4> worldTransforms,
         Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null,
         bool treatRootsAsIdentity = false,
-        HashSet<int>? billboardShapes = null)
+        Dictionary<int, NifBillboardMode>? billboardShapes = null)
     {
         // TES4-era NIFs (Oblivion, 10.x–20.0.0.5) compose the scene root's authored transform UNDER
         // the REFR placement instead of replacing it — ChorrolLODHouse01's root bakes a −90°X
@@ -550,8 +550,8 @@ internal static class NifSceneGraphWalker
         Dictionary<int, List<int>> nodeChildren, Dictionary<int, Matrix4x4> worldTransforms,
         Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null,
         bool ignoreOwnTransform = false,
-        HashSet<int>? billboardShapes = null,
-        bool underBillboard = false)
+        Dictionary<int, NifBillboardMode>? billboardShapes = null,
+        NifBillboardMode? activeBillboardMode = null)
     {
         var block = nif.Blocks[blockIndex];
         // A placed-reference's scene root has its own authored transform replaced by the REFR
@@ -561,6 +561,17 @@ internal static class NifSceneGraphWalker
             ? Matrix4x4.Identity
             : NifBlockParsers.ParseNiAVObjectTransform(data, block, nif.BsVersion, nif.BinaryVersion, nif.IsBigEndian,
                 nif.HasInlineStrings);
+
+        // A billboard can itself be a scene root. The child-special-case below never sees that
+        // topology, so establish the mode here and discard the root billboard's authored rotation
+        // just as we do for a nested billboard node.
+        if (billboardShapes != null && block.TypeName == "NiBillboardNode" &&
+            activeBillboardMode is null)
+        {
+            activeBillboardMode = NifObjectBlockReader.ReadBillboardMode(
+                data, block, nif.BinaryVersion, nif.IsBigEndian, nif.HasInlineStrings);
+            localTransform = StripRotationPreserveUniformScale(localTransform);
+        }
 
         // If animation overrides are available, merge per-channel: animation rotation
         // replaces bind pose rotation, but bind pose translation/scale are preserved
@@ -615,20 +626,24 @@ internal static class NifSceneGraphWalker
                 {
                     // Billboard subtree: the engine re-orients a NiBillboardNode toward the camera every
                     // frame, so its authored rotation is meaningless for a static bake. Fold only the
-                    // node's world TRANSLATION into the subtree parent (drop its rotation) so the quad
-                    // lands at the right spot in its authored local orientation, then flag every shape
-                    // underneath as a billboard for the renderer to re-aim per frame.
+                    // node's world translation + uniform scale into the subtree parent (drop only its
+                    // rotation) so the quad lands at the right spot and size in its authored local
+                    // orientation, then flag every shape underneath for per-frame re-aiming.
                     var bbLocal = NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[childIdx],
                         nif.BsVersion, nif.BinaryVersion, nif.IsBigEndian, nif.HasInlineStrings);
                     var bbWorld = bbLocal * worldTransform;
-                    var bbParent = Matrix4x4.CreateTranslation(bbWorld.Translation);
+                    var bbParent = StripRotationPreserveUniformScale(bbWorld);
+                    var mode = NifObjectBlockReader.ReadBillboardMode(
+                        data, nif.Blocks[childIdx], nif.BinaryVersion, nif.IsBigEndian,
+                        nif.HasInlineStrings);
                     WalkNode(data, nif, childIdx, bbParent, nodeChildren, worldTransforms, animOverrides,
-                        ignoreOwnTransform: true, billboardShapes: billboardShapes, underBillboard: true);
+                        ignoreOwnTransform: true, billboardShapes: billboardShapes,
+                        activeBillboardMode: mode);
                 }
                 else
                 {
                     WalkNode(data, nif, childIdx, worldTransform, nodeChildren, worldTransforms, animOverrides,
-                        billboardShapes: billboardShapes, underBillboard: underBillboard);
+                        billboardShapes: billboardShapes, activeBillboardMode: activeBillboardMode);
                 }
             }
             else if (ShapeTypes.Contains(childType))
@@ -638,12 +653,23 @@ internal static class NifSceneGraphWalker
                     NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[childIdx], nif.BsVersion,
                         nif.BinaryVersion, nif.IsBigEndian, nif.HasInlineStrings);
                 worldTransforms[childIdx] = shapeLocal * worldTransform;
-                if (underBillboard)
+                if (activeBillboardMode is { } mode)
                 {
-                    billboardShapes?.Add(childIdx);
+                    billboardShapes?[childIdx] = mode;
                 }
             }
         }
+    }
+
+    private static Matrix4x4 StripRotationPreserveUniformScale(Matrix4x4 transform)
+    {
+        var scale = new Vector3(transform.M11, transform.M12, transform.M13).Length();
+        if (!float.IsFinite(scale) || scale <= float.Epsilon)
+        {
+            scale = 1f;
+        }
+
+        return Matrix4x4.CreateScale(scale) * Matrix4x4.CreateTranslation(transform.Translation);
     }
 
     /// <summary>

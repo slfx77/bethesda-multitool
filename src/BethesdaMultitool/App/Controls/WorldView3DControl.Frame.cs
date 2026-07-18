@@ -195,7 +195,7 @@ public sealed partial class WorldView3DControl
 
         try
         {
-            RenderFrameD3D12();
+            RenderFrameD3D12(tonemap);
             _consecutiveRenderFailures = 0;
         }
         catch (Exception ex)
@@ -262,7 +262,7 @@ public sealed partial class WorldView3DControl
         Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, int frameIndex, bool enableFog = true,
         bool enableLighting = true, bool cameraRelative = false, Vector3? shadingCameraPosOverride = null,
         float? gameHourOverride = null, Vector3? cameraOriginOverride = null, bool enableShadows = true,
-        VisibilityCylinder? lightVisibility = null)
+        VisibilityCylinder? lightVisibility = null, GpuTonemapSettings? tonemapOverride = null)
     {
         // The top-down overlay drives lighting from the 2D map's own time-of-day, passed via
         // gameHourOverride; the live perspective path uses the 3D control's _gameHour. enableLighting is
@@ -298,13 +298,17 @@ public sealed partial class WorldView3DControl
         // uCameraOrigin.w = the active imagespace's EmissiveMult (hdrData[3], scene-pass emissive
         // brightness). Keyed off the same per-game resolution the display pass uses so the two stay
         // consistent.
-        var tonemap = ResolveTonemapSettings();
+        var tonemap = tonemapOverride ?? ResolveTonemapSettings();
         var hdrActive = _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
+        var game = _data?.Game ?? Core.Games.BethesdaGame.Unknown;
         var sceneSunlightScale = GpuTonemapSettings.ResolveSceneSunlightScale(
             tonemap,
-            _data?.Game ?? Core.Games.BethesdaGame.Unknown,
+            game,
             hdrActive,
             isInterior: _selectedInterior is not null);
+        var sceneSkyScale = GpuTonemapSettings.ResolveSceneSkyScale(
+            tonemap, game, hdrActive, isInterior: _selectedInterior is not null);
+        resolved = AtmosphereState.ApplySkyColorScale(resolved, sceneSkyScale);
         // Sun-shadow sampling constants: the rendered cascades' light matrices (with this frame's
         // render origin folded in) + packed params. Disabled (zero) until the cascades have
         // content, when the caller opts out (ortho export / top-down), or when the toggle / env
@@ -324,7 +328,7 @@ public sealed partial class WorldView3DControl
             lightingOn, projectedSunShadowActive, fogEnabled);
         _lastBoundShadowParams = shadow.Params0;
         var constants = AtmosphereConstants.From(
-            resolved, gameHour, shadingCameraPos, lightingEnabled: lightingOn ? 1f : 0f,
+            resolved, game, gameHour, shadingCameraPos, lightingEnabled: lightingOn ? 1f : 0f,
             skyEnabled: _showSky ? 1f : 0f, fogEnabled: enableFog && _showFog ? 1f : 0f,
             placedLightCount: placedLightCount,
             cameraOrigin: cameraOrigin, ambientScale: ambientScale, shadow: shadow,
@@ -332,9 +336,7 @@ public sealed partial class WorldView3DControl
             // FO3/FNV ApplyCurrentParameterData exposes hdrData[11] to directional-light setup.
             // Its exact retail consumer is exterior HDR directional light only. It is scene state,
             // so a display-operator override must not suppress it.
-            sunlightScale: sceneSunlightScale,
-            skyScale: tonemap.Mode == Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.CreationModern
-                ? tonemap.SkyScale : 1f);
+            sunlightScale: sceneSunlightScale);
         var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
         unsafe { *(AtmosphereConstants*)alloc.CpuPtr = constants; }
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
@@ -388,6 +390,7 @@ public sealed partial class WorldView3DControl
 
         public static AtmosphereConstants From(
             AtmosphereState.Resolved a,
+            Core.Games.BethesdaGame game,
             float gameHour,
             Vector3 cameraPos,
             float lightingEnabled,
@@ -399,11 +402,10 @@ public sealed partial class WorldView3DControl
             Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.ShadowSampleConstants shadow = default,
             float emissiveMult = 1f,
             bool hdrActive = true,
-            float sunlightScale = 1f,
-            float skyScale = 1f)
+            float sunlightScale = 1f)
         {
             var directionalAmbient = AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
-                AuthoredSkyArchitecture.Enabled, a.DirectionalAmbient);
+                game, AuthoredSkyArchitecture.Enabled, a.DirectionalAmbient);
 
             return new()
             {
@@ -411,10 +413,10 @@ public sealed partial class WorldView3DControl
                 SunColorLighting = new Vector4(a.SunColor * sunlightScale, lightingEnabled),
                 // w carries the per-game ambient ("fill") scale read by the object/terrain shaders.
                 AmbientColor = new Vector4(a.AmbientColor, ambientScale),
-                SkyTopSkyEnabled = new Vector4(a.SkyTopColor * skyScale, skyEnabled),
+                SkyTopSkyEnabled = new Vector4(a.SkyTopColor, skyEnabled),
                 // Spare w is the explicit HDR branch used only by classic Lighting30. This avoids
                 // overloading EmissiveMult=0, which is valid authored IMGS data.
-                SkyHorizon = new Vector4(a.SkyHorizonColor * skyScale, hdrActive ? 1f : 0f),
+                SkyHorizon = new Vector4(a.SkyHorizonColor, hdrActive ? 1f : 0f),
                 FogColorFogEnabled = new Vector4(a.FogColor, fogEnabled),
                 Params = new Vector4(gameHour, a.FogNear, a.FogFar, placedLightCount),
                 CameraPosFogPower = new Vector4(cameraPos, a.FogPower),
@@ -605,7 +607,7 @@ public sealed partial class WorldView3DControl
         // availability bit above. A degenerate full render publishes all-disabled and retries.
     }
 
-    private void RenderFrameD3D12()
+    private void RenderFrameD3D12(GpuTonemapSettings tonemap)
     {
         var frameNumber = ++_profileFrameIndex;
         var frameStarted = StartProfileTimestamp();
@@ -817,11 +819,16 @@ public sealed partial class WorldView3DControl
         // own PSO + slots, never the root signature, so this CBV survives every scene pass.
         // Ortho modes: force fog OFF (distance-from-a-1,000,000-unit-eye fog would max out everywhere)
         // and feed the ortho eye as the shading camera position so the specular view vector is parallel.
+        var sceneSkyScale = GpuTonemapSettings.ResolveSceneSkyScale(
+            tonemap,
+            _data?.Game ?? Core.Games.BethesdaGame.Unknown,
+            _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
+            isInterior: _selectedInterior is not null);
         BindAtmosphereConstants(
             cmd, recorder.FrameIndex, enableFog: !projectionActive, cameraRelative: cameraRelative,
             shadingCameraPosOverride: projectionActive ? orthoEye : null,
             cameraOriginOverride: cameraRelative ? sceneRenderOrigin : null,
-            lightVisibility: cylinder);
+            lightVisibility: cylinder, tonemapOverride: tonemap);
 
         // Sky FIRST — gradient + clouds + stars into the cleared color target (depth OFF, so terrain
         // overwrites it via the normal depth pass; OFF ⇒ the flat dark-blue clear shows), then the
@@ -833,7 +840,8 @@ public sealed partial class WorldView3DControl
         if (_showSky)
         {
             RenderSky(viewProjSky, Vector3.Zero,
-                projectionActive ? ProjectionCameraBasis() : null);
+                projectionActive ? ProjectionCameraBasis() : null,
+                skyColorScale: sceneSkyScale);
         }
 
         // Layer order matches D3D11: terrain → references → water → wireframe. Water is
@@ -876,7 +884,10 @@ public sealed partial class WorldView3DControl
             ? _references?.Render(
                   viewProjScene, cylinder, deferBlended: true, cullViewProj: viewProjAbsolute,
                   renderOrigin: referenceRenderOrigin, cullCameraPose: cullPose,
-                  cameraPosition: projectionActive ? orthoEye : _camera.Position) ?? 0
+                  cameraPosition: projectionActive ? orthoEye : _camera.Position,
+                  cameraForward: projectionActive
+                      ? Vector3.Normalize(_projectionFocus - orthoEye)
+                      : _camera.Forward) ?? 0
             : 0;
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ReferencesEnd);
         var referencesMs = ElapsedMilliseconds(segmentStarted);

@@ -39,7 +39,11 @@ internal readonly record struct GrassScatterProfile(
         // TESV.exe 1.9.32 dynamic initializers: 20, 2 (inclusive => three entries), and 0.
         BethesdaGame.Skyrim => new(
             true, 20f, 2, 3, 0f, GrassPositionQuantization.HalfRelativeToTwelveCellBlock,
-            null, false, default),
+            null, false,
+            // TESV 1.9.32 retail defaults: fGrassStartFadeDistance=3500 and
+            // fGrassFadeRange=1000. Like the recovered FNV path, the shader's fade signal is an
+            // endpoint gate rather than a gradual opacity fade.
+            new GrassDistanceEnvelope(FadeStart: 3500f, FadeRange: 1000f)),
 
         // Fallout4_Default.ini ships iMinGrassSize=20; the PDB-backed manager uses eval radius 2
         // and the same inclusive maximum-entry loop.
@@ -176,8 +180,7 @@ internal static class GrassDistanceCullPolicy
 {
     /// <summary>
     ///     Batch identity for the hard-end policy. Raw <c>IsGrass</c> is intentionally insufficient:
-    ///     Skyrim/FO4 grass has no recovered envelope in this slice and must retain the established
-    ///     non-grass batch topology.
+    ///     only game profiles with a recovered envelope split the established non-grass topology.
     /// </summary>
     internal static bool UsesEnvelope(bool isGrass, in GrassDistanceEnvelope envelope)
         => isGrass && envelope.Enabled;

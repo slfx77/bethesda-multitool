@@ -13,9 +13,11 @@ namespace BethesdaMultitool;
 ///     directory + BSA-path dedup so a DLC ESM in the same Data folder as the main game ESM
 ///     doesn't double-list shared archives.
 ///
-///     Ordering: primary first, then load-order entries in order, matching the engine's
-///     "later file overrides earlier" semantics — <c>NifTextureLoader</c> walks the
-///     sources list and returns the first hit, which gives precedence to later DLC.
+///     Ordering: primary first, then load-order entries in order. <c>NifTextureLoader</c>
+///     walks the sources list and returns the FIRST hit, so the primary's archives win any
+///     path collision and load-order entries only fill gaps — matching the engine's
+///     SArchiveList convention, where the first registered archive containing a path wins
+///     (the reason ArchiveInvalidation exists). Later DLC does NOT override the primary here.
 ///
 ///     A DMP file has no adjacent BSAs of its own, so without <c>AdditionalDataPaths</c> the
 ///     world map's terrain-texture layer renders only the fallback brown. This helper is

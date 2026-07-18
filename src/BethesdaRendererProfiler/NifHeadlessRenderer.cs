@@ -200,6 +200,10 @@ internal static class NifHeadlessRenderer
             {
                 ShowInitiallyDisabled = true,
                 ShowMarkers = true,
+                // This harness renders one explicitly requested NIF with no colocated full-detail
+                // sibling. Never hide it solely because its filename resembles a world LOD/imposter;
+                // Skyrim's placed WRCastleMainBuilding01LOD is a real retail regression fixture.
+                ShowImposters = true,
                 StreamingThrottled = false, // drain decodes/uploads as fast as possible
             };
 
@@ -265,6 +269,7 @@ internal static class NifHeadlessRenderer
                 var viewProj = OrthoViewProjBuilder.BuildViewProj(focus, azimuthDeg: azimuthDeg, elevationDeg: 30f,
                     orthoHalfHeight: halfHeight, aspect: 1f);
                 var cameraPosition = OrthoViewProjBuilder.EyePosition(focus, azimuthDeg, 30f);
+                var cameraForward = Vector3.Normalize(focus - cameraPosition);
                 var (camRight, camUp) = OrthoViewProjBuilder.CameraBasis(azimuthDeg, 30f);
                 // Cull cylinder centred at the REFR origin (world 0,0,0 — cell (0,0)) with a radius that
                 // reaches the framed geometry, so ContainsCell(0,0) + the per-REFR sphere both pass.
@@ -312,10 +317,10 @@ internal static class NifHeadlessRenderer
                     // Live-viewer call shape: tolerant cull pose + deferred blended pass.
                     var pose = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12
                         .ReferenceRenderer12.CullCameraPose(
-                            Vector3.Normalize(new Vector3(-1f, -1f, -0.5f)), 0.9f, 1f);
+                            cameraForward, 0.9f, 1f);
                     references.Render(viewProj, cylinder, deferBlended: true,
                         cullViewProj: viewProj, renderOrigin: default, cullCameraPose: pose,
-                        cameraPosition: cameraPosition);
+                        cameraPosition: cameraPosition, cameraForward: cameraForward);
                     water.SetNifWaterPlanes(references.NifWaterPlanes);
                     waterDraws = water.Render(viewProj, cylinder);
                     references.RenderBlendedDeferred();
@@ -323,7 +328,8 @@ internal static class NifHeadlessRenderer
                 else
                 {
                     references.Render(
-                        viewProj, cylinder, deferBlended: false, cameraPosition: cameraPosition);
+                        viewProj, cylinder, deferBlended: false, cameraPosition: cameraPosition,
+                        cameraForward: cameraForward);
                     water.SetNifWaterPlanes(references.NifWaterPlanes);
                     waterDraws = water.Render(viewProj, cylinder);
                 }
@@ -427,6 +433,7 @@ internal static class NifHeadlessRenderer
                 var viewProj = OrthoViewProjBuilder.BuildViewProj(focus, azimuthDeg: azimuthDeg,
                     elevationDeg: 30f, orthoHalfHeight: halfHeight, aspect: 1f);
                 var cameraPosition = OrthoViewProjBuilder.EyePosition(focus, azimuthDeg, 30f);
+                var cameraForward = Vector3.Normalize(focus - cameraPosition);
                 var (camRight, camUp) = OrthoViewProjBuilder.CameraBasis(azimuthDeg, 30f);
                 var cullRadius = MathF.Max((focus.Length() + halfHeight) * 1.5f, 4096f);
                 var cylinder = OrthoViewProjBuilder.BuildCoverCylinder(Vector3.Zero, cullRadius);
@@ -458,10 +465,10 @@ internal static class NifHeadlessRenderer
                     {
                         var pose = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12
                             .ReferenceRenderer12.CullCameraPose(
-                                Vector3.Normalize(new Vector3(-1f, -1f, -0.5f)), 0.9f, 1f);
+                                cameraForward, 0.9f, 1f);
                         references.Render(viewProj, cylinder, deferBlended: true,
                             cullViewProj: viewProj, renderOrigin: default, cullCameraPose: pose,
-                            cameraPosition: cameraPosition);
+                            cameraPosition: cameraPosition, cameraForward: cameraForward);
                         water.SetNifWaterPlanes(references.NifWaterPlanes);
                         water.Render(viewProj, cylinder);
                         references.RenderBlendedDeferred();
@@ -469,7 +476,8 @@ internal static class NifHeadlessRenderer
                     else
                     {
                         references.Render(
-                            viewProj, cylinder, deferBlended: false, cameraPosition: cameraPosition);
+                            viewProj, cylinder, deferBlended: false, cameraPosition: cameraPosition,
+                            cameraForward: cameraForward);
                         water.SetNifWaterPlanes(references.NifWaterPlanes);
                         water.Render(viewProj, cylinder);
                     }

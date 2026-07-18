@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -335,6 +336,37 @@ public sealed class RenderableReferenceTests
     public void IsImposterModelPath_NonImposters_ReturnFalse(string? path)
     {
         Assert.False(RenderableReference.IsImposterModelPath(path));
+    }
+
+    [Fact]
+    public void IsImposterModelPath_SkyrimPlacedLodFilename_ReturnsFalse()
+    {
+        const string castle =
+            "Architecture\\WhiteRun\\WRBuildings\\WRCastleMainBuilding01LOD.nif";
+
+        Assert.False(RenderableReference.IsImposterModelPath(castle, BethesdaGame.Skyrim));
+        Assert.True(RenderableReference.IsImposterModelPath(castle, BethesdaGame.Fallout4));
+    }
+
+    [Fact]
+    public void TryBuild_SkyrimPlacedLodFilename_RemainsRenderable()
+    {
+        var castle = new PlacedReference
+        {
+            FormId = 0x0005D2BE,
+            BaseFormId = 0x0008FC40,
+            RecordType = "REFR",
+            ModelPath = "Architecture\\WhiteRun\\WRBuildings\\WRCastleMainBuilding01LOD.nif",
+            X = 28313.12f,
+            Y = 1734.387f,
+            Z = -1191.528f,
+            Scale = 1f
+        };
+
+        var renderable = RenderableReference.TryBuild(castle, game: BethesdaGame.Skyrim);
+
+        Assert.NotNull(renderable);
+        Assert.False(renderable.Value.IsImposter);
     }
 
     [Fact]

@@ -42,6 +42,60 @@ public sealed class NifBillboardFacingTests
     }
 
     [Fact]
+    public void ResolveRotation_AlwaysFaceCenterPitchesHorizontalCardTowardCamera()
+    {
+        var authoredFront = Vector3.UnitZ;
+        var toCamera = Vector3.Normalize(new Vector3(3f, -4f, 5f));
+
+        var rotation = NifBillboardFacing.ResolveRotation(
+            NifBillboardMode.AlwaysFaceCenter,
+            authoredFront,
+            toCamera,
+            cameraForward: -toCamera);
+        var resolved = Vector3.Normalize(Vector3.TransformNormal(authoredFront, rotation));
+
+        Assert.InRange(Vector3.Dot(resolved, toCamera), 0.99999f, 1.00001f);
+        Assert.True(MathF.Abs(resolved.Z) < 0.999f, "The card must pitch instead of remaining horizontal.");
+    }
+
+    [Fact]
+    public void ResolveRotation_AlwaysFaceCameraUsesViewDirectionInsteadOfObjectCenter()
+    {
+        var authoredFront = Vector3.UnitY;
+        var toCamera = Vector3.UnitX;
+        var cameraForward = Vector3.UnitY;
+
+        var rotation = NifBillboardFacing.ResolveRotation(
+            NifBillboardMode.AlwaysFaceCamera,
+            authoredFront,
+            toCamera,
+            cameraForward);
+        var resolved = Vector3.Normalize(Vector3.TransformNormal(authoredFront, rotation));
+
+        Assert.InRange(Vector3.Dot(resolved, -cameraForward), 0.99999f, 1.00001f);
+        Assert.InRange(Vector3.Dot(resolved, toCamera), -0.00001f, 0.00001f);
+    }
+
+    [Fact]
+    public void ResolveRotation_RotateAboutUpDoesNotPitch()
+    {
+        var authoredFront = Vector3.UnitY;
+        var toCamera = Vector3.Normalize(new Vector3(3f, -4f, 5f));
+
+        var rotation = NifBillboardFacing.ResolveRotation(
+            NifBillboardMode.RotateAboutUp,
+            authoredFront,
+            toCamera,
+            cameraForward: -toCamera);
+        var resolved = Vector3.Normalize(Vector3.TransformNormal(authoredFront, rotation));
+
+        Assert.Equal(0f, resolved.Z, 6);
+        Assert.InRange(Vector2.Dot(
+            Vector2.Normalize(new Vector2(resolved.X, resolved.Y)),
+            Vector2.Normalize(new Vector2(toCamera.X, toCamera.Y))), 0.99999f, 1.00001f);
+    }
+
+    [Fact]
     public void ResolveFrontAxis_DegenerateOrCancellingGeometryRetainsPositiveYFallback()
     {
         var vertices = VerticalQuad();

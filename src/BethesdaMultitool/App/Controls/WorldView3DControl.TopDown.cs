@@ -166,7 +166,8 @@ public sealed partial class WorldView3DControl
                     viewProj,
                     cylinder,
                     deferBlended: false,
-                    cameraPosition: cylinder.Position);        // textured objects, depth-tested
+                    cameraPosition: cylinder.Position,
+                    cameraForward: -System.Numerics.Vector3.UnitZ); // textured objects, depth-tested
                 if (showWater && _water is not null)
                 {
                     // Height-correct water for the overlay: the offscreen DSV already holds the terrain +

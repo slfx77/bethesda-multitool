@@ -126,7 +126,7 @@ public sealed partial class WorldView3DControl
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
         if (_collisionDebug is not null)
         {
-            _collisionDebug.LoadData(_spatialIndex, _data.CategoryIndex);
+            _collisionDebug.LoadData(_spatialIndex, _data.CategoryIndex, _data.Game);
             _collisionDebug.ShowDisabled = _showDisabled;
             _collisionDebug.XespDisabledRefs = _data.XespDisabledRefs;
         }
@@ -308,7 +308,7 @@ public sealed partial class WorldView3DControl
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
         if (_collisionDebug is not null)
         {
-            _collisionDebug.LoadData(_spatialIndex, _data.CategoryIndex);
+            _collisionDebug.LoadData(_spatialIndex, _data.CategoryIndex, _data.Game);
             _collisionDebug.ShowDisabled = _showDisabled;
             _collisionDebug.XespDisabledRefs = _data.XespDisabledRefs;
         }

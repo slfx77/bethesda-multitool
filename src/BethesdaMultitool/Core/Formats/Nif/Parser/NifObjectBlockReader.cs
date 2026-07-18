@@ -9,6 +9,44 @@ namespace BethesdaMultitool.Core.Formats.Nif.Parser;
 internal static class NifObjectBlockReader
 {
     /// <summary>
+    ///     Reads the mode appended by <c>NiBillboardNode</c>. NIF 10.1+ serializes a dedicated
+    ///     ushort after the inherited <c>NiNode</c> payload; older files pack the four supported
+    ///     modes into NiAVObject flag bits 5-6.
+    /// </summary>
+    internal static NifBillboardMode ReadBillboardMode(
+        byte[] data,
+        BlockInfo block,
+        uint binaryVersion,
+        bool be,
+        bool hasInlineStrings = false)
+    {
+        if (binaryVersion >= NifVersions.Gamebryo10100)
+        {
+            if (block.Size < sizeof(ushort) || block.DataOffset < 0 ||
+                block.DataOffset + block.Size > data.Length)
+            {
+                return NifBillboardMode.RotateAboutUp;
+            }
+
+            var raw = BinaryUtils.ReadUInt16(data, block.DataOffset + block.Size - sizeof(ushort), be);
+            return Enum.IsDefined(typeof(NifBillboardMode), raw)
+                ? (NifBillboardMode)raw
+                : NifBillboardMode.RotateAboutUp;
+        }
+
+        var pos = block.DataOffset;
+        var end = Math.Min(data.Length, block.DataOffset + block.Size);
+        if (!NifBinaryCursor.SkipNiObjectNET(
+                data, ref pos, end, be, hasInlineStrings, binaryVersion) || pos + sizeof(ushort) > end)
+        {
+            return NifBillboardMode.RotateAboutUp;
+        }
+
+        var flags = BinaryUtils.ReadUInt16(data, pos, be);
+        return (NifBillboardMode)((flags >> 5) & 0x3);
+    }
+
+    /// <summary>
     ///     True when an NiAVObject-derived block (a node or geometry shape) has its <c>Hidden</c> flag set
     ///     (NiAVObject Flags bit 0 = APP_CULLED) — the engine does not render it. The Flags field sits right
     ///     after the NiObjectNET header: 4 bytes for <c>bsVersion &gt; 26</c> (FO3+), 2 bytes otherwise

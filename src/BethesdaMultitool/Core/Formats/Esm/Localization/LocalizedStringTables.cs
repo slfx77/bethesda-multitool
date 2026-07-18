@@ -1,8 +1,6 @@
 using System.Buffers.Binary;
-using BethesdaMultitool.Core.Formats.Bsa.Extraction;
-using BethesdaMultitool.Core.Formats.Bsa;
-using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using BethesdaMultitool.Core.Utils;
+using BethesdaMultitool.Core.Vfs;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Localization;
 
@@ -56,9 +54,16 @@ public sealed class LocalizedStringTables
         }
 
         var baseName = Path.GetFileNameWithoutExtension(esmPath);
-        var strings = LoadTable(dir, baseName, language, "STRINGS", lengthPrefixed: false);
-        var dlStrings = LoadTable(dir, baseName, language, "DLSTRINGS", lengthPrefixed: true);
-        var ilStrings = LoadTable(dir, baseName, language, "ILSTRINGS", lengthPrefixed: true);
+
+        // One lazy Data-folder mount serves all (up to 6) table lookups with the exact precedence
+        // the hand-rolled loose→BSA→BA2 chain implemented: loose Data\Strings first (zero archive
+        // opens on a hit), then *.bsa alphabetical, then *.ba2, first hit wins, per-source failures
+        // falling through. Lazy layers keep the early-exit (archives past the hit never open) and
+        // the shared registry lets back-to-back plugin loads reuse the parses.
+        using var dataFolder = GameFileSystem.OpenDataFolder(dir, registry: ArchiveHandleRegistry.Shared);
+        var strings = LoadTable(dataFolder, baseName, language, "STRINGS", lengthPrefixed: false);
+        var dlStrings = LoadTable(dataFolder, baseName, language, "DLSTRINGS", lengthPrefixed: true);
+        var ilStrings = LoadTable(dataFolder, baseName, language, "ILSTRINGS", lengthPrefixed: true);
 
         if (strings.Count == 0 && dlStrings.Count == 0 && ilStrings.Count == 0)
         {
@@ -139,16 +144,13 @@ public sealed class LocalizedStringTables
         };
 
     private static Dictionary<uint, string> LoadTable(
-        string dir, string baseName, string language, string extension, bool lengthPrefixed)
+        IGameFileSystem dataFolder, string baseName, string language, string extension, bool lengthPrefixed)
     {
         // Try the full language name first (Skyrim convention), then the 2-letter code (FO4/FO76).
         // File/archive lookups are case-insensitive, so casing of baseName/extension doesn't matter.
         foreach (var languageToken in LanguageTokens(language))
         {
-            var fileName = $"{baseName}_{languageToken}.{extension}";
-            var bytes = ReadLooseStringFile(dir, fileName)
-                        ?? ReadStringFileFromBsa(dir, fileName)
-                        ?? ReadStringFileFromBa2(dir, fileName);
+            var bytes = dataFolder.TryReadAllBytes($"Strings\\{baseName}_{languageToken}.{extension}");
             if (bytes != null)
             {
                 return ParseTable(bytes, lengthPrefixed);
@@ -166,72 +168,6 @@ public sealed class LocalizedStringTables
         {
             yield return code;
         }
-    }
-
-    private static byte[]? ReadLooseStringFile(string dir, string fileName)
-    {
-        var loosePath = Path.Combine(dir, "Strings", fileName);
-        try
-        {
-            return File.Exists(loosePath) ? File.ReadAllBytes(loosePath) : null;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-    }
-
-    private static byte[]? ReadStringFileFromBsa(string dir, string fileName)
-    {
-        var entryPath = $"strings\\{fileName}";
-        // Alphabetical order puts "<game> - Interface.bsa" (which holds the vanilla strings) early,
-        // before the big mesh/texture archives.
-        foreach (var bsaPath in Directory.GetFiles(dir, "*.bsa").OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
-        {
-            try
-            {
-                using var extractor = new BsaExtractor(bsaPath);
-                var record = extractor.Archive.FindFile(entryPath);
-                if (record != null)
-                {
-                    return extractor.ExtractFile(record);
-                }
-            }
-            catch (Exception ex) when (ex is IOException or InvalidDataException)
-            {
-                // Unreadable/corrupt archive — try the next one.
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    ///     Fallback for Fallout 76: the string tables ship inside a <c>.ba2</c>
-    ///     (<c>SeventySix - Localization.ba2</c>) rather than a BSA. Scans the Data folder's BA2s for
-    ///     <c>strings\&lt;file&gt;</c> and extracts it (the table layout is identical to BSA-hosted ones).
-    /// </summary>
-    private static byte[]? ReadStringFileFromBa2(string dir, string fileName)
-    {
-        var entryPath = $"strings\\{fileName}";
-        foreach (var ba2Path in Directory.GetFiles(dir, "*.ba2").OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
-        {
-            try
-            {
-                using var extractor = new Ba2Extractor(ba2Path);
-                var record = extractor.Archive.FindFile(entryPath);
-                if (record != null)
-                {
-                    return extractor.ExtractFile(record);
-                }
-            }
-            catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
-            {
-                // Unreadable/corrupt/unsupported (e.g. GNMF) archive — try the next one.
-            }
-        }
-
-        return null;
     }
 
     /// <summary>

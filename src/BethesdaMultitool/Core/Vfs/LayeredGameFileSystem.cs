@@ -36,11 +36,15 @@ public sealed class LayeredGameFileSystem : IGameFileSystem
     {
         foreach (var layer in _layers)
         {
-            // Stat-first so a miss in one layer doesn't pay that layer's read machinery, and a
-            // hit reads from exactly the layer that owns the winning copy.
-            if (layer.Exists(path))
+            // Try-read-then-fall-through: a layer that has the path but cannot extract it
+            // (corrupt entry, locked loose file) returns null and the next layer's copy wins —
+            // the same per-source tolerance as the hand-rolled chains this replaces. For
+            // readable files this is still first-hit-wins; note Exists(path) can therefore be
+            // true while the read comes from (or falls through past) a different layer than
+            // TryStat reports.
+            if (layer.TryReadAllBytes(path) is { } bytes)
             {
-                return layer.TryReadAllBytes(path);
+                return bytes;
             }
         }
 

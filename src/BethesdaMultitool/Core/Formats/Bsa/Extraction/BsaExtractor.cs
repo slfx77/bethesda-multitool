@@ -35,6 +35,10 @@ public sealed class BsaExtractor : IDisposable
     private bool _disposed;
     private bool _verbose;
 
+    // Set once by ArchiveHandleRegistry when this instance becomes a shared handle; the
+    // conversion toggles below are per-instance state and must stay off shared instances.
+    private bool _shared;
+
     // XMA needs special handling since it uses XmaWavConverter
     private bool _xmaConversionEnabled;
 
@@ -93,6 +97,25 @@ public sealed class BsaExtractor : IDisposable
     }
 
     /// <summary>
+    ///     Marks this extractor as a shared, registry-owned handle. The raw
+    ///     <see cref="ExtractFile(BsaFileRecord)" /> path never consults conversion state, so
+    ///     read-only sharing is safe — but the Enable* conversion toggles mutate per-instance
+    ///     state visible to every holder, so they throw on a shared instance. Sites that need
+    ///     conversion (Xbox→PC extraction flows) must open a private extractor.
+    /// </summary>
+    internal void MarkShared() => _shared = true;
+
+    private void ThrowIfShared()
+    {
+        if (_shared)
+        {
+            throw new InvalidOperationException(
+                "Conversion toggles are per-instance state and this BsaExtractor is a shared " +
+                "registry handle; open a private BsaExtractor for conversion-enabled extraction.");
+        }
+    }
+
+    /// <summary>
     ///     Enable DDX to DDS conversion during extraction.
     /// </summary>
     /// <param name="enable">Whether to enable conversion.</param>
@@ -100,6 +123,7 @@ public sealed class BsaExtractor : IDisposable
     /// <returns>True if conversion was successfully enabled, false if DDXConv is not available.</returns>
     public bool EnableDdxConversion(bool enable, bool verbose = false)
     {
+        ThrowIfShared();
         _verbose = verbose;
 
         if (!enable)
@@ -142,6 +166,7 @@ public sealed class BsaExtractor : IDisposable
     /// <returns>True if conversion was successfully enabled, false if FFmpeg is not available.</returns>
     public bool EnableXmaConversion(bool enable)
     {
+        ThrowIfShared();
         if (!enable)
         {
             _enabledExtensions.TryRemove(".xma", out _);
@@ -184,6 +209,7 @@ public sealed class BsaExtractor : IDisposable
     /// <returns>True if conversion was successfully enabled.</returns>
     public bool EnableNifConversion(bool enable, bool verbose = false)
     {
+        ThrowIfShared();
         _verbose = verbose;
 
         if (!enable)

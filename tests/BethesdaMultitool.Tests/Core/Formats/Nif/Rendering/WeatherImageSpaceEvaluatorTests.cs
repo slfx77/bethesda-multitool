@@ -432,6 +432,64 @@ public sealed class WeatherImageSpaceEvaluatorTests
     }
 
     [Fact]
+    public void ModernEvaluation_IsSemanticAndPreservesGammaAcesDisplayMode()
+    {
+        var weather = new WeatherRecord
+        {
+            FormId = 0x200,
+            ImageSpaceModifiers = new WeatherTimeBands<uint>(10, 11, 12, 13),
+        };
+        var day = new ImageSpaceRecord
+        {
+            FormId = 11,
+            ModernHdr = new ImageSpaceModernHdr
+            {
+                Family = ImageSpaceModernFamily.Skyrim,
+                EyeAdaptSpeed = 45f,
+                BloomBlurRadius = 7f,
+                BloomThreshold = 0.65f,
+                BloomScale = 4f,
+                ReceiveBloomThreshold = 0.625f,
+                White = 1f,
+                SunlightScale = 2.7f,
+                SkyScale = 0.235f,
+                EyeAdaptStrength = 5f,
+            },
+            Cinematic = new ImageSpaceCinematic
+            {
+                Saturation = 0.8f,
+                Brightness = 1.035f,
+                Contrast = 1.25f,
+            },
+            Tint = new ImageSpaceTint
+            {
+                Amount = 0.42f,
+                Red = 0.894118f,
+                Green = 0.839216f,
+                Blue = 0.772549f,
+            },
+        };
+        var basis = GpuTonemapSettings.ModernNeutralDefaults(ImageSpaceModernFamily.Skyrim) with
+        {
+            Mode = GpuTonemapMode.GammaAces,
+        };
+
+        var result = WeatherImageSpaceEvaluator.EvaluateModern(
+            basis, 12f, Timing, weather, null, 1f,
+            new Dictionary<uint, ImageSpaceRecord> { [day.FormId] = day });
+
+        Assert.Equal(GpuTonemapMode.GammaAces, result.Settings.Mode);
+        Assert.Equal(ImageSpaceModernFamily.Skyrim, result.Settings.ModernFamily);
+        Assert.Equal(2.7f, result.Settings.SunlightScale);
+        Assert.Equal(0.235f, result.Settings.SkyScale);
+        Assert.Equal(0.8f, result.Settings.Saturation);
+        Assert.Equal(1.035f, result.Settings.Brightness);
+        Assert.Equal(1.25f, result.Settings.Contrast);
+        Assert.Single(result.Contributions);
+        Assert.Equal(WeatherImageSpaceBand.Day, result.Contributions[0].Band);
+    }
+
+    [Fact]
     public void ModernChannelMapping_UsesFamilySpecificOrdinalsWithoutClassicAliases()
     {
         var channels = Enumerable.Range(0, 21).ToDictionary(

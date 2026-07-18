@@ -342,7 +342,8 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
                 alternateTextures = merged ?? alternateTextures;
             }
 
-            var renderable = RenderableReference.TryBuild(p, category, alternateTextures, xespDisabled);
+            var renderable = RenderableReference.TryBuild(
+                p, category, alternateTextures, xespDisabled, Game);
             if (renderable.HasValue) built.Add(renderable.Value);
         }
         _placedLights[cell] = placedLights is { Count: > 0 }

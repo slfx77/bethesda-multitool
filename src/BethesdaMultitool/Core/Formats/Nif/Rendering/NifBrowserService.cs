@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
+using BethesdaMultitool.Core.Vfs;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
@@ -16,17 +17,19 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 internal sealed class NifBrowserService : IDisposable
 {
     private readonly ArchiveReader? _archive;
+    private readonly ArchiveLease? _archiveLease;
     private readonly string? _rootDirectory;
     private readonly NifTextureResolver _textureResolver;
 
     private NifBrowserService(
         string? rootDirectory,
-        ArchiveReader? archive,
+        ArchiveLease? archiveLease,
         NifTextureResolver textureResolver,
         string[] texturePaths)
     {
         _rootDirectory = rootDirectory;
-        _archive = archive;
+        _archiveLease = archiveLease;
+        _archive = archiveLease?.Reader;
         _textureResolver = textureResolver;
         TexturePaths = texturePaths;
     }
@@ -40,7 +43,7 @@ internal sealed class NifBrowserService : IDisposable
 
     public void Dispose()
     {
-        _archive?.Dispose();
+        _archiveLease?.Dispose();
         _textureResolver.Dispose();
     }
 
@@ -62,12 +65,23 @@ internal sealed class NifBrowserService : IDisposable
     /// </summary>
     internal static NifBrowserService CreateFromBsa(string archivePath, string[]? texturePaths = null)
     {
-        var archive = ArchiveReader.Open(archivePath);
-        texturePaths ??= DiscoverTextureBsas(archivePath);
-        var resolver = texturePaths.Length > 0
-            ? new NifTextureResolver(texturePaths)
-            : new NifTextureResolver();
-        return new NifBrowserService(null, archive, resolver, texturePaths);
+        // Shared handle: the browser is long-lived and read-only, and its meshes archive often
+        // overlaps what the 3D viewer / extractor tab already hold open.
+        var archiveLease = ArchiveHandleRegistry.Shared.Acquire(archivePath);
+        try
+        {
+            texturePaths ??= DiscoverTextureBsas(archivePath);
+            var resolver = texturePaths.Length > 0
+                ? new NifTextureResolver(texturePaths)
+                : new NifTextureResolver();
+            return new NifBrowserService(null, archiveLease, resolver, texturePaths);
+        }
+        catch
+        {
+            // A failed texture-resolver open must not strand the meshes lease in the registry.
+            archiveLease.Dispose();
+            throw;
+        }
     }
 
     /// <summary>

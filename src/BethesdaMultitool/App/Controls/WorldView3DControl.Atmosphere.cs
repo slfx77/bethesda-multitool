@@ -249,8 +249,10 @@ public sealed partial class WorldView3DControl
         var engineImagespaceFamily = game is Core.Games.BethesdaGame.Oblivion
             or Core.Games.BethesdaGame.Fallout3
             or Core.Games.BethesdaGame.FalloutNewVegas;
-        var modernImagespaceFamily = settings.Mode ==
-            Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.CreationModern;
+        // Semantic Creation-family IMGS resolution is independent of the selected display operator.
+        // Skyrim retains its family while GammaAces is active so the non-imagespace scene scales can
+        // run without enabling the still-incomplete CreationModern cinematic/exposure shader.
+        var modernImagespaceFamily = settings.ModernFamily is not null;
         var imageSpaceWorld = skyContext.Worldspace;
         var cellContext = CurrentImageSpaceCellContext();
         var imageSpaceSelection = ImageSpaceSelectionResolver.Resolve(
@@ -1135,10 +1137,12 @@ public sealed partial class WorldView3DControl
     // projection modes pass their own camera axes because the perspective camera is parked/stale there.
     private void RenderSky(Matrix4x4 viewProj, Vector3 domeCenter,
         (Vector3 Right, Vector3 Up)? billboardBasis = null,
-        float? animationTimeSeconds = null)
+        float? animationTimeSeconds = null,
+        float skyColorScale = 1f)
     {
         EnsureSkyTexturesResolved();
-        var atmo = ResolveSceneAtmosphere(_gameHour, lightingEnabled: true);
+        var atmo = AtmosphereState.ApplySkyColorScale(
+            ResolveSceneAtmosphere(_gameHour, lightingEnabled: true), skyColorScale);
         var exterior = CurrentSkySceneContext().RendersExteriorSky;
 
         // The weather already authors per-layer PNAM tint and JNAM opacity. Keep the host gates neutral:

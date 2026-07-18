@@ -50,20 +50,30 @@ public sealed class GrassDistanceEnvelopeTests
     }
 
     [Fact]
-    public void NonFnvGrass_IsUnaffectedBecauseEnvelopeIsDisabled()
+    public void SkyrimProfile_UsesRetailDefaultEnvelope()
     {
         var envelope = GrassScatterProfile.ForGame(BethesdaGame.Skyrim).DistanceEnvelope;
 
-        Assert.False(envelope.Enabled);
-        Assert.True(GrassDistanceCullPolicy.Passes(
-            true,
-            in envelope,
-            horizontalDistanceSquared: 50000f * 50000f,
-            activeRenderDistance: 12000f));
+        Assert.True(envelope.Enabled);
+        Assert.Equal(3500f, envelope.FadeStart);
+        Assert.Equal(1000f, envelope.FadeRange);
+        Assert.Equal(4500f, envelope.HardEnd);
+    }
+
+    [Theory]
+    [InlineData(4499f, true)]
+    [InlineData(4500f, true)]
+    [InlineData(4501f, false)]
+    public void SkyrimGrass_HardEndIncludesEndpointOnly(float distance, bool expected)
+    {
+        var envelope = GrassScatterProfile.ForGame(BethesdaGame.Skyrim).DistanceEnvelope;
+
+        Assert.Equal(expected, GrassDistanceCullPolicy.Passes(
+            true, in envelope, distance * distance, activeRenderDistance: 12000f));
     }
 
     [Fact]
-    public void BatchPolicyIdentity_ActivatesOnlyForFnvGrass()
+    public void BatchPolicyIdentity_ActivatesForRecoveredGrassProfiles()
     {
         var fnv = GrassScatterProfile.ForGame(BethesdaGame.FalloutNewVegas).DistanceEnvelope;
         var skyrim = GrassScatterProfile.ForGame(BethesdaGame.Skyrim).DistanceEnvelope;
@@ -71,7 +81,7 @@ public sealed class GrassDistanceEnvelopeTests
 
         Assert.True(GrassDistanceCullPolicy.UsesEnvelope(true, in fnv));
         Assert.False(GrassDistanceCullPolicy.UsesEnvelope(false, in fnv));
-        Assert.False(GrassDistanceCullPolicy.UsesEnvelope(true, in skyrim));
+        Assert.True(GrassDistanceCullPolicy.UsesEnvelope(true, in skyrim));
         Assert.False(GrassDistanceCullPolicy.UsesEnvelope(true, in fallout4));
     }
 
@@ -200,7 +210,7 @@ public sealed class GrassDistanceEnvelopeTests
         // Non-opaque grass keeps identity and is gated before reservation/draw without deleting a
         // retained entry, so moving back inside the envelope works on frozen batches.
         Assert.Contains("bool IsGrass,", renderer, StringComparison.Ordinal);
-        Assert.Contains("float GrassWaveMultiplier);", renderer, StringComparison.Ordinal);
+        Assert.Contains("float GrassWaveMultiplier,", renderer, StringComparison.Ordinal);
         Assert.Equal(
             2,
             CountOccurrences(renderer, "PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)"));

@@ -259,8 +259,15 @@ internal sealed class SubtextureModifierDefinition : ParticleModifierDefinition
             return 0;
         }
 
-        var start = StartFrame + StartFrameFudge * seed;
-        var end = EndFrame >= start ? EndFrame : atlasCount - 1;
+        // Bethesda's per-particle fudge can push an authored edge frame slightly past the atlas
+        // (retail Skyrim fire reaches 15.992 for a 16-frame sheet and 63.190 for a 64-frame sheet).
+        // Normalize the sampled window before using it as Math.Clamp bounds; otherwise start >
+        // atlasCount - 1 throws and rejects the entire placed effect during mesh decode.
+        var lastFrame = atlasCount - 1f;
+        var start = Math.Clamp(StartFrame + StartFrameFudge * seed, 0f, lastFrame);
+        var end = EndFrame >= start
+            ? Math.Clamp(EndFrame, start, lastFrame)
+            : lastFrame;
         var rate = MathF.Max(0f, FrameCount + FrameCountFudge * (seed - 0.5f));
         var frame = start + age * rate;
         if (frame > end)

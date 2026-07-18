@@ -182,6 +182,41 @@ public sealed class GpuTonemapSettingsTests
     }
 
     [Fact]
+    public void ResolveSceneScales_SkyrimEncodePhysicalValuesForGammaScene()
+    {
+        var gamma = GpuTonemapSettings.ModernNeutralDefaults(ImageSpaceModernFamily.Skyrim) with
+        {
+            Mode = GpuTonemapMode.GammaAces,
+            SunlightScale = 2.7f,
+            SkyScale = 0.235f,
+        };
+        var expectedSun = MathF.Pow(2.7f, 1f / 2.2f);
+        var expectedSky = MathF.Pow(0.235f, 1f / 2.2f);
+
+        Assert.Equal(expectedSun, GpuTonemapSettings.ResolveSceneSunlightScale(
+            gamma, BethesdaGame.Skyrim, hdrActive: true, isInterior: false), 6);
+        Assert.Equal(expectedSky, GpuTonemapSettings.ResolveSceneSkyScale(
+            gamma, BethesdaGame.Skyrim, hdrActive: true, isInterior: false), 6);
+
+        var legacyClamp = gamma with { Mode = GpuTonemapMode.LegacyClamp };
+        Assert.Equal(expectedSun, GpuTonemapSettings.ResolveSceneSunlightScale(
+            legacyClamp, BethesdaGame.Skyrim, hdrActive: true, isInterior: false), 6);
+        Assert.Equal(expectedSky, GpuTonemapSettings.ResolveSceneSkyScale(
+            legacyClamp, BethesdaGame.Skyrim, hdrActive: true, isInterior: false), 6);
+
+        var modern = gamma with { Mode = GpuTonemapMode.CreationModern };
+        Assert.Equal(2.7f, GpuTonemapSettings.ResolveSceneSunlightScale(
+            modern, BethesdaGame.Skyrim, hdrActive: true, isInterior: false));
+        Assert.Equal(0.235f, GpuTonemapSettings.ResolveSceneSkyScale(
+            modern, BethesdaGame.Skyrim, hdrActive: true, isInterior: false));
+
+        Assert.Equal(1f, GpuTonemapSettings.ResolveSceneSunlightScale(
+            gamma, BethesdaGame.Skyrim, hdrActive: false, isInterior: false));
+        Assert.Equal(1f, GpuTonemapSettings.ResolveSceneSkyScale(
+            gamma, BethesdaGame.Skyrim, hdrActive: false, isInterior: false));
+    }
+
+    [Fact]
     public void GammaAcesDefaults_BloomOff()
     {
         // Skyrim/FO4/76 bloom rides their imagespace port; the ACES stand-in must not bloom.
@@ -326,11 +361,20 @@ public sealed class GpuTonemapSettingsTests
     public void ModernPipeline_IsDefaultOffAndExplicitlyOptedIn()
     {
         var previous = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_MODERN_IMAGESPACE");
+        var previousTonemap = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_TONEMAP");
         try
         {
             Environment.SetEnvironmentVariable("FALLOUT_VIEWER_MODERN_IMAGESPACE", null);
+            Environment.SetEnvironmentVariable("FALLOUT_VIEWER_TONEMAP", null);
+            var skyrimDefault = GpuTonemapSettings.ForGame(BethesdaGame.Skyrim);
+            Assert.Equal(GpuTonemapMode.GammaAces, skyrimDefault.Mode);
+            Assert.Equal(ImageSpaceModernFamily.Skyrim, skyrimDefault.ModernFamily);
             Assert.Equal(GpuTonemapMode.GammaAces, GpuTonemapSettings.ForGame(BethesdaGame.Fallout4).Mode);
+            Assert.Null(GpuTonemapSettings.ForGame(BethesdaGame.Fallout4).ModernFamily);
             Environment.SetEnvironmentVariable("FALLOUT_VIEWER_MODERN_IMAGESPACE", "1");
+            var skyrimEnabled = GpuTonemapSettings.ForGame(BethesdaGame.Skyrim);
+            Assert.Equal(GpuTonemapMode.CreationModern, skyrimEnabled.Mode);
+            Assert.Equal(ImageSpaceModernFamily.Skyrim, skyrimEnabled.ModernFamily);
             var enabled = GpuTonemapSettings.ForGame(BethesdaGame.Fallout4);
             Assert.Equal(GpuTonemapMode.CreationModern, enabled.Mode);
             Assert.Equal(ImageSpaceModernFamily.Fallout4, enabled.ModernFamily);
@@ -339,6 +383,7 @@ public sealed class GpuTonemapSettingsTests
         finally
         {
             Environment.SetEnvironmentVariable("FALLOUT_VIEWER_MODERN_IMAGESPACE", previous);
+            Environment.SetEnvironmentVariable("FALLOUT_VIEWER_TONEMAP", previousTonemap);
         }
     }
 

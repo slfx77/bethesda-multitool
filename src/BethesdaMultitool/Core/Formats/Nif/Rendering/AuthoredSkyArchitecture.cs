@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Games;
+
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
 /// <summary>
@@ -15,12 +17,13 @@ internal static class AuthoredSkyArchitecture
     internal static bool ShouldLoadAtmosphereNif(bool explicitlyEnabled) => explicitlyEnabled;
 
     /// <summary>
-    ///     Returns the lossless DALC cube only for the opt-in architecture. A null result makes the
-    ///     shaders consume Resolved.AmbientColor, which already carries the cube mean as the flat
-    ///     compatibility fallback; parsing and telemetry retain the original six faces either way.
+    ///     Skyrim's DALC cube is scene lighting and is enabled independently of the authored
+    ///     Atmosphere.nif replacement. Other modern families retain the existing opt-in boundary until
+    ///     their own capture matrices pass. A null result makes shaders consume the flat cube mean.
     /// </summary>
     internal static AtmosphereState.ResolvedAmbientCube? SelectDirectionalAmbientForUpload(
+        BethesdaGame game,
         bool explicitlyEnabled,
         AtmosphereState.ResolvedAmbientCube? directionalAmbient) =>
-        explicitlyEnabled ? directionalAmbient : null;
+        game == BethesdaGame.Skyrim || explicitlyEnabled ? directionalAmbient : null;
 }

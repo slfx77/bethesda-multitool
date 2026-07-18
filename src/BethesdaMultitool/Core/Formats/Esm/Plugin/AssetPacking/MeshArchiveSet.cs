@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using BethesdaMultitool.Core.Formats.Bsa.Ba2;
+using BethesdaMultitool.Core.Vfs;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 
@@ -44,7 +45,11 @@ internal sealed class MeshArchiveSet : IDisposable
     {
         ArchivePaths = archivePaths;
         _emptyBaseline = DataFolderIndex.FromArchivePaths([]);
-        _index = DataFolderIndex.FromArchivePaths(archivePaths, includeLooseFromArchiveDirs: includeLooseFiles);
+        // Shared handles: the 3D viewer, NPC browser, and headless profiler open overlapping
+        // archive sets in one process — the registry dedups the parse + memory map per archive.
+        // ArchiveSetIdentity/GetLookupMetadata keep their own FileInfo stats (cache keys unchanged).
+        _index = DataFolderIndex.FromArchivePaths(
+            archivePaths, includeLooseFromArchiveDirs: includeLooseFiles, ArchiveHandleRegistry.Shared);
         // Empty baseline + the real index as the SOLE secondary: the baseline-exact strategy returns
         // AlreadyInBaseline with a null Source (unusable for extraction), so routing everything through
         // the secondary guarantees every hit carries a readable Source (and a ResolvedPath when fuzzy).

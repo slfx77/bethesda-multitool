@@ -102,6 +102,19 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
         _sources = sources;
     }
 
+    /// <summary>
+    ///     Releases the texture sources (and their shared-archive leases). Only for a palette that
+    ///     LOST the <see cref="GetOrCreate" /> publication race and was never cached/registered —
+    ///     published palettes are process-lifetime and never dispose.
+    /// </summary>
+    private void DisposeSources()
+    {
+        foreach (var source in _sources)
+        {
+            source.Dispose();
+        }
+    }
+
     public string ResourceName => nameof(LandscapeTexturePalette);
 
     public ResourceCategory Category => ResourceCategory.CpuCache;
@@ -169,27 +182,43 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
             {
                 return cached;
             }
+        }
 
-            var bsaPaths = WorldDataBsaPathResolver.DiscoverTextureBsaPaths(data);
-            if (bsaPaths.Length == 0)
+        // Discovery + archive opens run OUTSIDE the static lock so a slow first open doesn't
+        // serialize unrelated palettes (the archive parse used to run under s_cacheLock). The
+        // no-BSAs result is deliberately NOT cached: a Load Order attached mid-session must be
+        // able to retry discovery on the next call.
+        var bsaPaths = WorldDataBsaPathResolver.DiscoverTextureBsaPaths(data);
+        if (bsaPaths.Length == 0)
+        {
+            Log.Warn(
+                "LandscapeTexturePalette: no texture BSAs discovered for '{0}' ({1} load-order path(s) probed) — terrain textures layer will fall back to regions view.",
+                Path.GetFileName(esmPath),
+                data.AdditionalDataPaths?.Count ?? 0);
+            return null;
+        }
+
+        Log.Info(
+            "LandscapeTexturePalette: discovered {0} texture BSA(s) for '{1}' (from {2} load-order path(s); {3} LTEX, {4} TXST records).",
+            bsaPaths.Length,
+            Path.GetFileName(esmPath),
+            data.AdditionalDataPaths?.Count ?? 0,
+            data.LandTexturesByFormId.Count,
+            data.TextureSetsByFormId.Count);
+
+        var sources = NifTextureArchiveSourceFactory.Create(bsaPaths);
+        var palette = new LandscapeTexturePalette(data, sources);
+
+        lock (s_cacheLock)
+        {
+            if (s_cache.TryGetValue(cacheKey, out var winner))
             {
-                Log.Warn(
-                    "LandscapeTexturePalette: no texture BSAs discovered for '{0}' ({1} load-order path(s) probed) — terrain textures layer will fall back to regions view.",
-                    Path.GetFileName(esmPath),
-                    data.AdditionalDataPaths?.Count ?? 0);
-                return null;
+                // Lost a racing create: dispose the speculative palette (its sources release
+                // their registry leases) BEFORE any registration, and serve the winner.
+                palette.DisposeSources();
+                return winner;
             }
 
-            Log.Info(
-                "LandscapeTexturePalette: discovered {0} texture BSA(s) for '{1}' (from {2} load-order path(s); {3} LTEX, {4} TXST records).",
-                bsaPaths.Length,
-                Path.GetFileName(esmPath),
-                data.AdditionalDataPaths?.Count ?? 0,
-                data.LandTexturesByFormId.Count,
-                data.TextureSetsByFormId.Count);
-
-            var sources = NifTextureArchiveSourceFactory.Create(bsaPaths);
-            var palette = new LandscapeTexturePalette(data, sources);
             s_cache[cacheKey] = palette;
             // Palettes are process-lifetime by design (cached per ESM + load-order key), so the
             // registration is intentionally never disposed.
@@ -220,10 +249,11 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
             _ = TryGetTile(formId);
         }
 
-        // Load the engine-default tile here too. Any cell quadrant without a BTXT samples
-        // it, and the parallel decode path needs it pre-warmed — BSA readers are not
-        // thread-safe so two workers racing to load DirtWasteland01 throws and aborts the
-        // whole Parallel.ForEachAsync. Done after the LTEX loop so the lock is uncontended.
+        // Load the engine-default tile here too. Any cell quadrant without a BTXT samples it,
+        // so pre-warming keeps the parallel decode path off the default tile's two-field
+        // publication lock. (The readers themselves are lock-free thread-safe; an earlier
+        // comment claiming otherwise justified a coarse lock that has since been removed.)
+        // Done after the LTEX loop so the lock is uncontended.
         _ = GetEngineDefaultTile();
     }
 

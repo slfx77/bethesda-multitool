@@ -4,6 +4,7 @@ using System.Text;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
 using BethesdaMultitool.Core.Resources;
@@ -217,7 +218,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // Skinned/SinglePass. Warm v61 entries can retain the earlier broader audit-only identity.
     // Bumped 62→63: persist each decoded submesh's stable source-shape block index. Warm v62
     // entries cannot identify the source shape for property-associated light observations.
-    internal const int DecoderVersion = 63;
+    // v64: retain NiBillboardNode.BillboardMode. Skyrim's flame cards use ALWAYS_FACE_CENTER;
+    // v63 flattened every billboard to rotate-about-up and rendered them as a horizontal glow.
+    // v65: honor Skyrim BSLightingShaderProperty SLSF2 Double_Sided. Warm v64 grass cards keep
+    // their incorrect backface-culling state and appear partial or as isolated floating triangles.
+    internal const int DecoderVersion = 65;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -629,6 +634,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         WriteNullableString(writer, submesh.ClassicParallaxHeightMapTexturePath, MaxStringBytes);
         writer.Write((byte)submesh.ClassicBasicShaderMode);
         writer.Write(submesh.SourceBlockIndex);
+        writer.Write((ushort)submesh.BillboardMode);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -716,7 +722,8 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             reader.ReadBoolean(),
             ReadNullableString(reader, MaxStringBytes),
             (FnvClassicBasicShaderMode)reader.ReadByte(),
-            reader.ReadInt32());
+            reader.ReadInt32(),
+            (NifBillboardMode)reader.ReadUInt16());
         if (!Enum.IsDefined(payload.ClassicBasicShaderMode))
         {
             throw new InvalidDataException("Invalid FNV classic basic shader mode in decoded mesh cache.");
@@ -725,6 +732,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         if (payload.SourceBlockIndex < -1)
         {
             throw new InvalidDataException("Invalid source shape block index in decoded mesh cache.");
+        }
+
+        if (!Enum.IsDefined(payload.BillboardMode))
+        {
+            throw new InvalidDataException("Invalid NIF billboard mode in decoded mesh cache.");
         }
 
         return payload;
@@ -1047,4 +1059,6 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     // strict ordinary-material/vertex-color discriminator.
     FnvClassicBasicShaderMode ClassicBasicShaderMode = FnvClassicBasicShaderMode.None,
     // Stable source shape provenance (v63+); -1 means unavailable.
-    int SourceBlockIndex = -1);
+    int SourceBlockIndex = -1,
+    // Authored NiBillboardNode mode (v64+). RotateAboutUp preserves pre-v64 behavior.
+    NifBillboardMode BillboardMode = NifBillboardMode.RotateAboutUp);

@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool;
 
@@ -241,7 +242,8 @@ public sealed partial class WorldView3DControl
                     if (!_referenceEnabledOverrides.IsVisible(p.FormId, authoredDisabled, _showDisabled)) continue;
                     if (p.RecordType is "ACHR" or "ACRE") continue; // skinned actors carry no static collision
                     if (RenderableReference.IsMarkerModelPath(p.ModelPath) ||
-                        RenderableReference.IsImposterModelPath(p.ModelPath) ||
+                        RenderableReference.IsImposterModelPath(
+                            p.ModelPath, _data?.Game ?? BethesdaGame.Unknown) ||
                         RenderableReference.IsLodDuplicateBaseEditorId(p.BaseEditorId)) continue;
                     // Doors are passable in walk mode: the viewer can't open them, so colliding with a
                     // shut door slab either blocks the doorway or — because the capsule rides the

@@ -258,6 +258,11 @@ public sealed partial class WorldView3DControl
             _data?.Game ?? Core.Games.BethesdaGame.Unknown,
             _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
             isInterior: _selectedInterior is not null);
+        var sceneSkyScale = GpuTonemapSettings.ResolveSceneSkyScale(
+            tonemap,
+            _data?.Game ?? Core.Games.BethesdaGame.Unknown,
+            _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
+            isInterior: _selectedInterior is not null);
 
         // Perspective view-projection from the current camera pose (matches the live frame's absolute path).
         var aspect = w / (float)h;
@@ -325,7 +330,7 @@ public sealed partial class WorldView3DControl
             $"moonPathFade={masserFade:0.00} moonAlpha={masserDrawAlpha:0.00} " +
             $"moonFrac={(_data?.MoonPrimaryHalfSizeFraction?.ToString("0.000") ?? "null")}/{(_data?.MoonSecondaryHalfSizeFraction?.ToString("0.000") ?? "null")} " +
             $"profileFrac={MoonProfile.PrimaryHalfSizeFraction:0.000}/{MoonProfile.SecondaryHalfSizeFraction:0.000} game={_data?.Game} " +
-            $"tonemap={tonemap.Mode}/bloom:{tonemap.BloomEnabled}/target:{tonemap.TargetLum:0.000}/contrast:{tonemap.Contrast:0.000}/brightness:{tonemap.Brightness:0.000}/sunScale:{sceneSunlightScale:0.000} " +
+            $"tonemap={tonemap.Mode}/bloom:{tonemap.BloomEnabled}/target:{tonemap.TargetLum:0.000}/contrast:{tonemap.Contrast:0.000}/brightness:{tonemap.Brightness:0.000}/sunScale:{sceneSunlightScale:0.000}/skyScale:{sceneSkyScale:0.000} " +
             $"weatherIMAD={_weatherImageSpaceTelemetry}"));
 
         ulong fenceValue;
@@ -412,7 +417,8 @@ public sealed partial class WorldView3DControl
 
                 // Live-frame atmosphere (perspective defaults: fog + lighting on, no ortho overrides).
                 BindAtmosphereConstants(
-                    cmd, recorder.FrameIndex, cameraRelative: false, lightVisibility: cylinder);
+                    cmd, recorder.FrameIndex, cameraRelative: false, lightVisibility: cylinder,
+                    tonemapOverride: tonemap);
                 target.Bind(cmd);
 
                 // Sky FIRST (gradient + sun/moon billboards), then the scene over it — same order as the live
@@ -422,13 +428,16 @@ public sealed partial class WorldView3DControl
                 {
                     // Offscreen capture uses an absolute viewProj, so center the dome on the camera position
                     // (the prior behavior). Jitter is a live-motion artifact and irrelevant to a static capture.
-                    RenderSky(viewProj, _camera.Position, animationTimeSeconds: animationTimeSeconds);
+                    RenderSky(viewProj, _camera.Position, animationTimeSeconds: animationTimeSeconds,
+                        skyColorScale: sceneSkyScale);
                 }
 
                 _terrain?.Render(viewProj, cylinder);
                 // Defer blended reference submeshes until after water so water never paints over them
                 // (mirrors the live frame / 3D export). cullViewProj == viewProj (absolute coords).
-                _references?.Render(viewProj, cylinder, deferBlended: true, cullViewProj: viewProj);
+                _references?.Render(
+                    viewProj, cylinder, deferBlended: true, cullViewProj: viewProj,
+                    cameraPosition: _camera.Position, cameraForward: _camera.Forward);
                 if (_showWater && _water is not null && _references is not null)
                 {
                     _water.SetNifWaterPlanes(_references.NifWaterPlanes);
@@ -1348,7 +1357,19 @@ public sealed partial class WorldView3DControl
         fields["sunDirection"] = Vec3(atmo.SunWorldDirection);
         fields["sunLightDirection"] = Vec3(atmo.SunWorldDirection);
         fields["sunBillboardDirection"] = Vec3(atmo.SunBillboardDirection);
+        fields["sunLightingColor"] = Vec3(atmo.SunColor);
+        fields["resolvedAmbientMeanColor"] = Vec3(atmo.AmbientColor);
+        fields["resolvedFogNearColor"] = Vec3(atmo.FogColor);
+        fields["resolvedFogFarColor"] = Vec3(atmo.FogFarColor);
+        fields["resolvedFogNearDistance"] = atmo.FogNear;
+        fields["resolvedFogFarDistance"] = atmo.FogFar;
+        fields["resolvedFogPower"] = atmo.FogPower;
+        fields["resolvedFogMaxOpacity"] = atmo.FogMaxOpacity;
+        // Preserve sunColor for capture-schema compatibility, but make its disc-only semantics
+        // explicit so it is not mistaken for the directional-light color above.
         fields["sunColor"] = Vec4(atmo.SunDiscColor);
+        fields["sunDiscColor"] = Vec4(atmo.SunDiscColor);
+        fields["sunColorSemantics"] = "legacy alias of sunDiscColor (authored WTHR Sun RGBX)";
         fields["sunGlareColor"] = Vec4(atmo.SunGlareColor);
         fields["sunGlareIntensity"] = atmo.SunGlareIntensity;
         fields["sunDrawAlpha"] = atmo.SunDiscDrawAlpha;
@@ -1454,6 +1475,12 @@ public sealed partial class WorldView3DControl
             game,
             _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
             isInterior: interior is not null);
+        fields["tonemapSkyScale"] = tonemap.SkyScale;
+        fields["sceneSkyScale"] = GpuTonemapSettings.ResolveSceneSkyScale(
+            tonemap,
+            game,
+            _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
+            isInterior: interior is not null);
         fields["tonemapSaturation"] = tonemap.Saturation;
         fields["tonemapContrastAvgLum"] = tonemap.ContrastAvgLum;
         fields["tonemapContrast"] = tonemap.Contrast;
@@ -1466,6 +1493,16 @@ public sealed partial class WorldView3DControl
         fields["tonemapBrightScale"] = tonemap.BrightScale;
         fields["tonemapBrightClamp"] = tonemap.BrightClamp;
         fields["tonemapModernFamily"] = tonemap.ModernFamily?.ToString();
+        fields["weatherImageSpaceApplication"] = _weatherImageSpaceEvaluation is null
+            ? "inactive"
+            : tonemap.ModernFamily is null
+                ? "classic"
+                : tonemap.Mode == GpuTonemapMode.CreationModern
+                    ? "creation-modern-full"
+                    : "scene-physical-only";
+        fields["directionalAmbientUploaded"] =
+            AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
+                game, AuthoredSkyArchitecture.Enabled, atmo.DirectionalAmbient) is not null;
         fields["tonemapHistoryKey"] = $"0x{tonemap.HistoryKey:X16}";
         fields["tonemapHistoryReset"] = target.TonemapHistoryReset;
         fields["tonemapHistoryResetReason"] = target.TonemapHistoryResetReason;

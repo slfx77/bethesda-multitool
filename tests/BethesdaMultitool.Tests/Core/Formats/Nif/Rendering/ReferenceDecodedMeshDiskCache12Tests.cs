@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
@@ -52,6 +53,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.Equal("textures\\foo.dds", loaded.DiffuseTexturePath);
         Assert.Equal("textures\\foo_n.dds", loaded.NormalMapTexturePath);
         Assert.True(loaded.HasBump);
+        Assert.True(loaded.DoubleSided);
         Assert.Equal(NifAlphaRenderMode.Blend, loaded.AlphaRenderMode);
         Assert.Equal(0.5f, loaded.AlphaTestThreshold);
         Assert.Equal(7, loaded.SrcBlendMode);
@@ -59,6 +61,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.Equal(new Vector3(1, 2, 3), loaded.LocalBoundsCenter);
         Assert.Equal(4.5f, loaded.LocalBoundsRadius);
         Assert.True(loaded.IsBillboard);
+        Assert.Equal(NifBillboardMode.AlwaysFaceCenter, loaded.BillboardMode);
         Assert.True(loaded.IsLeafBillboard);
         Assert.True(loaded.IsDecal);
         Assert.Equal(new Vector3(0.478f, 0.478f, 0.478f), loaded.EffectTint);
@@ -91,7 +94,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.Null(loaded.ClassicParallaxHeightMapTexturePath);
         Assert.Equal(FnvClassicBasicShaderMode.Sls1013VertexColor, loaded.ClassicBasicShaderMode);
         Assert.Equal(41, loaded.SourceBlockIndex);
-        Assert.Equal(63, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+        Assert.Equal(65, ReferenceDecodedMeshDiskCache12.DecoderVersion);
     }
 
     [Fact]
@@ -276,7 +279,8 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
                 ClassicEnvironmentMapScale: 1.25f,
                 ClassicEnvironmentMapUsesWindowReflection: true,
                 ClassicBasicShaderMode: FnvClassicBasicShaderMode.Sls1013VertexColor,
-                SourceBlockIndex: 41)
+                SourceBlockIndex: 41,
+                BillboardMode: NifBillboardMode.AlwaysFaceCenter)
         ]);
     }
 

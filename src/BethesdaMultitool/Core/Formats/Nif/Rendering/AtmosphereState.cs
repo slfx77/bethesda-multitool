@@ -101,6 +101,19 @@ public static class AtmosphereState
     }
 
     /// <summary>
+    ///     Applies one resolved scene multiplier to every color consumed by the procedural or authored
+    ///     atmosphere geometry. Keeping this projection centralized prevents the shared b3 reflection
+    ///     colors and the sky renderer's private b0 colors from drifting apart.
+    /// </summary>
+    internal static Resolved ApplySkyColorScale(Resolved value, float multiplier) => value with
+    {
+        SkyTopColor = value.SkyTopColor * multiplier,
+        SkyLowerColor = value.SkyLowerColor * multiplier,
+        AuthoredHorizonColor = value.AuthoredHorizonColor * multiplier,
+        SkyHorizonColor = value.SkyHorizonColor * multiplier,
+    };
+
+    /// <summary>
     ///     Runtime directional-ambient cube sampled from WTHR DALC. The retail lighting convention
     ///     weights the signed X/Y/Z face by the squared corresponding normal component, so the three
     ///     selected weights sum to one for a unit normal.

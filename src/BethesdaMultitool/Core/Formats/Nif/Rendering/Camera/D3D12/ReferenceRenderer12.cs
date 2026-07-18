@@ -6,6 +6,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Effects;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
@@ -734,7 +735,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
     /// <summary>
     ///     Sets the camera world-space right/up basis used to re-face SpeedTree leaf cards to the camera
     ///     in the leaf-billboard vertex shader. The host computes it from the inverse view matrix (the
-    ///     same source as <c>SkyBillboardRenderer12</c>) and calls this each frame before <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?)" />.
+    ///     same source as <c>SkyBillboardRenderer12</c>) and calls this each frame before <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?, Vector3?)" />.
     /// </summary>
     public void SetLeafBillboardBasis(Vector3 cameraRight, Vector3 cameraUp)
     {
@@ -754,7 +755,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
     ///     <paramref name="strength" /> = the weather wind-speed byte / 255 (0 is SpeedTree rest;
     ///     TallGrass still applies its recovered minimum magnitude);
     ///     <paramref name="timeSeconds" /> the animation clock. Call each frame before
-    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?)" />.
+    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?, Vector3?)" />.
     /// </summary>
     public void SetWind(Vector2 direction, float strength, float timeSeconds)
     {
@@ -798,7 +799,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
     // IWorldRenderer entry point — draws opaque + blended inline (no deferral). Used by the 2D
     // top-down overlay, which has no water pass.
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
-        => Render(viewProj, cylinder, deferBlended: false);
+        => Render(viewProj, cylinder, deferBlended: false, cameraForward: -Vector3.UnitZ);
 
     /// <summary>
     ///     Camera pose key for the translation-TOLERANT cull cache — see the
@@ -930,10 +931,15 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
     ///     views must pass their look-at eye because their covering cylinder is centered on the visible
     ///     footprint rather than on that eye.
     /// </param>
+    /// <param name="cameraForward">
+    ///     The actual normalized view direction used by face-camera billboard modes. This is independent
+    ///     of <paramref name="cullCameraPose" />: exact-cull, capture, projection, and export paths still
+    ///     need the correct facing even when they deliberately do not use the tolerant cull cache.
+    /// </param>
     public int Render(
         Matrix4x4 viewProj, VisibilityCylinder cylinder, bool deferBlended, Matrix4x4? cullViewProj = null,
         Vector3 renderOrigin = default, CullCameraPose? cullCameraPose = null,
-        Vector3? cameraPosition = null)
+        Vector3? cameraPosition = null, Vector3? cameraForward = null)
     {
         ReferencesDrawnLastFrame = 0;
         LastFrameDrawsTruncated = 0;
@@ -984,6 +990,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
 
         var started = StartTiming();
         var frameCameraPosition = cameraPosition ?? cylinder.Position;
+        var frameCameraForward = cameraForward ?? Vector3.Zero;
         var cmd = _recorder.CommandList;
         var frameIndex = _recorder.FrameIndex;
 
@@ -1294,7 +1301,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
             referencesWithReadyMesh = _lastBuildDrawn;
             missingMeshes = _lastBuildMissing;
             texturePending = _lastBuildTexturePending;
-            RefreshBlendedDraws(frameCameraPosition, renderOrigin);
+            RefreshBlendedDraws(frameCameraPosition, frameCameraForward, renderOrigin);
         }
         var survivorsToResolve = reuseBatches ? 0 : _cachedCullSurvivors.Count;
         for (var si = 0; si < survivorsToResolve; si++)
@@ -1423,8 +1430,8 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                     sampledRelativeWorld.Translation -= renderOrigin;
                     var world = sub.IsBillboard
                         ? BuildBillboardWorld(
-                            sub.LocalBoundsCenter, sub.BillboardFrontAxis, sampledSourceWorld,
-                            worldCenter, frameCameraPosition,
+                            sub.LocalBoundsCenter, sub.BillboardMode, sub.BillboardFrontNormal,
+                            sampledSourceWorld, worldCenter, frameCameraPosition, frameCameraForward,
                             renderOrigin)
                         : sampledRelativeWorld;
                     var blendedDraw = new BlendedReferenceDraw(
@@ -1653,7 +1660,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
 
     /// <summary>
     ///     3D-8: draws the blended (transparent) reference submeshes accumulated by the most recent
-    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?)" /> with <c>deferBlended: true</c>. Called AFTER the water pass so water
+    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?, Vector3?)" /> with <c>deferBlended: true</c>. Called AFTER the water pass so water
     ///     never paints over transparent meshes. The water pass rebinds <c>PerFrameCbv</c> to its own
     ///     uniforms (and may change topology), so this re-establishes the reference per-frame state
     ///     before issuing the blended draws. With a scene-depth SRV the host leaves the DSV unbound;
@@ -2380,7 +2387,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
 
     /// <summary>
     ///     Draws the depth-writing blend submeshes (effects-folder foliage the engine marks ZBuffer_Write,
-    ///     e.g. NVSeaPlant02) accumulated by the most recent <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?)" />.
+    ///     e.g. NVSeaPlant02) accumulated by the most recent <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?, Vector3?)" />.
     ///     Unlike <see cref="DrawBlended" /> these run INLINE — after the opaque batches but before the
     ///     water pass — with a depth-WRITING blend PSO, so the water surface occludes them from above
     ///     instead of them painting over it. Sorted back-to-front so overlapping cards blend correctly.
@@ -2883,9 +2890,9 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
     }
 
     /// <summary>
-    ///     Builds a cylindrical (billboardUp / ROTATE_ABOUT_UP) camera-facing world matrix for a
-    ///     submesh that sat under a <c>NiBillboardNode</c>. The quad spins about the world up axis (Z)
-    ///     to face the camera and ignores the REFR placement rotation — only the placement's world
+    ///     Builds the authored camera-facing world matrix for a submesh that sat under a
+    ///     <c>NiBillboardNode</c>. Rotate-about-up modes spin only around world Z; face-camera and
+    ///     face-center modes can pitch as well as yaw. The REFR placement rotation is ignored — only its world
     ///     position and uniform scale are kept. The bake already dropped the billboard node's own
     ///     rotation (NifSceneGraphWalker.WalkNode), so the quad sits at <paramref name="worldCenter" />
     ///     in its authored local orientation, re-aimable here.
@@ -2896,17 +2903,15 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
     ///     </para>
     /// </summary>
     private static Matrix4x4 BuildBillboardWorld(
-        Vector3 localBoundsCenter, Vector2 authoredFrontAxis, Matrix4x4 world,
-        Vector3 worldCenter, Vector3 cameraPosition, Vector3 renderOrigin)
+        Vector3 localBoundsCenter, NifBillboardMode mode, Vector3 authoredFrontNormal,
+        Matrix4x4 world, Vector3 worldCenter, Vector3 cameraPosition, Vector3 cameraForward,
+        Vector3 renderOrigin)
     {
         var toCam = cameraPosition - worldCenter;
-        toCam.Z = 0f;
-        var angle = NifBillboardFacing.ResolveYaw(
-            authoredFrontAxis,
-            new Vector2(toCam.X, toCam.Y));
         // Uniform scale = length of the placement matrix's first row (X axis).
         var scale = new Vector3(world.M11, world.M12, world.M13).Length();
-        var rs = Matrix4x4.CreateScale(scale) * Matrix4x4.CreateRotationZ(angle);
+        var rs = Matrix4x4.CreateScale(scale) * NifBillboardFacing.ResolveRotation(
+            mode, authoredFrontNormal, toCam, cameraForward);
         // Anchor the quad so its local bounds center maps to the placement's world position, then fold in
         // the camera-relative render origin (0 on absolute paths) so the uploaded matrix matches the
         // camera-relative space the reference VS now projects in — see the Render(renderOrigin) docs.
@@ -2928,14 +2933,16 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
     ///     drift) and, for billboards, the camera-facing world matrix. Everything else on the entry
     ///     is placement/material state that reuse guarantees unchanged.
     /// </summary>
-    private void RefreshBlendedDraws(Vector3 cameraPosition, Vector3 renderOrigin)
+    private void RefreshBlendedDraws(
+        Vector3 cameraPosition, Vector3 cameraForward, Vector3 renderOrigin)
     {
-        RefreshBlendedDrawList(_blendedDraws, cameraPosition, renderOrigin);
-        RefreshBlendedDrawList(_depthWritingBlendDraws, cameraPosition, renderOrigin);
+        RefreshBlendedDrawList(_blendedDraws, cameraPosition, cameraForward, renderOrigin);
+        RefreshBlendedDrawList(_depthWritingBlendDraws, cameraPosition, cameraForward, renderOrigin);
     }
 
     private void RefreshBlendedDrawList(
-        List<BlendedReferenceDraw> draws, Vector3 cameraPosition, Vector3 renderOrigin)
+        List<BlendedReferenceDraw> draws, Vector3 cameraPosition, Vector3 cameraForward,
+        Vector3 renderOrigin)
     {
         var span = CollectionsMarshal.AsSpan(draws);
         for (var i = 0; i < span.Length; i++)
@@ -2948,8 +2955,9 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
             sampledRelativeWorld.Translation -= renderOrigin;
             var world = draw.Submesh.IsBillboard
                 ? BuildBillboardWorld(
-                    draw.Submesh.LocalBoundsCenter, draw.Submesh.BillboardFrontAxis,
-                    sampledSourceWorld, worldCenter, cameraPosition,
+                    draw.Submesh.LocalBoundsCenter, draw.Submesh.BillboardMode,
+                    draw.Submesh.BillboardFrontNormal, sampledSourceWorld, worldCenter,
+                    cameraPosition, cameraForward,
                     renderOrigin)
                 : sampledRelativeWorld;
             draw = draw with

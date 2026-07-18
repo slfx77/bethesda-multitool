@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Effects;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using Vortice.Direct3D12;
 
@@ -244,11 +245,14 @@ internal sealed class CachedSubmesh12
     /// </summary>
     public required bool IsBillboard { get; init; }
 
+    /// <summary>Authored NiBillboardNode facing rule.</summary>
+    public NifBillboardMode BillboardMode { get; init; } = NifBillboardMode.RotateAboutUp;
+
     /// <summary>
     ///     Authored horizontal front axis recovered from the submesh's indexed winding. +Y is the
     ///     historical fallback; FNV effect meshes such as FireBall09 author their visible side as -Y.
     /// </summary>
-    public Vector2 BillboardFrontAxis { get; init; } = Vector2.UnitY;
+    public Vector3 BillboardFrontNormal { get; init; } = Vector3.UnitY;
 
     public bool IsLeafBillboard { get; init; }
 

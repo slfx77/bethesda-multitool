@@ -60,6 +60,13 @@ public sealed class ArchiveReader : IDisposable
     /// </summary>
     public BsaExtractor? AsBsaExtractor => _bsa;
 
+    /// <summary>
+    ///     The underlying BA2 extractor, non-null only for a BA2. Counterpart of
+    ///     <see cref="AsBsaExtractor" /> for callers that need record-typed extraction
+    ///     (e.g. texture sources built over a shared <see cref="ArchiveReader" /> handle).
+    /// </summary>
+    public Ba2Extractor? AsBa2Extractor => _ba2;
+
     /// <summary>Opens <paramref name="path" /> as a BA2 when it carries the BTDX magic, else as a BSA.</summary>
     public static ArchiveReader Open(string path) =>
         Ba2Parser.IsBa2File(path)

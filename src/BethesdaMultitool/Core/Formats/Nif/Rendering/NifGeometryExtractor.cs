@@ -319,9 +319,8 @@ internal static class NifGeometryExtractor
         // Static NIF transforms represent the rest pose — animation overrides are not applied
         // since NiControllerSequence keyframes define runtime motion, not the initial pose.
         // When collectBillboards is set, shapes under a NiBillboardNode bake with the node's rotation
-        // dropped (translation kept) and their indices land in billboardShapes so the caller can flag
-        // them for per-frame camera facing.
-        var billboardShapes = collectBillboards ? new HashSet<int>() : null;
+        // dropped (translation kept) and retain the authored per-frame camera-facing mode.
+        var billboardShapes = collectBillboards ? new Dictionary<int, NifBillboardMode>() : null;
         NifSceneGraphWalker.ComputeWorldTransforms(data, nif, nodeChildren, nodeTransforms, animOverrides,
             treatRootsAsIdentity, billboardShapes);
 
@@ -552,7 +551,9 @@ internal static class NifGeometryExtractor
                 normalMapPath = shaderMetadata?.NormalMapPath;
 
                 // NiStencilProperty DrawMode: DRAW_BOTH (3) = double-sided (no backface culling)
-                isDoubleSided = NifBlockParsers.ReadIsDoubleSided(data, nif, propRefs);
+                isDoubleSided = NifDoubleSidedPolicy.Resolve(
+                    NifBlockParsers.ReadIsDoubleSided(data, nif, propRefs),
+                    shaderMetadata);
 
                 // NiAlphaProperty: alpha blend/test flags, threshold, comparison function, and blend modes
                 NifBlockParsers.ReadAlphaProperty(data, nif, propRefs, out hasAlphaBlend, out hasAlphaTest,
@@ -567,8 +568,10 @@ internal static class NifGeometryExtractor
                     hasAlphaBlend = true;
                 }
 
-                // NiMaterialProperty: alpha float (< 1.0 triggers blending even without NiAlphaProperty)
-                materialAlpha = NifBlockParsers.ReadMaterialAlpha(data, nif, propRefs);
+                // NiMaterial alpha composes with the distinct inline BSEffect BaseColor.A term.
+                // Assigning here discarded the effect opacity recovered above, making Skyrim's
+                // blowing-snow planes (authored 0.4/0.6) render at alpha 1.
+                materialAlpha *= NifBlockParsers.ReadMaterialAlpha(data, nif, propRefs);
                 materialGlossiness = NifBlockParsers.ReadMaterialGlossiness(data, nif, propRefs);
                 specularColor = NifBlockParsers.ReadMaterialSpecularColor(data, nif, propRefs);
 
@@ -802,7 +805,11 @@ internal static class NifGeometryExtractor
             {
                 submesh.SourceBlockIndex = shapeIndex;
                 submesh.SkyType = skyType;
-                submesh.IsBillboard = billboardShapes?.Contains(shapeIndex) == true;
+                if (billboardShapes?.TryGetValue(shapeIndex, out var billboardMode) == true)
+                {
+                    submesh.IsBillboard = true;
+                    submesh.BillboardMode = billboardMode;
+                }
                 submesh.SpecularMapTexturePath = specularMapPath;
                 submesh.GradientMapTexturePath = gradientMapPath;
                 submesh.GradientMapV = gradientMapV;

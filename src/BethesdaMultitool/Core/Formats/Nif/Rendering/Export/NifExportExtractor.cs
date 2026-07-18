@@ -383,7 +383,9 @@ internal static class NifExportExtractor
                 or "BSEffectShaderProperty",
             UseVertexColors = useVertexColors,
             UseVertexAlphaForOpacity = NifVertexColorPolicy.UsesAlphaForOpacity(shaderMetadata),
-            IsDoubleSided = NifBlockParsers.ReadIsDoubleSided(data, nif, propRefs),
+            IsDoubleSided = NifDoubleSidedPolicy.Resolve(
+                NifBlockParsers.ReadIsDoubleSided(data, nif, propRefs),
+                shaderMetadata),
             HasAlphaBlend = hasAlphaBlend,
             HasAlphaTest = hasAlphaTest,
             AlphaTestThreshold = alphaTestThreshold,

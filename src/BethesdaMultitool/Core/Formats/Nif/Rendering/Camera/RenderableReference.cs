@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
@@ -121,14 +122,24 @@ internal readonly record struct RenderableReference(
     ///     visible-when-distant stand-ins the engine swaps out for full models, so rendering both
     ///     z-fights. <c>*explod.nif</c> is excluded: FNV DLC explosion FX meshes end in "explod".
     ///     See memory: viewer_imposter_doubling.
+    ///
+    ///     Skyrim is deliberately excluded from the filename-suffix heuristic: its master places
+    ///     some <c>*LOD.nif</c> meshes as the only parent-world representation of architecture
+    ///     (for example Whiterun's WRCastleMainBuilding01LOD), so treating the suffix alone as an
+    ///     imposter makes real geometry disappear. Explicit <c>imposter</c>/<c>LOD</c> path segments
+    ///     retain their existing meaning. <see cref="BethesdaGame.Unknown" /> preserves the legacy
+    ///     conservative classification for callers that do not yet have a game identity.
     /// </summary>
-    public static bool IsImposterModelPath(string? modelPath)
+    public static bool IsImposterModelPath(
+        string? modelPath,
+        BethesdaGame game = BethesdaGame.Unknown)
     {
         if (string.IsNullOrEmpty(modelPath)) return false;
         var segments = modelPath.Split(PathSeparators, StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length == 0) return false;
         if (segments[^1].EndsWith("_imposter.nif", StringComparison.OrdinalIgnoreCase)) return true;
-        if (segments[^1].EndsWith("lod.nif", StringComparison.OrdinalIgnoreCase) &&
+        if (game != BethesdaGame.Skyrim &&
+            segments[^1].EndsWith("lod.nif", StringComparison.OrdinalIgnoreCase) &&
             !segments[^1].EndsWith("explod.nif", StringComparison.OrdinalIgnoreCase))
         {
             return true;
@@ -170,7 +181,8 @@ internal readonly record struct RenderableReference(
         PlacedReference placement,
         PlacedObjectCategory category = PlacedObjectCategory.Unknown,
         AlternateTextureSet? alternateTextures = null,
-        bool xespDisabled = false)
+        bool xespDisabled = false,
+        BethesdaGame game = BethesdaGame.Unknown)
     {
         // Skip skinned actors — v3 renders static meshes only.
         if (placement.RecordType is "ACHR" or "ACRE") return null;
@@ -205,7 +217,7 @@ internal readonly record struct RenderableReference(
             // initial-world state rides the same flag the cull's ShowInitiallyDisabled toggle reads.
             IsInitiallyDisabled: placement.IsInitiallyDisabled || xespDisabled,
             IsMarker: IsMarkerModelPath(placement.ModelPath),
-            IsImposter: IsImposterModelPath(placement.ModelPath) ||
+            IsImposter: IsImposterModelPath(placement.ModelPath, game) ||
                         IsLodDuplicateBaseEditorId(placement.BaseEditorId),
             Category: category,
             AlternateTextures: alternateTextures);

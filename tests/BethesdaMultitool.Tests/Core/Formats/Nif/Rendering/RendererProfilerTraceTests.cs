@@ -185,8 +185,14 @@ public sealed class RendererProfilerTraceTests
                     events.Select(document => document.RootElement.GetProperty("sequence").GetInt64()));
 
                 var startedStep = events[1].RootElement;
-                Assert.Equal(JsonValueKind.Null,
-                    startedStep.GetProperty("requestedShadowsEnabled").ValueKind);
+                // The cloud-motion scenario pins every post-process toggle explicitly (shadows
+                // isolated OFF so the image delta belongs to the animation clock); the started
+                // event must echo the requested toggles rather than nulls.
+                Assert.True(startedStep.GetProperty("requestedHdrEnabled").GetBoolean());
+                Assert.True(startedStep.GetProperty("requestedBloomEnabled").GetBoolean());
+                Assert.True(startedStep.GetProperty("requestedImagespaceEnabled").GetBoolean());
+                Assert.True(startedStep.GetProperty("requestedFogEnabled").GetBoolean());
+                Assert.False(startedStep.GetProperty("requestedShadowsEnabled").GetBoolean());
 
                 var completedStep = events[2].RootElement;
                 Assert.Equal("complete", completedStep.GetProperty("phase").GetString());

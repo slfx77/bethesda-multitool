@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Bsa.Ba2;
+using BethesdaMultitool.Core.Vfs;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 
@@ -64,8 +65,9 @@ internal sealed record Ba2AssetSource : AssetSource
 
 /// <summary>
 ///     Indexes one game-data folder (loose files + every <c>*.bsa</c> at the top level)
-///     for fast exact-path and basename lookup. Disposable — owns the underlying memory-
-///     mapped BSA extractors.
+///     for fast exact-path and basename lookup. Disposable — releases the underlying
+///     memory-mapped extractors (or, when opened through an <see cref="ArchiveHandleRegistry" />,
+///     its leases on the shared handles).
 ///     Loose files take priority over BSA entries (mirrors FNV's runtime override rules).
 ///     BSAs are scanned in alphabetical filename order; later entries with the same
 ///     normalized path are ignored.
@@ -97,20 +99,25 @@ internal sealed class DataFolderIndex : IDisposable
 
     private readonly Dictionary<string, AssetSource> _byPath = new(StringComparer.OrdinalIgnoreCase);
 
-    private readonly List<BsaExtractor> _ownedExtractors = [];
+    // What Dispose/Clear releases per indexed archive: the extractor itself for a private open,
+    // or the registry lease when the extractor is a shared handle.
+    private readonly List<IDisposable> _ownedHandles = [];
 
-    private readonly List<Ba2Extractor> _ownedBa2Extractors = [];
+    private readonly ArchiveHandleRegistry? _registry;
 
     private bool _disposed;
 
     /// <summary>
     ///     Creates an index for a data folder; <paramref name="xbox360FormatHint" /> selects the
-    ///     Xbox 360 disc layout over the standard PC <c>Data\</c> layout.
+    ///     Xbox 360 disc layout over the standard PC <c>Data\</c> layout. Pass a
+    ///     <paramref name="registry" /> to open archives as shared handles (deduped with other
+    ///     holders of the same paths); null keeps private, exclusively owned opens.
     /// </summary>
-    public DataFolderIndex(string dataFolderPath, bool xbox360FormatHint)
+    public DataFolderIndex(string dataFolderPath, bool xbox360FormatHint, ArchiveHandleRegistry? registry = null)
     {
         DataFolderPath = dataFolderPath;
         Xbox360FormatHint = xbox360FormatHint;
+        _registry = registry;
     }
 
     /// <summary>Absolute path of the data folder this index was built from.</summary>
@@ -151,11 +158,11 @@ internal sealed class DataFolderIndex : IDisposable
 
     private void DisposeExtractors()
     {
-        foreach (var extractor in _ownedExtractors)
+        foreach (var handle in _ownedHandles)
         {
             try
             {
-                extractor.Dispose();
+                handle.Dispose();
             }
             catch
             {
@@ -163,21 +170,7 @@ internal sealed class DataFolderIndex : IDisposable
             }
         }
 
-        _ownedExtractors.Clear();
-
-        foreach (var extractor in _ownedBa2Extractors)
-        {
-            try
-            {
-                extractor.Dispose();
-            }
-            catch
-            {
-                // Best-effort cleanup
-            }
-        }
-
-        _ownedBa2Extractors.Clear();
+        _ownedHandles.Clear();
     }
 
     /// <summary>
@@ -230,9 +223,10 @@ internal sealed class DataFolderIndex : IDisposable
     /// </summary>
     public static DataFolderIndex FromArchivePaths(
         IReadOnlyList<string> archivePaths,
-        bool includeLooseFromArchiveDirs = false)
+        bool includeLooseFromArchiveDirs = false,
+        ArchiveHandleRegistry? registry = null)
     {
-        var index = new DataFolderIndex(string.Empty, xbox360FormatHint: false);
+        var index = new DataFolderIndex(string.Empty, xbox360FormatHint: false, registry);
         index.BuildFromExplicitArchives(archivePaths, includeLooseFromArchiveDirs);
         return index;
     }
@@ -475,14 +469,30 @@ internal sealed class DataFolderIndex : IDisposable
         BsaExtractor? extractor = null;
         try
         {
-            extractor = new BsaExtractor(bsaPath);
+            if (_registry is not null)
+            {
+                var lease = _registry.Acquire(bsaPath);
+                extractor = lease.Reader.AsBsaExtractor;
+                if (extractor is null)
+                {
+                    // A .bsa-named file whose magic dispatched to BA2 — not indexable here.
+                    lease.Dispose();
+                    return;
+                }
+
+                _ownedHandles.Add(lease);
+            }
+            else
+            {
+                extractor = new BsaExtractor(bsaPath);
+                _ownedHandles.Add(extractor);
+            }
         }
         catch
         {
             return; // skip unreadable BSAs
         }
 
-        _ownedExtractors.Add(extractor);
         var isXbox360 = extractor.Archive.Header.IsXbox360;
         var archiveFileName = Path.GetFileName(bsaPath);
         var archivePath = Path.GetFullPath(bsaPath);
@@ -562,14 +572,29 @@ internal sealed class DataFolderIndex : IDisposable
         Ba2Extractor? extractor = null;
         try
         {
-            extractor = new Ba2Extractor(ba2Path);
+            if (_registry is not null)
+            {
+                var lease = _registry.Acquire(ba2Path);
+                extractor = lease.Reader.AsBa2Extractor;
+                if (extractor is null)
+                {
+                    lease.Dispose();
+                    return;
+                }
+
+                _ownedHandles.Add(lease);
+            }
+            else
+            {
+                extractor = new Ba2Extractor(ba2Path);
+                _ownedHandles.Add(extractor);
+            }
         }
         catch
         {
             return; // skip unreadable BA2s
         }
 
-        _ownedBa2Extractors.Add(extractor);
         // BA2 is a Fallout 4 / 76 (PC) format — never an Xbox 360 archive.
         var archiveFileName = Path.GetFileName(ba2Path);
         var archivePath = Path.GetFullPath(ba2Path);

@@ -1121,9 +1121,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     LocalBoundsCenter = sub.LocalBoundsCenter,
                     LocalBoundsRadius = sub.LocalBoundsRadius,
                     IsBillboard = sub.IsBillboard,
-                    BillboardFrontAxis = sub.IsBillboard
-                        ? NifBillboardFacing.ResolveFrontAxis(sub.Vertices, sub.Indices)
-                        : Vector2.UnitY,
+                    BillboardMode = sub.BillboardMode,
+                    BillboardFrontNormal = sub.IsBillboard
+                        ? NifBillboardFacing.ResolveFrontNormal(sub.Vertices, sub.Indices)
+                        : Vector3.UnitY,
                     IsLeafBillboard = sub.IsLeafBillboard,
                     ParticleCenters = ExtractParticleCenters(sub),
                     LiveParticles = sub.ParticleRuntime is { } runtime

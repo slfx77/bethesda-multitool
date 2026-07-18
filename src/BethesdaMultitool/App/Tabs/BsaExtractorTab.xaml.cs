@@ -30,6 +30,10 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
     private ArchiveReader? _reader;
     private CancellationTokenSource? _cts;
 
+    // Monotonic token for LoadBsaAsync: overlapping loads (double-click, re-pick while a big
+    // archive parses) each capture a generation; only the newest may install its reader.
+    private int _loadGeneration;
+
     private string _currentSortColumn = "Path";
     private bool _sortAscending = true;
 
@@ -91,12 +95,37 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
 
     private async Task LoadBsaAsync(string path)
     {
+        var generation = ++_loadGeneration;
         try
         {
-            // Clean up previous reader
-            _reader?.Dispose();
+            // Open + list off the UI thread: both parse the full archive table, which used to
+            // stall the UI on multi-GB archives. ListFiles() re-materializes per call, so the
+            // one materialization must happen inside the background task too.
+            var (reader, entries) = await Task.Run(() =>
+            {
+                var opened = ArchiveReader.Open(path);
+                try
+                {
+                    return (opened, opened.ListFiles());
+                }
+                catch
+                {
+                    opened.Dispose();
+                    throw;
+                }
+            });
 
-            _reader = ArchiveReader.Open(path);
+            if (generation != _loadGeneration)
+            {
+                // A newer load superseded this one while it parsed; discard quietly.
+                reader.Dispose();
+                return;
+            }
+
+            // Retire the previous reader only now that its replacement opened successfully, so a
+            // failed pick keeps the current archive usable.
+            _reader?.Dispose();
+            _reader = reader;
 
             // Update UI with archive info (format-aware: BSA or BA2)
             ArchiveNameText.Text = Path.GetFileName(path);
@@ -132,7 +161,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
             _allFiles.Clear();
             FilesListView.SelectedItem = null;
 
-            foreach (var entry in _reader.ListFiles())
+            foreach (var entry in entries)
             {
                 var fileEntry = new BsaFileEntry { Record = entry };
                 fileEntry.PropertyChanged += File_PropertyChanged;

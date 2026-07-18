@@ -31,8 +31,24 @@ public sealed class LooseFileSystem : IGameFileSystem
         return info.Exists ? new GameFileEntry(VfsPath.Normalize(path), info.Length, Label) : null;
     }
 
-    public byte[]? TryReadAllBytes(string path) =>
-        Resolve(path) is { } full && File.Exists(full) ? File.ReadAllBytes(full) : null;
+    public byte[]? TryReadAllBytes(string path)
+    {
+        if (Resolve(path) is not { } full || !File.Exists(full))
+        {
+            return null;
+        }
+
+        try
+        {
+            return File.ReadAllBytes(full);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Locked/unreadable loose file: null lets a layered mount fall through to an archive
+            // copy, matching the hand-rolled loose→archive chains this API replaces.
+            return null;
+        }
+    }
 
     public IEnumerable<GameFileEntry> EnumerateFiles(string? prefix = null)
     {
@@ -76,7 +92,13 @@ public sealed class LooseFileSystem : IGameFileSystem
             }
         }
 
-        var full = Path.GetFullPath(Path.Combine(_root, normalized));
+        // Virtual paths are backslash-normalized, but '\' is not a separator on Unix (the CLI
+        // TFM runs on Linux CI) — translate to the OS separator before combining, or a
+        // multi-segment path like "Strings\X.STRINGS" becomes one bogus filename.
+        var osRelative = Path.DirectorySeparatorChar == '\\'
+            ? normalized
+            : normalized.Replace('\\', Path.DirectorySeparatorChar);
+        var full = Path.GetFullPath(Path.Combine(_root, osRelative));
         return full.StartsWith(_root, StringComparison.OrdinalIgnoreCase) ? full : null;
     }
 }

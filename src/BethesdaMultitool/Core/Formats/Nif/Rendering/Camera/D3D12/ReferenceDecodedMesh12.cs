@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
@@ -131,5 +132,7 @@ internal sealed record DecodedSubmesh12(
     FnvClassicBasicShaderMode ClassicBasicShaderMode = FnvClassicBasicShaderMode.None,
     // Stable source-shape provenance (v63+). This is CPU-only identity for diagnostics and future
     // property-associated light observations; -1 means the source block is unavailable.
-    int SourceBlockIndex = -1);
+    int SourceBlockIndex = -1,
+    // Authored NiBillboardNode mode (v64+). RotateAboutUp preserves pre-v64 behavior.
+    NifBillboardMode BillboardMode = NifBillboardMode.RotateAboutUp);
 #endif
