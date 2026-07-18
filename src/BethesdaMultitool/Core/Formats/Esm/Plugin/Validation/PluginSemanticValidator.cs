@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
@@ -38,7 +39,8 @@ public static class PluginSemanticValidator
         byte[] espBytes,
         IReadOnlySet<uint>? masterFormIds = null,
         IReadOnlyDictionary<string, HashSet<uint>>? masterFormIdsByType = null,
-        IReadOnlySet<uint>? additionalValidFormIds = null)
+        IReadOnlySet<uint>? additionalValidFormIds = null,
+        IReadOnlyDictionary<string, uint>? masterScriptFormIdsByEditorId = null)
     {
         var (records, grupHeaders) = EsmParser.EnumerateRecordsWithGrups(espBytes);
         var pluginFormIdsByType = records
@@ -49,6 +51,9 @@ public static class PluginSemanticValidator
                 g => new HashSet<uint>(g.Select(r => r.Header.FormId)),
                 StringComparer.Ordinal);
         var pluginFormIds = new HashSet<uint>(pluginFormIdsByType.Values.SelectMany(static ids => ids));
+        var duplicateScriptEditorIds = FindDuplicateEffectiveScriptEditorIds(
+            records, masterScriptFormIdsByEditorId);
+        var unknownConditionFunctions = FindUnknownConditionFunctions(records);
 
         // Offset-sorted event stream of GRUP headers + records, just like
         // PcEsmCellContextIndex uses to reconstruct the parent-GRUP stack.
@@ -287,6 +292,41 @@ public static class PluginSemanticValidator
             }
         }
 
+        if (duplicateScriptEditorIds.Count > 0)
+        {
+            errors += duplicateScriptEditorIds.Count;
+            report.AppendLine(
+                $"ERROR: {duplicateScriptEditorIds.Count:N0} duplicate effective SCPT EditorID(s) found:");
+            foreach (var duplicate in duplicateScriptEditorIds.Take(MaxDuplicateExamples))
+            {
+                report.AppendLine($"  {duplicate}");
+            }
+
+            if (duplicateScriptEditorIds.Count > MaxDuplicateExamples)
+            {
+                report.AppendLine(
+                    $"  …and {duplicateScriptEditorIds.Count - MaxDuplicateExamples:N0} more.");
+            }
+        }
+
+        if (unknownConditionFunctions.Count > 0)
+        {
+            errors += unknownConditionFunctions.Count;
+            report.AppendLine(
+                $"ERROR: {unknownConditionFunctions.Count:N0} CTDA/CTDT subrecord(s) use a function " +
+                "absent from the retail FNV command table:");
+            foreach (var unknown in unknownConditionFunctions.Take(MaxDuplicateExamples))
+            {
+                report.AppendLine($"  {unknown}");
+            }
+
+            if (unknownConditionFunctions.Count > MaxDuplicateExamples)
+            {
+                report.AppendLine(
+                    $"  …and {unknownConditionFunctions.Count - MaxDuplicateExamples:N0} more.");
+            }
+        }
+
         if (scriptDangling.Count > 0)
         {
             errors += scriptDangling.Count;
@@ -359,7 +399,8 @@ public static class PluginSemanticValidator
                 $"{scriptSemantic.ReferenceCount:N0} SCPT object/variable refs, " +
                 $"{packageSemantic.PackageReferenceCount:N0} package target/location refs, " +
                 $"{packageSemantic.ActorPackageCount:N0} actor package refs; no duplicate FormIDs, " +
-                "all refs correctly parented + flagged, all SCRI/PACK/PKID targets resolve with " +
+                "no duplicate effective SCPT EditorIDs, all refs correctly parented + flagged, " +
+                "all SCRI/PACK/PKID targets resolve with " +
                 "the expected record type.");
         }
         else
@@ -370,6 +411,102 @@ public static class PluginSemanticValidator
         }
 
         return new SemanticValidationResult(errors, warnings, report.ToString().TrimEnd());
+    }
+
+    private static List<string> FindDuplicateEffectiveScriptEditorIds(
+        IReadOnlyList<ParsedMainRecord> pluginRecords,
+        IReadOnlyDictionary<string, uint>? masterScriptFormIdsByEditorId)
+    {
+        var effectiveFormIdsByEditorId =
+            new Dictionary<string, HashSet<uint>>(StringComparer.OrdinalIgnoreCase);
+        var masterEditorIdByFormId = new Dictionary<uint, string>();
+
+        if (masterScriptFormIdsByEditorId is not null)
+        {
+            foreach (var (editorId, formId) in masterScriptFormIdsByEditorId)
+            {
+                Add(editorId, formId);
+                masterEditorIdByFormId.TryAdd(formId, editorId);
+            }
+        }
+
+        foreach (var record in pluginRecords.Where(static record => record.Header.Signature == "SCPT"))
+        {
+            var formId = record.Header.FormId;
+
+            // A plugin SCPT at a master FormID replaces that master's effective EditorID.
+            // Remove the old name before adding the fully-merged plugin record's name so
+            // a legitimate rename is not misreported as a load-order duplicate.
+            if (masterEditorIdByFormId.TryGetValue(formId, out var masterEditorId)
+                && effectiveFormIdsByEditorId.TryGetValue(masterEditorId, out var oldFormIds))
+            {
+                oldFormIds.Remove(formId);
+                if (oldFormIds.Count == 0)
+                {
+                    effectiveFormIdsByEditorId.Remove(masterEditorId);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(record.EditorId))
+            {
+                Add(record.EditorId, formId);
+            }
+        }
+
+        return effectiveFormIdsByEditorId
+            .Where(static pair => pair.Value.Count > 1)
+            .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(static pair =>
+                $"'{pair.Key}' resolves to {string.Join(", ", pair.Value.Order().Select(static id => $"0x{id:X8}"))}")
+            .ToList();
+
+        void Add(string editorId, uint formId)
+        {
+            if (!effectiveFormIdsByEditorId.TryGetValue(editorId, out var formIds))
+            {
+                formIds = [];
+                effectiveFormIdsByEditorId.Add(editorId, formIds);
+            }
+
+            formIds.Add(formId);
+        }
+    }
+
+    private static List<string> FindUnknownConditionFunctions(
+        IReadOnlyList<ParsedMainRecord> records)
+    {
+        var findings = new List<string>();
+        foreach (var record in records)
+        {
+            var conditionOrdinal = 0;
+            foreach (var subrecord in record.Subrecords)
+            {
+                if (subrecord.Signature is not ("CTDA" or "CTDT"))
+                {
+                    continue;
+                }
+
+                conditionOrdinal++;
+                if (subrecord.Data.Length < 10)
+                {
+                    // Byte-structure validation reports truncated subrecords separately.
+                    continue;
+                }
+
+                var functionIndex = BinaryPrimitives.ReadUInt16LittleEndian(
+                    subrecord.Data.AsSpan(8, 2));
+                if (PerkConditionParameterResolver.IsKnownConditionFunction(functionIndex))
+                {
+                    continue;
+                }
+
+                findings.Add(
+                    $"{record.Header.Signature} 0x{record.Header.FormId:X8} condition " +
+                    $"#{conditionOrdinal} uses function 0x{functionIndex:X4}");
+            }
+        }
+
+        return findings;
     }
 
     private static uint? ReadNameFormId(ParsedMainRecord record)

@@ -8,6 +8,7 @@ using BethesdaMultitool.Core.Formats.Esm.Planner.Disposition;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies;
 using BethesdaMultitool.Core.Formats.Esm.Planner.References;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
+using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner;
@@ -225,6 +226,58 @@ public sealed class EsmPlannerTier0Tests
         Assert.Equal(masterScriptFormId, plan.SourceToEmittedFormId[sourceScriptFormId]);
     }
 
+    [Fact]
+    public void Build_AliasedTruncatedScriptKeepsMasterWithoutAllocatingDuplicate()
+    {
+        const uint sourceScriptFormId = 0x000B16CE;
+        const uint masterScriptFormId = 0x001209D1;
+        var allocator = new FormIdAllocator();
+        var planner = BuildPlanner(allocator);
+        var masterScript = new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
+            {
+                Signature = "SCPT",
+                FormId = masterScriptFormId,
+                Version = 15
+            },
+            Subrecords =
+            [
+                new ParsedSubrecord { Signature = "SCDA", Data = new byte[5092] }
+            ]
+        };
+        var dmp = new RecordCollection
+        {
+            Scripts =
+            [
+                new ScriptRecord
+                {
+                    FormId = sourceScriptFormId,
+                    EditorId = "VNPCFollowersQuestSCRIPT",
+                    CompiledData = new byte[924]
+                }
+            ]
+        };
+
+        var plan = planner.Build(
+            [masterScript],
+            dmp,
+            new HashSet<string> { "SCPT" },
+            new HashSet<uint> { masterScriptFormId },
+            null,
+            masterFormIdAliases: new Dictionary<uint, uint>
+            {
+                [sourceScriptFormId] = masterScriptFormId
+            });
+
+        var record = Assert.Single(plan.Records);
+        Assert.Equal(RecordDisposition.KeepMaster, record.Disposition);
+        Assert.Equal(masterScriptFormId, record.FormId);
+        Assert.Equal(sourceScriptFormId, record.SourceFormId);
+        Assert.Equal(masterScriptFormId, plan.SourceToEmittedFormId[sourceScriptFormId]);
+        Assert.Equal(0x800u, allocator.NextObjectId);
+    }
+
     private static ParsedMainRecord MasterGameSetting(uint formId) => new()
     {
         Header = new MainRecordHeader
@@ -244,7 +297,8 @@ public sealed class EsmPlannerTier0Tests
 
     private static EsmPlanner BuildPlanner(FormIdAllocator? allocator = null)
     {
-        var disposition = new DispositionEngine([new DefaultDispositionPolicy()]);
+        var disposition = new DispositionEngine(
+            [new ScriptDispositionPolicy(), new DefaultDispositionPolicy()]);
         var degradation = new DegradationPolicy();
         var references = new ReferenceResolver([], degradation);
 

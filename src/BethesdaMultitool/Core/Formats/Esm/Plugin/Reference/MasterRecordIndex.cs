@@ -16,6 +16,14 @@ public sealed record MasterRecordIndex
     public required Dictionary<string, HashSet<uint>> FormIdsByType { get; init; }
     public required Dictionary<string, Dictionary<string, uint>> EditorIdToFormIdByType { get; init; }
     public required Dictionary<string, Dictionary<string, List<uint>>> StemToFormIdsByType { get; init; }
+    /// <summary>
+    ///     Exact, case-insensitive SCPT identity lookup. Script names are global record
+    ///     identities, but scripts are not legal placed-reference bases, so this index is
+    ///     intentionally separate from <see cref="EditorIdToFormIdByType" /> and
+    ///     <see cref="StemToFormIdsByType" />. Ambiguous master names are omitted.
+    /// </summary>
+    public Dictionary<string, uint> ScriptFormIdByEditorId { get; init; } =
+        new(StringComparer.OrdinalIgnoreCase);
     public required Dictionary<uint, MasterChildLocation> ChildLocations { get; init; }
     public required Dictionary<uint, uint> RefToCell { get; init; }
     public required Dictionary<uint, List<uint>> RefsByCell { get; init; }
@@ -48,6 +56,7 @@ public sealed record MasterRecordIndex
                     StringComparer.Ordinal),
             EditorIdToFormIdByType = editorIdsByType,
             StemToFormIdsByType = BuildStemLookup(editorIdsByType),
+            ScriptFormIdByEditorId = BuildUnambiguousScriptEditorIdLookup(records),
             ChildLocations = childLocations,
             RefToCell = BuildChildRecordToCellIndex(childLocations),
             RefsByCell = BuildRefsByCellIndex(childLocations),
@@ -85,6 +94,34 @@ public sealed record MasterRecordIndex
         }
 
         return lookup;
+    }
+
+    private static Dictionary<string, uint> BuildUnambiguousScriptEditorIdLookup(
+        IReadOnlyList<ParsedMainRecord> records)
+    {
+        var candidates = new Dictionary<string, HashSet<uint>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var record in records)
+        {
+            if (record.Header.Signature != "SCPT" || string.IsNullOrWhiteSpace(record.EditorId))
+            {
+                continue;
+            }
+
+            if (!candidates.TryGetValue(record.EditorId, out var formIds))
+            {
+                formIds = [];
+                candidates.Add(record.EditorId, formIds);
+            }
+
+            formIds.Add(record.Header.FormId);
+        }
+
+        return candidates
+            .Where(static pair => pair.Value.Count == 1)
+            .ToDictionary(
+                static pair => pair.Key,
+                static pair => pair.Value.Single(),
+                StringComparer.OrdinalIgnoreCase);
     }
 
     private static Dictionary<string, Dictionary<string, List<uint>>> BuildStemLookup(
@@ -231,4 +268,3 @@ public sealed record MasterRecordIndex
         return recordsByCell;
     }
 }
-

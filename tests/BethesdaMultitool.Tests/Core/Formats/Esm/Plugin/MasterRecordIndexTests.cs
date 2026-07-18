@@ -1,13 +1,48 @@
 using System.Buffers.Binary;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
+using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 
 public sealed class MasterRecordIndexTests
 {
+    [Fact]
+    public void Build_IndexesExactScriptIdentityWithoutMakingScptARefrBase()
+    {
+        var records = new List<ParsedMainRecord>
+        {
+            Record("SCPT", 0x001209D1, 24, "VNPCFollowersQuestSCRIPT"),
+            Record("STAT", 0x00001000, 72, "SomeStatic")
+        };
+
+        var index = MasterRecordIndex.Build(records, []);
+
+        Assert.Equal(
+            0x001209D1u,
+            index.ScriptFormIdByEditorId["vnpcfollowersquestscript"]);
+        Assert.False(index.EditorIdToFormIdByType.ContainsKey("SCPT"));
+        Assert.False(index.StemToFormIdsByType.ContainsKey("SCPT"));
+        Assert.Equal(0x00001000u, index.EditorIdToFormIdByType["STAT"]["SomeStatic"]);
+    }
+
+    [Fact]
+    public void Build_OmitsAmbiguousCaseInsensitiveScriptIdentity()
+    {
+        var records = new List<ParsedMainRecord>
+        {
+            Record("SCPT", 0x00100001, 24, "SharedScript"),
+            Record("SCPT", 0x00100002, 72, "sharedscript")
+        };
+
+        var index = MasterRecordIndex.Build(records, []);
+
+        Assert.False(index.ScriptFormIdByEditorId.ContainsKey("SharedScript"));
+    }
+
     [Fact]
     public void Build_ChildLocations_UsesCellChildGrupLabel()
     {
@@ -67,13 +102,26 @@ public sealed class MasterRecordIndexTests
         Assert.Equal(new List<uint> { 0xAA04u }, index.NavmsByCell[0xC001]);
     }
 
-    private static ParsedMainRecord Record(string signature, uint formId, long offset)
+    private static ParsedMainRecord Record(
+        string signature,
+        uint formId,
+        long offset,
+        string? editorId = null)
     {
         return new ParsedMainRecord
         {
             Header = new MainRecordHeader { Signature = signature, FormId = formId, Version = 0x000F },
             Offset = offset,
-            Subrecords = []
+            Subrecords = editorId is null
+                ? []
+                :
+                [
+                    new ParsedSubrecord
+                    {
+                        Signature = "EDID",
+                        Data = Encoding.ASCII.GetBytes(editorId + '\0')
+                    }
+                ]
         };
     }
 

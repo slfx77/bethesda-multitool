@@ -17,6 +17,7 @@ public sealed class TerminalMenuItemRuntimeReaderTests
     private const uint BytecodeVa = 0x40300300;
     private const uint DisplayNoteVa = 0x40400000;
     private const uint SubTerminalVa = 0x40400100;
+    private const uint MenuListNodeVa = 0x40500000;
 
     [Fact]
     public void ReadRuntimeTerminal_UsesFullMenuLayoutAndParsesInlineScriptObject()
@@ -31,7 +32,8 @@ public sealed class TerminalMenuItemRuntimeReaderTests
 
         var terminal = new byte[184];
         WriteFormHeader(terminal, 0, 0x17, terminalFormId);
-        WriteUInt32BE(terminal, 168, MenuItemVa); // MenuItemList.m_item
+        WriteUInt32BE(terminal, 164, MenuItemVa); // MenuItemList.m_item
+        WriteUInt32BE(terminal, 168, MenuListNodeVa); // MenuItemList.m_pkNext
 
         var item = new byte[136];
         WriteBsString(item, 0, ItemTextVa, (ushort)itemText.Length);
@@ -64,7 +66,10 @@ public sealed class TerminalMenuItemRuntimeReaderTests
             .WithPointerTarget(SourceTextVa, PaddedAscii(sourceText))
             .WithPointerTarget(BytecodeVa, bytecode)
             .WithPointerTarget(DisplayNoteVa, displayNote)
-            .WithPointerTarget(SubTerminalVa, subTerminal);
+            .WithPointerTarget(SubTerminalVa, subTerminal)
+            // Production regression: +168 is a valid next-node pointer, not the list
+            // head. A reader starting there silently treats this node as a menu item.
+            .WithPointerTarget(MenuListNodeVa, new byte[136]);
 
         var reader = new RuntimeQuestTerminalReader(fixture.BuildContext());
         var entry = RuntimeReaderTestFixture.MakeEntry(terminalFormId, 0x17, TerminalVa);
@@ -93,7 +98,7 @@ public sealed class TerminalMenuItemRuntimeReaderTests
 
         var terminal = new byte[184];
         WriteFormHeader(terminal, 0, 0x17, terminalFormId);
-        WriteUInt32BE(terminal, 168, MenuItemVa);
+        WriteUInt32BE(terminal, 164, MenuItemVa);
 
         var item = new byte[136];
         WriteBsString(item, 0, ItemTextVa, (ushort)itemText.Length);
@@ -130,7 +135,7 @@ public sealed class TerminalMenuItemRuntimeReaderTests
 
         var terminal = new byte[184];
         WriteFormHeader(terminal, 0, 0x17, terminalFormId);
-        WriteUInt32BE(terminal, 168, MenuItemVa);
+        WriteUInt32BE(terminal, 164, MenuItemVa);
 
         var item = new byte[136];
         WriteBsString(item, 0, ItemTextVa, (ushort)itemText.Length);

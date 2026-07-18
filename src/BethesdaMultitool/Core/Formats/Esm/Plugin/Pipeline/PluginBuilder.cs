@@ -29,6 +29,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
+using BethesdaMultitool.Core.Formats.Esm.Script;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Core.Recovery;
@@ -208,6 +209,13 @@ public sealed class PluginBuilder
     private Dictionary<string, Dictionary<string, uint>>? _masterEditorIdToFormIdByType;
 
     /// <summary>
+    ///     Exact, case-insensitive SCPT EditorID → master FormID identities. Kept separate
+    ///     from placed-reference base and stem indexes because SCPT is never a legal REFR
+    ///     base, while duplicate script names still collide in the engine's script registry.
+    /// </summary>
+    private Dictionary<string, uint>? _masterScriptFormIdByEditorId;
+
+    /// <summary>
     ///     Master ESM FormID set, populated at the start of <c>Build</c>. Used by post-encode
     ///     FormID validation (e.g., dropping SCRI subrecords whose script FormID doesn't
     ///     exist in master). Null until Build sets it; consumers must tolerate that.
@@ -338,6 +346,7 @@ public sealed class PluginBuilder
             _scriptVariableProducerRequirements = [];
             _scriptVariableProducerMappings = [];
             _masterEditorIdToFormIdByType = masterIndex.EditorIdToFormIdByType;
+            _masterScriptFormIdByEditorId = masterIndex.ScriptFormIdByEditorId;
             _masterStemToFormIdsByType = masterIndex.StemToFormIdsByType;
 
             // Build the master child-location index from GRUP ancestry. Existing placed-ref
@@ -903,7 +912,8 @@ public sealed class PluginBuilder
                 // These are runtime-load failures, so --validate rejects rather than merely
                 // annotating an artifact that cannot behave correctly in game.
                 var semantic = PluginSemanticValidator.Validate(
-                    outputBytes, _masterFormIds, _masterFormIdsByType, _masterChildFormIds);
+                    outputBytes, _masterFormIds, _masterFormIdsByType, _masterChildFormIds,
+                    masterIndex.ScriptFormIdByEditorId);
                 _sink.Info("Validating output", semantic.Report);
                 if (semantic.ErrorCount > 0)
                 {
@@ -5265,6 +5275,14 @@ public sealed class PluginBuilder
     private bool TryFindMasterByEditorId(string recordType, object model, out uint masterFormId)
     {
         masterFormId = 0;
+        if (recordType == "SCPT" && model is ScriptRecord script)
+        {
+            var scriptEditorId = ScriptRecordEmissionPolicy.ResolveEditorId(script);
+            return !string.IsNullOrWhiteSpace(scriptEditorId)
+                   && _masterScriptFormIdByEditorId is not null
+                   && _masterScriptFormIdByEditorId.TryGetValue(scriptEditorId, out masterFormId);
+        }
+
         if (_masterEditorIdToFormIdByType is null
             || !_masterEditorIdToFormIdByType.TryGetValue(recordType, out var byEdid))
         {

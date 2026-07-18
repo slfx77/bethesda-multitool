@@ -189,6 +189,44 @@ public sealed class TerminalEmbeddedScriptRoundTripTests
             "whole menu item is atomic", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void EncodeThenParse_DropsMenuItemWithUnknownConditionFunctionAndPreservesSibling()
+    {
+        var terminal = new TerminalRecord
+        {
+            FormId = TermFormId,
+            EditorId = "CorruptConditionalTerminal",
+            MenuItems =
+            [
+                new TerminalMenuItem
+                {
+                    Text = "Misread runtime bytes",
+                    Conditions =
+                    [
+                        new DialogueCondition
+                        {
+                            FunctionIndex = 0x5102,
+                        },
+                    ],
+                },
+                new TerminalMenuItem
+                {
+                    Text = "Safe sibling",
+                    ResultText = "Still available",
+                },
+            ],
+        };
+
+        var encoded = TermEncoder.EncodeNew(terminal);
+
+        var item = Assert.Single(ParseEncodedTerminal(encoded).MenuItems);
+        Assert.Equal("Safe sibling", item.Text);
+        Assert.DoesNotContain(encoded.Subrecords, static subrecord => subrecord.Signature == "CTDA");
+        Assert.Contains(encoded.Warnings, warning =>
+            warning.Contains("0x5102", StringComparison.Ordinal)
+            && warning.Contains("absent from the retail FNV command table", StringComparison.Ordinal));
+    }
+
     private static TerminalRecord CreateTerminal()
     {
         return new TerminalRecord

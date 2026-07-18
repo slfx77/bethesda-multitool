@@ -5,6 +5,17 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models;
 /// <summary>Maps CTDA condition-function indices to script function names and resolves their parameter values.</summary>
 internal static class PerkConditionParameterResolver
 {
+    /// <summary>
+    ///     Returns true when the condition index resolves to a function present in the
+    ///     final FNV executable's game-command table. Prototype-only or corrupt indices
+    ///     must not be serialized: the retail loader indexes this table while loading
+    ///     CTDAs and does not safely tolerate an out-of-range value.
+    /// </summary>
+    public static bool IsKnownConditionFunction(ushort conditionFunctionIndex)
+    {
+        return ScriptFunctionTable.Get(ToScriptOpcode(conditionFunctionIndex)) is not null;
+    }
+
     /// <summary>Returns the script function name for a CTDA condition-function index.</summary>
     public static string ResolveScriptFunctionName(ushort conditionFunctionIndex)
     {

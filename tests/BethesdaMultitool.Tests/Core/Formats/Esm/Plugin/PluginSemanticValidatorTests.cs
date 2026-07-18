@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Validation;
@@ -11,6 +12,103 @@ public class PluginSemanticValidatorTests
 {
     private const uint OwnerFormId = 0x01001000;
     private const uint ScriptFormId = 0x01002000;
+
+    [Fact]
+    public void Validate_RejectsDuplicateEffectiveScriptEditorIdAgainstMaster()
+    {
+        const uint masterScriptFormId = 0x001209D1;
+        const uint duplicateScriptFormId = 0x010050EC;
+        var bytes = BuildPlugin(
+            BuildRecord(
+                "SCPT",
+                masterScriptFormId,
+                ("EDID", NullTermString("VNPCFollowersQuestSCRIPT")),
+                ("SCHR", new byte[20])),
+            BuildRecord(
+                "SCPT",
+                duplicateScriptFormId,
+                ("EDID", NullTermString("vnpcfollowersquestscript")),
+                ("SCHR", new byte[20])));
+        var masterScripts = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["VNPCFollowersQuestSCRIPT"] = masterScriptFormId
+        };
+
+        var result = PluginSemanticValidator.Validate(
+            bytes,
+            masterScriptFormIdsByEditorId: masterScripts);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains("duplicate effective SCPT EditorID", result.Report, StringComparison.Ordinal);
+        Assert.Contains("0x001209D1", result.Report, StringComparison.Ordinal);
+        Assert.Contains("0x010050EC", result.Report, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Validate_AcceptsNewScriptWhenPluginRenamesTheMasterIdentity()
+    {
+        const uint masterScriptFormId = 0x0013408C;
+        const uint newScriptFormId = 0x01005022;
+        var bytes = BuildPlugin(
+            BuildRecord(
+                "SCPT",
+                masterScriptFormId,
+                ("EDID", NullTermString("CassScript")),
+                ("SCHR", new byte[20])),
+            BuildRecord(
+                "SCPT",
+                newScriptFormId,
+                ("EDID", NullTermString("RoseofSharonCassidyScript")),
+                ("SCHR", new byte[20])));
+        var masterScripts = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["RoseofSharonCassidyScript"] = masterScriptFormId
+        };
+
+        var result = PluginSemanticValidator.Validate(
+            bytes,
+            masterScriptFormIdsByEditorId: masterScripts);
+
+        Assert.Equal(0, result.ErrorCount);
+    }
+
+    [Fact]
+    public void Validate_RejectsConditionFunctionAbsentFromRetailCommandTable()
+    {
+        var ctda = new byte[28];
+        BinaryPrimitives.WriteUInt16LittleEndian(ctda.AsSpan(8, 2), 0x5102);
+        var bytes = BuildPlugin(
+            BuildRecord(
+                "TERM",
+                0x01006F4E,
+                ("EDID", NullTermString("HVPodTerminal")),
+                ("CTDA", ctda)));
+
+        var result = PluginSemanticValidator.Validate(bytes);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains("TERM 0x01006F4E", result.Report, StringComparison.Ordinal);
+        Assert.Contains("function 0x5102", result.Report, StringComparison.Ordinal);
+        Assert.Contains("absent from the retail FNV command table", result.Report,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Validate_AcceptsKnownRetailConditionFunction()
+    {
+        var ctda = new byte[28];
+        BinaryPrimitives.WriteUInt16LittleEndian(ctda.AsSpan(8, 2), 0x004F);
+        var bytes = BuildPlugin(
+            BuildRecord(
+                "TERM",
+                0x01006F4E,
+                ("EDID", NullTermString("HVPodTerminal")),
+                ("CTDA", ctda)));
+
+        var result = PluginSemanticValidator.Validate(bytes);
+
+        Assert.Equal(0, result.ErrorCount);
+    }
 
     [Fact]
     public void Validate_AcceptsScriThatTargetsEmittedScpt()
@@ -113,4 +211,6 @@ public class PluginSemanticValidatorTests
         BinaryPrimitives.WriteUInt32LittleEndian(bytes, formId);
         return bytes;
     }
+
+    private static byte[] NullTermString(string value) => Encoding.ASCII.GetBytes(value + '\0');
 }

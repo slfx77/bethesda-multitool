@@ -26,10 +26,13 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    // RuntimeTerminalLayoutProbe was deleted in Phase 1B.6. Across 32 sampled dumps the
-    // data-shift result was never high-confidence (so the consumer always took the 0
-    // fallback) and the menu-list shift was uniformly +4. The +4 is now baked into
-    // TermMenuItemListOffset below; the data-shift fallback (0) is the identity.
+    // RuntimeTerminalLayoutProbe was deleted in Phase 1B.6. Its menu-list signal only
+    // checked whether one 32-bit word looked pointer-shaped; that cannot distinguish a
+    // BSSimpleList head from its adjacent m_pkNext word. The actual list head is at
+    // runtime +164 in the captured builds. This is byte-verified on HVPodTerminal in
+    // Fallout_Release_Beta.xex.dmp: +164 is {menu item*, next node*}, while +168 is the
+    // next-node pointer alone. Treating +168 as the head made that node look like a menu
+    // item and projected unrelated heap bytes as ANAM/CTDA data.
     //
     // Phase 1B.7 placed TERMINAL_DATA at PDB +180 (Difficulty=byte0 of Data) per the
     // MemDebug PDB layout, but the actual runtime layout has Data at +176 — the
@@ -341,7 +344,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     {
         var results = new List<TerminalMenuItem>();
 
-        // Read the BSSimpleList inline node (8 bytes: m_item + m_pkNext) at +152
+        // Read the BSSimpleList inline node (8 bytes: m_item + m_pkNext) at runtime +164.
         var listOffset = terminalOffset + TermMenuItemListOffset;
         var listBuf = _context.ReadBytes(listOffset, 8);
         if (listBuf == null)
@@ -805,8 +808,8 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     // adding the build shift back in yields the runtime-correct offset.
     //
     // Update history:
-    //   - Phase 1B.6: the menu-item-list probe was deleted and its plus-four shift
-    //     was baked into TermMenuItemListOffset.
+    //   - Phase 1B.6: the menu-item-list probe was deleted; its pointer-shaped-word
+    //     signal was later found to have selected m_pkNext instead of the list head.
     //   - Phase 1B.7: the difficulty and flags bytes moved from the early
     //     plus-132/plus-133 location to the PDB-declared plus-180/plus-181.
     //   - Tier 3.2: the difficulty and flags bytes moved again, from the PDB
@@ -815,7 +818,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     private int TermStructSize => 168 + _s;          // 184 bytes (4 unused at end)
     private int TermDifficultyOffset => 160 + _s;    // TERMINAL_DATA byte 0 (runtime +176)
     private int TermFlagsOffset => 161 + _s;         // TERMINAL_DATA byte 1 (runtime +177)
-    private int TermMenuItemListOffset => 152 + _s;  // BSSimpleList<TERMINAL_MENU_ITEM*> head (PDB +168)
+    private int TermMenuItemListOffset => 148 + _s;  // BSSimpleList<TERMINAL_MENU_ITEM*> head (runtime +164)
 
     #endregion
 }
