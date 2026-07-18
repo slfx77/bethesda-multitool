@@ -153,7 +153,8 @@ internal static class EsmWorldExtractor
                     var parsedRadius = header.IsBigEndian
                         ? BinaryPrimitives.ReadSingleBigEndian(subData)
                         : BinaryPrimitives.ReadSingleLittleEndian(subData);
-                    if (float.IsFinite(parsedRadius) && parsedRadius > 0)
+                    // Signed ExtraRadius adjustment; negative retail values are intentional.
+                    if (float.IsFinite(parsedRadius))
                     {
                         radius = parsedRadius;
                     }

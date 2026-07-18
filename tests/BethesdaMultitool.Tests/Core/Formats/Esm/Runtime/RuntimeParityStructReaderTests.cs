@@ -1034,8 +1034,10 @@ public sealed class RuntimeParityStructReaderTests : RuntimeStructReaderTestBase
         Assert.Null(result.StartingWorldOrCellFormId);
     }
 
-    [Fact]
-    public void ReadRuntimeRefr_WithRadiusExtra_ReturnsRadius()
+    [Theory]
+    [InlineData(384f)]
+    [InlineData(-147.9012146f)]
+    public void ReadRuntimeRefr_WithRadiusExtra_ReturnsSignedRadius(float authoredRadius)
     {
         var data = new byte[DataSize];
         const uint refrFormId = 0x000061D8;
@@ -1055,17 +1057,19 @@ public sealed class RuntimeParityStructReaderTests : RuntimeStructReaderTestBase
 
         WriteTesFormHeader(data, baseObjectOffset, 0x82010000, 0x15, 0x000061D9);
         WriteTesFormHeader(data, parentCellOffset, 0x82010000, 0x39, 0x000061DA);
-        WriteExtraRadiusNode(data, extraRadiusOffset, 0, 384f);
+        WriteExtraRadiusNode(data, extraRadiusOffset, 0, authoredRadius);
 
         var reader = CreateReader(data);
         var result = reader.ReadRuntimeRefr(MakeEntry("PlacedRefRuntimeRadius", refrFormId, 0x3A, structOffset));
 
         Assert.NotNull(result);
-        Assert.Equal(384f, result.Radius);
+        Assert.Equal(authoredRadius, result.Radius);
     }
 
-    [Fact]
-    public void ReadRuntimeRefr_WithInvalidRadiusExtra_DoesNotGuessRadius()
+    [Theory]
+    [InlineData(600_001f)]
+    [InlineData(-600_001f)]
+    public void ReadRuntimeRefr_WithInvalidRadiusExtra_DoesNotGuessRadius(float authoredRadius)
     {
         var data = new byte[DataSize];
         const uint refrFormId = 0x000061DB;
@@ -1078,7 +1082,7 @@ public sealed class RuntimeParityStructReaderTests : RuntimeStructReaderTestBase
         WriteUInt32BE(data, structOffset + 88, FileOffsetToVa(extraRadiusOffset));
 
         WriteTesFormHeader(data, baseObjectOffset, 0x82010000, 0x15, 0x000061DC);
-        WriteExtraRadiusNode(data, extraRadiusOffset, 0, 600_001f);
+        WriteExtraRadiusNode(data, extraRadiusOffset, 0, authoredRadius);
 
         var reader = CreateReader(data);
         var result = reader.ReadRuntimeRefr(MakeEntry("PlacedRefRuntimeRadiusInvalid", refrFormId, 0x3A, structOffset));

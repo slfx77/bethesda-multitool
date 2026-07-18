@@ -1,9 +1,11 @@
 using System.Buffers.Binary;
+using System.IO.MemoryMappedFiles;
 using System.IO.Compression;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -60,11 +62,48 @@ public sealed class EsmDescriptorScannerTests
         Assert.Equal(parsedRefr.Header.FormId, descriptorRefr.Header.FormId);
         Assert.Equal(parsedRefr.BaseFormId, descriptorRefr.BaseFormId);
         Assert.NotNull(descriptorRefr.Position);
+        Assert.Equal(-500f, parsedRefr.Radius);
+        Assert.Equal(-500f, descriptorRefr.Radius);
+        Assert.Equal(0.84f, parsedRefr.Scale);
+        Assert.Equal(0.84f, descriptorRefr.Scale);
 
         Assert.Contains(scannedRecords, r => r.RecordType == "LAND");
         Assert.Contains(scannedRecords, r => r.RecordType == "INFO");
         Assert.Contains(descriptorScan.FormIdMap, kvp => kvp.Key == 0x00001001u && kvp.Value == "WeaponEditorId");
         Assert.Contains(descriptorScan.FormIdMap, kvp => kvp.Key == 0x00001002u && kvp.Value == "CompressedBook");
+    }
+
+    [Fact]
+    public void WorldExtractor_PreservesSignedReferenceRadius()
+    {
+        var fileData = BuildSyntheticEsm();
+        var scan = EsmDescriptorScanner.Scan(fileData).ScanResult;
+        scan.RefrRecords.Clear();
+        var tempPath = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllBytes(tempPath, fileData);
+            using var mmf = MemoryMappedFile.CreateFromFile(
+                tempPath,
+                FileMode.Open,
+                null,
+                0,
+                MemoryMappedFileAccess.Read);
+            using var accessor = mmf.CreateViewAccessor(
+                0,
+                fileData.Length,
+                MemoryMappedFileAccess.Read);
+
+            EsmWorldExtractor.ExtractRefrRecords(accessor, fileData.Length, scan);
+
+            var refr = Assert.Single(scan.RefrRecords);
+            Assert.Equal(-500f, refr.Radius);
+            Assert.Equal(0.84f, refr.Scale);
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
     }
 
     private static byte[] BuildSyntheticEsm()
@@ -128,6 +167,8 @@ public sealed class EsmDescriptorScannerTests
                             FormId = 0x00006001,
                             BaseFormId = 0x00001001,
                             EditorId = "PlacedWeapon",
+                            Scale = 0.84f,
+                            Radius = -500f,
                             X = 1,
                             Y = 2,
                             Z = 3

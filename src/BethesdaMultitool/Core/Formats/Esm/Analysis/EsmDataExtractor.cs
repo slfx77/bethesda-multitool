@@ -199,7 +199,10 @@ internal static class EsmDataExtractor
                         var parsedRadius = bigEndian
                             ? BinaryPrimitives.ReadSingleBigEndian(sub.Data)
                             : BinaryPrimitives.ReadSingleLittleEndian(sub.Data);
-                        if (float.IsFinite(parsedRadius) && parsedRadius > 0)
+                        // ExtraRadius/XRDS is a signed adjustment, not an absolute radius. Retail
+                        // FNV uses thousands of negative values (for example -500 on a 1500-unit
+                        // base LIGH). Preserve every finite authored value.
+                        if (float.IsFinite(parsedRadius))
                         {
                             radius = parsedRadius;
                         }

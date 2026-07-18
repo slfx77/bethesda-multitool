@@ -538,7 +538,8 @@ internal static class EsmDescriptorScanner
                 break;
             case "XRDS" when subData.Length == 4:
                 var radius = ReadSingle(subData, 0, record.IsBigEndian);
-                if (float.IsFinite(radius) && radius > 0)
+                // Signed ExtraRadius adjustment; negative retail values are intentional.
+                if (float.IsFinite(radius))
                 {
                     state.Radius = radius;
                 }

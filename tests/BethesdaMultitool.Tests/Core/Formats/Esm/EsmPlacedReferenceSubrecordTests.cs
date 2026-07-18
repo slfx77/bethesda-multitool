@@ -129,8 +129,13 @@ public sealed class EsmPlacedReferenceSubrecordTests
         Assert.Equal(linkedRefFormId, refr.LinkedRefFormId);
     }
 
-    [Fact]
-    public void ExtractRefrRecordsFromParsed_ReadsRadiusSubrecord()
+    [Theory]
+    [InlineData(false, 192.5f)]
+    [InlineData(false, -500f)]
+    [InlineData(true, -147.9012146f)]
+    public void ExtractRefrRecordsFromParsed_PreservesSignedRadiusSubrecord(
+        bool bigEndian,
+        float authoredRadius)
     {
         const uint refrFormId = 0x00150210;
         const uint baseFormId = 0x00150220;
@@ -147,16 +152,16 @@ public sealed class EsmPlacedReferenceSubrecordTests
             Offset = 0x2C0,
             Subrecords =
             [
-                MakeFormIdSubrecord("NAME", baseFormId),
-                MakeFloatSubrecord("XRDS", 192.5f)
+                MakeFormIdSubrecord("NAME", baseFormId, bigEndian),
+                MakeFloatSubrecord("XRDS", authoredRadius, bigEndian)
             ]
         };
 
         var scanResult = new EsmRecordScanResult();
-        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, [record], false);
+        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, [record], bigEndian);
 
         var refr = Assert.Single(scanResult.RefrRecords);
-        Assert.Equal(192.5f, refr.Radius);
+        Assert.Equal(authoredRadius, refr.Radius);
     }
 
     [Fact]
@@ -209,15 +214,25 @@ public sealed class EsmPlacedReferenceSubrecordTests
         };
     }
 
-    private static ParsedSubrecord MakeFloatSubrecord(string signature, float value)
+    private static ParsedSubrecord MakeFloatSubrecord(
+        string signature,
+        float value,
+        bool bigEndian = false)
     {
         Span<byte> data = stackalloc byte[4];
-        BinaryPrimitives.WriteSingleLittleEndian(data, value);
+        if (bigEndian)
+        {
+            BinaryPrimitives.WriteSingleBigEndian(data, value);
+        }
+        else
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(data, value);
+        }
         return new ParsedSubrecord
         {
             Signature = signature,
             Data = data.ToArray(),
-            BigEndian = false
+            BigEndian = bigEndian
         };
     }
 

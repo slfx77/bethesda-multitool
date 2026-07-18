@@ -51,7 +51,7 @@ public record PlacedReference
     /// <summary>Scale factor (1.0 = normal).</summary>
     public float Scale { get; init; } = 1.0f;
 
-    /// <summary>Activation or placement radius from XRDS/ExtraRadius.</summary>
+    /// <summary>Signed radius adjustment from XRDS/ExtraRadius.</summary>
     public float? Radius { get; init; }
 
     /// <summary>Item stack count from XCNT subrecord / ExtraCount.</summary>

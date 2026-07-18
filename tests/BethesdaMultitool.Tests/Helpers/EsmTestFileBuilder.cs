@@ -350,6 +350,20 @@ internal sealed class EsmTestFileBuilder
             subs.Add(("XESP", xesp));
         }
 
+        if (r.Scale != 1f)
+        {
+            var scale = new byte[4];
+            BinaryPrimitives.WriteSingleLittleEndian(scale, r.Scale);
+            subs.Add(("XSCL", scale));
+        }
+
+        if (r.Radius is { } radiusValue)
+        {
+            var radius = new byte[4];
+            BinaryPrimitives.WriteSingleLittleEndian(radius, radiusValue);
+            subs.Add(("XRDS", radius));
+        }
+
         // DATA subrecord (position: 6 floats = 24 bytes)
         var posData = new byte[24];
         BinaryPrimitives.WriteSingleLittleEndian(posData, r.X);
@@ -438,6 +452,8 @@ internal sealed class EsmTestFileBuilder
         public string? EditorId { get; init; }
         public uint? EnableParentFormId { get; init; }
         public byte EnableParentFlags { get; init; }
+        public float Scale { get; init; } = 1f;
+        public float? Radius { get; init; }
         public float X { get; init; }
         public float Y { get; init; }
         public float Z { get; init; }

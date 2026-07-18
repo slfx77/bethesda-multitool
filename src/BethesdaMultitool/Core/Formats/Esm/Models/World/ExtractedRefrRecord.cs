@@ -20,7 +20,7 @@ public record ExtractedRefrRecord
     /// <summary>XSCL - Scale factor (1.0 = normal).</summary>
     public float Scale { get; init; } = 1.0f;
 
-    /// <summary>XRDS - Activation/placement radius.</summary>
+    /// <summary>XRDS - signed ExtraRadius adjustment.</summary>
     public float? Radius { get; init; }
 
     /// <summary>XOWN - Owner FormID.</summary>

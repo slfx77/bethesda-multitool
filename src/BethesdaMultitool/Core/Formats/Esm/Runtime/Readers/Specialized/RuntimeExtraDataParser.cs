@@ -330,7 +330,9 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         }
 
         var radius = BinaryUtils.ReadFloatBE(nodeBuffer, ExtraPayloadPtrOffset);
-        return RuntimeMemoryContext.IsNormalFloat(radius) && radius > 0f && radius <= 500_000f
+        // ExtraRadius is signed. Keep the corruption guard symmetric so negative retail
+        // adjustments survive runtime/DMP extraction just like their on-disk XRDS form.
+        return RuntimeMemoryContext.IsNormalFloat(radius) && MathF.Abs(radius) <= 500_000f
             ? radius
             : null;
     }
