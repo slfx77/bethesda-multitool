@@ -33,6 +33,8 @@ public sealed class FnvActiveLightingRetailTests(
     private const uint ProspectorSaloonInteriorFormId = 0x00106185;
     private const uint ProspectorMainEntranceExteriorDoorFormId = 0x0010636F;
     private const uint ProspectorMainEntranceInteriorDoorFormId = 0x0010618E;
+    private const uint SouthGateFloodlightReferenceFormId = 0x0011A1F9;
+    private const uint SouthGateFloodlightBaseFormId = 0x0004DECE;
     // FlythroughCameraController is WINDOWS_GUI-only; pin its production walk-eye default here so
     // the platform-neutral installed-master test can reproduce the same XTEL arrival pose.
     private const float WalkEyeHeight = 112f;
@@ -308,6 +310,40 @@ public sealed class FnvActiveLightingRetailTests(
         Assert.InRange(MathF.Abs(cameraYaw), 0f, 0.000001f);
         Assert.Equal(16, selected.Count);
         Assert.True(clipped > 0);
+    }
+
+    [Fact]
+    public void SouthGateFloodlight_UsesSignedExtraRadiusWithoutPlacementScale()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+        Assert.SkipWhen(samples.PcFinalEsm is null, "PC final FalloutNV.esm not available");
+        var collection = PcFinalEsmPipelineCache.GetOrBuild(samples.PcFinalEsm!).Collection;
+        var cells = collection.Cells
+            .Concat(collection.Worldspaces.SelectMany(static worldspace => worldspace.Cells))
+            .GroupBy(static cell => cell.FormId)
+            .Select(static group => group.Last());
+        var placement = Assert.Single(
+            cells.SelectMany(static cell => cell.PlacedObjects),
+            static candidate => candidate.FormId == SouthGateFloodlightReferenceFormId);
+        var light = Assert.Single(
+            collection.Lights,
+            static candidate => candidate.FormId == SouthGateFloodlightBaseFormId);
+
+        Assert.Equal(SouthGateFloodlightBaseFormId, placement.BaseFormId);
+        Assert.Equal("VFSSouthGateFloodlightREF", placement.EditorId);
+        Assert.Equal("FXWashElvtrShaftLight01", placement.BaseEditorId);
+        Assert.Equal(1500u, light.Radius);
+        Assert.Equal(-500f, placement.Radius);
+        Assert.Equal(0.84f, placement.Scale);
+        Assert.True(placement.IsInitiallyDisabled);
+
+        var built = PlacedLight.TryBuild(
+            placement,
+            light,
+            game: BethesdaGame.FalloutNewVegas);
+
+        Assert.NotNull(built);
+        Assert.Equal(1000f, built.Value.Radius);
     }
 
     private static float MinimumComponent(float[] positions, int component)

@@ -13,22 +13,22 @@ public sealed class FnvRetailLightAssociationOracleTests
             niLightWorldTranslate: new Vector3(18f, 0f, 0f),
             globalSceneOffset: new Vector3(1f, 0f, 0f),
             geometryBound: new FnvRetailGeometryBound(new Vector3(10f, 0f, 0f), 2f),
-            niLightTerm: 8f);
+            effectiveRadius: 8f);
 
         Assert.Equal(new Vector3(9f, 0f, 0f), inside.Delta);
         Assert.Equal(9f, inside.CenterDistance);
         Assert.Equal(7f, inside.SurfaceDistance);
         Assert.Equal(0.875f, inside.Score);
-        Assert.True(inside.BoundWithinLightTerm);
+        Assert.True(inside.BoundWithinEffectiveRadius);
 
         var edge = FnvRetailLightAssociationOracle.EvaluateInfluence(
             niLightWorldTranslate: new Vector3(19f, 0f, 0f),
             globalSceneOffset: Vector3.UnitX,
             geometryBound: new FnvRetailGeometryBound(new Vector3(10f, 0f, 0f), 2f),
-            niLightTerm: 8f);
+            effectiveRadius: 8f);
 
         Assert.Equal(1f, edge.Score);
-        Assert.False(edge.BoundWithinLightTerm);
+        Assert.False(edge.BoundWithinEffectiveRadius);
     }
 
     [Fact]
@@ -38,11 +38,11 @@ public sealed class FnvRetailLightAssociationOracleTests
             niLightWorldTranslate: Vector3.Zero,
             globalSceneOffset: Vector3.Zero,
             geometryBound: new FnvRetailGeometryBound(Vector3.Zero, 5f),
-            niLightTerm: 10f);
+            effectiveRadius: 10f);
 
         Assert.Equal(-5f, result.SurfaceDistance);
         Assert.Equal(-0.5f, result.Score);
-        Assert.True(result.BoundWithinLightTerm);
+        Assert.True(result.BoundWithinEffectiveRadius);
     }
 
     [Fact]
@@ -88,6 +88,20 @@ public sealed class FnvRetailLightAssociationOracleTests
     }
 
     [Fact]
+    public void ActiveNonShadowFilter_DependsOnlyOnTheThreeRecoveredRuntimeFields()
+    {
+        var diagnosticFieldsUnavailable = new FnvRetailAttachedLightCandidate(
+            EmitterReferenceFormId: 0,
+            NiLightWorldTranslate: new Vector3(float.NaN),
+            EffectiveRadius: float.NaN);
+
+        var active = FnvRetailLightAssociationOracle.FilterActiveNonShadowInOrder(
+            [diagnosticFieldsUnavailable]);
+
+        Assert.Single(active);
+    }
+
+    [Fact]
     public void Contract_RemainsIsolatedFromProductionRouting()
     {
         Assert.False(FnvRetailLightAssociationOracle.RuntimeSupported);
@@ -128,13 +142,24 @@ public sealed class FnvRetailLightAssociationOracleTests
                 0f));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             FnvRetailLightAssociationOracle.StableSortForGeometry(
-                [Candidate(0, 1f)],
+                [Candidate(1, 1f) with { EffectiveRadius = 0f }],
                 Vector3.Zero,
                 new FnvRetailGeometryBound(Vector3.Zero, 1f)));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            FnvRetailLightAssociationOracle.StableSortForGeometry(
+                [],
+                new Vector3(float.NaN),
+                new FnvRetailGeometryBound(Vector3.Zero, 1f)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            FnvRetailLightAssociationOracle.StableSortForGeometry(
+                [Candidate(1, 1f)],
+                Vector3.Zero,
+                new FnvRetailGeometryBound(Vector3.Zero, -1f)));
     }
 
     private static FnvRetailAttachedLightCandidate Candidate(uint formId, float distance) =>
-        new(formId, new Vector3(distance, 0f, 0f), NiLightTerm: 10f);
+        new(formId, new Vector3(distance, 0f, 0f), EffectiveRadius: 10f);
 
     private static string FindRepoRoot()
     {

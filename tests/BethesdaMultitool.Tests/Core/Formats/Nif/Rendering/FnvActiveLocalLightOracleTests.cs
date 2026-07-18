@@ -81,6 +81,69 @@ public sealed class FnvActiveLocalLightOracleTests
     }
 
     [Fact]
+    public void PreparedPointColor_UsesPackedDataColorAndKeepsShadowLodOutOfRgb()
+    {
+        var prepared = FnvActiveLocalLightOracle.PreparePointLightColor(
+            dataColor: 0x00102040,
+            negative: false,
+            dataFade: 0.5f,
+            hdr: false,
+            forcedDarkness: 1f,
+            lodDimmer: 0.25f,
+            shadowLodDimmer: 0.75f);
+
+        AssertVector(new Vector3(8f, 4f, 2f) / 255f, prepared.Rgb);
+        Assert.Equal(0.75f, prepared.ShadowLodDimmer, 6);
+    }
+
+    [Fact]
+    public void PreparedPointColor_ClampsFadeOnlyAboveOneWhenHdrIsOff()
+    {
+        var nonHdr = FnvActiveLocalLightOracle.PreparePointLightColor(
+            0x000000ff, false, 2f, hdr: false, 1f, 1f, 0f);
+        var hdr = FnvActiveLocalLightOracle.PreparePointLightColor(
+            0x000000ff, false, 2f, hdr: true, 1f, 1f, 0f);
+        var negativeFade = FnvActiveLocalLightOracle.PreparePointLightColor(
+            0x000000ff, false, -0.5f, hdr: false, 1f, 1f, 0f);
+        var negativeLightAndFade = FnvActiveLocalLightOracle.PreparePointLightColor(
+            0x000000ff, true, -0.5f, hdr: false, 1f, 1f, 0f);
+
+        AssertVector(Vector3.UnitX, nonHdr.Rgb);
+        AssertVector(new Vector3(2f, 0f, 0f), hdr.Rgb);
+        AssertVector(new Vector3(-0.5f, 0f, 0f), negativeFade.Rgb);
+        AssertVector(new Vector3(0.5f, 0f, 0f), negativeLightAndFade.Rgb);
+    }
+
+    [Fact]
+    public void PreparedPointColor_BlacksAnyForcedDarknessBelowOneWithoutClampingAboveOne()
+    {
+        var darkened = FnvActiveLocalLightOracle.PreparePointLightColor(
+            0x00ffffff, false, 1f, hdr: false, 0.999f, 4f, 0f);
+        var amplified = FnvActiveLocalLightOracle.PreparePointLightColor(
+            0x00ffffff, false, 1f, hdr: false, 1.5f, 2f, 0f);
+
+        AssertVector(Vector3.Zero, darkened.Rgb);
+        AssertVector(new Vector3(3f), amplified.Rgb);
+    }
+
+    [Fact]
+    public void PreparedPointColor_RejectsNonFiniteRuntimeInputs()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            FnvActiveLocalLightOracle.PreparePointLightColor(
+                0, false, float.NaN, false, 1f, 1f, 1f));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            FnvActiveLocalLightOracle.PreparePointLightColor(
+                0, false, 1f, false, float.PositiveInfinity, 1f, 1f));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            FnvActiveLocalLightOracle.PreparePointLightColor(
+                0, false, 1f, false, 1f, float.NegativeInfinity, 1f));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            FnvActiveLocalLightOracle.PreparePointLightColor(
+                0, false, 1f, false, 1f, 1f, float.NaN));
+    }
+
+    [Fact]
     public void Id220VertexOracle_PreservesStageBoundaryAndBuildsAttenuationCoordinates()
     {
         var interpolants = FnvActiveLocalLightOracle.BuildId220VertexInterpolants(

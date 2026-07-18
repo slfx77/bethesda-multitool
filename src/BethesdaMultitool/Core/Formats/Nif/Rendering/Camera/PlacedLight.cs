@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
@@ -34,7 +35,8 @@ internal readonly record struct PlacedLight(
     internal static PlacedLight? TryBuild(
         PlacedReference placement,
         LightRecord light,
-        bool xespDisabled = false)
+        bool xespDisabled = false,
+        BethesdaGame game = BethesdaGame.Unknown)
     {
         if (placement.RecordType is "ACHR" or "ACRE" ||
             !float.IsFinite(placement.X) || !float.IsFinite(placement.Y) || !float.IsFinite(placement.Z))
@@ -42,10 +44,7 @@ internal readonly record struct PlacedLight(
             return null;
         }
 
-        var placementScale = float.IsFinite(placement.Scale) && placement.Scale > 0f
-            ? placement.Scale
-            : 1f;
-        var radius = light.Radius * placementScale;
+        var radius = ResolveEffectiveRadius(placement, light, game);
         if (!float.IsFinite(radius) || radius <= 0f)
         {
             return null;
@@ -80,6 +79,33 @@ internal readonly record struct PlacedLight(
             intensity,
             light.Flags,
             initiallyDisabled);
+    }
+
+    /// <summary>
+    ///     Resolves the runtime point-light radius. FNV <c>TESObjectLIGH::GenDynamic</c>
+    ///     (Xbox VA <c>0x8234C288</c>) copies <c>TESObjectREFR::GetRadius()</c> into all three
+    ///     components of <c>NiLight::m_kSpec</c>. For a LIGH reference, <c>GetRadius</c>
+    ///     (VA <c>0x8239B698</c>) returns the base LIGH DATA radius plus ExtraRadius/XRDS and does
+    ///     not consume XSCL. Other games retain the viewer's established scale-based behavior until
+    ///     their own runtime paths are recovered.
+    /// </summary>
+    internal static float ResolveEffectiveRadius(
+        PlacedReference placement,
+        LightRecord light,
+        BethesdaGame game)
+    {
+        if (game == BethesdaGame.FalloutNewVegas)
+        {
+            var extraRadius = placement.Radius ?? 0f;
+            return float.IsFinite(extraRadius)
+                ? light.Radius + extraRadius
+                : float.NaN;
+        }
+
+        var placementScale = float.IsFinite(placement.Scale) && placement.Scale > 0f
+            ? placement.Scale
+            : 1f;
+        return light.Radius * placementScale;
     }
 
     /// <summary>

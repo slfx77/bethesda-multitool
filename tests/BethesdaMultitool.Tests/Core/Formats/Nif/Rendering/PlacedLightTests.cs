@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -72,6 +73,52 @@ public sealed class PlacedLightTests
         Assert.NotNull(result);
         Assert.True(result.Value.IsInitiallyDisabled);
         Assert.Equal(0.75f, result.Value.Intensity);
+    }
+
+    [Fact]
+    public void TryBuild_FnvUsesBasePlusExtraRadiusAndIgnoresPlacementScale()
+    {
+        var placement = Placement(0x111, 0x211, modelPath: null) with
+        {
+            Scale = 0.84f,
+            Radius = -500f
+        };
+        var light = new LightRecord
+        {
+            FormId = placement.BaseFormId,
+            Radius = 1500
+        };
+
+        var result = PlacedLight.TryBuild(
+            placement,
+            light,
+            game: BethesdaGame.FalloutNewVegas);
+
+        Assert.NotNull(result);
+        Assert.Equal(1000f, result.Value.Radius);
+    }
+
+    [Fact]
+    public void TryBuild_FnvExtraRadiusCanSupplyAnOtherwiseZeroBaseRadius()
+    {
+        var placement = Placement(0x112, 0x212, modelPath: null) with
+        {
+            Scale = 4f,
+            Radius = 30f
+        };
+        var light = new LightRecord
+        {
+            FormId = placement.BaseFormId,
+            Radius = 0
+        };
+
+        var result = PlacedLight.TryBuild(
+            placement,
+            light,
+            game: BethesdaGame.FalloutNewVegas);
+
+        Assert.NotNull(result);
+        Assert.Equal(30f, result.Value.Radius);
     }
 
     [Fact]

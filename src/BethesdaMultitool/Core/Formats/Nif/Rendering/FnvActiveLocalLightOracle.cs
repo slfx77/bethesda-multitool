@@ -6,8 +6,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 ///     Non-runtime CPU oracle for the recovered FNV active local-light passes. Pass ID 220
 ///     (<c>BSSM_ADT2</c>, SLS2008/SLS2011) handles one property-associated local light; pass ID 143
 ///     (<c>BSSM_ADT4</c>, SLS2022/SLS2031) handles two or three. Production routing remains disabled
-///     until ordered per-geometry association, prepared light color, and the retail sampler contract
-///     are recovered.
+///     until the recovered per-geometry association and prepared-color inputs can be supplied and
+///     the remaining retail batching and sampler contracts are recovered.
 /// </summary>
 internal static class FnvActiveLocalLightOracle
 {
@@ -43,6 +43,42 @@ internal static class FnvActiveLocalLightOracle
     }
 
     internal static float NormalizeAttenuationTexel(byte value) => value / 255f;
+
+    /// <summary>
+    ///     Reconstructs the point-light color prepared by FNV's <c>SetLight1x2x</c> path for pass
+    ///     IDs 220 and 143. <paramref name="dataColor" /> is the packed LIGH DATA RGB value (red in
+    ///     bits 0..7). Non-HDR mode applies only an upper fade clamp; negative fade remains signed.
+    ///     Point lights are hard-black whenever the geometry property's forced-darkness value is
+    ///     below one. The shadow LOD dimmer is emitted as W and does not scale RGB.
+    /// </summary>
+    internal static FnvPreparedPointLightColor PreparePointLightColor(
+        uint dataColor,
+        bool negative,
+        float dataFade,
+        bool hdr,
+        float forcedDarkness,
+        float lodDimmer,
+        float shadowLodDimmer)
+    {
+        ValidateFinite(dataFade, nameof(dataFade));
+        ValidateFinite(forcedDarkness, nameof(forcedDarkness));
+        ValidateFinite(lodDimmer, nameof(lodDimmer));
+        ValidateFinite(shadowLodDimmer, nameof(shadowLodDimmer));
+
+        var sign = negative ? -1f : 1f;
+        var signedDataRgb = new Vector3(
+            (byte)(dataColor & 0xff),
+            (byte)((dataColor >> 8) & 0xff),
+            (byte)((dataColor >> 16) & 0xff)) * (sign / byte.MaxValue);
+        var dimmer = hdr ? dataFade : MathF.Min(dataFade, 1f);
+        var rgb = signedDataRgb * (dimmer * forcedDarkness * lodDimmer);
+        if (forcedDarkness < 1f)
+        {
+            rgb = Vector3.Zero;
+        }
+
+        return new FnvPreparedPointLightColor(rgb, shadowLodDimmer);
+    }
 
     /// <summary>
     ///     Models the ID220 vertex shader at one vertex. The projected sun direction is normalized
@@ -320,6 +356,14 @@ internal static class FnvActiveLocalLightOracle
         }
     }
 
+    private static void ValidateFinite(float value, string parameterName)
+    {
+        if (!float.IsFinite(value))
+        {
+            throw new ArgumentOutOfRangeException(parameterName);
+        }
+    }
+
     private static void ValidateFiniteVector(Vector3 value, string parameterName)
     {
         if (!float.IsFinite(value.X) ||
@@ -346,6 +390,10 @@ internal readonly record struct FnvActiveId220Interpolants(
     Vector3 SunTangentSpace,
     Vector3 LocalTangentSpace,
     Vector4 AttenuationCoordinates);
+
+internal readonly record struct FnvPreparedPointLightColor(
+    Vector3 Rgb,
+    float ShadowLodDimmer);
 
 internal readonly record struct FnvActiveId220Evaluation(
     Vector3 NormalizedDecodedNormal,
