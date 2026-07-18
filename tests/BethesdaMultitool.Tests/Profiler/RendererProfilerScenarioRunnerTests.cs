@@ -167,7 +167,7 @@ public sealed class RendererProfilerScenarioRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_WaterNightMatrixPinsRetailMixedWaterTypeFallback()
+    public async Task RunAsync_WaterNightMatrixPinsRetailPerWaterTypeBatching()
     {
         Assert.True(RendererProfilerScenarioCatalog.TryCreate(
             RendererProfilerScenarioCatalog.FnvWaterNightMatrix, out var plan));
@@ -178,9 +178,9 @@ public sealed class RendererProfilerScenarioRunnerTests
             .Where(static assertion => !assertion.Passed)
             .Select(static assertion => assertion.AssertionId)));
         Assert.Equal(2, result.Assertions.Count(assertion =>
-            assertion.AssertionId == "water.retail-mixed-context-fallback-technique" && assertion.Passed));
+            assertion.AssertionId == "water.retail-mixed-context-batched-technique" && assertion.Passed));
         Assert.Equal(2, result.Assertions.Count(assertion =>
-            assertion.AssertionId == "water.retail-mixed-context-fallback-reason" && assertion.Passed));
+            assertion.AssertionId == "water.retail-mixed-context-main-depth-approximation" && assertion.Passed));
     }
 
     [Fact]
@@ -742,12 +742,13 @@ public sealed class RendererProfilerScenarioRunnerTests
         var waterTechnique = isWater001Scenario
             ? $"FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-{sceneDepthRoute}"
             : isWaterNightScenario
-                ? $"FnvWater003RtFree-scene-depth-{sceneDepthRoute}"
+                ? $"FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-" +
+                  $"{sceneDepthRoute}+multi-watr-2"
                 : null;
         var waterFallbackReason = isWater001Scenario
             ? "selective-content-mask-approximated-by-main-depth"
             : isWaterNightScenario
-                ? "mixed-visible-water-types"
+                ? "selective-content-mask-approximated-by-main-depth"
                 : null;
         var historyKey = isHistoryScenario && step.ClearAdaptedLightBeforeCapture
             ? 0x200UL

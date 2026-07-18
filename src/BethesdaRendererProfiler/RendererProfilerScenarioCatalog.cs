@@ -22,8 +22,8 @@ internal sealed record RendererProfilerScenarioFixture(
 /// <summary>
 ///     Profiler-only WATER001 positive fixture. It keeps the selected retail worldspace, terrain,
 ///     references, weather, and NVCleanWater material, but gives the water renderer exactly one
-///     generated CELL packet. This isolates the reconstructed route from the intentionally mixed
-///     retail visibility set exercised by <c>fnv-water-night-matrix</c>.
+///     generated CELL packet. This isolates the single-material reconstructed route from the
+///     per-WATR batched retail visibility set exercised by <c>fnv-water-night-matrix</c>.
 /// </summary>
 internal sealed record RendererProfilerScenarioSyntheticWaterFixture(
     uint SourceCellFormId,

@@ -159,18 +159,24 @@ internal static class RendererProfilerScenarioAssertions
             add("water.technique", !string.IsNullOrWhiteSpace(snapshot.WaterTechnique), i, result.Step.Id,
                 "non-empty", snapshot.WaterTechnique,
                 "The capture reported the selected water shader and scene-input route.");
-            var expectedFallbackTechnique =
-                $"FnvWater003RtFree-scene-depth-{SceneDepthRoute(snapshot.SceneSampleCount)}";
-            add("water.retail-mixed-context-fallback-technique",
-                string.Equals(snapshot.WaterTechnique, expectedFallbackTechnique, StringComparison.Ordinal),
-                i, result.Step.Id, expectedFallbackTechnique, snapshot.WaterTechnique,
-                "The retail four-cell Lake Mead view remains a WATER003 fallback proof; it must not " +
-                "silently enter WATER001 under a heterogeneous visible WATR set.");
-            add("water.retail-mixed-context-fallback-reason",
-                string.Equals(snapshot.WaterFallbackReason, "mixed-visible-water-types", StringComparison.Ordinal),
-                i, result.Step.Id, "mixed-visible-water-types", snapshot.WaterFallbackReason,
-                "The fixed retail view contains multiple effective WATR identities and must report " +
-                "that exact bounded WATER001 rejection.");
+            var expectedBatchedTechniquePrefix =
+                $"FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-" +
+                $"{SceneDepthRoute(snapshot.SceneSampleCount)}+multi-watr-";
+            add("water.retail-mixed-context-batched-technique",
+                snapshot.WaterTechnique?.StartsWith(
+                    expectedBatchedTechniquePrefix,
+                    StringComparison.Ordinal) == true,
+                i, result.Step.Id, expectedBatchedTechniquePrefix + "N", snapshot.WaterTechnique,
+                "The retail visibility set contains multiple effective WATR identities. Each must " +
+                "draw with its own recovered material constants while retaining WATER001 transmission.");
+            add("water.retail-mixed-context-main-depth-approximation",
+                string.Equals(
+                    snapshot.WaterFallbackReason,
+                    "selective-content-mask-approximated-by-main-depth",
+                    StringComparison.Ordinal),
+                i, result.Step.Id, "selective-content-mask-approximated-by-main-depth",
+                snapshot.WaterFallbackReason,
+                "The batched WATER001 path must disclose its bounded main-scene snapshot approximation.");
             add("water.maps-resolved",
                 snapshot.WaterMapsResolved.Count > 0 && snapshot.WaterMapsResolved.All(static resolved => resolved),
                 i, result.Step.Id, "all true", snapshot.WaterMapsResolved.ToArray(),
@@ -200,8 +206,8 @@ internal static class RendererProfilerScenarioAssertions
                 "The fixed camera's unobstructed water band produced direct pixel telemetry.");
             if (waterBand is not null && string.Equals(result.Step.Id, "night", StringComparison.Ordinal))
             {
-                // Calibrated from the exact recovered WATER003 no-RT composite: authored c4
-                // ReflectionColor is not multiplied by the full-RT FresnelRI.w reflectivity term.
+                // Keep the night route observably non-black while the material-exact WATER001
+                // transmission replaces the old mixed-WATR WATER003 fallback.
                 add("water.night-band-visible-luminance", waterBand.MedianLuminance >= 10,
                     i, result.Step.Id, ">= 10", waterBand.MedianLuminance,
                     "The authored night reflection must survive the FNV cinematic contrast pivot.");
