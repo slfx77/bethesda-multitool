@@ -391,6 +391,27 @@ float FnvWater001SceneFogAmount(float distanceToEye)
     return pow(q, max(uCameraPosFogPower.w, 0.01));
 }
 
+bool FnvWater001DepthTapIsUnderwater(
+    uint depthIndex,
+    int2 pixel,
+    uint depthSampleCount,
+    float nearPlane,
+    float farPlane,
+    float displacedWaterDistance,
+    float3 displacedWorld,
+    float planeHeight)
+{
+    float sceneNdc = LoadSceneDepth(depthIndex, pixel, depthSampleCount);
+    float sceneDistance = LinearizeDepth(sceneNdc, nearPlane, farPlane);
+    float rayScale = sceneDistance / max(displacedWaterDistance, 1e-4);
+    float3 scenePoint = uCamPosTime.xyz +
+        (displacedWorld - uCamPosTime.xyz) * rayScale;
+    return sceneNdc > 0.0 && sceneNdc <= 1.0 &&
+        isfinite(sceneDistance) && isfinite(displacedWaterDistance) &&
+        displacedWaterDistance > 0.0 && sceneDistance > displacedWaterDistance &&
+        all(isfinite(scenePoint)) && scenePoint.z < planeHeight;
+}
+
 float4 main(PSInput input) : SV_Target
 {
     float t = uCamPosTime.w;
@@ -475,6 +496,40 @@ float4 main(PSInput input) : SV_Target
     {
         return FnvWater003LocalFallback(
             input, perturbation, V, distXY, column, fallbackDepthT, sunDir, sunCol, sunGate);
+    }
+
+    // The approximation snapshot contains the whole opaque scene, unlike retail's selectively
+    // populated RefractionMap.  Never pull an above-water/foreground silhouette across the water
+    // edge: validate the displaced tap against scene depth and the horizontal water plane.  When
+    // distortion crosses that content boundary, retain WATER001 transmission but use the original
+    // pixel's already-proven underwater sample.  Falling all the way back to opaque WATER003 here
+    // creates the same sharp bright rim this guard is intended to remove.
+    // Match SampleLevel's bilinear footprint exactly: texel-space center is uv*size-0.5 and the
+    // clamp sampler clamps each of the four integer taps to the texture edge. A single safe tap is
+    // insufficient because even a small weight from any foreground texel creates a bright rim.
+    int2 displacedPixelMax = int2(uFnvWater001Snapshot.yz) - 1;
+    int2 displacedPixelBase = (int2)floor(refractionUv * snapshotDimensions - 0.5);
+    int2 displacedPixel00 = clamp(displacedPixelBase, int2(0, 0), displacedPixelMax);
+    int2 displacedPixel10 = clamp(displacedPixelBase + int2(1, 0), int2(0, 0), displacedPixelMax);
+    int2 displacedPixel01 = clamp(displacedPixelBase + int2(0, 1), int2(0, 0), displacedPixelMax);
+    int2 displacedPixel11 = clamp(displacedPixelBase + int2(1, 1), int2(0, 0), displacedPixelMax);
+    float displacedWaterDistance = LinearizeDepth(refractionClip.z * inverseW, near, far);
+    bool displacedFootprintIsUnderwater =
+        FnvWater001DepthTapIsUnderwater(
+            depthIndex, displacedPixel00, depthSampleCount, near, far,
+            displacedWaterDistance, displacedWorld, planeHeight) &&
+        FnvWater001DepthTapIsUnderwater(
+            depthIndex, displacedPixel10, depthSampleCount, near, far,
+            displacedWaterDistance, displacedWorld, planeHeight) &&
+        FnvWater001DepthTapIsUnderwater(
+            depthIndex, displacedPixel01, depthSampleCount, near, far,
+            displacedWaterDistance, displacedWorld, planeHeight) &&
+        FnvWater001DepthTapIsUnderwater(
+            depthIndex, displacedPixel11, depthSampleCount, near, far,
+            displacedWaterDistance, displacedWorld, planeHeight);
+    if (!displacedFootprintIsUnderwater)
+    {
+        refractionUv = input.Position.xy / snapshotDimensions;
     }
 
     float3 refractionSample = gWaterTextures[NonUniformResourceIndex(snapshotIndex)]

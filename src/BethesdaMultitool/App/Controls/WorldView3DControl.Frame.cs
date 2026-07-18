@@ -60,6 +60,13 @@ public sealed partial class WorldView3DControl
     // off-screen caster's shadow hard to notice, and the ring's price is streaming those meshes.
     private const float ShadowCasterRingRadius = 8192f;
 
+    // The shadow pass runs after every screen-space draw. Protect its worst-case ring footprint at
+    // frame start so a dense scene cannot clear a near cascade and then fail to allocate the three
+    // constants needed to repopulate it (reference b0 + terrain b0/b2). Each allocation is CB-aligned.
+    private const uint ShadowPassRingReservationBytes =
+        ((uint)Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.CascadeCount * 3u + 1u) *
+        GpuRingBuffer12.CbAlignment; // three CBs per cascade + worst-case initial alignment pad
+
     // Re-render policy state (see RecordSunShadowPass): the last rendered pose key + content
     // version, the content throttle counter, and the animated-mode transition latch for logging.
     private SunShadowMath.ShadowKey _shadowPoseKey;
@@ -551,10 +558,11 @@ public sealed partial class WorldView3DControl
         // frustums verbatim (folded above), so no re-publish is needed on that path.
         var renderCount = fullRender ? cascadeCount : ShadowAnimatedCascadeCount;
         var drewAny = false;
+        Span<bool> cascadeHasDraws = stackalloc bool[cascadeCount];
         for (var i = 0; i < renderCount; i++)
         {
             _shadowMap.BeginCascade(cmd, i);
-            drewAny |= _references.RenderShadowDepth(frustums[i]);
+            var drewCascade = _references.RenderShadowDepth(frustums[i]);
             if (terrainCasts)
             {
                 // Same cylinder footprint the main pass streamed, clamped to this cascade's
@@ -564,24 +572,37 @@ public sealed partial class WorldView3DControl
                 // of terrain depth un-redrawn).
                 var terrainCenter = fullRender ? sceneCenter : _shadowPublishedCylinderCenter;
                 var terrainRadius = MathF.Min(MathF.Min(ShadowCascadeRadii[i], lastRadius), _renderDistance);
-                drewAny |= _terrain!.RenderShadowDepth(
+                drewCascade |= _terrain!.RenderShadowDepth(
                     frustums[i].ViewProj, new VisibilityCylinder(terrainCenter, terrainRadius)) > 0;
             }
             _shadowMap.EndCascade(cmd, i);
+            cascadeHasDraws[i] = drewCascade;
+            drewAny |= drewCascade;
+            if (!fullRender)
+            {
+                _shadowMap.SetCascadeAvailability(i, drewCascade);
+            }
         }
 
-        if (fullRender && drewAny)
+        if (fullRender)
         {
-            _shadowMap.Publish(frustums, renderOrigin);
-            _shadowPoseKey = poseKey;
-            _shadowContentVersion = contentVersion;
-            _shadowContentThrottle = 0;
-            _shadowPublishedFrustums = frustums;
-            _shadowPublishedOrigin = renderOrigin;
-            _shadowPublishedCylinderCenter = sceneCenter;
+            // Publish availability even for a degenerate render: every target was just cleared, so
+            // retaining an enabled bit would create a fully-lit cascade-shaped hole. Empty maps are
+            // disabled and fall through to farther cascades. Keep the old policy keys when nothing
+            // drew so the next frame retries instead of caching the degenerate result.
+            _shadowMap.Publish(frustums, renderOrigin, cascadeHasDraws);
+            if (drewAny)
+            {
+                _shadowPoseKey = poseKey;
+                _shadowContentVersion = contentVersion;
+                _shadowContentThrottle = 0;
+                _shadowPublishedFrustums = frustums;
+                _shadowPublishedOrigin = renderOrigin;
+                _shadowPublishedCylinderCenter = sceneCenter;
+            }
         }
-        // else: animated-only refresh (constants unchanged), or nothing drew (ring exhaustion /
-        // nothing resident — the cleared cascades read fully lit and the next frame retries).
+        // Animated-only refreshes keep their published matrices but update each refreshed map's
+        // availability bit above. A degenerate full render publishes all-disabled and retries.
     }
 
     private void RenderFrameD3D12()
@@ -767,11 +788,23 @@ public sealed partial class WorldView3DControl
         // the map itself re-renders at the end of this frame only when its key changed.
         var shadowsActive = ShadowsEnvEnabled && _showShadows && _showLighting && !projectionActive &&
                             _selectedInterior is null && _references is not null && _showReferences;
+        var shadowRingReserved = false;
         if (shadowsActive)
         {
-            _shadowMap ??= new Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12(
-                _gpu12!, _cbvSrvUavHeap12!);
-            _references!.ArmShadowCapture(MathF.Min(ShadowCasterRingRadius, _renderDistance));
+            shadowRingReserved = _ringBuffer12!.TryReserveTail(ShadowPassRingReservationBytes);
+            if (shadowRingReserved)
+            {
+                _shadowMap ??= new Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12(
+                    _gpu12!, _cbvSrvUavHeap12!);
+                _references!.ArmShadowCapture(MathF.Min(ShadowCasterRingRadius, _renderDistance));
+            }
+            else
+            {
+                // A deliberately tiny environment override may not fit the protected pass at all.
+                // Keep the existing maps untouched instead of clearing an enabled cascade to white.
+                shadowsActive = false;
+                _references!.DisarmShadowCapture();
+            }
         }
         else
         {
@@ -870,6 +903,9 @@ public sealed partial class WorldView3DControl
         var referencesUseDepth = !projectionActive && _showReferences && _references is not null
                                  && _depthSrv is not null && depthRes is not null;
         var fnvWater001SnapshotPrepared = false;
+        var waterTransparencyPartitioned = false;
+        var belowWaterTransparencyDrawn = false;
+        var partitionedWaterPlaneHeight = 0f;
         var waterDepthSampled = false;
         var sceneDepthSampled = waterUsesDepth || referencesUseDepth;
         var sampledDepthState = Vortice.Direct3D12.ResourceStates.DepthRead |
@@ -893,14 +929,33 @@ public sealed partial class WorldView3DControl
                     cylinder,
                     isPerspectiveProjection: !projectionActive);
                 if (fnvWater001Preflight.Candidate &&
-                    TryEnsureWaterOpaqueSnapshotSrv() &&
-                    surface.TryPrepareWaterOpaqueSnapshot(cmd))
+                    TryEnsureWaterOpaqueSnapshotSrv())
                 {
-                    fnvWater001SnapshotPrepared = true;
-                    _water.SetFnvWater001Snapshot(
-                        _waterOpaqueSnapshotSrv!.Value.BindlessIndex,
-                        surface.Width,
-                        surface.Height);
+                    // Underwater translucent decals/effects belong in the refraction source. Draw
+                    // that conservative partition before copying scene color; the complementary
+                    // intersecting/above-water partition remains after the water surface.
+                    if (_showReferences && _references is not null)
+                    {
+                        partitionedWaterPlaneHeight = fnvWater001Preflight.PlaneHeight;
+                        _references.RenderBlendedDeferredBelowWater(partitionedWaterPlaneHeight);
+                        belowWaterTransparencyDrawn = true;
+                    }
+
+                    if (surface.TryPrepareWaterOpaqueSnapshot(cmd))
+                    {
+                        fnvWater001SnapshotPrepared = true;
+                        waterTransparencyPartitioned = belowWaterTransparencyDrawn;
+                        _water.SetFnvWater001Snapshot(
+                            _waterOpaqueSnapshotSrv!.Value.BindlessIndex,
+                            surface.Width,
+                            surface.Height);
+                    }
+                    else
+                    {
+                        // WATER003 can cover the pre-snapshot below-water attempt. Leave the split
+                        // disabled so the ordinary post-water pass redraws every translucent item.
+                        _water.SetFnvWater001Snapshot(null, 0, 0);
+                    }
                 }
                 else
                 {
@@ -994,7 +1049,17 @@ public sealed partial class WorldView3DControl
             }
             cmd.OMSetRenderTargets(sceneRtv, surface.ReadOnlyDepthStencilView);
         }
-        if (_showReferences) _references?.RenderBlendedDeferred();
+        if (_showReferences)
+        {
+            if (waterTransparencyPartitioned)
+            {
+                _references?.RenderBlendedDeferredAtOrAboveWater(partitionedWaterPlaneHeight);
+            }
+            else
+            {
+                _references?.RenderBlendedDeferred();
+            }
+        }
         if (sceneDepthSampled)
         {
             cmd.OMSetRenderTargets(sceneRtv); // release read-only DSV before returning to DepthWrite
@@ -1023,6 +1088,13 @@ public sealed partial class WorldView3DControl
         // content version) is unchanged, so a settled scene records zero shadow work.
         if (shadowsActive)
         {
+            // All preceding allocations honored the protected tail. Release it only when the
+            // shadow pass is ready to consume it; no screen-space renderer allocates in between.
+            if (shadowRingReserved)
+            {
+                _ringBuffer12!.ReleaseTailReservation();
+                shadowRingReserved = false;
+            }
             RecordSunShadowPass(cmd, referenceRenderOrigin, _camera.Position);
         }
 

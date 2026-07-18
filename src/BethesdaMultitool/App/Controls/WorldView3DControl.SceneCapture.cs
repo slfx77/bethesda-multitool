@@ -374,7 +374,11 @@ public sealed partial class WorldView3DControl
             var isPrime = pass == 0;
             recorder.BeginFrame();
             var cmd = recorder.CommandList;
+            var captureShadowRingReserved = false;
             var captureFnvWater001SnapshotPrepared = false;
+            var captureWaterTransparencyPartitioned = false;
+            var captureBelowWaterTransparencyDrawn = false;
+            var captureWaterPlaneHeight = 0f;
             var captureDepthSampled = false;
             var sampledDepthState = Vortice.Direct3D12.ResourceStates.DepthRead |
                                     Vortice.Direct3D12.ResourceStates.PixelShaderResource;
@@ -390,6 +394,13 @@ public sealed partial class WorldView3DControl
 
                 if (captureShadows)
                 {
+                    if (!_ringBuffer12!.TryReserveTail(ShadowPassRingReservationBytes))
+                    {
+                        throw new InvalidOperationException(
+                            $"The capture ring cannot reserve {ShadowPassRingReservationBytes} bytes " +
+                            "for the sun-shadow pass.");
+                    }
+                    captureShadowRingReserved = true;
                     _shadowMap ??= new Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12(
                         _gpu12!, _cbvSrvUavHeap12!);
                     _references!.ArmShadowCapture(MathF.Min(ShadowCasterRingRadius, _renderDistance));
@@ -431,14 +442,31 @@ public sealed partial class WorldView3DControl
                         cylinder,
                         isPerspectiveProjection: true);
                     if (fnvWater001Preflight.Candidate &&
-                        captureWaterOpaqueSnapshotSrvReady &&
-                        target.TryPrepareWaterOpaqueSnapshot(cmd))
+                        captureWaterOpaqueSnapshotSrvReady)
                     {
-                        captureFnvWater001SnapshotPrepared = true;
-                        _water.SetFnvWater001Snapshot(
-                            _captureWaterOpaqueSnapshotSrv!.Value.BindlessIndex,
-                            checked((uint)target.Width),
-                            checked((uint)target.Height));
+                        if (_references is not null)
+                        {
+                            captureWaterPlaneHeight = fnvWater001Preflight.PlaneHeight;
+                            _references.RenderBlendedDeferredBelowWater(captureWaterPlaneHeight);
+                            captureBelowWaterTransparencyDrawn = true;
+                        }
+
+                        if (target.TryPrepareWaterOpaqueSnapshot(cmd))
+                        {
+                            captureFnvWater001SnapshotPrepared = true;
+                            captureWaterTransparencyPartitioned =
+                                captureBelowWaterTransparencyDrawn;
+                            _water.SetFnvWater001Snapshot(
+                                _captureWaterOpaqueSnapshotSrv!.Value.BindlessIndex,
+                                checked((uint)target.Width),
+                                checked((uint)target.Height));
+                        }
+                        else
+                        {
+                            // A WATER003 fallback may occlude the early below-water draw. Keep the
+                            // split disabled so the post-water route composites the complete list.
+                            _water.SetFnvWater001Snapshot(null, 0, 0);
+                        }
                     }
                     else
                     {
@@ -479,7 +507,14 @@ public sealed partial class WorldView3DControl
                     }
                     target.BindColorReadOnlyDepth(cmd);
                 }
-                _references?.RenderBlendedDeferred();
+                if (captureWaterTransparencyPartitioned)
+                {
+                    _references?.RenderBlendedDeferredAtOrAboveWater(captureWaterPlaneHeight);
+                }
+                else
+                {
+                    _references?.RenderBlendedDeferred();
+                }
 
                 if (captureWaterUsesDepth || captureReferencesUseDepth)
                 {
@@ -495,6 +530,8 @@ public sealed partial class WorldView3DControl
                 // is absolute). On the real pass it usually no-ops (key unchanged since the prime).
                 if (captureShadows)
                 {
+                    _ringBuffer12!.ReleaseTailReservation();
+                    captureShadowRingReserved = false;
                     Log.Info("[Capture] shadow state pass={0}: mapHasContent={1} shadowDraws={2} boundParams=({3},{4:0.00000},{5:0.00000},{6})",
                         isPrime ? "prime" : "real", _shadowMap!.HasContent, _references!.ShadowDrawCount,
                         _lastBoundShadowParams.X, _lastBoundShadowParams.Y,
@@ -511,6 +548,11 @@ public sealed partial class WorldView3DControl
             {
                 try
                 {
+                    if (captureShadowRingReserved)
+                    {
+                        _ringBuffer12!.ReleaseTailReservation();
+                        captureShadowRingReserved = false;
+                    }
                     // Any exception after snapshot preparation or the depth transition still submits
                     // a self-consistent partial pass. The next PRIME/real pass can therefore begin
                     // from the target's documented ResolveDest/CopyDest + DepthWrite baseline.

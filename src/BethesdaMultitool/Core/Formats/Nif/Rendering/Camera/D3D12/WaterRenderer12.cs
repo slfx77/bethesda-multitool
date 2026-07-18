@@ -115,6 +115,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance? _appearance;
     private uint _noiseBindlessIndex = NoNormalMap;
     private readonly uint[] _normalBindlessIndices = [NoNormalMap, NoNormalMap, NoNormalMap];
+    // FNV can author a different XCWT on each generated CELL.  The old camera-cell-global
+    // material binding made every visible tile change color and scroll direction when the camera
+    // crossed a CELL boundary.  Keep the resolved material/texture binding for every retained WATR
+    // so visible generated water can be emitted in per-WATR draw batches.  Other games retain the
+    // established single-material path.
+    private readonly Dictionary<uint, FnvWaterMaterialBinding> _fnvWaterMaterials = new();
+    private readonly List<FnvWaterCellDrawBatch> _fnvWaterCellDrawBatches = new();
+    private readonly HashSet<uint> _fnvVisibleWaterTypeScratch = new();
     private uint _oblivionDetailBindlessIndex = NoNormalMap;
     private string[] _telemetryMapPaths = [];
     private string[] _telemetryMapRoles = [];
@@ -146,6 +154,23 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     {
         internal bool IsValid => BindlessIndex != NoNormalMap && Width > 0 && Height > 0;
     }
+
+    internal readonly record struct FnvWaterMaterialBinding(
+        BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance? Appearance,
+        IReadOnlyList<uint?>? NormalMapBindlessIndices);
+
+    private readonly record struct ResolvedFnvWaterMaterial(
+        BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance? Appearance,
+        uint NoiseIndex,
+        uint NormalIndex1,
+        uint NormalIndex2,
+        uint NormalIndex3);
+
+    private readonly record struct FnvWaterCellDrawBatch(
+        uint WaterFormId,
+        int StartInstance,
+        int InstanceCount,
+        ResolvedFnvWaterMaterial Material);
 
     public WaterRenderer12(
         GpuDevice12 gpu,
@@ -442,10 +467,32 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     }
 
     /// <summary>
+    ///     Supplies the retained FNV WATR bindings used by generated CELL water.  A CELL's own XCWT
+    ///     wins; a missing XCWT inherits the WRLD NAM2 supplied through
+    ///     <see cref="SetFnvWater001WaterTypeContext"/>.  The catalog is copied so a worldspace reload
+    ///     cannot mutate bindings while the GPU command list is being recorded.
+    /// </summary>
+    public void SetFnvWaterMaterialCatalog(
+        IReadOnlyDictionary<uint, FnvWaterMaterialBinding>? materials)
+    {
+        _fnvWaterMaterials.Clear();
+        if (materials is null) return;
+
+        foreach (var (formId, material) in materials)
+        {
+            if (formId == 0) continue;
+            _fnvWaterMaterials[formId] = new FnvWaterMaterialBinding(
+                material.Appearance,
+                material.NormalMapBindlessIndices?.ToArray());
+        }
+    }
+
+    /// <summary>
     ///     Supplies the exact WATR identities needed by the bounded WATER001 preflight. A visible
     ///     CELL's non-zero XCWT is its effective type; otherwise it inherits
-    ///     <paramref name="worldspaceDefaultWaterFormId" /> (WRLD NAM2). Every visible generated
-    ///     packet must resolve to <paramref name="selectedWaterFormId" /> or the route falls back.
+    ///     <paramref name="worldspaceDefaultWaterFormId" /> (WRLD NAM2). The selected identity is
+    ///     retained for placed-NIF compatibility and one-material fixtures; generated CELL packets
+    ///     resolve their exact identities through the per-WATR material catalog.
     /// </summary>
     public void SetFnvWater001WaterTypeContext(
         uint? selectedWaterFormId,
@@ -499,6 +546,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         GatherVisibleWater(cylinder);
         var cells = InspectFnvWater001VisibleCells(_visibleWaterScratch);
         _fnvWater001PendingPreflight = EvaluateFnvWater001(
+            _visibleWaterScratch,
             cells,
             cylinder.Position.Z,
             isPerspectiveProjection,
@@ -550,6 +598,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     {
         _game = game;
         _waterProfile = WaterProfile.ForGame(game);
+        _fnvWaterMaterials.Clear();
+        _fnvWaterCellDrawBatches.Clear();
         ClearFnvWater001TransientState(clearWaterTypeContext: true);
         // FO3 and FNV share the recovered ISNOISESCROLLANDBLEND -> ISNOISENORMALMAP chain.
         // Skyrim's evolved shader samples its three authored normals independently and must not be
@@ -783,13 +833,13 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             BlendIndex = _fnvNoiseBlendBindlessIndex,
             NoiseScale = surface.NoiseScale,
             TexScaleAmplitude = new Vector4(
-                RecoveredNoiseTexScale(surface.Layer1.UvScale),
-                RecoveredNoiseTexScale(surface.Layer2.UvScale),
-                RecoveredNoiseTexScale(surface.Layer3.UvScale),
+                FnvWaterNoiseAnimation.TextureScale(surface.Layer1.UvScale),
+                FnvWaterNoiseAnimation.TextureScale(surface.Layer2.UvScale),
+                FnvWaterNoiseAnimation.TextureScale(surface.Layer3.UvScale),
                 0f),
-            Scroll0 = new Vector4(RecoveredNoiseScroll(surface.Layer1, elapsedSeconds), 0f, 0f),
-            Scroll1 = new Vector4(RecoveredNoiseScroll(surface.Layer2, elapsedSeconds), 0f, 0f),
-            Scroll2 = new Vector4(RecoveredNoiseScroll(surface.Layer3, elapsedSeconds), 0f, 0f),
+            Scroll0 = new Vector4(FnvWaterNoiseAnimation.Scroll(surface.Layer1, elapsedSeconds), 0f, 0f),
+            Scroll1 = new Vector4(FnvWaterNoiseAnimation.Scroll(surface.Layer2, elapsedSeconds), 0f, 0f),
+            Scroll2 = new Vector4(FnvWaterNoiseAnimation.Scroll(surface.Layer3, elapsedSeconds), 0f, 0f),
             Amplitude = new Vector4(
                 surface.Layer1.AmpScale,
                 surface.Layer2.AmpScale,
@@ -839,24 +889,6 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             ResourceStates.PixelShaderResource);
         return true;
     }
-
-    private static float RecoveredNoiseTexScale(float authoredScale) =>
-        MathF.Max(1f, MathF.Ceiling(authoredScale * 0.01f));
-
-    private static Vector2 RecoveredNoiseScroll(WaterNoiseLayer layer, float elapsedSeconds)
-    {
-        // TESWaterSystem::UpdateWaterNoise accumulates X with sin(direction) and Y with
-        // cos(direction): the DNAM angle is compass-style (0 degrees points +Y), not the prior
-        // mathematical-angle cos/sin interpretation. Sampling wraps, so retain only the fraction
-        // to keep long-running sessions numerically stable.
-        var radians = layer.WindDirDegrees * (MathF.PI / 180f);
-        var distance = layer.WindSpeed * elapsedSeconds;
-        return new Vector2(
-            WrapUnit(MathF.Sin(radians) * distance),
-            WrapUnit(MathF.Cos(radians) * distance));
-    }
-
-    private static float WrapUnit(float value) => value - MathF.Floor(value);
 
     /// <summary>IWorldRenderer entry — absolute path (zero render origin).</summary>
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder) =>
@@ -956,6 +988,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         if (fnvWater001ArmedPreflight.Candidate)
         {
             LastFnvWater001Decision = EvaluateFnvWater001(
+                _visibleWaterScratch,
                 fnvWater001Cells,
                 cylinder.Position.Z,
                 isPerspectiveProjection,
@@ -986,16 +1019,56 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         LastStats.ResourceResizeMilliseconds = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartTiming();
-        for (var i = 0; i < cellVisible; i++)
+        _fnvWaterCellDrawBatches.Clear();
+        if (_game == BethesdaGame.FalloutNewVegas && cellVisible > 0)
         {
-            var water = _visibleWaterScratch[i];
-            // OriginXY/FootprintSize are grid-derived for exteriors and AABB-derived for interiors
-            // (see WorldSpatialIndex.BuildInterior). This remains the existing cell-water quad path;
-            // only its two triangles are materialized into the unified six-vertex packet.
-            _instanceScratch[i] = CreateQuadPacket(
-                water.OriginXY,
-                water.Height,
-                new Vector2(water.FootprintSize));
+            // Keep each XCWT material contiguous so one CB/normal prepass can drive exactly the
+            // generated CELL packets that authored it.  Sorting by FormID is deterministic and,
+            // unlike the old camera-cell-global binding, cannot change every visible tile when the
+            // camera crosses a grid boundary.
+            _visibleWaterScratch.Sort((left, right) =>
+                EffectiveFnvWaterFormId(left).CompareTo(EffectiveFnvWaterFormId(right)));
+            var batchStart = 0;
+            var batchFormId = EffectiveFnvWaterFormId(_visibleWaterScratch[0]);
+            for (var i = 0; i < cellVisible; i++)
+            {
+                var water = _visibleWaterScratch[i];
+                var formId = EffectiveFnvWaterFormId(water);
+                if (formId != batchFormId)
+                {
+                    _fnvWaterCellDrawBatches.Add(new FnvWaterCellDrawBatch(
+                        batchFormId,
+                        batchStart,
+                        i - batchStart,
+                        ResolveFnvWaterMaterial(batchFormId)));
+                    batchStart = i;
+                    batchFormId = formId;
+                }
+
+                _instanceScratch[i] = CreateQuadPacket(
+                    water.OriginXY,
+                    water.Height,
+                    new Vector2(water.FootprintSize));
+            }
+            _fnvWaterCellDrawBatches.Add(new FnvWaterCellDrawBatch(
+                batchFormId,
+                batchStart,
+                cellVisible - batchStart,
+                ResolveFnvWaterMaterial(batchFormId)));
+        }
+        else
+        {
+            for (var i = 0; i < cellVisible; i++)
+            {
+                var water = _visibleWaterScratch[i];
+                // OriginXY/FootprintSize are grid-derived for exteriors and AABB-derived for interiors
+                // (see WorldSpatialIndex.BuildInterior). This remains the existing cell-water quad path;
+                // only its two triangles are materialized into the unified six-vertex packet.
+                _instanceScratch[i] = CreateQuadPacket(
+                    water.OriginXY,
+                    water.Height,
+                    new Vector2(water.FootprintSize));
+            }
         }
 
         // Placed NIF water follows the cell-water packets in the same buffer and uses the same DNAM
@@ -1020,6 +1093,25 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         LastStats.InstanceBuildMilliseconds = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartTiming();
+        if (_game == BethesdaGame.FalloutNewVegas && _fnvWaterCellDrawBatches.Count > 0)
+        {
+            return RenderFnvWaterMaterialBatches(
+                viewProj,
+                cylinder,
+                renderOrigin,
+                elapsedSeconds,
+                cmd,
+                frameIndex,
+                cellVisible,
+                nifVisible,
+                nifPacketCount,
+                instanceCount,
+                useFnvWater001,
+                fnvWater001Snapshot,
+                started,
+                segmentStarted);
+        }
+
         // Per-frame CB (b0) — viewProj + DNAM colors + (camera pos, elapsed time) for the
         // procedural ripple/Fresnel/specular shading.
         if (!_ringBuffer.TryAllocate(
@@ -1283,6 +1375,215 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         return visibleSurfaces;
     }
 
+    /// <summary>
+    ///     FNV generated water is materialized in contiguous XCWT batches.  Each batch records its
+    ///     own recovered noise prepass immediately before its draw because the 256x256 normal target
+    ///     is intentionally shared; command-list ordering guarantees that a later WATR cannot
+    ///     overwrite an earlier batch before that earlier draw consumes it.  Placed NIF water stays
+    ///     on the selected compatibility material and WATER003, exactly as before.
+    /// </summary>
+    private unsafe int RenderFnvWaterMaterialBatches(
+        Matrix4x4 viewProj,
+        VisibilityCylinder cylinder,
+        Vector3 renderOrigin,
+        float elapsedSeconds,
+        ID3D12GraphicsCommandList cmd,
+        int frameIndex,
+        int cellVisible,
+        int nifVisible,
+        int nifPacketCount,
+        int instanceCount,
+        bool useFnvWater001,
+        in FnvWater001SnapshotDescriptor snapshot,
+        long frameStarted,
+        long uploadStarted)
+    {
+        UploadInstances(instanceCount);
+        LastStats.GpuUploadMilliseconds = ElapsedMilliseconds(uploadStarted);
+
+        var srvAlloc = _cbvSrvUavHeap.Allocate(1);
+        _gpu.Device.CopyDescriptorsSimple(
+            1,
+            srvAlloc.Cpu,
+            _instanceSrvPersistent,
+            DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView);
+
+        cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.SrvTable, srvAlloc.Gpu);
+        cmd.SetGraphicsRootDescriptorTable(
+            GpuRootSignature12.Slots.BindlessSrvTable,
+            _cbvSrvUavHeap.BindlessHeapStartGpu);
+
+        var drawStarted = StartTiming();
+        var depthSample = _depthBindlessIndex != NoNormalMap;
+        var usedAnyNoisePrepass = false;
+        var drawnCells = 0;
+        var drewNifPackets = false;
+        // C# does not allow an `in` parameter to be captured by a local function. Copy the small
+        // immutable descriptor once; every material batch consumes the same frame snapshot.
+        var snapshotBindlessIndex = snapshot.BindlessIndex;
+        var snapshotWidth = snapshot.Width;
+        var snapshotHeight = snapshot.Height;
+
+        bool DrawBatch(
+            in ResolvedFnvWaterMaterial material,
+            int startInstance,
+            int drawInstanceCount,
+            bool water001)
+        {
+            if (drawInstanceCount <= 0) return true;
+
+            var appearance = material.Appearance;
+            var surface = appearance?.Surface ?? WaterSurfaceParams.Default;
+            var noiseIndex = material.NoiseIndex;
+            var usedNoisePrepass = false;
+            if (_useFnvNoisePrepass && noiseIndex != NoNormalMap)
+            {
+                usedNoisePrepass = RecordFnvNoisePrepass(
+                    cmd, frameIndex, elapsedSeconds, noiseIndex, surface);
+                if (usedNoisePrepass)
+                {
+                    noiseIndex = _fnvNoiseNormalBindlessIndex;
+                    usedAnyNoisePrepass = true;
+                }
+            }
+
+            if (!_ringBuffer.TryAllocate(
+                    frameIndex,
+                    WaterFrameUniformsByteSize,
+                    out var perFrame,
+                    GpuRingBuffer12.CbAlignment))
+            {
+                return false;
+            }
+
+            *(WaterFrameUniforms*)perFrame.CpuPtr = new WaterFrameUniforms
+            {
+                ViewProj = viewProj,
+                Shallow = ColorToVector4(appearance?.Shallow, _waterProfile.DefaultShallow),
+                Deep = ColorToVector4(appearance?.Deep, _waterProfile.DefaultDeep),
+                Reflection = ColorToVector4(appearance?.Reflection, _waterProfile.DefaultReflection),
+                CamPosTime = new Vector4(cylinder.Position, elapsedSeconds),
+                NoiseIndex = noiseIndex,
+                NoiseTiling = _waterProfile.NoiseTilingWorldUnits,
+                NoiseScale = surface.NoiseScale,
+                WaterOpacity = surface.Opacity,
+                Surface0 = new Vector4(
+                    surface.NormalsUvScale,
+                    surface.FresnelAmount,
+                    surface.ReflectivityAmount,
+                    surface.Shininess),
+                Surface1 = new Vector4(
+                    surface.SunPower,
+                    surface.DepthFalloffStart,
+                    surface.DepthFalloffEnd,
+                    appearance?.IsLava == true ? 1f : 0f),
+                Layer1 = LayerToVector4(surface.Layer1),
+                Layer2 = LayerToVector4(surface.Layer2),
+                Layer3 = LayerToVector4(surface.Layer3),
+                DepthIndex = _depthBindlessIndex,
+                DepthNear = _depthNear,
+                DepthFar = _depthFar,
+                DepthTieBias = _waterProfile.DepthTieBiasWorldUnits,
+                RenderOrigin = new Vector4(renderOrigin, _depthSampleCount),
+                NormalIndex1 = material.NormalIndex1,
+                NormalIndex2 = material.NormalIndex2,
+                NormalIndex3 = material.NormalIndex3,
+                NormalIndex4 = usedNoisePrepass ? 1u : 0u,
+                FnvWater001SnapshotIndex = water001 ? snapshotBindlessIndex : NoNormalMap,
+                FnvWater001SnapshotWidth = water001 ? snapshotWidth : 0,
+                FnvWater001SnapshotHeight = water001 ? snapshotHeight : 0,
+                FnvWater001PlaneHeight = water001 ? LastFnvWater001Decision.PlaneHeight : 0f,
+                FnvWater001Surface = new Vector4(
+                    surface.UnderwaterFogNear,
+                    surface.UnderwaterFogFar,
+                    surface.AboveWaterFogAmount,
+                    surface.RefractionDistortionAmount),
+            };
+
+            cmd.SetPipelineState(water001
+                ? _psoFnvWater001DepthSample
+                : depthSample
+                    ? _psoDepthSample
+                    : _pso);
+            cmd.SetGraphicsRootConstantBufferView(
+                GpuRootSignature12.Slots.PerFrameCbv,
+                perFrame.GpuAddress);
+            cmd.DrawInstanced(6, (uint)drawInstanceCount, 0, (uint)startInstance);
+            return true;
+        }
+
+        foreach (var batch in _fnvWaterCellDrawBatches)
+        {
+            if (!DrawBatch(
+                    batch.Material,
+                    batch.StartInstance,
+                    batch.InstanceCount,
+                    useFnvWater001))
+            {
+                break;
+            }
+            drawnCells += batch.InstanceCount;
+        }
+
+        if (nifPacketCount > 0)
+        {
+            var selected = new ResolvedFnvWaterMaterial(
+                _appearance,
+                _noiseBindlessIndex,
+                _normalBindlessIndices[0],
+                _normalBindlessIndices[1],
+                _normalBindlessIndices[2]);
+            drewNifPackets = DrawBatch(
+                selected,
+                cellVisible,
+                nifPacketCount,
+                water001: false);
+        }
+
+        LastStats.WaterNoisePrepassUsed = usedAnyNoisePrepass;
+        var depthRoute = _depthSampleCount > 1
+            ? $"msaa{_depthSampleCount}x"
+            : "1x";
+        if (useFnvWater001)
+        {
+            LastStats.WaterTechnique =
+                $"FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-{depthRoute}";
+            if (_fnvWaterCellDrawBatches.Count > 1)
+            {
+                LastStats.WaterTechnique += $"+multi-watr-{_fnvWaterCellDrawBatches.Count}";
+            }
+            if (nifPacketCount > 0)
+            {
+                LastStats.WaterTechnique +=
+                    $"+FnvWater003RtFree-scene-depth-{depthRoute}-placed-nif";
+            }
+            LastStats.WaterTelemetryUnavailableReason =
+                "selective-content-mask-approximated-by-main-depth";
+        }
+        else
+        {
+            LastStats.WaterTechnique = DescribeTechnique(
+                _game,
+                _waterProfile.ShaderVariant,
+                false,
+                ModernWaterTechnique.Baseline,
+                depthSample,
+                _depthSampleCount);
+            if (_fnvWaterCellDrawBatches.Count > 1)
+            {
+                LastStats.WaterTechnique += $"+multi-watr-{_fnvWaterCellDrawBatches.Count}";
+            }
+            LastStats.WaterTelemetryUnavailableReason = LastFnvWater001Decision.ReasonCode;
+        }
+
+        LastStats.DrawCallMilliseconds = ElapsedMilliseconds(drawStarted);
+        var waterDraws = drawnCells + (drewNifPackets ? nifVisible : 0);
+        LastStats.WaterDraws = waterDraws;
+        LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(frameStarted);
+        return waterDraws;
+    }
+
     private static string DescribeTechnique(
         BethesdaGame game,
         WaterShaderVariant shaderVariant,
@@ -1363,6 +1664,78 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         bool MixedWaterTypes,
         uint? EffectiveWaterFormId);
 
+    private uint EffectiveFnvWaterFormId(global::BethesdaMultitool.WorldWaterCell water) =>
+        water.Cell.WaterFormId is > 0
+            ? water.Cell.WaterFormId.Value
+            : _fnvWater001WorldspaceDefaultWaterFormId ?? 0u;
+
+    private ResolvedFnvWaterMaterial ResolveFnvWaterMaterial(uint formId)
+    {
+        if (TryResolveFnvWaterMaterial(formId, out var material))
+        {
+            return material;
+        }
+
+        // An unresolved/zero XCWT remains visible with the current compatibility material, but it
+        // cannot enter WATER001 (the aggregate preflight rejects the missing exact binding).
+        return new ResolvedFnvWaterMaterial(
+            _appearance,
+            _noiseBindlessIndex,
+            _normalBindlessIndices[0],
+            _normalBindlessIndices[1],
+            _normalBindlessIndices[2]);
+    }
+
+    private bool TryResolveFnvWaterMaterial(uint formId, out ResolvedFnvWaterMaterial material)
+    {
+        if (formId > 0 && _fnvWaterMaterials.TryGetValue(formId, out var binding))
+        {
+            var first = NoNormalMap;
+            if (binding.NormalMapBindlessIndices is not null)
+            {
+                for (var i = 0; i < binding.NormalMapBindlessIndices.Count; i++)
+                {
+                    if (binding.NormalMapBindlessIndices[i] is { } resolved)
+                    {
+                        first = resolved;
+                        break;
+                    }
+                }
+            }
+
+            uint ResolveIndex(int index) =>
+                binding.NormalMapBindlessIndices is not null &&
+                index < binding.NormalMapBindlessIndices.Count
+                    ? binding.NormalMapBindlessIndices[index] ?? first
+                    : first;
+
+            material = new ResolvedFnvWaterMaterial(
+                binding.Appearance,
+                first,
+                ResolveIndex(0),
+                ResolveIndex(1),
+                ResolveIndex(2));
+            return true;
+        }
+
+        // Synthetic/profiler fixtures historically supplied only SetAppearance + the selected
+        // identity. Preserve that exact one-material contract without allowing an unrelated
+        // camera material to masquerade as a missing CELL binding.
+        if (formId > 0 && formId == _fnvWater001SelectedWaterFormId)
+        {
+            material = new ResolvedFnvWaterMaterial(
+                _appearance,
+                _noiseBindlessIndex,
+                _normalBindlessIndices[0],
+                _normalBindlessIndices[1],
+                _normalBindlessIndices[2]);
+            return true;
+        }
+
+        material = default;
+        return false;
+    }
+
     private FnvWater001VisibleCellContract InspectFnvWater001VisibleCells(
         IReadOnlyList<global::BethesdaMultitool.WorldWaterCell> cells)
     {
@@ -1388,10 +1761,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 mixedPlaneHeights = true;
             }
 
-            var effectiveWaterFormId = water.Cell.WaterFormId is > 0
-                ? water.Cell.WaterFormId
-                : _fnvWater001WorldspaceDefaultWaterFormId;
-            if (effectiveWaterFormId is not > 0)
+            var effectiveWaterFormId = EffectiveFnvWaterFormId(water);
+            if (effectiveWaterFormId == 0)
             {
                 hasEffectiveWaterType = false;
                 continue;
@@ -1402,11 +1773,6 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 hasCommonWaterFormId = true;
             }
             else if (commonWaterFormId != effectiveWaterFormId)
-            {
-                mixedWaterTypes = true;
-            }
-            if (_fnvWater001SelectedWaterFormId is not > 0 ||
-                effectiveWaterFormId != _fnvWater001SelectedWaterFormId)
             {
                 mixedWaterTypes = true;
             }
@@ -1422,39 +1788,82 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     }
 
     private FnvWater001Preflight EvaluateFnvWater001(
+        IReadOnlyList<global::BethesdaMultitool.WorldWaterCell> visibleCells,
         in FnvWater001VisibleCellContract cells,
         float cameraHeight,
         bool isPerspectiveProjection,
         bool requireSnapshot,
         in FnvWater001SnapshotDescriptor snapshot)
     {
-        var surface = _appearance?.Surface ?? WaterSurfaceParams.Default;
-        return FnvWater001Contract.Evaluate(new FnvWater001EligibilityInput(
-            _game,
-            _waterProfile.ShaderVariant,
-            _appearance?.IsLava == true,
-            isPerspectiveProjection,
-            _depthBindlessIndex != NoNormalMap,
-            requireSnapshot,
-            snapshot.IsValid,
-            snapshot.Width,
-            snapshot.Height,
-            cells.Count,
-            _appearance is not null,
-            surface.HasAuthoredClassicRefractionInputs,
-            _fnvWater001HasWaterTypeContext,
-            cells.HasEffectiveWaterType && _fnvWater001SelectedWaterFormId is > 0,
-            cells.MixedWaterTypes,
-            cells.MixedPlaneHeights,
+        // WATER001 is a per-material shader draw.  Mixed visible WATRs are therefore valid once
+        // generated CELL packets are split into per-WATR batches; every distinct binding must pass
+        // the exact single-material contract independently, while the one shared plane remains a
+        // global requirement.
+        _fnvVisibleWaterTypeScratch.Clear();
+        for (var i = 0; i < visibleCells.Count; i++)
+        {
+            var formId = EffectiveFnvWaterFormId(visibleCells[i]);
+            if (formId > 0) _fnvVisibleWaterTypeScratch.Add(formId);
+        }
+
+        if (_fnvVisibleWaterTypeScratch.Count == 0)
+        {
+            var missingSurface = _appearance?.Surface ?? WaterSurfaceParams.Default;
+            return FnvWater001Contract.Evaluate(new FnvWater001EligibilityInput(
+                _game, _waterProfile.ShaderVariant, _appearance?.IsLava == true,
+                isPerspectiveProjection, _depthBindlessIndex != NoNormalMap,
+                requireSnapshot, snapshot.IsValid, snapshot.Width, snapshot.Height,
+                cells.Count, _appearance is not null,
+                missingSurface.HasAuthoredClassicRefractionInputs,
+                _fnvWater001HasWaterTypeContext, false, false, cells.MixedPlaneHeights,
+                cells.PlaneHeight, cameraHeight,
+                missingSurface.DepthFalloffStart, missingSurface.DepthFalloffEnd,
+                missingSurface.UnderwaterFogNear, missingSurface.UnderwaterFogFar,
+                missingSurface.AboveWaterFogAmount, missingSurface.RefractionDistortionAmount,
+                null));
+        }
+
+        foreach (var formId in _fnvVisibleWaterTypeScratch)
+        {
+            var hasMaterial = TryResolveFnvWaterMaterial(formId, out var material);
+            var appearance = hasMaterial ? material.Appearance : null;
+            var surface = appearance?.Surface ?? WaterSurfaceParams.Default;
+            var result = FnvWater001Contract.Evaluate(new FnvWater001EligibilityInput(
+                _game,
+                _waterProfile.ShaderVariant,
+                appearance?.IsLava == true,
+                isPerspectiveProjection,
+                _depthBindlessIndex != NoNormalMap,
+                requireSnapshot,
+                snapshot.IsValid,
+                snapshot.Width,
+                snapshot.Height,
+                cells.Count,
+                appearance is not null,
+                surface.HasAuthoredClassicRefractionInputs,
+                _fnvWater001HasWaterTypeContext,
+                cells.HasEffectiveWaterType && hasMaterial,
+                // This invocation describes one draw batch. The renderer's aggregate loop is the
+                // proof that mixed identities do not share constants.
+                HasMixedWaterTypes: false,
+                HasMixedPlaneHeights: cells.MixedPlaneHeights,
+                PlaneHeight: cells.PlaneHeight,
+                CameraHeight: cameraHeight,
+                DepthFalloffStart: surface.DepthFalloffStart,
+                DepthFalloffEnd: surface.DepthFalloffEnd,
+                UnderwaterFogNear: surface.UnderwaterFogNear,
+                UnderwaterFogFar: surface.UnderwaterFogFar,
+                AboveWaterFogAmount: surface.AboveWaterFogAmount,
+                RefractionDistortionAmount: surface.RefractionDistortionAmount,
+                EffectiveWaterFormId: formId));
+            if (!result.Candidate) return result;
+        }
+
+        return new FnvWater001Preflight(
+            true,
+            FnvWater001FallbackReason.None,
             cells.PlaneHeight,
-            cameraHeight,
-            surface.DepthFalloffStart,
-            surface.DepthFalloffEnd,
-            surface.UnderwaterFogNear,
-            surface.UnderwaterFogFar,
-            surface.AboveWaterFogAmount,
-            surface.RefractionDistortionAmount,
-            cells.EffectiveWaterFormId));
+            _fnvVisibleWaterTypeScratch.Count == 1 ? _fnvVisibleWaterTypeScratch.First() : null);
     }
 
     private void ClearFnvWater001TransientState(bool clearWaterTypeContext)

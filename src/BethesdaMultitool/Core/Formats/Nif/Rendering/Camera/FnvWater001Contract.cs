@@ -101,6 +101,12 @@ internal readonly record struct FnvWater001EligibilityInput(
     float RefractionDistortionAmount,
     uint? EffectiveWaterFormId);
 
+internal readonly record struct FnvWater001DisplacedDepthTap(
+    float SceneNdc,
+    float SceneDistance,
+    float WaterDistance,
+    float ScenePointZ);
+
 /// <summary>
 ///     Pure recovered WATER001 math and eligibility checks. The GPU implementation lives in
 ///     <c>water.frag.hlsl</c>; these methods provide deterministic CPU oracles and keep host preflight
@@ -261,6 +267,47 @@ internal static class FnvWater001Contract
         {
             uv = default;
             return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    ///     Validates the scene-depth tap at a distorted refraction UV. The bounded main-scene
+    ///     snapshot contains opaque foregrounds that retail's selective RefractionMap omits; a tap
+    ///     is safe only when it remains behind the displaced surface and reconstructs below water.
+    /// </summary>
+    internal static bool IsValidDisplacedRefractionSample(
+        float sceneNdc,
+        float sceneDistance,
+        float waterDistance,
+        float scenePointZ,
+        float planeHeight) =>
+        sceneNdc > 0f && sceneNdc <= 1f &&
+        float.IsFinite(sceneDistance) && float.IsFinite(waterDistance) &&
+        float.IsFinite(scenePointZ) && float.IsFinite(planeHeight) &&
+        waterDistance > 0f && sceneDistance > waterDistance && scenePointZ < planeHeight;
+
+    /// <summary>
+    ///     The color snapshot uses bilinear filtering, so all four depth texels in the matching
+    ///     <c>uv * size - 0.5</c> footprint must be safe. One foreground/above-water contributor is
+    ///     enough to reject distortion and retain the original-pixel refraction sample.
+    /// </summary>
+    internal static bool IsValidDisplacedRefractionFootprint(
+        ReadOnlySpan<FnvWater001DisplacedDepthTap> taps,
+        float planeHeight)
+    {
+        if (taps.Length != 4) return false;
+        foreach (var tap in taps)
+        {
+            if (!IsValidDisplacedRefractionSample(
+                    tap.SceneNdc,
+                    tap.SceneDistance,
+                    tap.WaterDistance,
+                    tap.ScenePointZ,
+                    planeHeight))
+            {
+                return false;
+            }
         }
         return true;
     }

@@ -77,6 +77,13 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
     private readonly ReferencePipelineFactory12 _pipelines;
     private readonly OpaqueBatchRegistry12 _opaqueBatches = new();
     private readonly List<BlendedReferenceDraw> _blendedDraws = new(256);
+    private readonly List<BlendedReferenceDraw> _waterPartitionedBlendedDraws = new(256);
+    private enum DeferredWaterPartition
+    {
+        All,
+        WhollyBelow,
+        NotWhollyBelow,
+    }
     private readonly HashSet<LiveParticleOwner12> _liveParticleOwners = [];
     private readonly List<global::BethesdaMultitool.ParticleRenderTelemetry> _particleTelemetry = [];
     // Depth-writing blend foliage (effects-folder shapes the engine marks ZBuffer_Write, e.g. NVSeaPlant02):
@@ -1407,6 +1414,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                 {
                     var sampledSourceWorld = ApplyPhysicsLiteSway(sub, r.FormId, r.WorldMatrix);
                     var worldCenter = Vector3.Transform(sub.LocalBoundsCenter, sampledSourceWorld);
+                    var worldRadius = ResolveWorldBoundsRadius(sub, sampledSourceWorld);
                     // worldCenter stays ABSOLUTE (sorted against the actual rendering eye; billboard
                     // facing needs the absolute camera vector). The uploaded matrix is camera-relative:
                     // the non-billboard case folds the possibly-swayed source matrix;
@@ -1429,7 +1437,9 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                         r.WorldMatrix,
                         r.FormId,
                         r.IsGrass,
-                        r.GrassWaveMultiplier);
+                        r.GrassWaveMultiplier,
+                        worldCenter.Z,
+                        worldRadius);
                     // Depth-writing blend foliage (e.g. NVSeaPlant02) draws inline BEFORE the water pass so
                     // water occludes it from above; everything else defers to after water. Billboards keep
                     // the deferred path — they need per-frame camera-facing matrices and aren't occluders.
@@ -1650,7 +1660,33 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
     ///     the shader reproduces reversed-Z opaque occlusion and feathers only eligible effects.
     ///     Otherwise the established hardware-depth PSO remains active.
     /// </summary>
-    public void RenderBlendedDeferred()
+    public void RenderBlendedDeferred() =>
+        RenderBlendedDeferredCore(DeferredWaterPartition.All, 0f, allowSceneDepth: true);
+
+    /// <summary>
+    ///     Draws only translucent geometry whose conservative world bound is wholly below the
+    ///     generated-water plane.  The host invokes this before capturing WATER001's opaque-scene
+    ///     approximation so underwater decals/effects are refracted by the surface instead of being
+    ///     composited over it.  Scene-depth sampling is deliberately disabled here because the depth
+    ///     resource is still in its ordinary writable state.
+    /// </summary>
+    public void RenderBlendedDeferredBelowWater(float planeHeight) =>
+        RenderBlendedDeferredCore(
+            DeferredWaterPartition.WhollyBelow,
+            planeHeight,
+            allowSceneDepth: false);
+
+    /// <summary>Draws the complementary intersecting/above-water translucent partition.</summary>
+    public void RenderBlendedDeferredAtOrAboveWater(float planeHeight) =>
+        RenderBlendedDeferredCore(
+            DeferredWaterPartition.NotWhollyBelow,
+            planeHeight,
+            allowSceneDepth: true);
+
+    private void RenderBlendedDeferredCore(
+        DeferredWaterPartition waterPartition,
+        float waterPlaneHeight,
+        bool allowSceneDepth)
     {
         // Address 0 = the opaque pass skipped this frame (ring exhaustion) — nothing valid to bind.
         if (_blendedDraws.Count == 0 || _deferredPerFrameCbvAddress == 0) return;
@@ -1663,10 +1699,11 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
         ID3D12PipelineState? currentPso = null;
         double cbUpdateMs = 0, drawCallMs = 0;
         var submeshDraws = 0;
-        var sceneDepthSampled = _deferredSceneDepthIndex != NoSceneDepth;
+        var sceneDepthSampled = allowSceneDepth && _deferredSceneDepthIndex != NoSceneDepth;
         DrawBlended(
             cmd, _deferredFrameIndex, sceneDepthSampled,
-            ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws);
+            ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws,
+            waterPartition, waterPlaneHeight);
 
         LastStats.ReferenceSubmeshDraws += submeshDraws;
         LastStats.ReferenceCbUpdateMilliseconds += cbUpdateMs;
@@ -1704,7 +1741,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                 _recorder.FrameIndex, ShadowPerFrameConstants.ByteSize, out var perFrameAlloc,
                 GpuRingBuffer12.CbAlignment))
         {
-            return false; // ring exhausted — keep the previous map (the host skips EndRender)
+            return false; // the host disables this cleared cascade and falls through to a farther map
         }
 
         unsafe
@@ -2251,12 +2288,34 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
         ref ID3D12PipelineState? currentPso,
         ref double cbUpdateMs,
         ref double drawCallMs,
-        ref int submeshDraws)
+        ref int submeshDraws,
+        DeferredWaterPartition waterPartition = DeferredWaterPartition.All,
+        float waterPlaneHeight = 0f)
     {
         if (_blendedDraws.Count == 0) return;
 
-        _blendedDraws.Sort(static (a, b) => b.DistanceSquared.CompareTo(a.DistanceSquared));
-        var reservations = ArrayPool<GpuRingBuffer12.RingAllocation>.Shared.Rent(_blendedDraws.Count);
+        var draws = _blendedDraws;
+        if (waterPartition != DeferredWaterPartition.All)
+        {
+            _waterPartitionedBlendedDraws.Clear();
+            foreach (var draw in _blendedDraws)
+            {
+                var below = WaterTransparencyPartition.IsWhollyBelow(
+                    draw.WorldBoundsCenterZ,
+                    draw.WorldBoundsRadius,
+                    waterPlaneHeight);
+                if ((waterPartition == DeferredWaterPartition.WhollyBelow && below) ||
+                    (waterPartition == DeferredWaterPartition.NotWhollyBelow && !below))
+                {
+                    _waterPartitionedBlendedDraws.Add(draw);
+                }
+            }
+            if (_waterPartitionedBlendedDraws.Count == 0) return;
+            draws = _waterPartitionedBlendedDraws;
+        }
+
+        draws.Sort(static (a, b) => b.DistanceSquared.CompareTo(a.DistanceSquared));
+        var reservations = ArrayPool<GpuRingBuffer12.RingAllocation>.Shared.Rent(draws.Count);
         try
         {
             // Reserve per-draw CBs nearest-first, then issue the surviving suffix back-to-front.
@@ -2264,12 +2323,12 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
             // so later transient allocations can degrade sorting but can never evict a nearer object.
             var reservationStarted = StartTiming();
             var firstSelected = ReserveNearestBlendedDrawConstants(
-                frameIndex, _blendedDraws, reservations, out var truncated);
+                frameIndex, draws, reservations, out var truncated);
             cbUpdateMs += ElapsedMilliseconds(reservationStarted);
             LastFrameDrawsTruncated += truncated;
-            for (var i = firstSelected; i < _blendedDraws.Count; i++)
+            for (var i = firstSelected; i < draws.Count; i++)
             {
-                var draw = _blendedDraws[i];
+                var draw = draws[i];
                 if (draw.Submesh.EffectiveIndexCount <= 0 ||
                     !PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)) continue;
                 var pso = _pipelines.GetBlendPipeline(
@@ -2406,7 +2465,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
 
             var capacity = BlendedDrawPriority.CountAlignedAllocations(
                 _ringBuffer.CurrentFrameBytes,
-                _ringBuffer.BytesPerFrame,
+                _ringBuffer.AllocationLimitBytes,
                 PerDrawByteSize,
                 GpuRingBuffer12.CbAlignment);
             var plan = BlendedDrawPriority.PlanNearestBackToFront(
@@ -2645,8 +2704,8 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                 {
                     var liveUsed = _ringBuffer.CurrentFrameBytes - liveStart;
                     var liveRemaining = liveUsed < liveBudget ? liveBudget - liveUsed : 0;
-                    var ringRemaining = _ringBuffer.CurrentFrameBytes < _ringBuffer.BytesPerFrame
-                        ? _ringBuffer.BytesPerFrame - _ringBuffer.CurrentFrameBytes
+                    var ringRemaining = _ringBuffer.CurrentFrameBytes < _ringBuffer.AllocationLimitBytes
+                        ? _ringBuffer.AllocationLimitBytes - _ringBuffer.CurrentFrameBytes
                         : 0;
                     var safeRingRemaining = ringRemaining > ringReserve ? ringRemaining - ringReserve : 0;
                     var ownerBudget = Math.Min(liveRemaining, safeRingRemaining);
@@ -2855,6 +2914,14 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
         return rs;
     }
 
+    private static float ResolveWorldBoundsRadius(CachedSubmesh12 submesh, in Matrix4x4 world)
+    {
+        var scaleX = new Vector3(world.M11, world.M12, world.M13).Length();
+        var scaleY = new Vector3(world.M21, world.M22, world.M23).Length();
+        var scaleZ = new Vector3(world.M31, world.M32, world.M33).Length();
+        return submesh.LocalBoundsRadius * MathF.Max(scaleX, MathF.Max(scaleY, scaleZ));
+    }
+
     /// <summary>
     ///     Batch-reuse frames keep the frozen blended draw lists but must refresh what the camera
     ///     moves: every entry's sort distance (back-to-front order stays correct across in-cell
@@ -2888,7 +2955,9 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
             draw = draw with
             {
                 World = world,
-                DistanceSquared = Vector3.DistanceSquared(worldCenter, cameraPosition)
+                DistanceSquared = Vector3.DistanceSquared(worldCenter, cameraPosition),
+                WorldBoundsCenterZ = worldCenter.Z,
+                WorldBoundsRadius = ResolveWorldBoundsRadius(draw.Submesh, sampledSourceWorld),
             };
         }
     }
@@ -3021,7 +3090,9 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
         Matrix4x4 SourceWorld,
         uint PhysicsLiteSeed,
         bool IsGrass,
-        float GrassWaveMultiplier);
+        float GrassWaveMultiplier,
+        float WorldBoundsCenterZ,
+        float WorldBoundsRadius);
 }
 #endif
 

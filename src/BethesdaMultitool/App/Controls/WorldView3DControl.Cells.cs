@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using WaterRenderer12 = BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.WaterRenderer12;
 
 namespace BethesdaMultitool;
 
@@ -111,6 +112,7 @@ public sealed partial class WorldView3DControl
         if (_worldZExtent is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
         _water?.SetGame(_data.Game);
+        _water?.SetFnvWaterMaterialCatalog(ResolveFnvWaterMaterialCatalog());
         _water?.SetLegacyAnimatedFrames(ResolveLegacyAnimatedWaterFrames());
         _water?.SetOblivionDetailTexture(oblivionDetailIndex);
         _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex, appearance, normalIndices);
@@ -124,7 +126,7 @@ public sealed partial class WorldView3DControl
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
         if (_collisionDebug is not null)
         {
-            _collisionDebug.LoadData(_spatialIndex);
+            _collisionDebug.LoadData(_spatialIndex, _data.CategoryIndex);
             _collisionDebug.ShowDisabled = _showDisabled;
             _collisionDebug.XespDisabledRefs = _data.XespDisabledRefs;
         }
@@ -172,6 +174,27 @@ public sealed partial class WorldView3DControl
             : appearance?.NoiseTexture is { } noise
                 ? new uint?[] { _textureResolver12?.ResolveNormalMapBindlessIndex(noise) }
                 : null;
+    }
+
+    private IReadOnlyDictionary<uint, WaterRenderer12.FnvWaterMaterialBinding>?
+        ResolveFnvWaterMaterialCatalog()
+    {
+        if (_data?.Game != BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<uint, WaterRenderer12.FnvWaterMaterialBinding>(
+            _data.WatersByFormId.Count);
+        foreach (var (formId, water) in _data.WatersByFormId)
+        {
+            if (formId == 0) continue;
+            var appearance = WaterAppearance.FromWaterRecord(water);
+            result[formId] = new WaterRenderer12.FnvWaterMaterialBinding(
+                appearance, ResolveWaterNormalIndices(appearance));
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -263,6 +286,7 @@ public sealed partial class WorldView3DControl
         if (_worldZExtent is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
         _water?.SetGame(_data.Game);
+        _water?.SetFnvWaterMaterialCatalog(ResolveFnvWaterMaterialCatalog());
         _water?.SetLegacyAnimatedFrames(ResolveLegacyAnimatedWaterFrames());
         _water?.SetOblivionDetailTexture(null);
         var waterSelection = WaterAppearanceSelectionResolver.Resolve(
@@ -284,7 +308,7 @@ public sealed partial class WorldView3DControl
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
         if (_collisionDebug is not null)
         {
-            _collisionDebug.LoadData(_spatialIndex);
+            _collisionDebug.LoadData(_spatialIndex, _data.CategoryIndex);
             _collisionDebug.ShowDisabled = _showDisabled;
             _collisionDebug.XespDisabledRefs = _data.XespDisabledRefs;
         }

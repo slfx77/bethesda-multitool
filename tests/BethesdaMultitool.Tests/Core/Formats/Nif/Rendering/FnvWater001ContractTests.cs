@@ -67,6 +67,41 @@ public sealed class FnvWater001ContractTests
         Assert.Equal(0.6f, uv.Y, 6);
     }
 
+    [Theory]
+    [InlineData(0.5f, 30f, 10f, -2f, 0f, true)]
+    [InlineData(0.5f, 8f, 10f, -2f, 0f, false)]
+    [InlineData(0.5f, 30f, 10f, 2f, 0f, false)]
+    [InlineData(0f, 30f, 10f, -2f, 0f, false)]
+    [InlineData(0.5f, float.NaN, 10f, -2f, 0f, false)]
+    public void DisplacedRefractionTapRejectsForegroundAndAboveWaterContent(
+        float sceneNdc,
+        float sceneDistance,
+        float waterDistance,
+        float scenePointZ,
+        float planeHeight,
+        bool expected)
+    {
+        Assert.Equal(expected, FnvWater001Contract.IsValidDisplacedRefractionSample(
+            sceneNdc,
+            sceneDistance,
+            waterDistance,
+            scenePointZ,
+            planeHeight));
+    }
+
+    [Fact]
+    public void BilinearRefractionFootprintRejectsWhenAnyOfFourDepthTapsIsUnsafe()
+    {
+        var safe = new FnvWater001DisplacedDepthTap(0.5f, 30f, 10f, -2f);
+        var taps = new[] { safe, safe, safe, safe };
+
+        Assert.True(FnvWater001Contract.IsValidDisplacedRefractionFootprint(taps, 0f));
+
+        taps[2] = safe with { SceneDistance = 8f, ScenePointZ = 2f };
+        Assert.False(FnvWater001Contract.IsValidDisplacedRefractionFootprint(taps, 0f));
+        Assert.False(FnvWater001Contract.IsValidDisplacedRefractionFootprint(taps[..3], 0f));
+    }
+
     [Fact]
     public void RecoveredCompositeTermsKeepRefractionBodyAndReflectionDepthLerpsSeparate()
     {
