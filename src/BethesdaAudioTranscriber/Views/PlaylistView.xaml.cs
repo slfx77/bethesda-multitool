@@ -35,6 +35,10 @@ public sealed partial class PlaylistView : UserControl
     // Transcription state
     private TranscriptionProject? _project;
 
+    // Suspected-typo review sidecar (.fnvreview.json)
+    private ReviewFile? _reviewFile;
+    private bool _reviewDirty;
+
     // Filter state
     private string _searchQuery = "";
     private bool _showEsmSubtitles;
@@ -57,6 +61,7 @@ public sealed partial class PlaylistView : UserControl
         DetailPanel.ApproveRequested += DetailPanel_ApproveRequested;
         DetailPanel.TranscribeRequested += DetailPanel_TranscribeRequested;
         DetailPanel.RejectRequested += DetailPanel_RejectRequested;
+        DetailPanel.DismissReviewRequested += DetailPanel_DismissReviewRequested;
     }
 
     /// <summary>
@@ -79,6 +84,15 @@ public sealed partial class PlaylistView : UserControl
                        };
 
             TranscriptionFileService.ApplyToEntries(_project, _allEntries);
+
+            // Load suspected-typo flags (.fnvreview.json), if present
+            _reviewFile = await ReviewFileService.LoadAsync(dataDirectory);
+            if (_reviewFile != null)
+            {
+                var pending = ReviewFileService.ApplyToEntries(_reviewFile, _allEntries);
+                FlaggedOnlyCheck.Visibility = Visibility.Visible;
+                MainWindow.Instance?.SetStatus($"{pending:N0} suspected typos flagged for review");
+            }
         }
 
         // Populate filter dropdowns
@@ -233,7 +247,8 @@ public sealed partial class PlaylistView : UserControl
             VoiceTypeFilter.SelectedItem as string,
             _searchQuery,
             _sortColumn,
-            _sortAscending);
+            _sortAscending,
+            FlaggedOnlyCheck.IsChecked == true);
 
         _displayedEntries.Clear();
         foreach (var entry in results)
@@ -241,7 +256,10 @@ public sealed partial class PlaylistView : UserControl
             _displayedEntries.Add(entry);
         }
 
-        CountText.Text = $"{_displayedEntries.Count:N0} of {_allEntries.Count:N0} files";
+        var flaggedNote = _reviewFile != null
+            ? $" • {ReviewFileService.CountPending(_allEntries):N0} flagged"
+            : "";
+        CountText.Text = $"{_displayedEntries.Count:N0} of {_allEntries.Count:N0} files{flaggedNote}";
     }
 
     // ────────────────────────────────────────────────────
@@ -338,6 +356,7 @@ public sealed partial class PlaylistView : UserControl
         }
 
         BatchOperationHelper.ApplyTranscription(selected, text, "accepted", _project);
+        ResolveReviewFlag(selected);
 
         _hasUnsavedChanges = true;
         _autoSaveTimer?.Start();
@@ -347,6 +366,34 @@ public sealed partial class PlaylistView : UserControl
         // Refresh list and advance to next untranscribed entry
         ApplyFilters();
         SelectNextUntranscribed();
+    }
+
+    /// <summary>
+    ///     Mark the entry's suspected-typo flag as resolved (if any) and queue a sidecar save.
+    /// </summary>
+    private void ResolveReviewFlag(VoiceFileEntry entry)
+    {
+        if (entry.Review is not { Resolved: false })
+        {
+            return;
+        }
+
+        entry.Review.Resolved = true;
+        _reviewDirty = true;
+        _autoSaveTimer?.Start();
+    }
+
+    private void DetailPanel_DismissReviewRequested(object? sender, EventArgs e)
+    {
+        var selected = FileListView.SelectedItem as VoiceFileEntry;
+        if (selected == null)
+        {
+            return;
+        }
+
+        ResolveReviewFlag(selected);
+        DetailPanel.ShowEntry(selected);
+        ApplyFilters();
     }
 
     private void SelectNextUntranscribed()
@@ -389,6 +436,7 @@ public sealed partial class PlaylistView : UserControl
             return;
         }
 
+        ResolveReviewFlag(selected);
         _hasUnsavedChanges = true;
         _autoSaveTimer?.Start();
 
@@ -441,17 +489,25 @@ public sealed partial class PlaylistView : UserControl
     {
         _autoSaveTimer?.Stop();
 
-        if (!_hasUnsavedChanges || _project == null || _dataDirectory == null)
+        if (_dataDirectory == null)
         {
             return;
         }
 
-        _hasUnsavedChanges = false;
-
         try
         {
-            await TranscriptionFileService.SaveAsync(_dataDirectory, _project);
-            MainWindow.Instance?.SetStatus($"Saved {_project.Entries.Count} transcriptions");
+            if (_hasUnsavedChanges && _project != null)
+            {
+                _hasUnsavedChanges = false;
+                await TranscriptionFileService.SaveAsync(_dataDirectory, _project);
+                MainWindow.Instance?.SetStatus($"Saved {_project.Entries.Count} transcriptions");
+            }
+
+            if (_reviewDirty && _reviewFile != null)
+            {
+                _reviewDirty = false;
+                await ReviewFileService.SaveAsync(_dataDirectory, _reviewFile);
+            }
         }
         catch (Exception ex)
         {

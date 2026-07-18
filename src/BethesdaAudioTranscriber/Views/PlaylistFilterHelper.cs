@@ -59,7 +59,8 @@ internal static class PlaylistFilterHelper
         string? voiceTypeSelection,
         string searchQuery,
         string sortColumn,
-        bool sortAscending)
+        bool sortAscending,
+        bool flaggedOnly = false)
     {
         var filtered = allEntries.AsEnumerable();
 
@@ -67,6 +68,12 @@ internal static class PlaylistFilterHelper
         if (!showEsmSubtitles)
         {
             filtered = filtered.Where(e => e.Status != TranscriptionStatus.EsmSubtitle);
+        }
+
+        // Suspected-typo flag filter
+        if (flaggedOnly)
+        {
+            filtered = filtered.Where(e => e.HasPendingReview);
         }
 
         // Speaker filter

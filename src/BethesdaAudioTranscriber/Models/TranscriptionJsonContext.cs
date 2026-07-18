@@ -7,4 +7,5 @@ namespace BethesdaAudioTranscriber.Models;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(TranscriptionProject))]
+[JsonSerializable(typeof(ReviewFile))]
 internal sealed partial class TranscriptionJsonContext : JsonSerializerContext;

@@ -30,6 +30,9 @@ public sealed partial class VoiceFileDetailPanel : UserControl
     /// <summary>Raised when the user clicks Reject (revert to ESM text).</summary>
     public event EventHandler? RejectRequested;
 
+    /// <summary>Raised when the user dismisses a suspected-typo flag without changes.</summary>
+    public event EventHandler? DismissReviewRequested;
+
     /// <summary>Set whether ESM lines should show transcription controls.</summary>
     public void SetTranscribeEsmMode(bool enabled)
     {
@@ -85,6 +88,8 @@ public sealed partial class VoiceFileDetailPanel : UserControl
         {
             EsmReferencePanel.Visibility = Visibility.Collapsed;
         }
+
+        ShowReviewCard(entry);
 
         SubtitleText.Text = entry.HasSubtitle ? entry.SubtitleText! : "(no subtitle in ESM)";
         SubtitleText.FontStyle = entry.HasSubtitle
@@ -144,6 +149,55 @@ public sealed partial class VoiceFileDetailPanel : UserControl
     public void SetWhisperAvailable(bool available)
     {
         TranscribeButton.IsEnabled = available;
+    }
+
+    /// <summary>
+    ///     Show or hide the suspected-typo card for the given entry.
+    /// </summary>
+    private void ShowReviewCard(VoiceFileEntry entry)
+    {
+        var review = entry.Review;
+        if (review == null || review.Resolved)
+        {
+            ReviewPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        ReviewPanel.Visibility = Visibility.Visible;
+        ReviewHeaderText.Text = $"Suspected Typo ({review.Confidence}) — {review.Checks}";
+        ReviewDetailText.Text = review.Detail;
+
+        // Warn when the transcript changed since the flag was generated
+        var stale = review.FlaggedText != null
+                    && entry.SubtitleText != null
+                    && !string.Equals(review.FlaggedText.Trim(), entry.SubtitleText.Trim(), StringComparison.Ordinal);
+        ReviewFlaggedTextPanel.Visibility = stale ? Visibility.Visible : Visibility.Collapsed;
+        ReviewFlaggedText.Text = stale ? review.FlaggedText : "";
+
+        if (!string.IsNullOrEmpty(review.SuggestedText))
+        {
+            ReviewSuggestionPanel.Visibility = Visibility.Visible;
+            ReviewSuggestionText.Text = review.SuggestedText;
+            UseSuggestionButton.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            ReviewSuggestionPanel.Visibility = Visibility.Collapsed;
+            UseSuggestionButton.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void UseSuggestion_Click(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrEmpty(ReviewSuggestionText.Text))
+        {
+            TranscriptionTextBox.Text = ReviewSuggestionText.Text;
+        }
+    }
+
+    private void DismissReview_Click(object sender, RoutedEventArgs e)
+    {
+        DismissReviewRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private void Approve_Click(object sender, RoutedEventArgs e)

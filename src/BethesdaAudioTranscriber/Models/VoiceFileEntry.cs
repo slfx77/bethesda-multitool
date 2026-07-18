@@ -45,6 +45,12 @@ public class VoiceFileEntry
     /// <summary>How the subtitle/transcription was obtained: "esm", "whisper", "manual", or null.</summary>
     public string? TranscriptionSource { get; set; }
 
+    /// <summary>Suspected-typo flag from a .fnvreview.json sidecar, if any.</summary>
+    public ReviewSuggestion? Review { get; set; }
+
+    /// <summary>Whether this entry has an unresolved suspected-typo flag.</summary>
+    public bool HasPendingReview => Review is { Resolved: false };
+
     /// <summary>Whether this file has subtitle text from any source (ESM, Whisper, manual).</summary>
     public bool HasSubtitle => SubtitleText != null;
 

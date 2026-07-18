@@ -112,6 +112,16 @@
           Checked="TranscribeEsmCheck_Changed"
           Unchecked="TranscribeEsmCheck_Changed" />
 
+        <CheckBox
+          x:Name="FlaggedOnlyCheck"
+          Content="Flagged only"
+          AutomationProperties.Name="Show only entries with suspected typo flags"
+          ToolTipService.ToolTip="Show only entries flagged by the typo checker (.fnvreview.json)"
+          IsChecked="False"
+          Visibility="Collapsed"
+          Checked="Filter_Changed"
+          Unchecked="Filter_Changed" />
+
         <ComboBox
           x:Name="SpeakerFilter"
           PlaceholderText="Speaker"
@@ -237,9 +247,18 @@
 
                 <!-- Name (Topic + VoiceType + StatusLabel) -->
                 <StackPanel Grid.Column="2">
-                  <TextBlock
-                    Text="{x:Bind DisplayName}"
-                    TextTrimming="CharacterEllipsis" />
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon
+                      Glyph="&#xE7BA;"
+                      FontSize="11"
+                      VerticalAlignment="Center"
+                      Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                      Visibility="{x:Bind HasPendingReview}"
+                      ToolTipService.ToolTip="Suspected typo — see details panel" />
+                    <TextBlock
+                      Text="{x:Bind DisplayName}"
+                      TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
                   <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock
                       Text="{x:Bind VoiceType}"
