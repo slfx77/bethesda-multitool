@@ -112,7 +112,7 @@ internal static class DoorTeleportTargetRescue
 
     private static ImmutableArray<RecordPlan> RescueBucket(
         ImmutableArray<RecordPlan> bucket,
-        IReadOnlyDictionary<uint, (uint EmittedFormId, RecordPlan Child)> rescuedPlans,
+        Dictionary<uint, (uint EmittedFormId, RecordPlan Child)> rescuedPlans,
         out bool changed)
     {
         changed = false;

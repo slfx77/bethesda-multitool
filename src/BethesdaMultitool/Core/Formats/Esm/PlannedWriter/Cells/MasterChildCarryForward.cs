@@ -2,7 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
@@ -81,16 +81,28 @@ internal static class MasterChildCarryForward
 
         var stats = context.Stats ?? new ConversionPipelineStats();
 
+        // Coverage = refs this CELL emitted ∪ refs the plan emitted anywhere else
+        // (cross-cell moves). Without the global view, a ref the capture moved to a
+        // neighbor cell would be tombstoned here (disabling the moved instance) or
+        // carried here (duplicate FormID).
+        ISet<uint> covered = state.CoveredMasterRefFormIds;
+        if (context.GloballyEmittedMasterRefs.Count > 0)
+        {
+            var union = new HashSet<uint>(state.CoveredMasterRefFormIds);
+            union.UnionWith(context.GloballyEmittedMasterRefs);
+            covered = union;
+        }
+
         if (state.Mode == CellMergeMode.LoadedReplacement)
         {
             var hasAuthoritativeDmpStructuralRefs = dmpCell?.PlacedObjects
                 .Any(placed => placed.StructuralData is { HasAny: true }) ?? false;
             var dmpCapturedBaseTypes = dmpCell is null
                 ? new HashSet<string>(StringComparer.Ordinal)
-                : PluginBuilder.ComputeDmpCapturedBaseTypes(dmpCell.PlacedObjects, context.MasterByFormId);
+                : PlacedReferenceAnalysis.ComputeDmpCapturedBaseTypes(dmpCell.PlacedObjects, context.MasterByFormId);
 
             CellStructuralReferencePreserver.PreserveLoadedReplacementMissing(
-                carryRefs, state.CoveredMasterRefFormIds, context.MasterIndex.ChildLocations,
+                carryRefs, covered, context.MasterIndex.ChildLocations,
                 context.MasterByFormId, persistentRecords, vwdRecords, temporaryRecords, stats,
                 hasAuthoritativeDmpStructuralRefs,
                 dmpCapturedBaseTypes,
@@ -103,7 +115,7 @@ internal static class MasterChildCarryForward
             // undelete-and-disable so every FormID keeps resolving.
             var deleted = DeletedRefSynthesizer.Synthesize(
                 allRefs,
-                state.CoveredMasterRefFormIds,
+                covered,
                 masterRef =>
                     !(state.DropRenderCullingMarkers
                       && CellStructuralReferencePreserver.IsRenderCullingMarker(masterRef, context.MasterByFormId))
@@ -124,7 +136,7 @@ internal static class MasterChildCarryForward
             // Unlike legacy, pass the REAL covered set (legacy passed an empty set, which
             // double-emitted refs also covered by a map-marker override).
             CellStructuralReferencePreserver.PreserveAllMissing(
-                carryRefs, state.CoveredMasterRefFormIds, context.MasterIndex.ChildLocations,
+                carryRefs, covered, context.MasterIndex.ChildLocations,
                 persistentRecords, vwdRecords, temporaryRecords, stats);
         }
     }
@@ -139,6 +151,13 @@ internal static class MasterChildCarryForward
         CellEncodeState state,
         List<byte[]> temporaryPrefixRecords)
     {
+        // A planned LAND (captured-terrain override or new record) already occupies the
+        // prefix — copying master's LAND beside it would put two LANDs in one cell.
+        if (temporaryPrefixRecords.Count > 0)
+        {
+            return;
+        }
+
         if (context.MasterIndex is null || !state.IsMasterAnchored || state.IsInterior)
         {
             return;

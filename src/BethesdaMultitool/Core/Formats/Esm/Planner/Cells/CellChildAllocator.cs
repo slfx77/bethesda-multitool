@@ -117,15 +117,18 @@ public sealed class CellChildAllocator
         // Pass 3: LAND has no trustworthy source FormID in a runtime cell capture, so
         // allocate by source CELL identity in catalog order. Keeping this separate from
         // CellSourceToEmitted prevents a cell→LAND mapping from colliding with the
-        // cell's own source→emitted mapping.
+        // cell's own source→emitted mapping. Master-anchored override decisions target
+        // master's existing LAND FormID and consume no allocation — keeping the
+        // allocation sequence identical whether or not any override cells decided LAND.
         if (landDecisions is not null)
         {
             foreach (var entry in cellEntries)
             {
-                if (landDecisions.ContainsKey(entry.CellFormId)
+                if (landDecisions.TryGetValue(entry.CellFormId, out var landDecision)
                     && !landByCellMap.ContainsKey(entry.CellFormId))
                 {
-                    landByCellMap[entry.CellFormId] = _allocator.Allocate();
+                    landByCellMap[entry.CellFormId] =
+                        landDecision.MasterLandFormId ?? _allocator.Allocate();
                 }
             }
         }

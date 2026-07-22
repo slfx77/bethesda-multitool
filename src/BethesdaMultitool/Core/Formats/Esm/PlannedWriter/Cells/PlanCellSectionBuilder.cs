@@ -69,9 +69,26 @@ internal static class PlanCellSectionBuilder
             ? new Dictionary<uint, PlannerXespParentClassifier.Resolution>()
             : PlannerXespParentClassifier.BuildIndex(plan, masterByFormId, masterRefFormIds);
 
+        // Master ref FormIDs the plan emits anywhere (cross-cell moves included): a moved
+        // ref's home cell must neither carry-forward nor tombstone it.
+        var globallyEmittedMasterRefs = new HashSet<uint>();
+        foreach (var plannedCell in plan.CellsByFormId.Values)
+        {
+            foreach (var (refFormId, decision) in plannedCell.RefDecisions)
+            {
+                if (decision.Verdict == PlacedRefEmitVerdict.Emit && decision.MarksMasterCovered)
+                {
+                    globallyEmittedMasterRefs.Add(refFormId);
+                }
+            }
+        }
+
         var context = new CellChildEncodeContext(
             plan, masterByFormId, validFormIds, options, stats, masterIndex, masterRefFormIds,
-            dmpBaseTypes, xespParentIndex);
+            dmpBaseTypes, xespParentIndex)
+        {
+            GloballyEmittedMasterRefs = globallyEmittedMasterRefs,
+        };
 
         var bundles = ConvertCellsToBundles(plan, context, out var emittedNavmFormIds);
         if (bundles.Count == 0)
@@ -94,61 +111,8 @@ internal static class PlanCellSectionBuilder
             sectionBytes,
             emittedNavmFormIds,
             EmittedPlacedReferenceCollector.Collect(bundles),
-            CollectOverriddenChildFormIds(bundles),
+            OverriddenChildFormIdCollector.Collect(bundles),
             navmConnectivity);
-    }
-
-    /// <summary>
-    ///     Master-resident cell-child records this plugin emits (overrides, carry-forwards,
-    ///     deletion records, LAND copies). The ESM-flagged TES4 must list these in ONAM or
-    ///     the FO3/FNV runtime mishandles the overrides at load.
-    /// </summary>
-    private static HashSet<uint> CollectOverriddenChildFormIds(List<CellOverrideBundle> bundles)
-    {
-        var result = new HashSet<uint>();
-        foreach (var bundle in bundles)
-        {
-            CollectFromRecords(bundle.PersistentChildRecords, result);
-            CollectFromRecords(bundle.VwdChildRecords, result);
-            CollectFromRecords(bundle.TemporaryChildRecords, result);
-        }
-
-        return result;
-
-        static void CollectFromRecords(IReadOnlyList<byte[]> records, HashSet<uint> result)
-        {
-            foreach (var record in records)
-            {
-                if (record.Length < 24)
-                {
-                    continue;
-                }
-
-                var sig = System.Text.Encoding.ASCII.GetString(record, 0, 4);
-                if (sig is not ("REFR" or "ACHR" or "ACRE" or "PGRE" or "PMIS" or "LAND" or "NAVM"))
-                {
-                    continue;
-                }
-
-                // xEdit rule (wbImplementation.pas: "ONAMs are for overridden temporary refs
-                // only"): persistent-flagged records are excluded. Listing them sends the
-                // runtime's temporary-group loader after records that live in persistent
-                // groups — "Failed to load temporary data" for the whole cell.
-                var flags = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
-                    record.AsSpan(8, 4));
-                if ((flags & 0x400u) != 0)
-                {
-                    continue;
-                }
-
-                var formId = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
-                    record.AsSpan(12, 4));
-                if (formId < 0x01000000u)
-                {
-                    result.Add(formId);
-                }
-            }
-        }
     }
 
     /// <summary>
@@ -325,7 +289,10 @@ internal static class PlanCellSectionBuilder
             }
             else
             {
-                if (isMasterAnchored && state.GenuineChildCount == 0)
+                // Planned LAND counts as genuine content for the ITM gate (mirrors the
+                // planner-side PlanCellGates rule): a master cell whose only captured
+                // change is terrain must still emit its override.
+                if (isMasterAnchored && state.GenuineChildCount == 0 && landPrefix.Count == 0)
                 {
                     context.Stats?.IncrementDropReason("cell.itm-override-suppressed");
                     continue;
@@ -383,6 +350,17 @@ internal static class PlanCellSectionBuilder
                 {
                     landPrefix.Add(landBytes);
                     context.Stats?.IncrementEmitted("LAND");
+                    if (context.Stats is { } landStats)
+                    {
+                        if (child.Disposition == RecordDisposition.Override)
+                        {
+                            landStats.OverridesEmitted++;
+                        }
+                        else
+                        {
+                            landStats.NewRecordsEmitted++;
+                        }
+                    }
                 }
                 // LAND does not participate in genuine-child emission gates.
                 continue;
@@ -489,8 +467,8 @@ internal static class PlanCellSectionBuilder
         if (child.Disposition != RecordDisposition.New)
         {
             return null; // Master (KeepMaster) NAVMs are intentionally not emitted: engine RE
-                         // shows they load from master via the cell's TESForm file-list merge
-                         // (memory/navm_engine_load_mechanism.md), so copying them is redundant.
+                         // shows they load from master via the cell's TESForm file-list merge,
+                         // so copying them is redundant.
         }
 
         return PlannedNavmEncoder.EncodeRecord(

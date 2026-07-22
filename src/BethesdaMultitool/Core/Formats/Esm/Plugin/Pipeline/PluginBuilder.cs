@@ -51,18 +51,11 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 ///     overrides.
 ///     6. Optionally validate by re-parsing.
 /// </summary>
-#pragma warning disable S1133 // Deprecated code reminder — intentional, removal tracked in roadmap.
+#pragma warning disable S1133 // Deprecated code reminder — intentional; superseded by PluginConversionPipeline (see [Obsolete] below).
 [Obsolete("Use PluginConversionPipeline as the conversion orchestration entrypoint.")]
 #pragma warning restore S1133
 public sealed class PluginBuilder
 {
-    /// <summary>
-    ///     Record types eligible to be referenced as the "base" of a REFR/ACHR/ACRE placed
-    ///     reference. Shared with <see cref="ReferenceBaseRemapper" /> so the master index
-    ///     and runtime REFR rescue policy use identical type gates.
-    /// </summary>
-    private static readonly HashSet<string> RefrBaseEligibleTypes = ReferenceBaseRemapper.RefrBaseEligibleTypes;
-
     /// <summary>
     ///     Tracks every new exterior cell emitted by <c>TryBuildSyntheticExteriorContext</c>,
     ///     keyed by (parent-worldspace FormID, gridX, gridY). The FNV runtime rejects two
@@ -497,7 +490,7 @@ public sealed class PluginBuilder
             // — RuntimeActorReader no longer brute-force-scans struct memory for Script*
             // pointers, because the prefix-based gate was unsafe (VMS01PartsSCRIPT falsely
             // matched VMS01DocMitchell, breaking the Doc Mitchell intro and Sunny Smiles
-            // quest state). See memory/quest_script_brute_force_scan.md.
+            // quest state).
             AttachOrphanScriptsByEditorId(dmpRecords);
 
             // One runtime INFO can be recovered through more than one capture path. Collapse
@@ -664,9 +657,9 @@ public sealed class PluginBuilder
             // (BuildGrupForType), which returns BEFORE the legacy TrackNewRecordSourceAlias call —
             // so their source→emitted mappings live only in _emitPlan.SourceToEmittedFormId, and
             // DialogGrupBuilder can't resolve an INFO's QSTI/ANAM to a proto quest/NPC → the
-            // reference is nulled → the whole INFO is dropped (droppedNoQstiInfos), the Ulysses /
-            // Gomorrah-greeter "force-greets but has no dialogue" regression the ESM eager-load
-            // surfaces. PlannerLegacyStateBridge merges only records the planner actually
+            // reference is nulled → the whole INFO is dropped (droppedNoQstiInfos), which in-game
+            // leaves the affected actors force-greeting with no dialogue.
+            // PlannerLegacyStateBridge merges only records the planner actually
             // emits (skipping allocated-but-unemitted orphans) and leaves DIAL/INFO to
             // DialogGrupBuilder, which allocates their real FormIDs itself.
             if (_emitPlan is not null)
@@ -1211,15 +1204,22 @@ public sealed class PluginBuilder
                 : string.Empty;
             var detail = $"{diagnostic.Message} Target=0x{diagnostic.TargetFormId:X8}; " +
                          $"variable={variable}{targetScript}.";
-            var reportedCode = diagnostic.RecordSuppressed
-                ? diagnostic.RecordType == "TERM"
-                    ? diagnostic.Code.StartsWith("script-variable.", StringComparison.Ordinal)
+            var reportedCode = diagnostic.Code;
+            if (diagnostic.RecordSuppressed)
+            {
+                var isScriptVariable =
+                    diagnostic.Code.StartsWith("script-variable.", StringComparison.Ordinal);
+                if (diagnostic.RecordType == "TERM")
+                {
+                    reportedCode = isScriptVariable
                         ? "script-variable.menu-item-suppressed"
-                        : "quest-variable.menu-item-suppressed"
-                    : diagnostic.Code.StartsWith("script-variable.", StringComparison.Ordinal)
-                        ? "script-variable.record-suppressed"
-                        : diagnostic.Code
-                : diagnostic.Code;
+                        : "quest-variable.menu-item-suppressed";
+                }
+                else if (isScriptVariable)
+                {
+                    reportedCode = "script-variable.record-suppressed";
+                }
+            }
             IReadOnlyDictionary<string, string?> metadata = diagnostic.Metadata;
             if (!string.Equals(reportedCode, diagnostic.Code, StringComparison.Ordinal))
             {
@@ -1648,8 +1648,8 @@ public sealed class PluginBuilder
                 // FormID in the validity set that Phase 3 encoders (notably PACK PLDT/PTDT) then
                 // resolve to — producing a package whose location/target reference is never
                 // written. At runtime the engine can't path the owning actor to that destination
-                // and warps it ("teleport along a path"; ~457 such refs on xex22, the source of
-                // the "Unable to find Package Location/Target Reference" floods). Skip them so the
+                // and warps it ("teleport along a path"; hundreds of such refs in captured dumps,
+                // the source of the "Unable to find Package Location/Target Reference" floods). Skip them so the
                 // PACK sanitizer falls back to NearCurrentLocation/ObjectType instead.
                 if (IsRuntimeDynamicBase(placed.BaseFormId))
                 {
@@ -2354,16 +2354,13 @@ public sealed class PluginBuilder
     ///     SCRI / full script blocks because partial DMP captures could desynchronize the
     ///     master record).
     ///     <para>
-    ///     Safe only because the upstream Script* probes are now constrained:
+    ///     Safe only because the upstream Script* probes are constrained:
     ///     <c>RuntimeQuestTerminalReader</c> validates candidates via the
-    ///     <c>Script.pOwnerQuest</c> backpointer, and <c>RuntimeActorReader</c> no longer
-    ///     brute-force-scans NPC struct memory at all (the prefix-based gate it relied on
-    ///     was unsafe — VMS01PartsSCRIPT falsely matched VMS01DocMitchell). Null
-    ///     <c>pFormScript</c> on NPCs/creatures is now recovered only via the exact-name
-    ///     <see cref="AttachOrphanScriptsByEditorId" /> heuristic. See
-    ///     <c>memory/quest_script_brute_force_scan.md</c>. Before these constraints landed,
-    ///     this override silently bound master quests (e.g. VMS01) to arbitrary
-    ///     tutorial-cluster scripts, breaking the Doc Mitchell "Finished" prompt.
+    ///     <c>Script.pOwnerQuest</c> backpointer, and null <c>pFormScript</c> on
+    ///     NPCs/creatures is recovered only via the exact-name
+    ///     <see cref="AttachOrphanScriptsByEditorId" /> heuristic — never by scanning NPC
+    ///     struct memory, whose prefix-based gate was unsafe (VMS01PartsSCRIPT falsely
+    ///     matched VMS01DocMitchell).
     ///     <c>ScriptOverridePolicyTests</c> in the test
     ///     project pins the contract that <see cref="QustEncoder.Encode" /> +
     ///     <see cref="ScptEncoder" /> never emit SCRI / full script overrides via the standard
@@ -2390,10 +2387,9 @@ public sealed class PluginBuilder
         // reconstruction of an existing master script is unreliable — wrong VariableCount /
         // bytecode length / garbage SCRO refs (e.g. vNiptonSCRIPT 0x00138493 came out
         // 357B/7 vars vs master 163B/11 vars, no SCTX). Overriding clobbers the local-variable
-        // table that the master's own dialogue conditions resolve against — the xex22 v58-v65
-        // title-screen crash (~1492 "variable not found" in GREETING/quest-init, then AV). The
-        // old size-only downgrade guard caught truncation but not corruption. See
-        // memory/titlescreen_crash_script_override.md.
+        // table that the master's own dialogue conditions resolve against — a title-screen
+        // crash (floods of "variable not found" in GREETING/quest-init, then AV). A size-only
+        // downgrade guard is insufficient: it catches truncation but not corruption.
 
         if (recordType == "QUST" && model is QuestRecord quest && quest.Script.HasValue)
         {
@@ -3128,7 +3124,7 @@ public sealed class PluginBuilder
                     && placedForEmit.IsMapMarker
                     && pcRecordsByFormId.TryGetValue(placed.FormId, out var sparseMasterRef))
                 {
-                    allowSparseMapMarkerOverride = MapMarkerDiffersFromMaster(placedForEmit, sparseMasterRef);
+                    allowSparseMapMarkerOverride = PlacedReferenceAnalysis.MapMarkerDiffersFromMaster(placedForEmit, sparseMasterRef);
                 }
 
                 if (mode == CellMergeMode.PersistentOnly && refIsInMaster && !allowSparseMapMarkerOverride)
@@ -3210,7 +3206,7 @@ public sealed class PluginBuilder
                 }
 
                 if (!refIsInMaster
-                    && IsRuntimeStructuralMarkerPlacement(
+                    && PlacedReferenceAnalysis.IsRuntimeStructuralMarkerPlacement(
                         placedForEmit,
                         pcRecordsByFormId,
                         out var structuralMarkerBaseEditorId))
@@ -3272,12 +3268,12 @@ public sealed class PluginBuilder
 
                 // Mode A (PersistentOnly): skip non-persistent overrides — DMP didn't actually
                 // load this cell, so we can't trust temporary refs. New persistent refs are still
-                // allowed (user spec). Map markers are intrinsically persistent (the Pip-Boy world
+                // allowed (policy). Map markers are intrinsically persistent (the Pip-Boy world
                 // map data is always loaded regardless of cell visit state), but proto captures do
                 // not always set the IsPersistent flag on REFR map-marker records — the engine
                 // synthesizes that classification at run time. Exempt them from the filter so new
                 // map markers reach the new-ref encoder; without this exemption they're dropped
-                // here before `TryEncodeNewRef` ever sees them (the v52-xex44 "locations renamed
+                // here before `TryEncodeNewRef` ever sees them (the "locations renamed
                 // but new markers missing" symptom).
                 if (mode == CellMergeMode.PersistentOnly && !placed.IsPersistent && !placedForEmit.IsMapMarker)
                 {
@@ -3500,7 +3496,7 @@ public sealed class PluginBuilder
                         // but no STAT, so master statics should stay). Without this, the
                         // binary LoadedReplacement mode wipes master content the DMP
                         // didn't even attempt to author.
-                        var dmpCapturedBaseTypes = ComputeDmpCapturedBaseTypes(
+                        var dmpCapturedBaseTypes = PlacedReferenceAnalysis.ComputeDmpCapturedBaseTypes(
                             dmpCell.PlacedObjects, pcRecordsByFormId);
 
                         preservedMasterRefs = CellStructuralReferencePreserver.PreserveLoadedReplacementMissing(
@@ -3651,13 +3647,12 @@ public sealed class PluginBuilder
             // override on their own: NavMesh::Load resolves its parent cell from the DATA
             // FormID, and TESObjectCELL::LoadAllTempData iterates the cell's entire TESForm
             // file-list (master + our plugin) and merges every file's Temporary Children
-            // without clearing the cell's navmesh array (memory/navm_engine_load_mechanism.md).
+            // without clearing the cell's navmesh array.
             // The matching NVMI/NVCI for our new NAVM go into the NAVI override downstream,
-            // which independently carries master's full NVMI/NVCI set. The old verbatim-
-            // preservation cascade (which ballooned v63 to 34 MB and crashed at load) is gone.
+            // which independently carries master's full NVMI/NVCI set.
             //
-            // EmitMasterCellNavmAugmentation (default true) gates the master-cell case for
-            // rollback; set it false to suppress master-cell NAVM emission entirely.
+            // EmitMasterCellNavmAugmentation (default false) gates the master-cell case:
+            // unless it is enabled, master-cell NAVM emission is suppressed entirely.
             var cellIsNew = (dmpCell.FormId & 0xFF000000) == 0x01000000
                             || !pcRecordsByFormId.ContainsKey(dmpCell.FormId);
             if (!options.EmitMasterCellNavmAugmentation
@@ -4559,7 +4554,7 @@ public sealed class PluginBuilder
             return false;
         }
 
-        if (!TryReadPlacementData(targetRef, out var targetTransform))
+        if (!PlacedReferenceAnalysis.TryReadPlacementData(targetRef, out var targetTransform))
         {
             return false;
         }
@@ -4766,72 +4761,6 @@ public sealed class PluginBuilder
         var bytes = new byte[Encoding.ASCII.GetByteCount(value) + 1];
         Encoding.ASCII.GetBytes(value, bytes);
         return bytes;
-    }
-
-    // Internal: OverrideDoorCloning's overlap guard reads master placements at plan time.
-    internal static bool TryReadPlacementData(ParsedMainRecord record, out PositionSubrecord position)
-    {
-        var data = record.Subrecords.FirstOrDefault(s => s.Signature == "DATA" && s.Data.Length >= 24);
-        if (data is null)
-        {
-            position = new PositionSubrecord(0, 0, 0, 0, 0, 0, 0, false);
-            return false;
-        }
-
-        position = new PositionSubrecord(
-            BinaryPrimitives.ReadSingleLittleEndian(data.Data.AsSpan(0, 4)),
-            BinaryPrimitives.ReadSingleLittleEndian(data.Data.AsSpan(4, 4)),
-            BinaryPrimitives.ReadSingleLittleEndian(data.Data.AsSpan(8, 4)),
-            BinaryPrimitives.ReadSingleLittleEndian(data.Data.AsSpan(12, 4)),
-            BinaryPrimitives.ReadSingleLittleEndian(data.Data.AsSpan(16, 4)),
-            BinaryPrimitives.ReadSingleLittleEndian(data.Data.AsSpan(20, 4)),
-            0,
-            false);
-        return true;
-    }
-
-    internal static bool MapMarkerDiffersFromMaster(PlacedReference placed, ParsedMainRecord masterRecord)
-    {
-        if (!placed.IsMapMarker)
-        {
-            return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(placed.MarkerName))
-        {
-            var masterName = masterRecord.Subrecords
-                .FirstOrDefault(s => s.Signature == "FULL")?.DataAsString;
-            if (!string.Equals(placed.MarkerName, masterName ?? string.Empty, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        if (placed.MarkerType.HasValue)
-        {
-            var masterTypeSubrecord = masterRecord.Subrecords
-                .FirstOrDefault(s => s.Signature == "TNAM" && s.Data.Length >= 2);
-            var masterType = masterTypeSubrecord is null
-                ? (ushort)0
-                : BinaryPrimitives.ReadUInt16LittleEndian(masterTypeSubrecord.Data.AsSpan(0, 2));
-            if (masterType != (ushort)placed.MarkerType.Value)
-            {
-                return true;
-            }
-        }
-
-        if (TryReadPlacementData(masterRecord, out var masterPosition))
-        {
-            var dx = placed.X - masterPosition.X;
-            var dy = placed.Y - masterPosition.Y;
-            var dz = placed.Z - masterPosition.Z;
-            if ((dx * dx) + (dy * dy) + (dz * dz) > 1.0f)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static bool TryReadScale(ParsedMainRecord record, out float scale)
@@ -5305,8 +5234,7 @@ public sealed class PluginBuilder
     ///     Returns the master FormID on a unique hit; null on no hit, empty stem, or
     ///     mismatched type; null + <paramref name="ambiguous" />=true on multiple-candidate
     ///     hits so the caller can log a refusal decision. Extracted as a static helper
-    ///     for unit testability — the instance overload wraps it with the builder's
-    ///     pre-built stem lookup.
+    ///     for unit testability.
     /// </summary>
     internal static uint? TryFindMasterBaseByEditorIdStem(
         Dictionary<string, Dictionary<string, List<uint>>> stemLookup,
@@ -5321,21 +5249,6 @@ public sealed class PluginBuilder
             expectedBaseType,
             out ambiguous,
             out candidates);
-    }
-
-    private uint? TryFindMasterBaseByEditorIdStem(
-        string? prototypeBaseEditorId,
-        string expectedBaseType,
-        out bool ambiguous,
-        out List<uint>? candidates)
-    {
-        ambiguous = false;
-        candidates = null;
-        return _masterStemToFormIdsByType is null
-            ? null
-            : TryFindMasterBaseByEditorIdStem(
-                _masterStemToFormIdsByType, prototypeBaseEditorId, expectedBaseType,
-                out ambiguous, out candidates);
     }
 
     /// <summary>
@@ -5654,24 +5567,6 @@ public sealed class PluginBuilder
                && subrecords.Any(s => s.Signature == "FGGS" && s.Bytes.Length == 50 * sizeof(float))
                && subrecords.Any(s => s.Signature == "FGGA" && s.Bytes.Length == 30 * sizeof(float))
                && subrecords.Any(s => s.Signature == "FGTS" && s.Bytes.Length == 50 * sizeof(float));
-    }
-
-    internal static bool IsRuntimeStructuralMarkerPlacement(
-        PlacedReference placed,
-        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
-        out string? baseEditorId)
-    {
-        baseEditorId = null;
-        if (placed.RecordType != "REFR"
-            || placed.BaseFormId == 0
-            || !pcRecordsByFormId.TryGetValue(placed.BaseFormId, out var baseRecord)
-            || !CellStructuralReferencePreserver.IsStructuralMarkerBase(baseRecord))
-        {
-            return false;
-        }
-
-        baseEditorId = baseRecord.EditorId;
-        return true;
     }
 
     private IReadOnlyList<EncodedSubrecord> RemapEncodedFormIds(
@@ -6029,35 +5924,6 @@ public sealed class PluginBuilder
     }
 
     /// <summary>
-    ///     Compute the set of base-record signatures (e.g. <c>STAT</c>, <c>DOOR</c>,
-    ///     <c>FURN</c>) represented among the placed objects the DMP captured for a cell.
-    ///     Used by the <c>LoadedReplacement</c> preservation path to keep master refs whose
-    ///     base type the DMP didn't capture — addresses sparse-cell captures like Doc
-    ///     Mitchell's house where the DMP captures only DOOR/ACHR/FURN and master statics
-    ///     would otherwise be wiped.
-    /// </summary>
-    internal static HashSet<string> ComputeDmpCapturedBaseTypes(
-        IReadOnlyList<PlacedReference> placedObjects,
-        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId)
-    {
-        var result = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var placed in placedObjects)
-        {
-            if (placed.BaseFormId == 0)
-            {
-                continue;
-            }
-
-            if (pcRecordsByFormId.TryGetValue(placed.BaseFormId, out var baseRecord)
-                && !string.IsNullOrEmpty(baseRecord.Header.Signature))
-            {
-                result.Add(baseRecord.Header.Signature);
-            }
-        }
-        return result;
-    }
-
-    /// <summary>
     ///     Walks the digested record collection and yields per-type model lists for the
     ///     simple-type set. Cell children (REFR/ACHR/ACRE) are NOT yielded here — they have
     ///     their own pipeline (see <see cref="BuildCellOverrideBundles" />).
@@ -6086,9 +5952,9 @@ public sealed class PluginBuilder
         // already emitted in this pass.
         yield return ("IMAD", records.ImageSpaceModifiers);
         // PACK must precede NPC_ so the NPC encoder can validate its PKID list against the
-        // set of (master ∪ just-emitted) PACK FormIDs and drop dangling refs. Dangling PKIDs
-        // were the leading suspect for the "every NPC plays the crucified idle" regression —
-        // missing packages → NPC falls through to default behavior → crucify idle.
+        // set of (master ∪ just-emitted) PACK FormIDs and drop dangling refs. A dangling
+        // PKID leaves the NPC without its packages → it falls through to default behavior →
+        // the crucified idle.
         yield return ("PACK", records.Packages);
         // SCPT must precede NPC_ (and QUST) for the same reason: the NPC encoder validates
         // its SCRI against (master ∪ emitted) script FormIDs. Emitting SCPT after NPC_
@@ -6148,9 +6014,8 @@ public sealed class PluginBuilder
         yield return ("MGEF", records.BaseEffects);
         yield return ("WRLD", records.Worldspaces);
         yield return ("RACE", records.Races);
-        // Types whose encoders are registered but were not previously dispatched.
-        // Adding them ensures DMP-captured overrides for these record types reach the
-        // merge engine.
+        // Remaining types with registered encoders — dispatched here so DMP-captured
+        // overrides for these record types reach the merge engine.
         yield return ("CSTY", records.CombatStyles);
         yield return ("LGTM", records.LightingTemplates);
         yield return ("WATR", records.Water);

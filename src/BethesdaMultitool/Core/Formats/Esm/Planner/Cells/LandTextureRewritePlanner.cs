@@ -125,7 +125,7 @@ public static class LandTextureRewritePlanner
     private static LandVisualData RewriteLandVisual(
         LandVisualData visual,
         uint cellSourceFormId,
-        IReadOnlyDictionary<uint, uint> remap,
+        ImmutableDictionary<uint, uint> remap,
         IReadOnlyDictionary<uint, string> emittedTypes,
         ImmutableArray<PlanDiagnostic>.Builder diagnostics)
     {

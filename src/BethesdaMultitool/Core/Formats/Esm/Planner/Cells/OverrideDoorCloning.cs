@@ -3,7 +3,6 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
@@ -235,7 +234,7 @@ public static class OverrideDoorCloning
             return false; // Different (or unknown) worldspace — positions can't collide.
         }
 
-        if (!PluginBuilder.TryReadPlacementData(masterRef, out var masterPosition))
+        if (!PlacedReferenceAnalysis.TryReadPlacementData(masterRef, out var masterPosition))
         {
             return false;
         }

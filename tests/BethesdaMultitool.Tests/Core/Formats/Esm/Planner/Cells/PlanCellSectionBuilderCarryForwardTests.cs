@@ -322,40 +322,6 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
         return (block, sub);
     }
 
-    private static List<string>? FindCellRecordSubrecords(byte[] section, uint cellFormId)
-    {
-        var pos = 0;
-        while (pos + 24 <= section.Length)
-        {
-            var sig = Encoding.ASCII.GetString(section, pos, 4);
-            if (sig == "GRUP")
-            {
-                pos += 24;
-                continue;
-            }
-
-            var dataSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(section.AsSpan(pos + 4, 4));
-            var formId = BinaryPrimitives.ReadUInt32LittleEndian(section.AsSpan(pos + 12, 4));
-            if (sig == "CELL" && formId == cellFormId)
-            {
-                var subs = new List<string>();
-                var q = pos + 24;
-                var end = q + dataSize;
-                while (q + 6 <= end)
-                {
-                    subs.Add(Encoding.ASCII.GetString(section, q, 4));
-                    q += 6 + BinaryPrimitives.ReadUInt16LittleEndian(section.AsSpan(q + 4, 2));
-                }
-
-                return subs;
-            }
-
-            pos += 24 + dataSize;
-        }
-
-        return null;
-    }
-
     // A genuine NEW proto child so the interior cell clears the "no new content" stability
     // gate (an ESM interior override is only emitted when it carries new records the master
     // lacks). Its base is a master STAT so it passes base validation.
@@ -369,7 +335,7 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
 
     // ---- fixture plumbing ----------------------------------------------------------
 
-    private (byte[]? Section, ConversionPipelineStats Stats) BuildSection(
+    private static (byte[]? Section, ConversionPipelineStats Stats) BuildSection(
         CellRecord dmpCell,
         (RecordPlan Plan, int Bucket)[] children,
         uint[]? emittedFormIds = null,

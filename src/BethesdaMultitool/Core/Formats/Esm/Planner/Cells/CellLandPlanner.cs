@@ -1,7 +1,11 @@
 using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Subrecords;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 using BethesdaMultitool.Core.Formats.Esm.Terrain;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
@@ -12,43 +16,76 @@ public enum CellLandHeightSource
     CompleteRuntimeMesh,
 }
 
-/// <summary>The immutable terrain payload selected for one DMP-new exterior cell.</summary>
+/// <summary>The immutable terrain payload selected for one exterior cell's LAND emission.</summary>
 public sealed record CellLandDecision
 {
     public required uint CellSourceFormId { get; init; }
     public required LandHeightmap Heightmap { get; init; }
     public LandVisualData? VisualData { get; init; }
     public required CellLandHeightSource HeightSource { get; init; }
+
+    /// <summary>
+    ///     Master LAND FormID this decision overrides (master-anchored cells whose master
+    ///     already owns terrain). Null emits a NEW LAND with an allocated FormID.
+    /// </summary>
+    public uint? MasterLandFormId { get; init; }
 }
 
-/// <summary>Selects safe LAND sources before any LAND FormID is allocated.</summary>
+/// <summary>
+///     Selects safe LAND sources before any LAND FormID is allocated. DMP-new exterior
+///     cells emit NEW LAND; master-anchored (override) exterior cells emit an OVERRIDE of
+///     master's LAND when the capture holds a complete heightmap — legacy
+///     <see cref="LandOverrideBuilder" /> parity, including flat-rejection against the
+///     master baseline (an effectively-flat capture never replaces sculpted retail terrain).
+/// </summary>
 public static class CellLandPlanner
 {
     private const int LandVertexCount = 33 * 33;
 
-    public static CellLandPlanningResult DecideAll(IReadOnlyList<CellCatalogEntry> entries)
+    public static CellLandPlanningResult DecideAll(
+        IReadOnlyList<CellCatalogEntry> entries,
+        IReadOnlyDictionary<uint, ParsedMainRecord>? masterRecordsByFormId = null,
+        IReadOnlyDictionary<uint, List<uint>>? masterLandsByCell = null)
     {
         ArgumentNullException.ThrowIfNull(entries);
 
         var decisions = ImmutableDictionary.CreateBuilder<uint, CellLandDecision>();
         var diagnostics = ImmutableArray.CreateBuilder<PlanDiagnostic>();
+        var masterLandCache = new Dictionary<uint, LandSubrecordParseResult?>();
 
         foreach (var entry in entries)
         {
-            if (entry.Source != SourceKind.DmpNew || entry.DmpModel is not { } cell
-                || cell.IsInterior || !cell.WorldspaceFormId.HasValue
+            var isOverride = entry.Source == SourceKind.DmpOverride;
+            if (entry.Source is not (SourceKind.DmpNew or SourceKind.DmpOverride)
+                || entry.DmpModel is not { } cell
                 || cell.IsPersistentCell || cell.IsVirtual || cell.IsUnresolvedBucket)
             {
                 continue;
             }
 
+            // Override captures may lack grouping data the master context carries; DMP-new
+            // cells have only the capture to consult.
+            var isInterior = isOverride
+                ? entry.MasterContext?.IsInterior ?? cell.IsInterior
+                : cell.IsInterior;
+            var hasWorldspace = isOverride
+                ? entry.MasterContext?.WorldspaceFormId is not null || cell.WorldspaceFormId.HasValue
+                : cell.WorldspaceFormId.HasValue;
+            if (isInterior || !hasWorldspace
+                || (isOverride && entry.MasterContext?.IsPersistentCellContainer == true))
+            {
+                continue;
+            }
+
+            var cellKind = isOverride ? "master-override" : "DMP-new";
             LandHeightmap? heightmap = null;
             var source = CellLandHeightSource.CapturedHeightmap;
+            var fallbackHeightmap = cell.Heightmap is { ExactHeights: null } && IsUsable(cell.Heightmap)
+                ? cell.Heightmap
+                : null;
             var capturedHeightmap = IsUsable(cell.CapturedLandHeightmap)
                 ? cell.CapturedLandHeightmap
-                : cell.Heightmap is { ExactHeights: null } && IsUsable(cell.Heightmap)
-                    ? cell.Heightmap
-                    : null;
+                : fallbackHeightmap;
             if (capturedHeightmap is not null)
             {
                 if (capturedHeightmap.SourceParentCellFormId == cell.FormId)
@@ -64,7 +101,7 @@ public static class CellLandPlanner
                         Code = "land.captured-heightmap-parent-mismatch",
                         RecordType = "CELL",
                         FormId = cell.FormId,
-                        Message = $"Skipped captured LAND for DMP-new CELL 0x{cell.FormId:X8}: source parent was "
+                        Message = $"Skipped captured LAND for {cellKind} CELL 0x{cell.FormId:X8}: source parent was "
                                   + FormatParent(capturedHeightmap.SourceParentCellFormId) + ".",
                     });
                 }
@@ -113,26 +150,36 @@ public static class CellLandPlanner
                 {
                     var parentMismatch = !hasExactParent;
                     var baseHeightMissing = hasExactParent && hasCompleteRuntimeSource && !hasRuntimeBaseHeight;
+                    string skipCode;
+                    string skipMessage;
+                    if (parentMismatch)
+                    {
+                        skipCode = "land.runtime-mesh-parent-mismatch";
+                        skipMessage = $"Skipped runtime LAND for {cellKind} CELL 0x{cell.FormId:X8}: source parent was "
+                            + FormatParent(runtimeMesh.SourceParentCellFormId) + ".";
+                    }
+                    else if (baseHeightMissing)
+                    {
+                        skipCode = "land.runtime-base-height-missing";
+                        skipMessage = $"Skipped runtime LAND for {cellKind} CELL 0x{cell.FormId:X8}: "
+                            + "LoadedLandData base-height provenance was unavailable.";
+                    }
+                    else
+                    {
+                        skipCode = "land.runtime-mesh-not-complete";
+                        skipMessage = $"Skipped LAND for {cellKind} CELL 0x{cell.FormId:X8}: runtime terrain source coverage was "
+                            + $"{quality.SourceSampleCount} accepted samples "
+                            + $"({quality.SourceCoveragePercent:F1}%, {quality.Classification}).";
+                    }
+
                     diagnostics.Add(new PlanDiagnostic
                     {
                         Kind = PlanDiagnosticKind.Warning,
                         Phase = "CellLand",
-                        Code = parentMismatch
-                            ? "land.runtime-mesh-parent-mismatch"
-                            : baseHeightMissing
-                                ? "land.runtime-base-height-missing"
-                                : "land.runtime-mesh-not-complete",
+                        Code = skipCode,
                         RecordType = "CELL",
                         FormId = cell.FormId,
-                        Message = parentMismatch
-                            ? $"Skipped runtime LAND for DMP-new CELL 0x{cell.FormId:X8}: source parent was "
-                              + FormatParent(runtimeMesh.SourceParentCellFormId) + "."
-                            : baseHeightMissing
-                                ? $"Skipped runtime LAND for DMP-new CELL 0x{cell.FormId:X8}: "
-                                  + "LoadedLandData base-height provenance was unavailable."
-                            : $"Skipped LAND for DMP-new CELL 0x{cell.FormId:X8}: runtime terrain source coverage was "
-                              + $"{quality.SourceSampleCount} accepted samples "
-                              + $"({quality.SourceCoveragePercent:F1}%, {quality.Classification}).",
+                        Message = skipMessage,
                     });
                 }
             }
@@ -140,6 +187,37 @@ public static class CellLandPlanner
             if (heightmap is null)
             {
                 continue;
+            }
+
+            // Master baseline (override cells only): the override target FormID, the
+            // flat-rejection reference, and the visual-data fallback the legacy enricher
+            // used to pre-merge (the planner sees un-enriched captures).
+            uint? masterLandFormId = null;
+            LandHeightmap? masterHeightmap = null;
+            LandVisualData? masterVisualData = null;
+            if (isOverride && masterLandsByCell is not null && masterRecordsByFormId is not null
+                && masterLandsByCell.TryGetValue(entry.CellFormId, out var masterLandIds)
+                && masterLandIds.Count > 0)
+            {
+                masterLandFormId = masterLandIds[0];
+                var parsed = ParseMasterLand(masterLandFormId.Value, masterRecordsByFormId, masterLandCache);
+                masterHeightmap = parsed?.Heightmap;
+                masterVisualData = parsed?.VisualData;
+            }
+
+            if (isOverride && LandOverrideBuilder.ShouldRejectFlatOverride(heightmap, masterHeightmap))
+            {
+                diagnostics.Add(new PlanDiagnostic
+                {
+                    Kind = PlanDiagnosticKind.Decision,
+                    Phase = "CellLand",
+                    Code = "land.flat-rejected",
+                    RecordType = "CELL",
+                    FormId = cell.FormId,
+                    Message = $"Rejected effectively-flat captured LAND for master CELL 0x{entry.CellFormId:X8}; "
+                              + "master terrain retained.",
+                });
+                continue; // Writer keeps master LAND verbatim via the carry-forward fallback.
             }
 
             byte[]? runtimeVertexColors = null;
@@ -159,19 +237,20 @@ public static class CellLandPlanner
                     Code = "land.visual-data-parent-mismatch",
                     RecordType = "CELL",
                     FormId = cell.FormId,
-                    Message = $"Dropped LAND visual data for DMP-new CELL 0x{cell.FormId:X8}: source parent was "
+                    Message = $"Dropped LAND visual data for {cellKind} CELL 0x{cell.FormId:X8}: source parent was "
                               + FormatParent(visualData.SourceParentCellFormId) + ".",
                 });
                 visualData = null;
             }
 
-            decisions[cell.FormId] = new CellLandDecision
+            decisions[entry.CellFormId] = new CellLandDecision
             {
                 CellSourceFormId = cell.FormId,
                 Heightmap = heightmap,
                 VisualData = LandVisualData.MergeForEmission(
-                    visualData, runtimeVertexColors, fallback: null),
+                    visualData, runtimeVertexColors, fallback: masterVisualData),
                 HeightSource = source,
+                MasterLandFormId = masterLandFormId,
             };
         }
 
@@ -364,6 +443,39 @@ public static class CellLandPlanner
         return fitError <= TerrainConstants.CanonicalVertexFitTolerance
             ? new TerrainGridMapping(gridX, gridY, fitError)
             : null;
+    }
+
+    /// <summary>
+    ///     Parse a master LAND record's heightmap + visual data (PC little-endian), cached
+    ///     per FormID — a worldspace's cells frequently share probe order with their
+    ///     neighbors and re-parsing the same LAND per cell is pure waste.
+    /// </summary>
+    private static LandSubrecordParseResult? ParseMasterLand(
+        uint masterLandFormId,
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
+        Dictionary<uint, LandSubrecordParseResult?> cache)
+    {
+        if (cache.TryGetValue(masterLandFormId, out var cached))
+        {
+            return cached;
+        }
+
+        LandSubrecordParseResult? result = null;
+        if (masterRecordsByFormId.TryGetValue(masterLandFormId, out var record)
+            && record.Header.Signature == "LAND")
+        {
+            var recordBytes = CellGrupBuilder.ReconstructRecordBytes(record);
+            if (recordBytes.Length > 24)
+            {
+                var dataSize = recordBytes.Length - 24;
+                var data = new byte[dataSize];
+                Buffer.BlockCopy(recordBytes, 24, data, 0, dataSize);
+                result = LandSubrecordParser.Parse(data, dataSize, isBigEndian: false);
+            }
+        }
+
+        cache[masterLandFormId] = result;
+        return result;
     }
 
     private static string FormatParent(uint? formId) =>

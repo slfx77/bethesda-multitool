@@ -15,8 +15,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 ///     keeps every exterior persistent ref in the worldspace's persistent dummy cell, and the
 ///     loader never reads Persistent-Children GRUPs under exterior grid cells. Emitting
 ///     records there produces content the engine never loads (in-game proven twice: NEW refs
-///     via <c>prid</c> "not found" — Ulysses at Wolfhorn, xex21.v110 — and Override map
-///     markers whose renames/moves never applied while filed in grid cells, v112→v113).
+///     via <c>prid</c> "not found" — Ulysses at Wolfhorn — and Override map
+///     markers whose renames/moves never applied while filed in grid cells).
 /// </summary>
 /// <remarks>
 ///     Move rules, per exterior non-container cell (master grid cells, new-worldspace proto
@@ -27,10 +27,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 ///         <item>Persistent-bucket ACHR/ACRE move regardless of disposition, and Override
 ///         ACHR/ACRE whose MASTER record carries the persistent flag move from any bucket
 ///         (runtime captures don't always preserve the flag). Moving applies the captured
-///         placement — user-directed policy: an actor the DMP places elsewhere is MOVED via
+///         placement — policy: an actor the DMP places elsewhere is MOVED via
 ///         a container override, never duplicated with a NEW record, and actors absent from
 ///         the DMP are left alone.</item>
-///         <item>NEW persistent-bucket REFRs move (v111 rule). Override non-marker REFRs
+///         <item>NEW persistent-bucket REFRs move. Override non-marker REFRs
 ///         stay — moving world-object runtime state is a separate policy question.</item>
 ///         <item>Parse-side orphan buckets (cells flagged <see cref="CellRecord.IsVirtual" />,
 ///         synthesized for refs whose runtime parent cell couldn't be resolved) get the same
@@ -91,14 +91,19 @@ public static class PersistentCellReparenting
             }
         }
 
-        uint? ContainerFor(uint ws) =>
-            masterContainers.TryGetValue(ws, out var master) ? master
-            : protoContainers.TryGetValue(ws, out var proto) ? proto
-            : null;
+        uint? ContainerFor(uint ws)
+        {
+            if (masterContainers.TryGetValue(ws, out var master))
+            {
+                return master;
+            }
+
+            return protoContainers.TryGetValue(ws, out var proto) ? proto : (uint?)null;
+        }
 
         // Enable-parent targets: refs other captured refs gate on via XESP. If the parent
         // never emits, the encoder strips the child's XESP and the gating is lost (street
-        // lights always on — TheStripWorld, xex21.v115). Parents captured anywhere (including
+        // lights always on in TheStripWorld). Parents captured anywhere (including
         // cells that later die at the writer, e.g. cut cells with a missing parent
         // worldspace) get the same container rescue as markers.
         var enableParentTargets = new HashSet<uint>();

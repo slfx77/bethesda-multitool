@@ -5,7 +5,6 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
@@ -37,13 +36,13 @@ public sealed record CellVerdictInputs
 /// </summary>
 public static class CellChildVerdictPlanner
 {
-    private const uint TheStripWorldFormId = 0x0010B96F;
-    private const uint ProtoStreetLightSouthParent = 0x00127E9F;
-    private const uint ProtoStreetLightFirstParent = 0x00127EA0;
-    private const uint ProtoStreetLightNorthParent = 0x00127EA1;
-    private const uint RetailStreetLightOneParent = 0x0013BAE3;
-    private const uint RetailStreetLightTwoParent = 0x0013BAE2;
-    private const uint RetailStreetLightThreeParent = 0x0013BAE1;
+    /// <summary>
+    ///     A captured master ref parented to a master-anchored cell that is NOT its master
+    ///     parent — the DMP moved it there (Goodsprings cemetery class). Deferred to phase 2
+    ///     so home-cell captures win the FormID before any cross-cell move claims it.
+    /// </summary>
+    private sealed record CrossCellMoveCandidate(
+        uint CellFormId, uint ChildFormId, int TargetGroupType, bool? OverrideInitiallyDisabled);
 
     /// <summary>
     ///     Rewrite each planned cell with its children's verdicts. Cells whose
@@ -62,8 +61,14 @@ public static class CellChildVerdictPlanner
             return cells;
         }
 
+        // Phase 1 (sorted for deterministic phase-2 claiming): settle every verdict except
+        // cross-cell moves; own-cell Override emits register their FormIDs so a home-cell
+        // capture always beats a neighbor-cell capture of the same ref.
         var result = cells.ToBuilder();
-        foreach (var (cellFormId, cellPlan) in cells)
+        var verdictBuilders = new Dictionary<uint, ImmutableDictionary<uint, PlacedRefDecision>.Builder>();
+        var emittedOverrideFormIds = new HashSet<uint>();
+        var moveCandidates = new List<CrossCellMoveCandidate>();
+        foreach (var (cellFormId, cellPlan) in cells.OrderBy(static kv => kv.Key))
         {
             if (cellPlan.Mode is null)
             {
@@ -72,13 +77,40 @@ public static class CellChildVerdictPlanner
 
             var verdicts = ImmutableDictionary.CreateBuilder<uint, PlacedRefDecision>();
             DecideBucket(cellPlan.PersistentChildren, 8, cellPlan, masterByFormId,
-                sourceToEmitted, emittedFormIds, inputs, verdicts);
+                sourceToEmitted, emittedFormIds, inputs, verdicts, emittedOverrideFormIds, moveCandidates);
             DecideBucket(cellPlan.VwdChildren, 10, cellPlan, masterByFormId,
-                sourceToEmitted, emittedFormIds, inputs, verdicts);
+                sourceToEmitted, emittedFormIds, inputs, verdicts, emittedOverrideFormIds, moveCandidates);
             DecideBucket(cellPlan.TemporaryChildren, 9, cellPlan, masterByFormId,
-                sourceToEmitted, emittedFormIds, inputs, verdicts);
+                sourceToEmitted, emittedFormIds, inputs, verdicts, emittedOverrideFormIds, moveCandidates);
+            verdictBuilders[cellFormId] = verdicts;
+        }
 
-            var withVerdicts = cellPlan with { RefDecisions = verdicts.ToImmutable() };
+        // Phase 2: cross-cell moves (USER POLICY 2026-07-20, Goodsprings cemetery: the
+        // capture's parent cell is the proto-authored placement — "true to xex.dmp").
+        // First claim per FormID wins; the rest are duplicate captures of the same ref.
+        foreach (var candidate in moveCandidates
+                     .OrderBy(static c => c.CellFormId).ThenBy(static c => c.ChildFormId))
+        {
+            var verdicts = verdictBuilders[candidate.CellFormId];
+            if (!emittedOverrideFormIds.Add(candidate.ChildFormId))
+            {
+                verdicts[candidate.ChildFormId] = Drop("refr.cross-cell-duplicate");
+                continue;
+            }
+
+            verdicts[candidate.ChildFormId] = new PlacedRefDecision
+            {
+                Verdict = PlacedRefEmitVerdict.Emit,
+                TargetGroupType = candidate.TargetGroupType,
+                MarksMasterCovered = true,
+                AuxStatCode = "refr.cross-cell-move",
+                OverrideInitiallyDisabled = candidate.OverrideInitiallyDisabled,
+            };
+        }
+
+        foreach (var (cellFormId, verdicts) in verdictBuilders)
+        {
+            var withVerdicts = cells[cellFormId] with { RefDecisions = verdicts.ToImmutable() };
             result[cellFormId] = PlanCellGates(withVerdicts, inputs);
         }
 
@@ -113,8 +145,14 @@ public static class CellChildVerdictPlanner
             genuine = 0;
         }
 
+        // Planned LAND is genuine content for the ITM gate (legacy hasCapturedTerrain
+        // parity: a master cell whose only change is terrain still emits), but it never
+        // enters the genuine/navm counts — those gates reason about placed children only.
+        var hasPlannedLand = cellPlan.TemporaryChildren.Any(
+            static c => c.Type == "LAND" && c.Model is CellLandDecision);
+
         var (emits, suppressReason) = (true, (string?)null);
-        if (isMasterAnchored && genuine == 0)
+        if (isMasterAnchored && genuine == 0 && !hasPlannedLand)
         {
             (emits, suppressReason) = (false, "cell.itm-override-suppressed");
         }
@@ -172,7 +210,9 @@ public static class CellChildVerdictPlanner
         IReadOnlyDictionary<uint, uint> sourceToEmitted,
         IReadOnlySet<uint> emittedFormIds,
         CellVerdictInputs inputs,
-        ImmutableDictionary<uint, PlacedRefDecision>.Builder verdicts)
+        ImmutableDictionary<uint, PlacedRefDecision>.Builder verdicts,
+        HashSet<uint> emittedOverrideFormIds,
+        List<CrossCellMoveCandidate> moveCandidates)
     {
         foreach (var child in children)
         {
@@ -183,13 +223,24 @@ public static class CellChildVerdictPlanner
                           // never encode — the writer handles both without a verdict.
             }
 
-            verdicts[child.FormId] = Decide(
+            var verdict = Decide(
                 child, placed, plannedGroupType, cellPlan, masterByFormId,
-                sourceToEmitted, emittedFormIds, inputs);
+                sourceToEmitted, emittedFormIds, inputs, moveCandidates);
+            if (verdict is null)
+            {
+                continue; // Deferred cross-cell move; phase 2 fills the verdict.
+            }
+
+            verdicts[child.FormId] = verdict;
+            if (child.Disposition == RecordDisposition.Override
+                && verdict.Verdict == PlacedRefEmitVerdict.Emit)
+            {
+                emittedOverrideFormIds.Add(child.FormId);
+            }
         }
     }
 
-    private static PlacedRefDecision Decide(
+    private static PlacedRefDecision? Decide(
         RecordPlan child,
         PlacedReference placed,
         int plannedGroupType,
@@ -197,7 +248,8 @@ public static class CellChildVerdictPlanner
         IReadOnlyDictionary<uint, ParsedMainRecord> masterByFormId,
         IReadOnlyDictionary<uint, uint> sourceToEmitted,
         IReadOnlySet<uint> emittedFormIds,
-        CellVerdictInputs inputs)
+        CellVerdictInputs inputs,
+        List<CrossCellMoveCandidate> moveCandidates)
     {
         if (RuntimeStateRecordPolicy.IsRuntimeStateFormId(placed.FormId))
         {
@@ -215,7 +267,7 @@ public static class CellChildVerdictPlanner
                 child, placed, plannedGroupType, cellPlan, masterByFormId,
                 sourceToEmitted, emittedFormIds, inputs),
             RecordDisposition.Override => DecideOverride(
-                child, placed, plannedGroupType, cellPlan, masterByFormId, inputs),
+                child, placed, plannedGroupType, cellPlan, masterByFormId, inputs, moveCandidates),
             // Other dispositions never encode (legacy returned null silently): drop with
             // no reason so the writer skips the stats counters.
             _ => new PlacedRefDecision { Verdict = PlacedRefEmitVerdict.Drop },
@@ -234,7 +286,7 @@ public static class CellChildVerdictPlanner
         IReadOnlySet<uint> emittedFormIds,
         CellVerdictInputs inputs)
     {
-        if (PluginBuilder.IsRuntimeStructuralMarkerPlacement(placed, masterByFormId, out _))
+        if (PlacedReferenceAnalysis.IsRuntimeStructuralMarkerPlacement(placed, masterByFormId, out _))
         {
             return Drop("refr.runtime-structural-marker");
         }
@@ -317,84 +369,22 @@ public static class CellChildVerdictPlanner
             FinalBaseFormId = baseFormId,
             TargetGroupType = plannedGroupType,
             AuxStatCode = auxStatCode,
-            NewInitiallyDisabled = SelectNewInitiallyDisabled(child, placed, cellPlan),
-            NewEnableParentFormId = SelectNewEnableParent(placed, cellPlan),
+            NewInitiallyDisabled = StripStreetLightPolicy.SelectNewInitiallyDisabled(child, placed, cellPlan),
+            NewEnableParentFormId = StripStreetLightPolicy.SelectNewEnableParent(placed, cellPlan),
         };
-    }
-
-    /// <summary>
-    ///     v123 force-enabled 119 disabled Strip REFRs to restore content that v122 hid.
-    ///     Artifact tracing split that set into 98 normally-gated street-light refs, three
-    ///     captured starter markers, and 18 genuinely parentless compatibility refs. The
-    ///     first 101 are not undriven: retail's surviving VStreetLighting quest can drive
-    ///     them through the parent aliases selected below, so their captured disabled state
-    ///     is required for daytime-off behavior. Only the 18 parentless refs retain the
-    ///     v123 force-enable fallback.
-    ///
-    ///     Keep this compatibility rule deliberately narrow: NEW REFRs in TheStripWorld
-    ///     only. Opposite-state XESP children, the staged light network, actors, creatures,
-    ///     and every other worldspace retain the capture verbatim.
-    /// </summary>
-    private static bool SelectNewInitiallyDisabled(
-        RecordPlan child,
-        PlacedReference placed,
-        CellPlan cellPlan)
-    {
-        var isStripUndrivenScenery = child.Type == "REFR"
-            && cellPlan.Context.WorldspaceFormId == TheStripWorldFormId
-            && placed.IsInitiallyDisabled
-            && !IsProtoStreetLightParent(placed.FormId)
-            && !TryMapProtoStreetLightParent(placed.EnableParentFormId, out _)
-            && (placed.EnableParentFlags.GetValueOrDefault() & 0x01) == 0;
-
-        return isStripUndrivenScenery ? false : placed.IsInitiallyDisabled;
-    }
-
-    /// <summary>
-    ///     The prototype and retail masters share the VStreetLighting quest/script FormIDs,
-    ///     but the retail script targets its renamed One/Two/Three starter refs. Point only
-    ///     the prototype Strip's staged XESP children at those live retail parents. The
-    ///     semantic mapping follows the scripted activation sequence:
-    ///     First/South/North becomes One/Two/Three.
-    /// </summary>
-    private static uint? SelectNewEnableParent(PlacedReference placed, CellPlan cellPlan)
-    {
-        if (cellPlan.Context.WorldspaceFormId != TheStripWorldFormId)
-        {
-            return null;
-        }
-
-        return TryMapProtoStreetLightParent(placed.EnableParentFormId, out var retailParent)
-            ? retailParent
-            : null;
-    }
-
-    private static bool IsProtoStreetLightParent(uint formId) =>
-        formId is ProtoStreetLightSouthParent
-            or ProtoStreetLightFirstParent
-            or ProtoStreetLightNorthParent;
-
-    private static bool TryMapProtoStreetLightParent(uint? sourceParent, out uint retailParent)
-    {
-        retailParent = sourceParent switch
-        {
-            ProtoStreetLightFirstParent => RetailStreetLightOneParent,
-            ProtoStreetLightSouthParent => RetailStreetLightTwoParent,
-            ProtoStreetLightNorthParent => RetailStreetLightThreeParent,
-            _ => 0,
-        };
-        return retailParent != 0;
     }
 
     /// <summary>Mirrors the writer's override chain: temp-actor suppression, render-culling
-    /// drop, sparse-cell preservation, parent-cell guard, then master-bucket routing.</summary>
-    private static PlacedRefDecision DecideOverride(
+    /// drop, sparse-cell preservation, cross-cell-move deferral, then master-bucket routing.
+    /// Returns null for a deferred cross-cell move (phase 2 settles it).</summary>
+    private static PlacedRefDecision? DecideOverride(
         RecordPlan child,
         PlacedReference placed,
         int plannedGroupType,
         CellPlan cellPlan,
         IReadOnlyDictionary<uint, ParsedMainRecord> masterByFormId,
-        CellVerdictInputs inputs)
+        CellVerdictInputs inputs,
+        List<CrossCellMoveCandidate> moveCandidates)
     {
         if (!masterByFormId.TryGetValue(child.FormId, out var masterRecord))
         {
@@ -424,18 +414,9 @@ public static class CellChildVerdictPlanner
         // "mismatched" parent is the whole point of the move.
         if (cellPlan.Mode == CellMergeMode.PersistentOnly
             && !child.Reparented
-            && !(placed.IsMapMarker && PluginBuilder.MapMarkerDiffersFromMaster(placed, masterRecord)))
+            && !(placed.IsMapMarker && PlacedReferenceAnalysis.MapMarkerDiffersFromMaster(placed, masterRecord)))
         {
             return Drop("refr.sparse-cell-master-preserved");
-        }
-
-        if (inputs.MasterIndex.RefToCell.TryGetValue(child.FormId, out var masterParentCell)
-            && masterParentCell != 0
-            && masterParentCell != cellPlan.CellFormId
-            && !placed.IsMapMarker
-            && !child.Reparented)
-        {
-            return Drop("refr.parent-cell-mismatch");
         }
 
         // Overrides re-bucket to master's original child GRUP; the record-header persistent
@@ -452,15 +433,41 @@ public static class CellChildVerdictPlanner
             routeGroupType = 8;
         }
 
-        // A reparented actor applies the proto's authored enable-state: master's copy of a
-        // cut NPC is often disabled (EthelPhebus — retail parks her disabled in another
-        // worldspace) while the proto shipped her live. Without this the move emits a
-        // disabled actor and changes nothing in-game.
+        var isForeignParent = inputs.MasterIndex.RefToCell.TryGetValue(child.FormId, out var masterParentCell)
+            && masterParentCell != 0
+            && masterParentCell != cellPlan.CellFormId
+            && !placed.IsMapMarker
+            && !child.Reparented;
+
+        // A reparented actor or a cross-cell-moved ref applies the proto's authored
+        // enable-state: master's copy of a cut NPC is often disabled (EthelPhebus — retail
+        // parks her disabled in another worldspace) while the proto shipped her live.
+        // Without this the move emits a disabled record and changes nothing in-game.
         bool? overrideInitiallyDisabled = null;
-        if (child.Reparented
+        if ((child.Reparented || isForeignParent)
             && (masterRecord.Header.Flags & 0x00000800u) != 0 != placed.IsInitiallyDisabled)
         {
             overrideInitiallyDisabled = placed.IsInitiallyDisabled;
+        }
+
+        if (isForeignParent)
+        {
+            // USER POLICY (2026-07-20, Goodsprings cemetery): in a master-anchored capture
+            // cell the DMP's parent assignment IS the proto-authored placement (retail
+            // relocated the content; the proto cell was even named GoodspringsCemeteryOLD
+            // in interim builds) — emit the override HERE, true to the dump.
+            // Exclusions keep the legacy drop: NEW-worldspace capture cells (retail records
+            // stay untouched there; doors clone as fresh NEW refs via OverrideDoorCloning)
+            // and persistent-routed refs (exterior grid-cell Persistent GRUPs never load —
+            // persistent moves are PersistentCellReparenting's domain).
+            if (routeGroupType == 8 || cellPlan.CellRecordPlan.Master is null)
+            {
+                return Drop("refr.parent-cell-mismatch");
+            }
+
+            moveCandidates.Add(new CrossCellMoveCandidate(
+                cellPlan.CellFormId, child.FormId, routeGroupType, overrideInitiallyDisabled));
+            return null;
         }
 
         return new PlacedRefDecision

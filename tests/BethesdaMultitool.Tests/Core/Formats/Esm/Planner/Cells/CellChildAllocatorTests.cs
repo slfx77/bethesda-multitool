@@ -354,4 +354,45 @@ public sealed class CellChildAllocatorTests
         Assert.Equal(0x01000802u, result.LandByCellSourceToEmitted[cell.FormId]);
         Assert.DoesNotContain(result.LandByCellSourceToEmitted.Keys, result.CellSourceToEmitted.Values.Contains);
     }
+
+    [Fact]
+    public void Land_Override_Decision_Maps_Master_Land_FormId_Without_Allocating()
+    {
+        const uint masterCellId = 0x000DDF1C;
+        const uint masterLandId = 0x000ABCDE;
+        var cell = new CellRecord
+        {
+            FormId = masterCellId,
+            WorldspaceFormId = 0x000DA726,
+            GridX = 0,
+            GridY = 0,
+        };
+        var entry = new CellCatalogEntry
+        {
+            CellFormId = masterCellId,
+            Source = SourceKind.DmpOverride,
+            DmpModel = cell,
+        };
+        var land = new CellLandDecision
+        {
+            CellSourceFormId = masterCellId,
+            Heightmap = new LandHeightmap { HeightDeltas = new sbyte[33 * 33] },
+            HeightSource = CellLandHeightSource.CapturedHeightmap,
+            MasterLandFormId = masterLandId,
+        };
+        var masterFormIds = new HashSet<uint> { masterCellId, masterLandId };
+
+        var withOverride = new FormIdAllocator();
+        var result = new CellChildAllocator(withOverride).AllocateAll(
+            [entry], [], masterFormIds,
+            new Dictionary<uint, CellLandDecision> { [masterCellId] = land });
+
+        var without = new FormIdAllocator();
+        new CellChildAllocator(without).AllocateAll([entry], [], masterFormIds);
+
+        Assert.Equal(masterLandId, result.LandByCellSourceToEmitted[masterCellId]);
+        // Override mappings must not consume allocator IDs — the next allocation matches
+        // a run that planned no LAND at all.
+        Assert.Equal(without.Allocate(), withOverride.Allocate());
+    }
 }

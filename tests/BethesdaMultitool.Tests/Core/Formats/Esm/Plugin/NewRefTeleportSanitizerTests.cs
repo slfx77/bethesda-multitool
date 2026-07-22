@@ -29,7 +29,7 @@ public class NewRefTeleportSanitizerTests
             BaseFormId = 0x0000001F
         };
 
-        var result = PluginBuilder.IsRuntimeStructuralMarkerPlacement(
+        var result = PlacedReferenceAnalysis.IsRuntimeStructuralMarkerPlacement(
             placed,
             records,
             out var baseEditorId);
@@ -53,7 +53,7 @@ public class NewRefTeleportSanitizerTests
             BaseFormId = 0x00000010
         };
 
-        var result = PluginBuilder.IsRuntimeStructuralMarkerPlacement(
+        var result = PlacedReferenceAnalysis.IsRuntimeStructuralMarkerPlacement(
             placed,
             records,
             out var baseEditorId);

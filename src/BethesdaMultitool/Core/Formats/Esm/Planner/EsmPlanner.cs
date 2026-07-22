@@ -126,7 +126,8 @@ public sealed class EsmPlanner
                 dmpRecords, masterFormIds, masterCellContexts, masterRecordsByFormId,
                 cellChildAllocator, emitMasterCellNavmAugmentation,
                 masterRefFormIds, replaceCellTemporariesOnOverride,
-                cellVerdictInputs?.MasterIndex.RefToCell)
+                cellVerdictInputs?.MasterIndex.RefToCell,
+                cellVerdictInputs?.MasterIndex.LandsByCell)
             : null;
 
         if (catalog.Count == 0 && cellSection is null)
@@ -159,9 +160,7 @@ public sealed class EsmPlanner
         // for EVERY DmpNew regardless of whether the source FormID happens to be in master
         // (e.g. DMP-duplicate captures where the second one falls through to DmpNew). Each
         // gets a fresh plugin-range FormID, so emission is safe by construction. The
-        // phantom-master risk lived in the CellChildAllocator's per-type skip conditions
-        // (now fixed there). The post-write PhantomMasterFormIdRegressionTests guard
-        // catches any future leak.
+        // post-write PhantomMasterFormIdRegressionTests guard catches any leak.
 
         // Merge cell-child allocations into the plan's source→emitted map so reference
         // resolution sees them as live FormIDs. New worldspaces likewise contribute their
@@ -196,8 +195,7 @@ public sealed class EsmPlanner
         if (packageSanitation.SuppressedNewFormIds.Count > 0)
         {
             emittedFormIds = emittedFormIds
-                .Except(packageSanitation.SuppressedNewFormIds)
-                .ToImmutableHashSet();
+                .Except(packageSanitation.SuppressedNewFormIds);
         }
 
         var (ordered, diagnostics) = PlanValidator.Validate(records, RuntimeStateRecordPolicy.EngineFormIds);
@@ -331,7 +329,8 @@ public sealed class EsmPlanner
         bool emitMasterCellNavmAugmentation,
         IReadOnlySet<uint>? masterRefFormIds,
         bool replaceCellTemporariesOnOverride,
-        IReadOnlyDictionary<uint, uint>? masterRefToCell)
+        IReadOnlyDictionary<uint, uint>? masterRefToCell,
+        IReadOnlyDictionary<uint, List<uint>>? masterLandsByCell)
     {
         if (masterCellContexts is null || masterRecordsByFormId is null || cellChildAllocator is null)
         {
@@ -349,7 +348,8 @@ public sealed class EsmPlanner
             emitMasterCellNavmAugmentation,
             masterRefFormIds,
             replaceCellTemporariesOnOverride,
-            masterRefToCell);
+            masterRefToCell,
+            masterLandsByCell);
     }
 
     private static ImmutableHashSet<uint> BuildEmittedFormIds(

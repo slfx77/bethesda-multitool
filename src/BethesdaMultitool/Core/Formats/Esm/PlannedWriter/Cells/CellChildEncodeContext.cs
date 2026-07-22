@@ -27,6 +27,16 @@ internal sealed record CellChildEncodeContext(
     IReadOnlyDictionary<uint, PlannerXespParentClassifier.Resolution> XespParentIndex)
 {
     /// <summary>
+    ///     Master ref FormIDs the plan emits as overrides ANYWHERE in the plugin (cross-cell
+    ///     moves included). A ref's HOME cell must consult this set — not just its own
+    ///     per-cell covered set — before carrying it forward or synthesizing a removal, or a
+    ///     moved ref would be duplicated (carry) or disabled (tombstone) in the cell the
+    ///     capture moved it out of.
+    /// </summary>
+    public IReadOnlySet<uint> GloballyEmittedMasterRefs { get; init; } =
+        ImmutableHashSet<uint>.Empty;
+
+    /// <summary>
     ///     Resolve a placed ref's base record signature (e.g. "CONT", "WEAP"). The final
     ///     (post-remap) base resolves against master; the original captured base resolves
     ///     against the DMP base-type map for proto content the master lacks. Null when
@@ -103,12 +113,13 @@ internal sealed record CellChildEncodeContext(
                     continue;
                 }
 
+                var remappedBaseFormId = Plan.SourceToEmittedFormId.TryGetValue(placed.BaseFormId, out var remapped)
+                    ? remapped
+                    : placed.BaseFormId;
                 var finalBaseFormId = cell.RefDecisions.TryGetValue(child.FormId, out var decision)
                                       && decision.FinalBaseFormId != 0
                     ? decision.FinalBaseFormId
-                    : Plan.SourceToEmittedFormId.TryGetValue(placed.BaseFormId, out var remapped)
-                        ? remapped
-                        : placed.BaseFormId;
+                    : remappedBaseFormId;
                 return string.Equals(
                     ResolveBaseRecordType(placed.BaseFormId, finalBaseFormId),
                     "DOOR",

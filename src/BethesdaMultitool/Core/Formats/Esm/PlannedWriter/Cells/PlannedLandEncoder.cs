@@ -20,11 +20,16 @@ public static class PlannedLandEncoder
     /// <summary>Compressed-record flag bit; matches legacy <c>PluginRecordByteBuilder</c>.</summary>
     private const uint CompressedFlag = 0x00040000u;
 
-    /// <summary>Encode a planner-owned LAND child, or null when the plan is not emit-ready.</summary>
+    /// <summary>
+    ///     Encode a planner-owned LAND child, or null when the plan is not emit-ready.
+    ///     New and Override dispositions share the byte layout — an override simply reuses
+    ///     master's LAND FormID in the record header.
+    /// </summary>
     public static byte[]? EncodeRecord(RecordPlan plan, PluginBuildOptions options)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        return plan.Disposition == RecordDisposition.New && plan.Model is CellLandDecision land
+        return plan.Disposition is RecordDisposition.New or RecordDisposition.Override
+               && plan.Model is CellLandDecision land
             ? EncodeRecord(land.Heightmap, land.VisualData, plan.FormId, options)
             : null;
     }

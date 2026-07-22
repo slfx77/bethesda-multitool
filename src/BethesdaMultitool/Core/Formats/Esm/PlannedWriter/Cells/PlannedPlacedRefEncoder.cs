@@ -7,7 +7,6 @@ using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
@@ -86,7 +85,7 @@ internal static class PlannedPlacedRefEncoder
     {
         // Authored-cell structural markers (room/portal/occlusion bases identified by
         // master EditorID) captured as runtime placements are never renderable content.
-        if (PluginBuilder.IsRuntimeStructuralMarkerPlacement(placed, context.MasterByFormId, out _))
+        if (PlacedReferenceAnalysis.IsRuntimeStructuralMarkerPlacement(placed, context.MasterByFormId, out _))
         {
             context.Stats?.IncrementSkipped(child.Type);
             context.Stats?.IncrementDropReason("refr.runtime-structural-marker");
@@ -284,7 +283,7 @@ internal static class PlannedPlacedRefEncoder
         // the master copy is carried verbatim by the preservation pass instead. Map markers
         // whose name/type/position genuinely differ are the one exception.
         if (state.Mode == CellMergeMode.PersistentOnly
-            && !(placed.IsMapMarker && PluginBuilder.MapMarkerDiffersFromMaster(placed, masterRecord)))
+            && !(placed.IsMapMarker && PlacedReferenceAnalysis.MapMarkerDiffersFromMaster(placed, masterRecord)))
         {
             context.Stats?.IncrementSkipped(child.Type);
             context.Stats?.IncrementDropReason("refr.sparse-cell-master-preserved");
@@ -428,11 +427,12 @@ internal static class PlannedPlacedRefEncoder
             // NAME needs special care: a master ACHR captured live can point its base at
             // the 0xFF runtime leveled-actor clone. Dropping the subrecord (instead of the
             // whole override, as legacy did) lets the merge keep master's own NAME.
+            var danglingReason = xtelTargetNotDoor
+                ? "refr.xtel-target-not-door"
+                : "refr.override-subrecord-dangling";
             context.Stats?.IncrementDropReason(sub.Signature == "NAME"
                 ? "refr.override-name-preserved-master"
-                : xtelTargetNotDoor
-                    ? "refr.xtel-target-not-door"
-                    : "refr.override-subrecord-dangling");
+                : danglingReason);
         }
 
         return result;

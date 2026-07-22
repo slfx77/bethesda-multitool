@@ -64,7 +64,8 @@ public sealed class DuplicateActorPlacementMergeTests
     public void Second_Proto_Capture_Of_Same_Actor_Is_Skipped()
     {
         // The runtime shares actors into several cells — only ONE capture may fold onto the
-        // master ref, or the same FormID emits repeatedly (xex21.v119: 25 duplicate FormIDs).
+        // master ref, or the same FormID emits repeatedly (one converted output emitted
+        // 25 duplicate FormIDs).
         var cellA = MakeCell(NewActor(ProtoAchrId, NpcBaseId));
         var cellB = MakeCell(NewActor(0x0010F001, NpcBaseId)) with { CellFormId = CellId + 1 };
         var cells = ImmutableDictionary<uint, CellPlan>.Empty

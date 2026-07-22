@@ -120,6 +120,11 @@ internal static class VerdictPlacedRefEncoder
             return null;
         }
 
+        if (verdict.AuxStatCode is { } aux)
+        {
+            context.Stats?.IncrementDropReason(aux);
+        }
+
         var encoded = RefrEncoder.EncodePlacedReference(placed);
         if (encoded.Subrecords.Count == 0)
         {

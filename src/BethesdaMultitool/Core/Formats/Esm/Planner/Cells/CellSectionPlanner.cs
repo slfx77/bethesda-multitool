@@ -36,7 +36,8 @@ public sealed class CellSectionPlanner
         bool emitMasterCellNavmAugmentation = false,
         IReadOnlySet<uint>? masterRefFormIds = null,
         bool replaceCellTemporariesOnOverride = false,
-        IReadOnlyDictionary<uint, uint>? masterRefToCell = null)
+        IReadOnlyDictionary<uint, uint>? masterRefToCell = null,
+        IReadOnlyDictionary<uint, List<uint>>? masterLandsByCell = null)
     {
         ArgumentNullException.ThrowIfNull(masterContexts);
         ArgumentNullException.ThrowIfNull(masterRecordsByFormId);
@@ -53,7 +54,7 @@ public sealed class CellSectionPlanner
         }
 
         // Coord-based pairing. Catches proto cells at master coords that carry
-        // different FormIDs than master's (xex22.v61 produced 522 such collisions in
+        // different FormIDs than master's (a captured dump produced 522 such collisions in
         // WastelandNV alone). Without this, both the master cell and the proto cell survive
         // to emission and the engine destroys one of them with a "Cell will be destroyed"
         // warning. After reconciliation: one DmpOverride entry per coord-match, keyed on
@@ -78,7 +79,7 @@ public sealed class CellSectionPlanner
 
         var dispositionEngine = new CellDispositionEngine([new DefaultCellDispositionPolicy()]);
         var decisions = dispositionEngine.Decide(catalog);
-        var landPlanning = CellLandPlanner.DecideAll(catalog);
+        var landPlanning = CellLandPlanner.DecideAll(catalog, masterRecordsByFormId, masterLandsByCell);
         var childAllocator = new CellChildAllocator(allocator);
         var allocations = childAllocator.AllocateAll(
             catalog, dmpNavmeshes, masterFormIds, landPlanning.DecisionsByCellSourceFormId);
@@ -151,8 +152,6 @@ public sealed class CellSectionPlanner
         };
     }
 
-
-
     private static ImmutableDictionary<uint, CellPlan> BuildCellPlans(
         IReadOnlyList<(CellCatalogEntry Entry, Disposition.DispositionDecision Decision)> decisions,
         IReadOnlyDictionary<uint, List<NavMeshRecord>> navmsByCell,
@@ -216,8 +215,8 @@ public sealed class CellSectionPlanner
     }
 
     /// <summary>
-    ///     Settle the cell's merge-mode + render-culling-marker policy at plan time (the
-    ///     writer previously derived both). Master cells classify via
+    ///     Settle the cell's merge-mode + render-culling-marker policy at plan time. Master
+    ///     cells classify via
     ///     <see cref="CellMerger.Classify" /> (any non-persistent master-resident capture ⇒
     ///     LoadedReplacement; persistent-only ⇒ PersistentOnly); brand-new cells emit all
     ///     their children unconditionally (LoadedReplacement semantics). Returns null Mode
@@ -236,11 +235,12 @@ public sealed class CellSectionPlanner
         }
 
         var isMasterAnchored = entry.MasterRecord is not null;
-        var mode = !isMasterAnchored
-            ? CellMergeMode.LoadedReplacement
-            : entry.DmpModel is null
-                ? CellMergeMode.Skip
-                : CellMerger.Classify(entry.DmpModel, masterRefFormIds);
+        var mode = (isMasterAnchored, entry.DmpModel) switch
+        {
+            (false, _) => CellMergeMode.LoadedReplacement,
+            (true, null) => CellMergeMode.Skip,
+            (true, { } dmpModel) => CellMerger.Classify(dmpModel, masterRefFormIds),
+        };
 
         // Replaced interiors drop captured render-culling markers (their final-game bounds
         // mis-cull the proto layout) unless the diagnostic replace-temporaries mode is on.
@@ -362,9 +362,9 @@ public sealed class CellSectionPlanner
     private static RecordPlan BuildLandPlan(CellLandDecision land, uint landFormId) => new()
     {
         Type = "LAND",
-        Disposition = RecordDisposition.New,
+        Disposition = land.MasterLandFormId is null ? RecordDisposition.New : RecordDisposition.Override,
         FormId = landFormId,
-        SourceFormId = null,
+        SourceFormId = land.MasterLandFormId,
         Model = land,
         Master = null,
         References = ImmutableArray<ResolvedRef>.Empty,
@@ -372,8 +372,10 @@ public sealed class CellSectionPlanner
         ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
         Provenance = new PlanProvenance
         {
-            PolicyId = "CellLandPlanner.New",
-            Reason = $"DMP-new exterior CELL 0x{land.CellSourceFormId:X8} has {land.HeightSource} terrain.",
+            PolicyId = land.MasterLandFormId is null ? "CellLandPlanner.New" : "CellLandPlanner.Override",
+            Reason = land.MasterLandFormId is { } masterLand
+                ? $"DMP capture for master CELL 0x{land.CellSourceFormId:X8} has complete {land.HeightSource} terrain; overrides master LAND 0x{masterLand:X8}."
+                : $"DMP-new exterior CELL 0x{land.CellSourceFormId:X8} has {land.HeightSource} terrain.",
         },
     };
 

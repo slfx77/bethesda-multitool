@@ -9,8 +9,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 ///     Folds proto-authored duplicate actor placements onto master's own ref. The proto
 ///     places some retail NPCs with its OWN ACHR FormIDs (different ref, same NPC_ base);
 ///     emitting those as NEW records puts a second copy of the actor in the world next to
-///     master's (2× Julie Farkas, 3× Arcade Gannon — xex22.v118 in-game, visible since the
-///     v114 container moves made NEW persistents actually load). User policy: never
+///     master's (seen in-game as 2× Julie Farkas, 3× Arcade Gannon). Policy: never
 ///     duplicate — MOVE the existing. A NEW ACHR/ACRE whose base is a master actor with
 ///     exactly ONE master placement becomes an Override of that master ref carrying the
 ///     captured placement (flagged Reparented so the container move + verdict bypasses
@@ -43,8 +42,8 @@ public static class DuplicateActorPlacementMerge
 
         // A master ref may only be overridden ONCE across the whole plan: the runtime shares
         // actors into several cells and the proto can re-place one repeatedly, so without
-        // global accounting the same master FormID emits 2-3× (xex21.v119 validation: 25
-        // duplicate FormIDs). Master refs already covered by a captured Override anywhere
+        // global accounting the same master FormID emits 2-3× (validation on a captured
+        // dump found 25 duplicate FormIDs). Master refs already covered by a captured Override anywhere
         // are consumed up front — that capture IS the move; extra proto copies drop.
         var consumedMasterRefs = new HashSet<uint>();
         foreach (var plan in cells.Values)
@@ -100,7 +99,7 @@ public static class DuplicateActorPlacementMerge
 
     private static ImmutableArray<RecordPlan> MergeBucket(
         ImmutableArray<RecordPlan> bucket,
-        IReadOnlyDictionary<uint, uint> soleMasterPlacementByBase,
+        Dictionary<uint, uint> soleMasterPlacementByBase,
         HashSet<uint> consumedMasterRefs,
         ref bool mutated)
     {
@@ -198,9 +197,8 @@ public static class DuplicateActorPlacementMerge
                 continue;
             }
 
-            if (soleByBase.ContainsKey(baseFormId))
+            if (soleByBase.Remove(baseFormId))
             {
-                soleByBase.Remove(baseFormId);
                 ambiguous.Add(baseFormId);
                 continue;
             }

@@ -8,7 +8,7 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 
 /// <summary>
-///     v22 LAND + XCLR encoder tests. Covers the cell-render gap from xex21 (cells with
+///     v22 LAND + XCLR encoder tests. Covers the cell-render gap (cells with
 ///     XCLW water height but no LAND record → appeared flooded) and XCLR radiation-region
 ///     loss on cell overrides.
 /// </summary>

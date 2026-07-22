@@ -326,6 +326,127 @@ public sealed class CellChildVerdictPlannerTests
     }
 
     [Fact]
+    public void Foreign_Parent_Temp_Override_In_Master_Cell_Moves_With_Capture()
+    {
+        // USER POLICY 2026-07-20 (Goodsprings cemetery): the capture's parent cell is the
+        // proto-authored placement — the override emits HERE instead of dropping. Exterior
+        // cell: the interior no-new-content gate must not eat a move-only override.
+        var captured = Ref(MasterRefId, MasterStatBaseId);
+        var cells = Apply(
+            MakeCell(
+                temporary: [OverrideChild("REFR", MasterRefId, captured)],
+                worldspaceFormId: 0x000DA726),
+            configureIndex: index =>
+            {
+                index.ChildLocations[MasterRefId] = new MasterChildLocation(0x000FFFFF, 9, "REFR");
+                index.RefToCell[MasterRefId] = 0x000FFFFF;
+            },
+            extraMaster: ("REFR", MasterRefId));
+
+        var verdict = cells[CellId].RefDecisions[MasterRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Emit, verdict.Verdict);
+        Assert.Equal(9, verdict.TargetGroupType);
+        Assert.True(verdict.MarksMasterCovered);
+        Assert.Equal("refr.cross-cell-move", verdict.AuxStatCode);
+        Assert.True(cells[CellId].Emits);
+    }
+
+    [Fact]
+    public void CrossCell_Move_Applies_Proto_Enable_State()
+    {
+        // Master parks the moved ref disabled; the proto capture has it live — the move
+        // must carry the proto state or nothing changes in-game.
+        var captured = Ref(MasterRefId, MasterStatBaseId);
+        var cells = Apply(
+            MakeCell(temporary: [OverrideChild("REFR", MasterRefId, captured)]),
+            configureIndex: index =>
+            {
+                index.ChildLocations[MasterRefId] = new MasterChildLocation(0x000FFFFF, 9, "REFR");
+                index.RefToCell[MasterRefId] = 0x000FFFFF;
+            },
+            extraMaster: ("REFR", MasterRefId),
+            extraMasterFlags: 0x00000800);
+
+        var verdict = cells[CellId].RefDecisions[MasterRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Emit, verdict.Verdict);
+        Assert.False(verdict.OverrideInitiallyDisabled);
+    }
+
+    [Fact]
+    public void Foreign_Parent_Override_In_New_Worldspace_Cell_Still_Drops()
+    {
+        // NEW-worldspace capture cells keep the drop — retail records stay untouched there
+        // (doors clone as fresh NEW refs via OverrideDoorCloning instead).
+        var captured = Ref(MasterRefId, MasterStatBaseId);
+        var cells = Apply(
+            MakeCell(
+                temporary: [OverrideChild("REFR", MasterRefId, captured)],
+                worldspaceFormId: 0x01000FFF,
+                masterAnchored: false),
+            configureIndex: index =>
+            {
+                index.ChildLocations[MasterRefId] = new MasterChildLocation(0x000FFFFF, 9, "REFR");
+                index.RefToCell[MasterRefId] = 0x000FFFFF;
+            },
+            extraMaster: ("REFR", MasterRefId));
+
+        var verdict = cells[CellId].RefDecisions[MasterRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Drop, verdict.Verdict);
+        Assert.Equal("refr.parent-cell-mismatch", verdict.DropReason);
+    }
+
+    [Fact]
+    public void Home_Cell_Capture_Beats_CrossCell_Move()
+    {
+        const uint homeCellId = 0x000ABD00;
+        var captured = Ref(MasterRefId, MasterStatBaseId);
+        var foreignCell = MakeCell(temporary: [OverrideChild("REFR", MasterRefId, captured)]);
+        var homeCell = MakeCell(
+            temporary: [OverrideChild("REFR", MasterRefId, captured)], cellFormId: homeCellId);
+
+        var cells = ApplyCells(
+            [foreignCell, homeCell],
+            configureIndex: index =>
+            {
+                index.ChildLocations[MasterRefId] = new MasterChildLocation(homeCellId, 9, "REFR");
+                index.RefToCell[MasterRefId] = homeCellId;
+            },
+            extraMasters: [("REFR", MasterRefId, 0u)]);
+
+        // The home cell's own capture wins the FormID even though the foreign cell sorts
+        // first; the foreign copy is a duplicate capture of the same ref.
+        Assert.Equal(PlacedRefEmitVerdict.Emit, cells[homeCellId].RefDecisions[MasterRefId].Verdict);
+        Assert.Null(cells[homeCellId].RefDecisions[MasterRefId].AuxStatCode);
+        var foreignVerdict = cells[CellId].RefDecisions[MasterRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Drop, foreignVerdict.Verdict);
+        Assert.Equal("refr.cross-cell-duplicate", foreignVerdict.DropReason);
+    }
+
+    [Fact]
+    public void CrossCell_Move_Duplicate_Capture_First_Cell_Claims()
+    {
+        const uint otherCellId = 0x000ABD00; // Sorts after CellId → CellId claims first.
+        var captured = Ref(MasterRefId, MasterStatBaseId);
+        var cellA = MakeCell(temporary: [OverrideChild("REFR", MasterRefId, captured)]);
+        var cellB = MakeCell(
+            temporary: [OverrideChild("REFR", MasterRefId, captured)], cellFormId: otherCellId);
+
+        var cells = ApplyCells(
+            [cellB, cellA],
+            configureIndex: index =>
+            {
+                index.ChildLocations[MasterRefId] = new MasterChildLocation(0x000FFFFF, 9, "REFR");
+                index.RefToCell[MasterRefId] = 0x000FFFFF;
+            },
+            extraMasters: [("REFR", MasterRefId, 0u)]);
+
+        Assert.Equal(PlacedRefEmitVerdict.Emit, cells[CellId].RefDecisions[MasterRefId].Verdict);
+        var loser = cells[otherCellId].RefDecisions[MasterRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Drop, loser.Verdict);
+        Assert.Equal("refr.cross-cell-duplicate", loser.DropReason);
+    }
+
+    [Fact]
     public void Reparented_Actor_Override_Applies_Proto_Enable_State()
     {
         // Master parks the cut NPC disabled (header 0x800); the proto capture has her live.
@@ -450,6 +571,36 @@ public sealed class CellChildVerdictPlannerTests
     }
 
     [Fact]
+    public void Gate_Land_Only_Master_Cell_Emits()
+    {
+        // Legacy hasCapturedTerrain parity: a master exterior cell whose only captured
+        // change is terrain must not be ITM-suppressed — the LAND override IS the content.
+        var landPlan = new RecordPlan
+        {
+            Type = "LAND",
+            Disposition = RecordDisposition.Override,
+            FormId = 0x000AB001,
+            Model = new CellLandDecision
+            {
+                CellSourceFormId = CellId,
+                Heightmap = new LandHeightmap { HeightDeltas = new sbyte[33 * 33] },
+                HeightSource = CellLandHeightSource.CapturedHeightmap,
+                MasterLandFormId = 0x000AB001,
+            },
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+        };
+
+        var cells = Apply(MakeCell(temporary: [landPlan], worldspaceFormId: 0x000DA726));
+
+        var plan = cells[CellId];
+        Assert.True(plan.Emits);
+        Assert.Null(plan.SuppressReason);
+        Assert.False(plan.NavmOnlySuppressed);
+    }
+
+    [Fact]
     public void Cell_Without_Planned_Mode_Is_Left_Untouched()
     {
         var cells = Apply(MakeCell(
@@ -469,16 +620,35 @@ public sealed class CellChildVerdictPlannerTests
         (string Type, uint FormId)? extraMaster = null,
         uint extraMasterFlags = 0)
     {
+        return ApplyCells(
+            [cellPlan], configureIndex,
+            extraMaster is { } extra ? [(extra.Type, extra.FormId, extraMasterFlags)] : []);
+    }
+
+    private static ImmutableDictionary<uint, CellPlan> ApplyCells(
+        CellPlan[] cellPlans,
+        Action<MasterRecordIndex>? configureIndex = null,
+        (string Type, uint FormId, uint Flags)[]? extraMasters = null)
+    {
         var masterByFormId = new Dictionary<uint, ParsedMainRecord>
         {
-            [CellId] = MakeMasterRecord("CELL", CellId),
             [MasterStatBaseId] = MakeMasterRecord("STAT", MasterStatBaseId),
             [MasterNpcBaseId] = MakeMasterRecord("NPC_", MasterNpcBaseId),
             [MasterCreatureBaseId] = MakeMasterRecord("CREA", MasterCreatureBaseId),
         };
-        if (extraMaster is { } extra)
+        var cells = ImmutableDictionary.CreateBuilder<uint, CellPlan>();
+        foreach (var cellPlan in cellPlans)
         {
-            masterByFormId[extra.FormId] = MakeMasterRecord(extra.Type, extra.FormId, extraMasterFlags);
+            cells.Add(cellPlan.CellFormId, cellPlan);
+            if (cellPlan.CellRecordPlan.Master is not null)
+            {
+                masterByFormId[cellPlan.CellFormId] = MakeMasterRecord("CELL", cellPlan.CellFormId);
+            }
+        }
+
+        foreach (var (type, formId, flags) in extraMasters ?? [])
+        {
+            masterByFormId[formId] = MakeMasterRecord(type, formId, flags);
         }
 
         var index = new MasterRecordIndex
@@ -499,7 +669,7 @@ public sealed class CellChildVerdictPlannerTests
         configureIndex?.Invoke(index);
 
         return CellChildVerdictPlanner.Apply(
-            ImmutableDictionary<uint, CellPlan>.Empty.Add(CellId, cellPlan),
+            cells.ToImmutable(),
             masterByFormId,
             ImmutableDictionary<uint, uint>.Empty,
             masterByFormId.Keys.ToImmutableHashSet(),
@@ -509,27 +679,29 @@ public sealed class CellChildVerdictPlannerTests
     private static CellPlan MakeCell(
         RecordPlan[]? temporary = null,
         CellMergeMode? mode = CellMergeMode.LoadedReplacement,
-        uint? worldspaceFormId = null)
+        uint? worldspaceFormId = null,
+        uint cellFormId = CellId,
+        bool masterAnchored = true)
     {
-        var masterCell = MakeMasterRecord("CELL", CellId);
-        var dmpCell = new CellRecord { FormId = CellId };
+        var masterCell = MakeMasterRecord("CELL", cellFormId);
+        var dmpCell = new CellRecord { FormId = cellFormId };
         return new CellPlan
         {
-            CellFormId = CellId,
+            CellFormId = cellFormId,
             CellRecordPlan = new RecordPlan
             {
                 Type = "CELL",
-                Disposition = RecordDisposition.Override,
-                FormId = CellId,
+                Disposition = masterAnchored ? RecordDisposition.Override : RecordDisposition.New,
+                FormId = cellFormId,
                 Model = dmpCell,
-                Master = masterCell,
+                Master = masterAnchored ? masterCell : null,
                 References = ImmutableArray<ResolvedRef>.Empty,
                 ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
                 Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
             },
             Context = new PcEsmCellContext
             {
-                CellFormId = CellId,
+                CellFormId = cellFormId,
                 IsInterior = worldspaceFormId is null,
                 WorldspaceFormId = worldspaceFormId,
                 BlockGroupType = worldspaceFormId is null ? 2 : 4,

@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
@@ -558,29 +559,124 @@ public sealed class CellLandPlannerTests
     }
 
     [Fact]
-    public void Master_Override_Interior_And_Persistent_Cell_Never_Get_New_Land()
+    public void Interior_And_Persistent_Cells_Never_Get_Land()
     {
-        var masterOverride = Exterior() with { Heightmap = Heightmap(1) };
         var interior = new CellRecord
         {
             FormId = 0x0010B903,
             Flags = 0x01,
-            Heightmap = Heightmap(2),
+            Heightmap = Heightmap(2, 0x0010B903),
         };
         var persistent = Exterior(0x0010B904) with
         {
             IsPersistentCell = true,
-            Heightmap = Heightmap(3),
+            Heightmap = Heightmap(3, 0x0010B904),
+        };
+        var interiorOverride = new CellRecord
+        {
+            FormId = 0x000DDF10,
+            Flags = 0x01,
+            Heightmap = Heightmap(1, 0x000DDF10),
         };
 
         var result = CellLandPlanner.DecideAll(
             [
-                Entry(masterOverride, SourceKind.DmpOverride),
                 Entry(interior, SourceKind.DmpNew),
                 Entry(persistent, SourceKind.DmpNew),
+                OverrideEntry(interiorOverride, isInterior: true),
             ]);
 
         Assert.Empty(result.DecisionsByCellSourceFormId);
+    }
+
+    [Fact]
+    public void Master_Override_Complete_Capture_Overrides_Master_Land()
+    {
+        var captured = Heightmap(4, MasterCellId);
+        var cell = Exterior(MasterCellId) with { CapturedLandHeightmap = captured };
+        var masterVclr = Enumerable.Repeat((byte)200, 33 * 33 * 3).ToArray();
+
+        var result = CellLandPlanner.DecideAll(
+            [OverrideEntry(cell)],
+            new Dictionary<uint, ParsedMainRecord>
+            {
+                [MasterLandId] = MasterLand(MasterLandId, 3, masterVclr),
+            },
+            new Dictionary<uint, List<uint>> { [MasterCellId] = [MasterLandId] });
+
+        var decision = Assert.Single(result.DecisionsByCellSourceFormId.Values);
+        Assert.Same(captured, decision.Heightmap);
+        Assert.Equal(MasterLandId, decision.MasterLandFormId);
+        Assert.NotNull(decision.VisualData);
+        Assert.Equal(masterVclr, decision.VisualData!.VertexColors);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void Master_Override_Flat_Capture_Rejected_Against_Sculpted_Master()
+    {
+        var cell = Exterior(MasterCellId) with
+        {
+            CapturedLandHeightmap = Heightmap(0, MasterCellId),
+        };
+
+        var result = CellLandPlanner.DecideAll(
+            [OverrideEntry(cell)],
+            new Dictionary<uint, ParsedMainRecord> { [MasterLandId] = MasterLand(MasterLandId, 5) },
+            new Dictionary<uint, List<uint>> { [MasterCellId] = [MasterLandId] });
+
+        Assert.Empty(result.DecisionsByCellSourceFormId);
+        Assert.Equal("land.flat-rejected", Assert.Single(result.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void Master_Override_Without_Master_Land_Plans_New_Land()
+    {
+        var cell = Exterior(MasterCellId) with
+        {
+            CapturedLandHeightmap = Heightmap(4, MasterCellId),
+        };
+
+        var result = CellLandPlanner.DecideAll([OverrideEntry(cell)]);
+
+        var decision = Assert.Single(result.DecisionsByCellSourceFormId.Values);
+        Assert.Null(decision.MasterLandFormId);
+    }
+
+    [Fact]
+    public void Master_Override_Incomplete_Capture_Does_Not_Override()
+    {
+        var cell = Exterior(MasterCellId) with { RuntimeTerrainMesh = PartialRuntimeMesh() with
+        {
+            SourceParentCellFormId = MasterCellId,
+        } };
+
+        var result = CellLandPlanner.DecideAll(
+            [OverrideEntry(cell)],
+            new Dictionary<uint, ParsedMainRecord> { [MasterLandId] = MasterLand(MasterLandId, 5) },
+            new Dictionary<uint, List<uint>> { [MasterCellId] = [MasterLandId] });
+
+        Assert.Empty(result.DecisionsByCellSourceFormId);
+        Assert.Equal("land.runtime-mesh-not-complete", Assert.Single(result.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void CoordPaired_Override_Keys_Decision_On_Master_Cell_FormId()
+    {
+        var protoCell = Exterior(0x01001670) with
+        {
+            CapturedLandHeightmap = Heightmap(4, 0x01001670),
+        };
+
+        var result = CellLandPlanner.DecideAll(
+            [OverrideEntry(protoCell, cellFormId: MasterCellId)],
+            new Dictionary<uint, ParsedMainRecord> { [MasterLandId] = MasterLand(MasterLandId, 3) },
+            new Dictionary<uint, List<uint>> { [MasterCellId] = [MasterLandId] });
+
+        var (key, decision) = Assert.Single(result.DecisionsByCellSourceFormId);
+        Assert.Equal(MasterCellId, key);
+        Assert.Equal(protoCell.FormId, decision.CellSourceFormId);
+        Assert.Equal(MasterLandId, decision.MasterLandFormId);
     }
 
     [Fact]
@@ -620,6 +716,9 @@ public sealed class CellLandPlannerTests
         Assert.Equal(["LAND", "NAVM", "REFR"], plan.TemporaryChildren.Select(child => child.Type));
     }
 
+    private const uint MasterCellId = 0x000DDF1C;
+    private const uint MasterLandId = 0x000ABCDE;
+
     private static CellRecord Exterior(uint formId = 0x0010B901) => new()
     {
         FormId = formId,
@@ -634,6 +733,61 @@ public sealed class CellLandPlannerTests
         Source = source,
         DmpModel = cell,
     };
+
+    private static CellCatalogEntry OverrideEntry(
+        CellRecord cell,
+        bool isInterior = false,
+        uint? cellFormId = null) => new()
+    {
+        CellFormId = cellFormId ?? cell.FormId,
+        Source = SourceKind.DmpOverride,
+        DmpModel = cell,
+        MasterContext = new PcEsmCellContext
+        {
+            CellFormId = cellFormId ?? cell.FormId,
+            IsInterior = isInterior,
+            WorldspaceFormId = isInterior ? null : 0x000DA726u,
+            BlockGroupType = isInterior ? 2 : 4,
+            SubblockGroupType = isInterior ? 3 : 5,
+            BlockLabel = new byte[4],
+            SubblockLabel = new byte[4],
+        },
+    };
+
+    private static ParsedMainRecord MasterLand(uint formId, sbyte delta, byte[]? vclr = null)
+    {
+        var vhgt = new byte[1096];
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(vhgt.AsSpan(0, 4), 50f);
+        for (var i = 0; i < 1089; i++)
+        {
+            vhgt[4 + i] = (byte)delta;
+        }
+
+        var subrecords = new List<ParsedSubrecord>
+        {
+            new() { Signature = "VHGT", Data = vhgt },
+        };
+        if (vclr is not null)
+        {
+            subrecords.Add(new ParsedSubrecord { Signature = "VCLR", Data = vclr });
+        }
+
+        return new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
+            {
+                Signature = "LAND",
+                DataSize = 0,
+                Flags = 0,
+                FormId = formId,
+                Timestamp = 0,
+                VcsInfo = 0,
+                Version = 15,
+            },
+            Offset = 0,
+            Subrecords = subrecords,
+        };
+    }
 
     private static LandHeightmap Heightmap(
         sbyte value,
