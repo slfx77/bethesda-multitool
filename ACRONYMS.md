@@ -23,6 +23,8 @@ lives in the code.
 | **XMA**        | Xbox 360 audio codec.                                                                                     |
 | **LIP**        | Lip-sync data (drives mouth animation).                                                                   |
 | **GLB / glTF** | Khronos 3D model interchange format that `export`/`render` emit.                                          |
+| **FOS**        | Fallout save-game file (the container the `save` commands decode).                                        |
+| **STFS**       | Secure Transacted File System — the Xbox 360 packaged-content format wrapping console saves.              |
 
 ## ESM record & subrecord codes
 
@@ -40,7 +42,18 @@ that recur in comments):
 | **OFST**               | Offset table inside WRLD records (cell streaming layout).                                          |
 | **TOFT**               | An Xbox 360-only streaming-cache region.                                                           |
 | **FormID**             | 32-bit record identifier (load-order byte + 24-bit index).                                         |
+| **EDID**               | Editor ID — a record's human-readable identifier subrecord (e.g. `VDialogueDocMitchell`).          |
+| **SCDA / SCTX**        | Compiled script bytecode / the script's source text.                                               |
+| **SCRO / SCRV**        | Script reference (a FormID operand) / script local-variable reference.                             |
+| **CTDA**               | Condition data — the per-record condition entries (function, operator, operands).                  |
 | **HEDR / TES4**        | Plugin header record and its version/author/master-list data.                                      |
+
+## Bethesda tooling
+
+| Term      | Meaning                                                                                       |
+| --------- | ---------------------------------------------------------------------------------------------- |
+| **GECK**  | Garden of Eden Creation Kit — Bethesda's official Fallout 3 / New Vegas editor; "GECK-style" output mirrors its report/browser formats. |
+| **xEdit** | Community plugin editor (TES5Edit/FNVEdit family); its `wbDefinitions` are the authoritative record-layout reference this project generates schemas from. |
 
 ## Xbox 360 reverse engineering
 
@@ -53,7 +66,7 @@ that recur in comments):
 | **RTTI**         | Run-Time Type Information — C++ vtable/type metadata scanned to identify runtime structs. |
 | **cvdump**       | Microsoft tool that dumps symbol/function addresses from a PDB.                           |
 
-## Renderer / GPU (Direct3D 12)
+## Renderer / GPU (Direct3D 11/12)
 
 | Term        | Meaning                                                                                |
 | ----------- | -------------------------------------------------------------------------------------- |

@@ -260,34 +260,7 @@ From PDB analysis, these structures have `Endian()` methods and map to ESM subre
 
 **Full list**: The complete set of PDB structures is extracted on demand by `tools/PdbAnalyzer` (the `FindEsmStructures` command) from the debug PDB, rather than checked in as a static `.cs` file.
 
-**Key Discovery**: The `FORM` struct (and its header siblings) carry a built-in `Endian()` method, confirming the game does endian conversion at the struct level.
-
-### CHUNK Structure (6 bytes)
-
-The subrecord header structure, found at PDB type 0x14dbc:
-
-```c
-struct CHUNK {
-    uint32_t chunk;             // Offset 0: Subrecord type (signature as uint32)
-    uint16_t length;            // Offset 4: Data size
-
-    void Endian();              // Built-in endian conversion method!
-};
-```
-
-### FILE_HEADER Structure (12 bytes)
-
-The TES4 header data (HEDR subrecord), found at PDB type 0x1ed43:
-
-```c
-struct FILE_HEADER {
-    float    fVersion;          // Offset 0: ESM version (1.32 Xbox, 1.34 PC)
-    uint32_t iFormCount;        // Offset 4: Total form count
-    uint32_t iNextFormID;       // Offset 8: Next available FormID
-
-    void Endian();              // Built-in endian conversion method!
-};
-```
+**Key Discovery**: The `FORM` struct (and its header siblings, `CHUNK` and `FILE_HEADER`, documented above) carry a built-in `Endian()` method, confirming the game does endian conversion at the struct level.
 
 ### TESFile Class (1068 bytes)
 
@@ -334,12 +307,10 @@ class TESFile {
 | Xbox 360 ESM   | `Sample/ESM/360_final/`                                          | Input for conversion       |
 | PC ESM         | `Sample/ESM/pc_final/`                                           | Reference for verification |
 | Xbox 360 proto | `Sample/ESM/360_proto/`                                          | Earlier Xbox build         |
-| Debug PDB      | `Sample/Fallout New Vegas (July 21, 2010)/FalloutNV/Fallout.pdb` | Structure definitions      |
+| Debug PDB      | `Sample/Full_Builds/Fallout New Vegas (July 21, 2010)/FalloutNV/Fallout.pdb` | Structure definitions |
 
 ### Related Documentation
 
-- [Memory_Dump_Research.md](Memory_Dump_Research.md) - Memory dump analysis
-- [Architecture.md](Architecture.md) - Project architecture overview
 - [UESP ESM Format](https://en.uesp.net/wiki/Skyrim_Mod:Mod_File_Format) - Community documentation (Skyrim, similar format)
 - [FO3/FNV ESM Format](https://en.uesp.net/wiki/Tes5Mod:Mod_File_Format) - Fallout 3/NV specifics
 
@@ -352,7 +323,7 @@ class TESFile {
 
 ### PDB-Verified Subrecord Layouts
 
-The following subrecord schemas have been cross-referenced against the Fallout New Vegas PDB debug symbols (`Sample/PDB/Fallout_Debug/types_full.txt`). These are authoritative — they come from the actual game engine source, not community reverse-engineering.
+The following subrecord schemas have been cross-referenced against the Fallout New Vegas PDB debug symbols (`Sample/PDB/Proto/Fallout_Debug/types_full.txt`). These are authoritative — they come from the actual game engine source, not community reverse-engineering.
 
 #### ACTOR_BASE_DATA (ACBS - 24 bytes)
 
@@ -426,18 +397,3 @@ PDB struct `BGSProjectileData` (type 0x867895). Confirms `iFlags` at offset 0 is
 | EXPL DATA | BGSExplosionData      | 52   | Perfect match                                     |
 | RACE DATA | RACE_DATA             | 36   | SkillBoost[7] = 7×(char,char)                     |
 | CLAS DATA | CLASS_DATA            | 28   | cClassFlags is 1 byte + 3 pad (swapped as UInt32) |
-
-### Version History
-
-| Date       | Change                                                                   |
-| ---------- | ------------------------------------------------------------------------ |
-| 2026-02-09 | PDB cross-reference: verified ACBS, AIDT, EFIT, PROJ, WEAP, EXPL, etc.   |
-| 2026-02-09 | Fixed AIDT schema (offsets 12-15: four uint8s, not one int32)            |
-| 2026-02-09 | Fixed EFIT Magnitude type (Int32, not Float) per PDB                     |
-| 2026-02-09 | Fixed FACT DATA (UInt32 flags, not ByteArray)                            |
-| 2026-01-19 | Added PDB structure definitions for OBJ_WEAP, NavMesh, etc.              |
-| 2026-01-19 | Documented TOFT streaming cache and INFO record duplication              |
-| 2026-01-XX | Initial document creation from diff analysis                             |
-| 2026-01-XX | Added structured pattern detection to diff tool                          |
-| 2026-01-XX | Comprehensive analysis: NPC\_, WEAP, AMMO, ARMO, CREA, ALCH, ENCH, PERK  |
-| 2026-01-XX | Documented DATA variants by record type, CTDA patterns, OBND, ENIT, etc. |

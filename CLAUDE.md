@@ -36,7 +36,6 @@ list <file> [-t TYPE] [-f FILTER]      # Browse reconstructed records
 show <file> <formid-or-editorid>       # Inspect record detail (NPC, quest, etc.)
 diff <fileA> <fileB> [-t TYPE] [-f ID] # Compare records between any two files
 analyze <file>                         # Analyze memory dump structure
-compare <fileA> <fileB>                # Format-agnostic comparison
 world <file>                           # World/terrain analysis
 
 # ESM commands
@@ -430,27 +429,37 @@ dotnet build -c Release
 dotnet build -c Release -p:BuildTestsOnly=true -p:SkipAnalyzers=true
 
 # Run tests — fast (CLI-only build, no analyzers, ~1 min total)
-dotnet test -p:CollectCoverage=false -p:BuildTestsOnly=true -p:SkipAnalyzers=true
+dotnet test -p:BuildTestsOnly=true -p:SkipAnalyzers=true
 
 # Run tests — full build (both TFMs, with analyzers)
-dotnet test -p:CollectCoverage=false
+dotnet test
+
+# Run a subset (MTP runner args go after --; also works on the built exe directly)
+dotnet test -p:BuildTestsOnly=true -p:SkipAnalyzers=true -- --filter-class Full.Class.Name
+tests/BethesdaMultitool.Tests/bin/Release/net10.0/BethesdaMultitool.Tests.exe --filter-class Full.Class.Name
+
+# TRX report (what CI uses)
+dotnet test --project tests/BethesdaMultitool.Tests/BethesdaMultitool.Tests.csproj -c Release --no-build -- --report-xunit-trx --report-xunit-trx-filename test-results.trx --results-directory ./TestResults
 ```
 
 ### Build Flags
 
 - `BuildTestsOnly=true` — Skips `net10.0-windows` TFM (WinUI 3 GUI). Saves ~2 min. Safe for test runs since the test project only targets `net10.0`. Also skips the standalone WinUI app projects (`BethesdaAudioTranscriber`, `BethesdaRendererProfiler`, `BethesdaMap2DProfiler`) — they depend on the dropped GUI TFM, so each no-ops its `Build` under this flag via `eng/SkipBuildInTestsOnly.targets` (wired in through a `BuildTestsOnly`-gated `CustomAfterMicrosoftCommonTargets`). Build them with a normal (no-flag) build.
 - `SkipAnalyzers=true` — Disables SonarAnalyzer + Roslynator during build. Saves 5-15s. Use for fast iteration; omit for CI/lint passes.
-- `CollectCoverage=false` — Required: coverage collection hangs without this flag.
 
 ### Test Discipline: Synthetic Data Only
 
-Tests use synthetic byte fixtures by default. Tests that require real game data (retail masters, BSAs, dumps) are OPT-IN behind `RUN_BUCKET_B=1` via `BucketBTestGuard.SkipUnlessEnabled()` — never auto-enabled by detecting installed games. The default suite must stay fast (~1-2 min) everywhere.
+Tests use synthetic byte fixtures by default. Tests that require real game data (retail masters, BSAs, dumps) are OPT-IN behind `RUN_BUCKET_B=1` via `BucketBTestGuard.SkipUnlessEnabled()` — never auto-enabled by detecting installed games. The default suite must stay fast (~1-2 min) everywhere. Two more opt-in gates follow the same pattern: `RUN_GPU_TESTS=1` (`GpuTestGuard`, tests that create D3D devices) and `RUN_SHADER_COMPILE_TESTS=1` (`ShaderCompileTestGuard`, tests that invoke the real D3D shader compiler).
 
-Every real-asset test class additionally MUST carry `[Collection(SequentialIntegrationGroup.Name)]` and load masters via `RealAssetEsmCache.LoadAsync` (never dispose the returned result — the cache owns it). Without this, xUnit runs the multi-GB parses in parallel and the suite thrashes RAM until it never finishes. A full `RUN_BUCKET_B=1` sweep takes ~10 min and is for when the relevant code (semantic loader, schema decode, profiles) changes.
+Every real-asset test class additionally MUST carry `[Collection(SequentialIntegrationGroup.Name)]` and load masters via `RealAssetEsmCache.LoadAsync` (never dispose the returned result — the cache owns it). Without this, xUnit runs the multi-GB parses in parallel and the suite thrashes RAM until it never finishes. A full `RUN_BUCKET_B=1` sweep takes ~7 min and is for when the relevant code (semantic loader, schema decode, profiles) changes.
+
+### Code Coverage
+
+Opt-in only, via `tools/scripts/coverage.ps1` (coverlet static IL instrumentation, scoped to `[BethesdaMultitool]*`; full default suite ≈ 2 min; baseline 2026-07-20: 64% line). Coverage never runs in the default test path. Do NOT use the Microsoft dynamic-instrumentation engine — VS coverage, `dotnet-coverage`, the MTP CodeCoverage extension, and VSTest `--collect:"XPlat Code Coverage"` all deadlock instrumenting `BethesdaMultitool.dll` (collector burns 200-300s CPU to ~8 GB with the test host frozen; reproduced 2026-07-19 on a single test class). The old `-p:CollectCoverage=false` flag is gone (it bound to nothing).
 
 ### CI/CD
 
-CI: `.github/workflows/build-and-test.yml` — builds Release + runs tests with code coverage on Windows, then cross-platform CLI build on Ubuntu.
+CI: `.github/workflows/build-and-test.yml` — builds Release + runs tests (MTP runner args after `--`; TRX artifact, no coverage) on Windows, then cross-platform CLI build on Ubuntu.
 
 ## Accessibility
 

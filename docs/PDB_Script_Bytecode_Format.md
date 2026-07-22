@@ -6,10 +6,10 @@ All data sourced from PDB symbol dumps and game executables. Verified 2026-02-06
 
 | File                | Path                                                                     | Notes                                                    |
 | ------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------- |
-| PDB types (debug)   | `Sample/PDB/Fallout_Debug/types_full.txt`                                | Primary source for struct/enum definitions               |
-| PDB globals (debug) | `Sample/PDB/Fallout_Debug/globals.txt`                                   | Global variable addresses and function offsets           |
-| Final build exe     | `Sample/Fallout New Vegas (Aug 22, 2010)/Diskuild_1.0.0.252/Fallout.exe` | Xbox 360 PowerPC PE (machine 0x1F2), XEX base 0x82000000 |
-| Prototype exe       | `Sample/Fallout New Vegas (July 21, 2010)/FalloutNV/Fallout.exe`         | Earlier prototype (2 param differences vs final)         |
+| PDB types (debug)   | `Sample/PDB/Proto/Fallout_Debug/types_full.txt`                                      | Primary source for struct/enum definitions               |
+| PDB globals (debug) | `Sample/PDB/Proto/Fallout_Debug/globals.txt`                                         | Global variable addresses and function offsets           |
+| Final build exe     | `Sample/Full_Builds/Fallout New Vegas (Aug 22, 2010)/Diskuild_1.0.0.252/Fallout.exe` | Xbox 360 PowerPC PE (machine 0x1F2), XEX base 0x82000000 |
+| Prototype exe       | `Sample/Full_Builds/Fallout New Vegas (July 21, 2010)/FalloutNV/Fallout.exe`         | Earlier prototype (2 param differences vs final)         |
 
 ### Executable Layout (Aug 22, 2010 Final Build)
 

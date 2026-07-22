@@ -29,13 +29,15 @@ A .NET 10.0 toolkit for analyzing and converting Bethesda game data across The E
 | `esm` | Analyze ESM/ESP plugins and convert Xbox 360 → PC (GECK compatible) |
 | `convert-nif` | Convert Xbox 360 NIF meshes to PC format |
 | `convert-ddx` | Convert DDX textures to DDS |
-| `bsa` / `ba2` | Inspect and extract BSA / BA2 archives |
+| `archive` | Inspect, extract, and convert BSA / BA2 archives (`bsa` and `ba2` are deprecated aliases) |
 | `dialogue` | Browse and export NPC dialogue trees |
+| `papyrus` | Inspect, decompile, and extract Papyrus (`.pex`) compiled scripts |
 | `world` | Explore worldspace data, heightmaps, and placed objects |
 | `render` / `export` | Render NIF/NPC models to PNG, or export to GLB |
 | `save` | Inspect Fallout 3/NV save game files |
 | `dmp` | Memory dump analysis (modules, regions, coverage, cross-build compare, …) plus `dmp to-esm` — rebuild a loadable ESM/ESP plugin from a dump |
 | `search` / `stats` / `list` / `show` / `diff` | Format-agnostic inspection of any ESM/ESP/DMP file |
+| `report` | Validate generated report fields and cross-check report consistency across builds |
 | `version-track` | Track game data changes across development builds |
 
 ### Audio Transcriber (Windows)
@@ -213,8 +215,8 @@ dotnet run --project tools/NifAnalyzer -f net10.0 -- info mesh.nif
 # Texture analysis
 dotnet run --project tools/TextureAnalyzer -- info texture.ddx
 
-# BSA file search (main app)
-dotnet run --project src/BethesdaMultitool -f net10.0 -- bsa find archive.bsa "*.nif"
+# Archive file search (main app)
+dotnet run --project src/BethesdaMultitool -f net10.0 -- archive find archive.bsa "*.nif"
 ```
 
 ## Project Structure
@@ -251,6 +253,8 @@ tools/
 ├── RttiScanner/             # RTTI / operator-new extraction
 ├── TerrainAnalyzer/         # Terrain/heightmap analysis
 ├── SignatureScanner/        # File signature scanning
+├── EsmSchemaGen/            # Per-game record schema generation from xEdit definitions
+├── ShaderProbe/             # FNV shaderpackage.sdp extraction and probing
 └── Shared/                  # Shared CLI strings library
 ```
 

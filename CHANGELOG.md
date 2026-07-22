@@ -63,6 +63,7 @@ decompilation added Papyrus.
   back-compat alias), the WinUI converter tab, and internals (`EspAssembler`→`EsmAssembler`,
   `DmpToEspInputs`→`DmpToEsmInputs`). No behavior change from the rename itself.
 - **`runtime-parity-matrix.json` moved** from `docs/` to `tests/BethesdaMultitool.Tests/Resources/`. It's a load-bearing test fixture (consumed by `RuntimeParityMatrixTests`), not documentation.
+- **Documentation & comment pass**: README CLI table updated (`archive` documented as canonical with `bsa`/`ba2` as deprecated aliases; `papyrus` and `report` added), ACRONYMS expanded (GECK, xEdit, EDID, SCDA/SCTX/SCRO/SCRV, CTDA, FOS/STFS), format docs' sample-path citations corrected, and source comments scrubbed of stale references and development-history narration.
 
 ### Removed
 
@@ -70,6 +71,8 @@ decompilation added Papyrus.
 - **`docs/file-size-exemptions.md`**: a stale, unenforced list of intentionally-large files (no test consumed it; the `LineCountInvariantTests` ceiling is enforced in code).
 - **In-repo memory notes**: removed `memory/bsa_mixed_archive_layout.md`, `memory/bsa_split_2gb_boundary.md`, `memory/dialogue_topic_link_remap.md` — investigation notes, not format docs.
 - `MigrationDeltaMarkdownSyncTests.cs` — paired with the deleted `docs/planner/migration-deltas.md`; the C# `MigrationDeltaRegistry` is now the sole source of truth for delta entries.
+- **`CompareCommand.cs`** (top-level `compare`) — orphaned since the CLI reorganization (never registered) and superseded by `diff --semantic`, EsmAnalyzer `compare cells`, and `dmp coverage`.
+- **`docs/fnv_backlog_validation.md`** — internal validation ledger whose evidence links target untracked `TestOutput/`; moved to the untracked backlog notes.
 
 ## [3.0.0-alpha.1] - 2026-06-02
 
@@ -95,9 +98,9 @@ First alpha release of the 3.x line. The headline additions are the **DMP→ESP 
 
 #### ESP Planner (two-pass pipeline)
 
-- **Tier 0-7**: A from-scratch planner/encoder pipeline that walks DMP + master ESM in a catalog → disposition → reference-resolution → plan-write sequence. Replaces the prior single-pass converter on most record types; gated via `--planner-types` CLI flag. Covers cell-section orchestration (`PlanCellSectionBuilder`, `CellSectionPlanner`), reference walkers for SCPT/PACK/INFO/NPC_/CREA/PERK, and a `MigrationDelta` parity-harness foundation.
+- **Planner pipeline**: A from-scratch planner/encoder pipeline that walks DMP + master ESM in a catalog → disposition → reference-resolution → plan-write sequence. Replaces the prior single-pass converter on most record types; gated via `--planner-types` CLI flag. Covers cell-section orchestration (`PlanCellSectionBuilder`, `CellSectionPlanner`), reference walkers for SCPT/PACK/INFO/NPC_/CREA/PERK, and a `MigrationDelta` parity-harness foundation.
 - **Specialized cell-child encoders**: LAND, NAVM, NAVI emission routed through planner-aware writers.
-- **PGRE encoder + planner wrapper**: Tier 7a primitive for emitting placed grenade refs through the planner pipeline.
+- **PGRE encoder + planner wrapper**: emits placed grenade refs through the planner pipeline.
 
 #### Runtime readers
 
@@ -130,11 +133,11 @@ First alpha release of the 3.x line. The headline additions are the **DMP→ESP 
 - **Cross-dump comparison pipeline** rewritten in 10 phases as a projection-based streaming pipeline; old `CrossDumpComparisonPipeline` deleted.
 - **`SchemaModelSerializer`** + **`SubrecordSchemaView`** replace the older `SubrecordDataReader.ReadFields` / `HasSchema` pattern (~45 encoder subrecords migrated; parser side migrated 16 handlers).
 - **`SubrecordSchemaRegistry`**: opaque `ByteArray` schema fields replaced with named `UInt8` sequences for diff-friendliness.
-- **Plugin builder v23**: full encoder coverage + validation + merge + nav-mesh emission. Versioned `v8` … `v55` smoke milestones rolled up into the planner pipeline.
+- **Plugin builder**: full encoder coverage + validation + merge + nav-mesh emission; dozens of iterative in-game smoke-test milestones rolled up into the planner pipeline.
 
 ### Fixed
 
-- **SCDA bytecode endian** — script bytecode emitted to PC ESPs was the source's Xbox 360 big-endian bytes unswapped, so every converted quest's scripts dead-loaded. Decimal 7424 in 23K log errors = byte-reversed `ScriptName` opcode 0x001D. Fixed via `ScriptBytecodeEndianConverter` that reuses the decompiler as a structural walker.
+- **SCDA bytecode endian** — script bytecode emitted to PC ESPs was the source's Xbox 360 big-endian bytes unswapped, so every converted quest's scripts dead-loaded (the byte-reversed `ScriptName` opcode flooded the engine log with identical errors). Fixed via `ScriptBytecodeEndianConverter` that reuses the decompiler as a structural walker.
 - **DIAL QSTI remap missing** — `DialEncoder.EncodeNew` wrote QSTI verbatim; new DIALs referenced proto QUST FormIDs causing the engine to filter all their topics out (player only saw GOODBYE for Ulysses). Fixed by `SanitizeDialReferences` (mirrors `SanitizeInfoReferences`).
 - **SCHR canonical layout** — `InfoEncoder` + `ScptEncoder` were emitting SCHR with the runtime `SCRIPT_HEADER` PDB layout, which diverges from the canonical fopdoc 20-byte layout at offsets 0, 12, and 16-19. Result: thousands of `SCRIPTS: Variable ID NNNNNNNN not found` errors. Now emit canonical layout (Padding/RefCount/CompiledSize/VariableCount/Type/Flags).
 - **CellEncoder empty EDID** — empty EDID subrecord was emitted on every cell override; xEdit's `wbCELL` definition requires EDID to be optional and first-when-present. Now skipped when null/empty.
@@ -384,7 +387,9 @@ First alpha release of the 3.x line. The headline additions are the **DMP→ESP 
 - **DDX Conversion**: Xbox 360 DDX textures to standard DDS format
 - **Minidump Parsing**: Extract module information from Xbox 360 minidumps
 
-[Unreleased]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v3.0.0-alpha.1...HEAD
+[3.0.0-alpha.1]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v2.4.0...v3.0.0-alpha.1
+[2.4.0]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v2.2.0-pre1...v2.3.0
 [1.0.0]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v0.2.0-alpha.1...v1.0.0
 [0.2.0-alpha.1]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v0.1.0-alpha.1...v0.2.0-alpha.1

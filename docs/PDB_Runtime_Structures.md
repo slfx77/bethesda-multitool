@@ -4,7 +4,7 @@ Comprehensive documentation of all C++ runtime structures identified from the Fa
 
 **PDB Sources:**
 
-- **Proto Debug PDB:** `Sample/PDB/Fallout_Debug/types_full.txt` (Jul 2010, TESForm = 24 bytes) — used for base object types (NPC, WEAP, etc.)
+- **Proto Debug PDB:** `Sample/PDB/Proto/Fallout_Debug/types_full.txt` (Jul 2010, TESForm = 24 bytes) — used for base object types (NPC, WEAP, etc.)
 - **Final Debug PDB:** `Sample/PDB/Final/Fallout_Debug_Final/types_full.txt` (TESForm = 40 bytes) — used for TESObjectREFR and related types
   **Key Files:** `RuntimeStructReader.cs`, `RecordParser.cs`, `Models/`
 
@@ -154,7 +154,7 @@ The primary non-player character definition. Contains appearance, stats, AI, inv
 | 468        | 484         | ptr         | pCombatStyle     | Combat style (TESCombatStyle\*)      |
 
 **PDB Type:** `0x0E14B` — PDB Size: 492 — Dump Size: 508 (+16 shift)
-**Code:** `RuntimeStructReader.ReadRuntimeNpc()` → `Models/NpcRecord.cs`
+**Code:** `RuntimeStructReader.ReadRuntimeNpc()` → `Models/Records/Character/NpcRecord.cs`
 **Called from:** `RecordParser.ReconstructNpcs()`
 
 #### ACBS (Actor Base Stats) — Embedded at NPC +68
@@ -247,7 +247,7 @@ Weapon definitions with extensive combat data.
 | —          | 584         | ptr           | impactDataSet | Impact data set (BGSImpactDataSet\*) |
 
 **PDB Type:** `0x1FF61` — PDB Size: 908 — Dump Size: 924 (+16 shift)
-**Code:** `RuntimeStructReader.ReadRuntimeWeapon()` → `Models/WeaponRecord.cs`
+**Code:** `RuntimeStructReader.ReadRuntimeWeapon()` → `Models/Records/Item/WeaponRecord.cs`
 
 ### TESObjectARMO (ARMO — FormType 0x1A)
 
