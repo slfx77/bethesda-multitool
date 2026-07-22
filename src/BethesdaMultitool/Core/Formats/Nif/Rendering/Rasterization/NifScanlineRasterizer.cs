@@ -268,7 +268,9 @@ internal static class NifScanlineRasterizer
 
     private static bool CoversSample(float normalizedEdge, bool isTopLeft)
     {
+#pragma warning disable S1244 // top-left fill rule: an exactly-zero edge function marks the on-edge sample; exact comparison intended
         return normalizedEdge > 0f || (normalizedEdge == 0f && isTopLeft);
+#pragma warning restore S1244
     }
 
     private static bool IsTopLeftEdge(
@@ -282,7 +284,9 @@ internal static class NifScanlineRasterizer
         // run left-to-right and left edges run bottom-to-top.
         var dx = (bx - ax) * windingSign;
         var dy = (by - ay) * windingSign;
+#pragma warning disable S1244 // top-left fill rule: an exactly-horizontal edge is the dy == 0 case; exact comparison intended
         return dy < 0f || (dy == 0f && dx > 0f);
+#pragma warning restore S1244
     }
 
     private static void RasterizeTexturedPixel(

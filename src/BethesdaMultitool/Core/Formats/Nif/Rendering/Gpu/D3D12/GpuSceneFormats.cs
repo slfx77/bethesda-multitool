@@ -6,7 +6,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///     Single source of truth for the 3D scene's render-target formats, so every scene PSO
 ///     (<c>ReferencePipelineFactory12</c>, <c>TerrainPipelineFactory12</c>, water, sky, the debug
 ///     overlays) and both scene targets (<see cref="GpuOffscreenSceneTarget12" /> headless +
-///     <see cref="GpuSwapChainSurface12" /> live) agree on the color format. A PSO's
+///     <c>GpuSwapChainSurface12</c> live) agree on the color format. A PSO's
 ///     <c>RenderTargetFormats</c> MUST match the bound RTV's format or draw fails, so this MUST be
 ///     flipped in exactly one place.
 ///     <para>

@@ -27,7 +27,7 @@ internal readonly record struct CollisionWireframeCacheResult<TBuffer>(
 ///     implementation must consume/copy the first <paramref name="count" /> array entries before
 ///     returning; the cache reuses its CPU scratch array on later rebuilds.
 /// </summary>
-internal delegate TBuffer CollisionWireframeUploader<TBuffer>(Vector3[] vertices, int count)
+internal delegate TBuffer CollisionWireframeUploader<out TBuffer>(Vector3[] vertices, int count)
     where TBuffer : class;
 
 /// <summary>

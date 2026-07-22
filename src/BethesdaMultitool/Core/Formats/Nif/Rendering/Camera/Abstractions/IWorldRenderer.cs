@@ -9,9 +9,9 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.Abstractions;
 ///     extra public properties.
 ///     <para>
 ///         WorldView3DControl holds one field per renderer-type, typed as the interface;
-///         instantiation picks either the D3D11 or D3D12 concrete class based on the
-///         <c>FALLOUT_VIEWER_D3D12</c> env var. The render-frame loop iterates / calls
-///         each renderer through its interface — backend-agnostic.
+///         instantiation creates the D3D12 concrete class (the single supported backend).
+///         The render-frame loop iterates / calls each renderer through its interface —
+///         backend-agnostic.
 ///     </para>
 /// </summary>
 internal interface IWorldRenderer : IDisposable

@@ -437,9 +437,11 @@ internal static class NifSpriteRenderer
                     EmissiveR = submesh.AnimatedEmissiveColor?.R ?? 0f,
                     EmissiveG = submesh.AnimatedEmissiveColor?.G ?? 0f,
                     EmissiveB = submesh.AnimatedEmissiveColor?.B ?? 0f,
+#pragma warning disable S1244 // an effect tint of exactly (1,1,1) is the authored no-tint default; exact comparison intended
                     HasEffectTint = submesh.EffectTint.R != 1f ||
                                     submesh.EffectTint.G != 1f ||
                                     submesh.EffectTint.B != 1f,
+#pragma warning restore S1244
                     EffectTintR = submesh.EffectTint.R,
                     EffectTintG = submesh.EffectTint.G,
                     EffectTintB = submesh.EffectTint.B,

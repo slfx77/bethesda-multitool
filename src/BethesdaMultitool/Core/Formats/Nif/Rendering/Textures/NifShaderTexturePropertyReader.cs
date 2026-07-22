@@ -36,7 +36,7 @@ internal static class NifShaderTexturePropertyReader
                 // slots don't convey — e.g. SLSF1_Refraction / SLSF1_Fire_Refraction (heat-haze/vapor planes
                 // that must NOT draw as opaque normal-map "gems"). Best-effort; null when the layout is unknown.
                 TryReadBsLightingShaderFlags(data, nif, propBlock, out var lsFlags1, out var lsFlags2);
-                TryReadBsShaderUvTransform(data, nif, propBlock, hasLeadingShaderType: true,
+                ReadBsShaderUvTransform(data, nif, propBlock, hasLeadingShaderType: true,
                     out var uvOffset, out var uvScale);
 
                 return new NifShaderTextureMetadata
@@ -79,7 +79,7 @@ internal static class NifShaderTexturePropertyReader
                 // Fallout 4+ layouts diverge (external BGEM / CRC flag arrays), so this deliberately
                 // only decodes the Skyrim-family layout.
                 var inline = ReadClassicBsEffectShaderData(data, nif, propBlock);
-                TryReadBsShaderUvTransform(data, nif, propBlock, hasLeadingShaderType: false,
+                ReadBsShaderUvTransform(data, nif, propBlock, hasLeadingShaderType: false,
                     out var uvOffset, out var uvScale);
 
                 return new NifShaderTextureMetadata
@@ -345,7 +345,9 @@ internal static class NifShaderTexturePropertyReader
 
         // All-zero quad = unauthored (the shader would multiply opacity to 0 and hide the shape);
         // NaN/garbage guards the same way. Authored fades always carry a non-zero opacity or angle.
+#pragma warning disable S1244 // an all-zero quad is the serialized "unauthored" sentinel; exact comparison intended
         var authored = (startAngle != 0f || stopAngle != 0f || startOpacity != 0f || stopOpacity != 0f)
+#pragma warning restore S1244
                        && float.IsFinite(startAngle) && float.IsFinite(stopAngle)
                        && float.IsFinite(startOpacity) && float.IsFinite(stopOpacity);
         return authored ? (startAngle, stopAngle, startOpacity, stopOpacity) : null;
@@ -635,7 +637,7 @@ internal static class NifShaderTexturePropertyReader
             float.IsFinite(softFalloffDepth) && softFalloffDepth > 0f ? softFalloffDepth : null);
     }
 
-    private static bool TryReadBsShaderUvTransform(
+    private static void ReadBsShaderUvTransform(
         byte[] data,
         NifInfo nif,
         BlockInfo block,
@@ -647,14 +649,14 @@ internal static class NifShaderTexturePropertyReader
         scale = Vector2.One;
         if (nif.BsVersion < 83 || nif.BsVersion >= 155)
         {
-            return false;
+            return;
         }
 
         var pos = block.DataOffset + (hasLeadingShaderType ? 4 : 0);
         var end = Math.Min(data.Length, block.DataOffset + block.Size);
         if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian) || pos + 24 > end)
         {
-            return false;
+            return;
         }
 
         pos += 8; // Shader Flags 1/2
@@ -669,10 +671,7 @@ internal static class NifShaderTexturePropertyReader
         {
             offset = Vector2.Zero;
             scale = Vector2.One;
-            return false;
         }
-
-        return true;
     }
 
     /// <summary>

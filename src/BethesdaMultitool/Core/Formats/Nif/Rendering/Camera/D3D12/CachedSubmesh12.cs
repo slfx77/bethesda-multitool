@@ -146,12 +146,18 @@ internal sealed class CachedSubmesh12
                 (ClassicParallaxHeightMap is null ? 0 : 1) <= 1,
                 "Specular, classic environment-mask, and classic height maps cannot share TexIndices.z.");
 
+            // .y > 0.5 routes the instanced VS to the leaf-billboard branch; 2 additionally marks
+            // an ALPHA-TESTED leaf card (SPT leaves — the PS boosts test alpha by texture LOD to
+            // undo mip alpha decay; baked particle clouds are blends and stay at 1).
+            var leafBillboardMode = (IsSpeedTreeBranch, IsLeafBillboard) switch
+            {
+                (true, _) => -1f,
+                (false, true) => AlphaTest ? 2f : 1f,
+                _ => 0f,
+            };
             var state = new Vector4(
                 Normal.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ ? 1f : 0f,
-                // .y > 0.5 routes the instanced VS to the leaf-billboard branch; 2 additionally marks
-                // an ALPHA-TESTED leaf card (SPT leaves — the PS boosts test alpha by texture LOD to
-                // undo mip alpha decay; baked particle clouds are blends and stay at 1).
-                IsSpeedTreeBranch ? -1f : IsLeafBillboard ? (AlphaTest ? 2f : 1f) : 0f,
+                leafBillboardMode,
                 // Exact integer flags carried in a float constant: bit 0 = sample TexIndices.z for
                 // the spec mask, bits 1/2 = clamp U/V, bit 3 = TexIndices.w is a Lighting30 glow
                 // map, bit 4 = classic Lighting30 material route, bit 5 = TallGrassShaderProperty,

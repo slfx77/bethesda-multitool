@@ -20,6 +20,14 @@ internal static class ParticleDepthSort
             var distanceOrder = other.DistanceSquared.CompareTo(DistanceSquared);
             return distanceOrder != 0 ? distanceOrder : SourceIndex.CompareTo(other.SourceIndex);
         }
+
+        public static bool operator <(Entry left, Entry right) => left.CompareTo(right) < 0;
+
+        public static bool operator <=(Entry left, Entry right) => left.CompareTo(right) <= 0;
+
+        public static bool operator >(Entry left, Entry right) => left.CompareTo(right) > 0;
+
+        public static bool operator >=(Entry left, Entry right) => left.CompareTo(right) >= 0;
     }
 
     /// <summary>
@@ -29,7 +37,7 @@ internal static class ParticleDepthSort
     /// </summary>
     public static void WriteBackToFrontQuadIndices(
         ReadOnlySpan<Vector3> localCenters,
-        in Matrix4x4 sourceWorld,
+        Matrix4x4 sourceWorld,
         Vector3 cameraPosition,
         Span<Entry> scratch,
         Span<ushort> destination)

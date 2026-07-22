@@ -796,11 +796,6 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
         _captureWindRig.Profile = profile;
     }
 
-    // IWorldRenderer entry point — draws opaque + blended inline (no deferral). Used by the 2D
-    // top-down overlay, which has no water pass.
-    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
-        => Render(viewProj, cylinder, deferBlended: false, cameraForward: -Vector3.UnitZ);
-
     /// <summary>
     ///     Camera pose key for the translation-TOLERANT cull cache — see the
     ///     <c>cullCameraPose</c> parameter docs on the main <c>Render</c> overload.
@@ -882,6 +877,11 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
     private Vector3 _frameCameraPosition;
     private Vector3 _frameRenderOrigin;
     private float _frameSmallPropCutoffSq;
+
+    // IWorldRenderer entry point — draws opaque + blended inline (no deferral). Used by the 2D
+    // top-down overlay, which has no water pass.
+    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
+        => Render(viewProj, cylinder, deferBlended: false, cameraForward: -Vector3.UnitZ);
 
     /// <summary>
     ///     Draws the visible reference submeshes for this frame — opaque always, blended either inline or
@@ -1070,6 +1070,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
         _framesSinceCull++;
         var meshBoundsCurrent = _cullCacheMeshRadiusCount == _meshLocalRadius.Count
                                 || (tolerant && _framesSinceCull < CullStreamingRefreshFrames);
+#pragma warning disable S1244 // cull-cache identity: exact compare of a cached snapshot detects change, not proximity
         var cullCacheValid =
             _cullCacheValid
             && meshBoundsCurrent
@@ -1085,6 +1086,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                   && _cullCacheRadius == cylinder.Radius
                   && ChebyshevWithin(cylinder.Position, _cullCachePosition, CullPositionSlack)
                 : _cullCacheViewProj == cullFrustumSource && _cullCacheCylinder == cylinder);
+#pragma warning restore S1244
 
         // === Batch reuse decision ===
         // cullCacheValid ⇒ no re-cull this frame ⇒ _cullEpoch is stable, so an epoch match means
@@ -1961,9 +1963,9 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                             if (filterMainGrassDistance && !PassesExactGrassDistance(
                                     new Vector3(boundsSpan[i].X, boundsSpan[i].Y, boundsSpan[i].Z),
                                     isGrass: true)) continue;
-                            if (refilter && !PassesExactCull(in boundsSpan[i])) continue;
+                            if (refilter && !PassesExactCull(boundsSpan[i])) continue;
                             if (filterSpeedTreeLod &&
-                                !PassesSpeedTreeLod(batchState.Submesh, in worldSpan[i], in boundsSpan[i])) continue;
+                                !PassesSpeedTreeLod(batchState.Submesh, worldSpan[i], boundsSpan[i])) continue;
                             span[offset++] = animatePhysicsLite
                                 ? ApplyPhysicsLiteSway(batchState.Submesh, physicsSeeds[i], worldSpan[i])
                                 : worldSpan[i];
@@ -1997,7 +1999,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                                 if (filterGrassDistance && !PassesExactGrassDistance(
                                         shadowSpan[i].Translation + _frameRenderOrigin,
                                         isGrass: true)) continue;
-                                if (!PassesSpeedTreeLod(batchState.Submesh, in shadowSpan[i])) continue;
+                                if (!PassesSpeedTreeLod(batchState.Submesh, shadowSpan[i])) continue;
                                 span[offset++] = animateShadowPhysicsLite
                                     ? ApplyPhysicsLiteSway(
                                         batchState.Submesh, shadowPhysicsSeeds[i], shadowSpan[i])
@@ -2068,9 +2070,9 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                             if (filterMainGrassDistance && !PassesExactGrassDistance(
                                     new Vector3(boundsSpan[i].X, boundsSpan[i].Y, boundsSpan[i].Z),
                                     isGrass: true)) continue;
-                            if (refilter && !PassesExactCull(in boundsSpan[i])) continue;
+                            if (refilter && !PassesExactCull(boundsSpan[i])) continue;
                             if (filterSpeedTreeLod &&
-                                !PassesSpeedTreeLod(batchState.Submesh, in worldSpan[i], in boundsSpan[i])) continue;
+                                !PassesSpeedTreeLod(batchState.Submesh, worldSpan[i], boundsSpan[i])) continue;
                             span[drawCount++] = animatePhysicsLite
                                 ? ApplyPhysicsLiteSway(batchState.Submesh, physicsSeeds[i], worldSpan[i])
                                 : worldSpan[i];
@@ -2100,7 +2102,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                                 if (filterGrassDistance && !PassesExactGrassDistance(
                                         shadowSpan[i].Translation + _frameRenderOrigin,
                                         isGrass: true)) continue;
-                                if (!PassesSpeedTreeLod(batchState.Submesh, in shadowSpan[i])) continue;
+                                if (!PassesSpeedTreeLod(batchState.Submesh, shadowSpan[i])) continue;
                                 span[drawCount + shadowCount++] = animateShadowPhysicsLite
                                     ? ApplyPhysicsLiteSway(
                                         batchState.Submesh, shadowPhysicsSeeds[i], shadowSpan[i])
@@ -2249,9 +2251,11 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                 {
                     ObserveTallGrassWaveMultiplier(batchState.GrassWaveMultiplier);
                 }
+#pragma warning disable S1244 // exactly-zero rock/rustle amounts mean wind authored off by design
                 if (sub.IsLeafBillboard &&
                     sub.SpeedTreeLod?.Component != SpeedTreeLodComponent.Billboard &&
                     (_wind.X != 0f || _wind.Z != 0f))
+#pragma warning restore S1244
                 {
                     // Swaying canopy in the map → the host re-renders it every frame (rock/rustle
                     // AMOUNTS gate motion; the phases advance regardless).
@@ -2799,7 +2803,9 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
     /// returns exactly 0 — non-scrolling submeshes stay byte-static.</summary>
     private static float WrapUv(float velocity, double clockSeconds)
     {
+#pragma warning disable S1244 // exactly-zero velocity keeps non-scrolling submeshes byte-static by design
         if (velocity == 0f)
+#pragma warning restore S1244
         {
             return 0f;
         }
@@ -2833,7 +2839,9 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
     private void ObserveTallGrassWaveMultiplier(float grassWaveMultiplier)
     {
         var multiplier = FnvTallGrassWind.SanitizeWaveMultiplier(grassWaveMultiplier);
+#pragma warning disable S1244 // SanitizeWaveMultiplier returns the exact 0f sentinel for no-wave grass
         if (multiplier == 0f)
+#pragma warning restore S1244
         {
             return;
         }
@@ -2919,7 +2927,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
         return rs;
     }
 
-    private static float ResolveWorldBoundsRadius(CachedSubmesh12 submesh, in Matrix4x4 world)
+    private static float ResolveWorldBoundsRadius(CachedSubmesh12 submesh, Matrix4x4 world)
     {
         var scaleX = new Vector3(world.M11, world.M12, world.M13).Length();
         var scaleY = new Vector3(world.M21, world.M22, world.M23).Length();
@@ -3000,7 +3008,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
     ///     The grass hard end is intentionally separate in the copy loops so disabling reference
     ///     frustum culling cannot call <c>IntersectsSphere</c> on an uninitialized frustum.
     /// </summary>
-    private bool PassesExactCull(in Vector4 bounds)
+    private bool PassesExactCull(Vector4 bounds)
     {
         var rdx = MathF.Abs(bounds.X - _frameCylinderX);
         var rdy = MathF.Abs(bounds.Y - _frameCylinderY);
@@ -3047,8 +3055,8 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
     /// </summary>
     private bool PassesSpeedTreeLod(
         CachedSubmesh12 submesh,
-        in Matrix4x4 world,
-        in Vector4 absoluteBounds)
+        Matrix4x4 world,
+        Vector4 absoluteBounds)
     {
         if (submesh.SpeedTreeLod is not { IsValid: true } metadata)
         {
@@ -3056,12 +3064,12 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
         }
 
         var placement = new Vector3(absoluteBounds.X, absoluteBounds.Y, absoluteBounds.Z);
-        return SelectsSpeedTreeLod(in world, placement, metadata);
+        return SelectsSpeedTreeLod(world, placement, metadata);
     }
 
     /// <summary>Shadow-only placements do not carry a parallel bounds array; recover their absolute
     /// origin from the render-origin-folded world matrix.</summary>
-    private bool PassesSpeedTreeLod(CachedSubmesh12 submesh, in Matrix4x4 world)
+    private bool PassesSpeedTreeLod(CachedSubmesh12 submesh, Matrix4x4 world)
     {
         if (submesh.SpeedTreeLod is not { IsValid: true } metadata)
         {
@@ -3069,11 +3077,11 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
         }
 
         var placement = world.Translation + _frameRenderOrigin;
-        return SelectsSpeedTreeLod(in world, placement, metadata);
+        return SelectsSpeedTreeLod(world, placement, metadata);
     }
 
     private bool SelectsSpeedTreeLod(
-        in Matrix4x4 world,
+        Matrix4x4 world,
         Vector3 absolutePlacement,
         in SpeedTreeLodMetadata metadata)
     {
@@ -3083,6 +3091,10 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
         return SpeedTreeRuntimeLod.SelectLevelForPlacement(distance, uniformScale, metadata) == metadata.Level;
     }
 
+    /// <summary>
+    ///     One deferred blended (transparent) reference submesh draw, frozen with everything the
+    ///     back-to-front pass needs to re-sort and re-issue it.
+    /// </summary>
     /// <param name="SourceWorld">
     ///     The ABSOLUTE placement world matrix, kept so batch-reuse frames can refresh what the
     ///     camera moves without re-resolving the reference: the back-to-front sort distance and,

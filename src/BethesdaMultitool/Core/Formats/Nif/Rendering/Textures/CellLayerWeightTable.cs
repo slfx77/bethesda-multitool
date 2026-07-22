@@ -331,7 +331,7 @@ public sealed class CellLayerWeightTable
                     (true, true) => (northEast, 0, 0),
                     (true, false) => (north, 0, col),
                     (false, true) => (east, row, 0),
-                    _ => ((uint[]?)vtexFormIds, row, col),
+                    _ => (vtexFormIds, row, col),
                 };
                 if (grid is null)
                 {

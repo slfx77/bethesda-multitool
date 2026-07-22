@@ -47,10 +47,7 @@ internal sealed class CollisionReferencePriorityResolver
     {
         ArgumentNullException.ThrowIfNull(candidates);
         ArgumentNullException.ThrowIfNull(warmup);
-        if (maxWarmupRequests < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maxWarmupRequests));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegative(maxWarmupRequests);
 
         _warmupBestCandidateScratch.Clear();
         foreach (var candidate in candidates)
@@ -102,10 +99,7 @@ internal sealed class CollisionReferencePriorityResolver
         ArgumentNullException.ThrowIfNull(candidates);
         ArgumentNullException.ThrowIfNull(resolver);
         ArgumentNullException.ThrowIfNull(destination);
-        if (maxWarmupRequests < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maxWarmupRequests));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegative(maxWarmupRequests);
         if (maxLineVertices < 6)
         {
             throw new ArgumentOutOfRangeException(nameof(maxLineVertices), "Must fit at least one triangle.");

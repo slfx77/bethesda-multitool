@@ -20,8 +20,8 @@ internal static class ExportTileStitcher
         int tileCol, int tileRow)
     {
         if (tileWidth <= 0 || tileHeight <= 0) throw new ArgumentOutOfRangeException(nameof(tileWidth));
-        if (tileCol < 0) throw new ArgumentOutOfRangeException(nameof(tileCol));
-        if (tileRow < 0) throw new ArgumentOutOfRangeException(nameof(tileRow));
+        ArgumentOutOfRangeException.ThrowIfNegative(tileCol);
+        ArgumentOutOfRangeException.ThrowIfNegative(tileRow);
         if (tileRgba.Length < tileWidth * tileHeight * 4)
         {
             throw new ArgumentException("Tile buffer smaller than tileWidth×tileHeight×4.", nameof(tileRgba));

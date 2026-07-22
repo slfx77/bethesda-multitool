@@ -120,7 +120,9 @@ internal static class FnvTallGrassWind
     internal static float ComputeTimePhaseRadians(double timerValue, float grassWaveMultiplier)
     {
         var multiplier = SanitizeWaveMultiplier(grassWaveMultiplier);
+#pragma warning disable S1244 // exact zero is the "wave disabled" sentinel produced by SanitizeWaveMultiplier
         if (!double.IsFinite(timerValue) || multiplier == 0f)
+#pragma warning restore S1244
         {
             return 0f;
         }
@@ -138,7 +140,9 @@ internal static class FnvTallGrassWind
         float grassWaveMultiplier,
         float authoredVertexAlpha)
     {
+#pragma warning disable S1244 // exact zero is the "wind disabled" sentinel; near-zero magnitudes still sway
         if (!float.IsFinite(windMagnitude) || windMagnitude == 0f)
+#pragma warning restore S1244
         {
             return Vector2.Zero;
         }

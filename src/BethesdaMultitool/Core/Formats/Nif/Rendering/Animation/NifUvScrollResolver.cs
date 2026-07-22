@@ -99,7 +99,9 @@ internal static class NifUvScrollResolver
             return false;
         }
 
+#pragma warning disable S1244 // 0 is the authored "unset" frequency sentinel; exact comparison intended
         velocity = new Vector2(uSlope, vSlope) * (header.Frequency == 0f ? 1f : header.Frequency);
+#pragma warning restore S1244
         return velocity != Vector2.Zero;
     }
 

@@ -262,11 +262,11 @@ internal static class GrassPlacementBuilder
 
                 var uniformScale = (data.Flags & GrassFlagUniformScale) != 0;
                 var fitToSlope = (data.Flags & GrassFlagFitToSlope) != 0;
-                var instanceHeight = profile.FloorSampledHeight
-                    ? MathF.Floor(height)
-                    : profile.PositionQuantization == GrassPositionQuantization.HalfRelativeToTwelveCellBlock
+                var quantizedHeight =
+                    profile.PositionQuantization == GrassPositionQuantization.HalfRelativeToTwelveCellBlock
                         ? (float)(Half)height
                         : height;
+                var instanceHeight = profile.FloorSampledHeight ? MathF.Floor(height) : quantizedHeight;
                 var position = new Vector3(x, y, instanceHeight);
                 float heightScale;
                 Matrix4x4 world;
@@ -335,7 +335,7 @@ internal static class GrassPlacementBuilder
         }
     }
 
-    private static float WeightFor(in VertexWeights weights, uint formId)
+    private static float WeightFor(VertexWeights weights, uint formId)
     {
         if (weights.Count > 0 && weights.E0.FormId == formId) return weights.E0.Weight;
         if (weights.Count > 1 && weights.E1.FormId == formId) return weights.E1.Weight;

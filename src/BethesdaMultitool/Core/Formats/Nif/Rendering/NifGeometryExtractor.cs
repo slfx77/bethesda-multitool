@@ -534,7 +534,7 @@ internal static class NifGeometryExtractor
                 // alpha into the cutout test discards the entire trunk (TreeElmFree01) — and ships
                 // non-visual data in RGB with Vertex_Colors clear (VineHanging05 tinting black).
                 if (shaderMetadata is
-                    { PropertyType: "BSLightingShaderProperty", ShaderFlags: { } lsf1, ShaderFlags2: { } lsf2 })
+                    { PropertyType: "BSLightingShaderProperty", ShaderFlags: not null, ShaderFlags2: { } lsf2 })
                 {
                     useVertexColors = (lsf2 & 0x20u) != 0;
                 }

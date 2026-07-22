@@ -407,7 +407,9 @@ internal sealed class ColorModifierDefinition : ParticleModifierDefinition
     private Vector4 SampleSimpleColorRgb(float t)
     {
         var color1Span = Color1StartPercent - Color1EndPercent;
+#pragma warning disable S1244 // an authored zero span disables the transition and guards the division; exact comparison intended
         if (color1Span != 0f && t < Color1StartPercent)
+#pragma warning restore S1244
         {
             return t < Color1EndPercent
                 ? Color0
@@ -415,7 +417,9 @@ internal sealed class ColorModifierDefinition : ParticleModifierDefinition
         }
 
         var color2Span = Color2StartPercent - Color2EndPercent;
+#pragma warning disable S1244 // an authored zero span disables the transition and guards the division; exact comparison intended
         if (color2Span == 0f || t <= Color2EndPercent)
+#pragma warning restore S1244
         {
             return Color1;
         }
@@ -427,12 +431,14 @@ internal sealed class ColorModifierDefinition : ParticleModifierDefinition
 
     private float SampleSimpleColorAlpha(float t)
     {
+#pragma warning disable S1244 // an authored 0 percent disables the fade and guards the divisions; exact comparison intended
         if (FadeOutPercent == 0f || t <= FadeOutPercent)
         {
             return FadeInPercent == 0f || t >= FadeInPercent
                 ? Color1.W
                 : Color0.W + ((Color1.W - Color0.W) * (t / FadeInPercent));
         }
+#pragma warning restore S1244
 
         return Color1.W + ((Color2.W - Color1.W) *
                            ((t - FadeOutPercent) / (1f - FadeOutPercent)));

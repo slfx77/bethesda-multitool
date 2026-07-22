@@ -27,7 +27,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         Owns its own root signature (SRV table t0–t2 + 24 root constants b0 + a linear-clamp static
 ///         sampler), PSOs, and a small shader-visible SRV ring heap for the per-call texture views.
 ///         Both scene targets (<see cref="GpuOffscreenSceneTarget12" /> headless +
-///         <see cref="GpuSwapChainSurface12" /> live) drive it once per frame; the ring survives the
+///         <c>GpuSwapChainSurface12</c> live) drive it once per frame; the ring survives the
 ///         in-flight frames. The caller owns the resource-state transitions (HDR source →
 ///         <see cref="ResourceStates.PixelShaderResource" />, LDR dest →
 ///         <see cref="ResourceStates.RenderTarget" />) around <see cref="Record" />.
@@ -532,7 +532,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
     /// <summary>
     ///     Lazily (re)creates every recursive /4 reduction target plus the quarter-resolution
     ///     vertical BrightPassBlur intermediate and horizontal plain-blur output. Dispose-and-recreate
-    ///     on size change is safe: the live path resizes via <see cref="GpuSwapChainSurface12" />'s
+    ///     on size change is safe: the live path resizes via <c>GpuSwapChainSurface12</c>'s
     ///     GPU-idle Resize, and offscreen targets are fixed-size for their lifetime.
     /// </summary>
     private void EnsureClassicTargets(in ClassicHdrPassPlan plan)

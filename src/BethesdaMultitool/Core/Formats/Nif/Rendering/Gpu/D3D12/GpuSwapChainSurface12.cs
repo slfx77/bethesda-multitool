@@ -490,7 +490,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     ///     transitioning the current back buffer to PRESENT. Kept separate so diagnostic overlays
     ///     (collision cages, editor guides) cannot contaminate HDR adaptation or bloom.
     /// </summary>
-    public void FinishBackBuffer(ID3D12GraphicsCommandList cmd, ID3D12Resource backBuffer) =>
+    public static void FinishBackBuffer(ID3D12GraphicsCommandList cmd, ID3D12Resource backBuffer) =>
         cmd.ResourceBarrierTransition(backBuffer, ResourceStates.RenderTarget, ResourceStates.Present);
 
     /// <summary>Presents the current back buffer with vsync. The back-buffer index advances

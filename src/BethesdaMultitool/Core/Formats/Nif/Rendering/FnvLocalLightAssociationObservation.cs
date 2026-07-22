@@ -22,15 +22,8 @@ internal readonly record struct FnvGeometryLightAssociationKey
         uint geometryReferenceFormId,
         int sourceShapeBlockIndex)
     {
-        if (geometryReferenceFormId == 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(geometryReferenceFormId));
-        }
-
-        if (sourceShapeBlockIndex < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(sourceShapeBlockIndex));
-        }
+        ArgumentOutOfRangeException.ThrowIfZero(geometryReferenceFormId);
+        ArgumentOutOfRangeException.ThrowIfNegative(sourceShapeBlockIndex);
 
         GeometryReferenceFormId = geometryReferenceFormId;
         SourceShapeBlockIndex = sourceShapeBlockIndex;

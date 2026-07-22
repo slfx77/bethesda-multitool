@@ -226,7 +226,7 @@ internal static class WeatherImageSpaceEvaluator
             };
     }
 
-    private static IReadOnlyDictionary<ImageSpaceModifierParameter, WeatherImageSpaceChannel> NeutralChannels()
+    private static Dictionary<ImageSpaceModifierParameter, WeatherImageSpaceChannel> NeutralChannels()
     {
         var result = new Dictionary<ImageSpaceModifierParameter, WeatherImageSpaceChannel>(21);
         for (var i = 0; i < 21; i++) result[(ImageSpaceModifierParameter)i] = new(1f, 0f);
@@ -484,7 +484,9 @@ internal static class WeatherImageSpaceEvaluator
         var value = keys[0].Value;
         for (var i = 1; i < keys.Count; i++)
         {
+#pragma warning disable S1244 // exact same-source identity: any authored difference means the curve animates
             if (keys[i].Value != value) return neutral;
+#pragma warning restore S1244
         }
         return value;
     }
@@ -523,9 +525,11 @@ internal static class WeatherImageSpaceEvaluator
         for (var i = 1; i < keys.Count; i++)
         {
             var next = keys[i];
+#pragma warning disable S1244 // exact same-source identity: any authored difference means the curve animates
             if (next.Red != color.Red || next.Green != color.Green
                                       || next.Blue != color.Blue || next.Alpha != color.Alpha)
                 return false;
+#pragma warning restore S1244
         }
         return true;
     }
@@ -589,9 +593,9 @@ internal static class WeatherImageSpaceEvaluator
 
     private static string FormatTelemetry(
         float hour,
-        IReadOnlyList<WeatherImageSpaceContribution> contributions,
+        List<WeatherImageSpaceContribution> contributions,
         GpuTonemapSettings settings,
-        IReadOnlyDictionary<ImageSpaceModifierParameter, WeatherImageSpaceChannel> channels)
+        Dictionary<ImageSpaceModifierParameter, WeatherImageSpaceChannel> channels)
     {
         static string F(float value) => value.ToString("0.###", CultureInfo.InvariantCulture);
         static string Time(float? value) => value is { } time ? F(time) : "unknown";
@@ -614,7 +618,7 @@ internal static class WeatherImageSpaceEvaluator
 
     private static string FormatModernTelemetry(
         float hour,
-        IReadOnlyList<WeatherImageSpaceContribution> contributions,
+        List<WeatherImageSpaceContribution> contributions,
         GpuTonemapSettings settings,
         IReadOnlyList<(GpuTonemapSettings Settings, float Weight, string? Lut)> sources)
     {

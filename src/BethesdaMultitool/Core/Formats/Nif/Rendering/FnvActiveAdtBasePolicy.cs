@@ -24,7 +24,9 @@ internal static class FnvActiveAdtBasePolicy
         !eligibility.FogEnabled &&
         !eligibility.HasAlphaBlend &&
         !eligibility.HasAlphaTest &&
+#pragma warning disable S1244 // eligibility requires the exact authored default alpha of 1; any deviation routes to the alpha path
         eligibility.MaterialAlpha == 1f &&
+#pragma warning restore S1244
         !eligibility.HasMaterialAlphaController &&
         IsClassifiedOrdinaryMaterial(eligibility.ClassifierMode);
 

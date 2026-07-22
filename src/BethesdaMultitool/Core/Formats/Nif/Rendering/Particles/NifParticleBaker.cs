@@ -174,7 +174,9 @@ internal static class NifParticleBaker
                             p.Velocity += BombForce(bomb, p.Position) * dt;
                             break;
                         case GravityModifierDefinition gravity:
+#pragma warning disable S1244 // authored zero Turbulence disables the term; exact comparison intended
                             var turbulenceSample = gravity.Turbulence != 0f
+#pragma warning restore S1244
                                 ? new Vector3(rng.NextSignedFloat(), rng.NextSignedFloat(), rng.NextSignedFloat())
                                 : Vector3.Zero;
                             p.Velocity += GravityForce(gravity, p.Position, turbulenceSample) * dt;
@@ -606,9 +608,11 @@ internal static class NifParticleBaker
             distance = MathF.Abs(Vector3.Dot(axis, gravityPosition - pos));
         }
 
+#pragma warning disable S1244 // authored zero Decay/Turbulence disables the term; exact comparison intended
         var attenuation = g.Decay != 0f ? MathF.Exp(-g.Decay * distance) : 1f;
         var force = direction * (g.Strength * 1.6f * attenuation);
         if (g.Turbulence != 0f)
+#pragma warning restore S1244
         {
             force += signedTurbulenceSample * (g.Turbulence * g.TurbulenceScale * 500f);
         }
@@ -703,8 +707,6 @@ internal static class NifParticleBaker
         var r = MathF.Sqrt(MathF.Max(0f, 1f - z * z));
         return new Vector3(r * MathF.Cos(theta), r * MathF.Sin(theta), z);
     }
-
-    private static float Lerp(float a, float b, float t) => a + (b - a) * t;
 
     private struct Particle
     {

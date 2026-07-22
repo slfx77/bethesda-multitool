@@ -343,11 +343,11 @@ internal static class NpcExportHeadAssembler
             }
 
             // Hair NIFs intentionally have unshared per-face vertices and authored
-            // flat normals. The engine renders them as-is. Previously we called
-            // RecalculateNormals + WeldSeamNormals to "smooth" hair, but this averages
-            // normals across hair cards facing very different directions, producing
-            // sideways-pointing normals at silhouette edges that read as dark patches
-            // in glTF PBR viewers. Trust the authored NIF normals.
+            // flat normals. The engine renders them as-is. Do not smooth hair normals
+            // (RecalculateNormals + WeldSeamNormals): averaging normals across hair
+            // cards facing very different directions produces sideways-pointing
+            // normals at silhouette edges that read as dark patches in glTF PBR
+            // viewers. Trust the authored NIF normals.
         }
 
         NpcExportSceneBuilder.AddRigidModel(scene, npc.HairNifPath, hairModel);

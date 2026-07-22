@@ -22,8 +22,10 @@ internal static class PlacedLightSelector
         scratch.Clear();
         foreach (var light in source)
         {
+#pragma warning disable S1244 // exact zero intensity means the light emits nothing; near-zero lights still render
             if ((!includeInitiallyDisabled && light.IsInitiallyDisabled) ||
                 light.Intensity == 0f || light.Radius <= 0f)
+#pragma warning restore S1244
             {
                 continue;
             }

@@ -217,7 +217,9 @@ internal static class FnvActiveLocalLightOracle
         Vector3 vertexRgb)
     {
         ValidateMode(classifierMode);
+#pragma warning disable S1244 // the shader gate is authored as exactly 3 or 4; validation is intentionally exact
         if (totalLightCountGate != 3f && totalLightCountGate != 4f)
+#pragma warning restore S1244
         {
             throw new ArgumentOutOfRangeException(nameof(totalLightCountGate));
         }

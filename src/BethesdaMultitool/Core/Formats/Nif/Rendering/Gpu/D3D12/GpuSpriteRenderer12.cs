@@ -780,10 +780,10 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     private static D12.Blend MapBlend(byte nifBlendMode)
     {
         // Keep the standalone sprite path on the same OpenGL-order NIF mapping as the world
-        // renderer.  This used to carry a second, stale ordering in which modes 4..9 were
-        // shifted; the common 6/7 pair therefore became DestinationAlpha/InverseDestinationAlpha
-        // instead of SourceAlpha/InverseSourceAlpha.  On a transparent sprite target that turns
-        // the first blended draw black, and over an opaque draw it replaces rather than blends.
+        // renderer — a shifted ordering of modes 4..9 turns the common 6/7 pair into
+        // DestinationAlpha/InverseDestinationAlpha instead of SourceAlpha/InverseSourceAlpha,
+        // which on a transparent sprite target turns the first blended draw black, and over an
+        // opaque draw replaces rather than blends.
         return global::BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.NifD3D12BlendMapper
             .ResolveBlendFactor(nifBlendMode);
     }

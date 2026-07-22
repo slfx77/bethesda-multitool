@@ -492,7 +492,7 @@ internal static class GlbWriter
                 // visible boundary between the MASK opaque core and the BLEND soft halo.
                 // Pure BLEND is the cleaner trade-off — soft strand-aligned silhouettes
                 // matching the rasterizer's appearance, at the cost of z-fighting where
-                // hair cards genuinely intersect (accepted per user direction). The
+                // hair cards genuinely intersect. The
                 // rasterizer's A2C stochastic dither stays in place for the WinUI
                 // viewer; this is the GLB-export branch only.
                 material.WithAlpha(AlphaMode.BLEND);

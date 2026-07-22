@@ -26,192 +26,13 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// </summary>
 internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
 {
+    // Container layout version (magic/header/framing owned by DiskBlobCache); a mismatch
+    // invalidates the file. Independent of DecoderVersion below, which versions the payload.
     internal const int CacheFormatVersion = 1;
-    // Bumped 1→2: the decoded float output changed when HalfToFloat moved from a Math.Pow
-    // approximation to the exact hardware (BitConverter.UInt16BitsToHalf) conversion — the low bits
-    // differ, so any cache written by the old decoder must be invalidated. Bump this whenever the
-    // decode output bytes can change.
-    // Bumped 2→3: placed-reference bake now discards the scene-root node's own authored transform
-    // (treatRootsAsIdentity) so non-identity root rotations (e.g. McMarranWalls wallReg 90°,
-    // monorail curves 15°) are no longer baked into the vertices — the decoded positions change.
-    // Bumped 3→4: NiBillboardNode subtrees now bake with the node's rotation dropped (translation
-    // kept) and the new IsBillboard flag rides the payload, so old caches lack the field and would
-    // bake the smoke glow with the wrong orientation.
-    // Bumped 4→5: the payload now carries the NIF's decoded Havok (bhk*) collision soup (used by
-    // walk-mode ground/ceiling sampling). Old caches lack those trailing fields, so a warm read would
-    // both deserialize wrong AND silently lose collision — invalidate them.
-    // Bumped 5→6: the per-submesh payload now carries NiMaterialProperty specular (color + glossiness +
-    // enable gate) for the GPU specular term (1A). Old caches lack those trailing fields.
-    // Bumped 6→7: the per-submesh payload now carries IsLeafBillboard, the SpeedTree leaf-billboard
-    // shader route bit. Old caches lack the trailing flag and would silently route as static geometry.
-    // Bumped 7→8: the legacy-block measure walk no longer drops large arrays (it now bounds array length
-    // by bytes-remaining instead of a magic 100000 cap), so meshes with big tangent/vertex blobs (e.g.
-    // Oblivion ICAUTower01 / ICPalaceTowerBase01) extract ALL their shapes instead of desyncing mid-file.
-    // The decoded submesh set changes (ICAUTower01: 10→20), so old v7 entries are stale.
-    // Bumped 8→9: NIF 10.2.0.0 geometry now extracts (NiGeometryData reads keyed on the NIF version) — meshes
-    // like ICPalaceTower01 that previously decoded to nothing now produce geometry, so any v8 entry is stale.
-    // Bumped 9→10: the per-submesh payload now carries DepthWritingBlend (effects-folder foliage that keeps
-    // alpha blend but writes depth, e.g. NVSeaPlant02). Old caches lack the trailing flag.
-    // Bumped 10→11: the alpha classifier no longer demotes UNLIT decals (BSShaderNoLightingProperty) NOR flat
-    // planar decals to opaque on ZBuffer_Write — neither has a closed interior to leak, so they keep their
-    // authored blend instead of rendering as opaque blocks: white/black ground-blend rings (SuperMutantBedding01,
-    // SewerLidExit01, HoldingTankTopOnly), the opaque green NV_BarrelPile03 radioactive disc, opaque neon signage,
-    // and lit surface decals like Vault87Blood10 (which fell to OPAQUE because the cutout fallback needs a texture
-    // that isn't decoded yet at decode time). The baked AlphaRenderMode changes, so old v10 entries are stale.
-    // Bumped 11→12: the geometry extractor now drops shapes with the NiAVObject Hidden flag (Flags bit 0 =
-    // APP_CULLED) that the engine culls — e.g. NV_FencePickCleanGate's hidden C_gatepost proxy posts. The
-    // decoded submesh SET changes, so old v11 entries bake the stray hidden geometry.
-    // Bumped 12→13: the alpha classifier is now engine-accurate (decompiled BSShader::SetupGeometry*): the
-    // BSShaderFlags2 ZBuffer_Write "demote alpha-blend to opaque" heuristic (+ the unlit/flat-decal exemptions)
-    // is gone — alpha-blend shapes keep their blend, and depth-write follows the alpha-TEST bit (blend+test ⇒
-    // DepthWritingBlend). The baked AlphaRenderMode/DepthWritingBlend changes, so old v12 entries are stale.
-    // Bumped 13→14: NiParticleSystem effects now bake to leaf-billboard quad clouds (NifParticleSystemExtractor)
-    // and the emitter-volume meshes are dropped — the decoded submesh set changes, so old v13 entries lack the
-    // particle clouds and still carry the suppressed emitter blobs.
-    // Bumped 14→15: mesh emitters (e.g. NV whirlwind columns) now spawn over the emitter mesh's AABB instead of a
-    // single point (NifParticleSystemExtractor.ResolveMeshEmitterBounds), so the baked particle positions change.
-    // Bumped 15→16: particle bake now (a) honors NiPSysDragModifier (velocity damping) and transforms planar
-    // gravity by its gravity-object (fountain jet arcs back down instead of flying to the sky), and (b) only
-    // marks ADDITIVE (Dst=ONE) particles emissive — alpha-blended dust/smoke are shaded. Positions + the
-    // emissive flag change, so old v15 entries are stale.
-    // Bumped 16→17: particle density now follows the AUTHORED birth rate (NiPSysEmitterCtlr interpolator) instead
-    // of filling to NiPSysData capacity — far fewer live particles for dust/smoke (SandDust "too opaque" fix), and
-    // the volume-emitter declination axis defaults to +Z (fountain jet goes up, not sideways). Positions + counts
-    // change, so old v16 entries are stale.
-    // Bumped 17→18: NiPSysDragModifier is now engine-accurate (decompiled NiPSysDragModifier::Update) — anisotropic
-    // (damps only the velocity component along the drag-object-transformed axis), range-gated, frame-scaled, and
-    // no-op without a drag object (was a uniform -pct·v on the whole velocity). Baked positions change for any
-    // system with a drag modifier, so old v17 entries are stale.
-    // Bumped 18→19: NiPSysSpawnModifier now spawns child particles on death (decompiled SpawnParticles) — a dying
-    // particle bursts MinToSpawn..MaxToSpawn chaos-scattered children (the fountain's splash spray), cascading up
-    // to NumSpawnGenerations. Particle counts + positions change for any system with an active spawn modifier.
-    // Bumped 19→20: FO4/FO76 .bgsm/.bgem materials now override the NIF's inline render state (alpha test
-    // threshold/blend, two-sided, specular) and expand their texture slots to real .dds paths (diffuse AND
-    // normal map), and BSTriShape decodes tangents/bitangents (enables the FO4 bump path). The serialized
-    // alpha state, texture paths, and TBN payload all change, so old v19 entries are stale.
-    // Bumped 20→21: (a) BSMeshLODTriShape renders only its first non-empty LOD slice (was the whole
-    // buffer — full-detail + LOD copies z-fighting); (b) SLSF vertex-channel gating (Vertex_Colors /
-    // Vertex_Alpha) neutralizes FO4 wind-weight vertex alpha that discarded tree trunks via the cutout
-    // test; (c) absolute build-path materials now resolve (normalized), changing baked alpha/two-sided
-    // state; (d) new per-submesh SpecularMapTexturePath field in the payload.
-    // Bumped 21→22: FO4/FO76 grayscale-to-palette — new per-submesh GradientMapTexturePath +
-    // GradientMapV payload fields (the shader replaces diffuse RGB with the palette lookup; without
-    // the fields, warm v21 meshes keep rendering the lavender authoring base).
-    // Bumped 22→23: BSMeshLODTriShape far-slice fallbacks (LOD0 empty) are now dropped when the model
-    // has near-content siblings — they're distant imposters the engine never draws up close, and they
-    // z-fight coplanar real geometry (workshop rubble's LOD2-only floor slab vs its _Foundation ref).
-    // The decoded submesh SET changes, so v22 entries still carry the stray imposters.
-    // Bumped 23→24: TES4 parallax materials (NiTexturingProperty Apply Mode HILIGHT/HILIGHT2) no
-    // longer alpha-blend — their diffuse alpha is a parallax height map, and blending with it drew
-    // Oblivion rock faces see-through (SEIsland). Warm v23 entries bake the old blend state.
-    // Bumped 24→25: TES4-era NIFs now apply the scene root's authored transform (Oblivion composes
-    // it under the REFR placement; discarding it rendered ChorrolLODHouse01 sideways and the RFN
-    // dungeon halls at 90/180°). Warm v24 TES4 entries bake identity-root geometry.
-    // Bumped 25→26: new per-submesh IsDecal payload field (BGSM decal byte / shader-flags bits
-    // 26-27) — decal overlays draw with a depth-biased PSO instead of z-fighting their backing
-    // surface. Warm v25 entries lack the field.
-    // Bumped 26→27: BGEM effect materials with Effect Lighting or the decal byte are now
-    // scene-lit instead of blanket-emissive (FO4 wall stains glowed against night-dark walls).
-    // The baked IsEmissive changes, so v26 entries keep the glow.
-    // Bumped 27→28: (a) BSMeshLODTriShape segments are drawn as the full cumulative set (they are
-    // COMPLEMENTARY geometry, not alternates — first-slice-only amputated WoodCrate03's boards and
-    // 97% of workshop rubble), with exact-copy segments suppressed; (b) new per-submesh BGEM
-    // effect-tint + |N·V| falloff payload fields (blinding mist fix). Geometry AND payload change.
-    // Bumped 28→29: FO4 cubemap environment mapping — new per-submesh EnvironmentMapTexturePath +
-    // EnvironmentMapScale + EnvironmentMapSmoothness payload fields (BGSM slot 4 reflections; the
-    // _s map is now also kept for specular-disabled materials that reflect). Warm v28 entries
-    // would keep FO4 metal/gloss matte.
-    // Bumped 29→30: BSMeshLODTriShape far-only classification narrowed to LOD2-only partitions
-    // (lod0 == 0 AND lod1 == 0 covering the whole buffer). The old lod0==0 flag amputated LOD1-only
-    // shapes next to near siblings — every needle card on FO4 Far Harbor's pines ((0, N, 0)
-    // partitions). Warm v29 entries bake needle-less trees.
-    // Bumped 30→31: Morrowind NiBSAnimationNode/NiBSParticleNode subtrees are now walked as scene
-    // nodes and AvoidNode hulls excluded (5f74a54c) — the decoded submesh SET changes for TES3 NIFs
-    // (in_lava_1024 gains its three magma shapes and drops the white avoid hull). Warm v30 entries
-    // kept serving the pre-fix decode, which is why the GUI still showed white lava after the fix.
-    // Bumped 31→32: NIF animation — new per-submesh UvScrollVelocity payload field (TES3
-    // NiUVController constant scroll: waterfalls, lava), and internally-skinned statics
-    // (Morrowind banners, FNV cloth flags) now decode REST-POSE-skinned instead of raw bind-pose
-    // geometry. Payload shape AND decoded positions change; warm v31 entries bake face-up banners
-    // with no scroll fields.
-    // Bumped 32→33: emissive shapes now carry their material emissive GLOW TINT in the
-    // (specular-disabled-on-emissive) SpecularColor slot — the FO3/FNV SHADER_NOLIGHTING formula
-    // texture × emissive (× mult). Warm v32 entries carry (0,0,0) there and would render emissive
-    // glows white (BarrelPile03's clipped goo).
-    // Bumped 33→34: (a) the animation clip policy changed to loop the FULL authored controller
-    // range (the old last-IdleN-loop window parked Morrowind banners near-horizontal in Idle3's
-    // violent sub-window) — the clip window is baked into the cached NifMeshAnimation, so stale
-    // entries keep the wrong window; (b) modern NiControllerManager idle sequences (FNV cloth
-    // flags) now attach a playback rig, so their Animation/Skin payloads appear where v33 cached
-    // none; (c) SpeedTree .spt meshes now keep their natural engine world scale — v33 entries
-    // carry the old TREE-OBND/billboard rescale that oversized shrubs up to 2.7×.
-    // v35: FO3/FNV BSShaderNoLightingProperty view-angle falloff now populates EffectFalloff —
-    // v34 entries cache effect shells (dust storms, light-ray cones, glow fills) without their
-    // authored |N·V| opacity ramp and render them as solid silhouettes.
-    // v36: bhkRigidBodyT transform offsets fixed (28/44 → 52/68) — v35 entries for every FNV
-    // bhkRigidBodyT static (RockCave07, NV_Truck, NVN_RockCanyon08, …) cache a NaN-poisoned
-    // collision soup that draws no overlay, fails walk-mode raycasts, and blocks the visual-mesh
-    // fallback.
-    // v37: FO3/FNV refraction flags now suppress PPLighting/NoLighting distortion shells, and
-    // External_Emittance shapes no longer cache their ignored material emissive multiplier.
-    // v38: classic Skyrim NiSwitchNode trees now keep the active full-detail, internally-skinned
-    // child and reconstruct its omitted NiTriShapeData topology from NiSkinPartition. Warm v37
-    // entries contain only the inactive sparse static fallback (TreePineForest03).
-    // v39: classic Skyrim inline BSEffectShaderProperty now preserves its flags, BaseColor × scale,
-    // and falloff. Warm v38 entries keep these effects white and non-decal — notably
-    // WRLODWindowGlow01 instead of its authored ×2 tint / decal state.
-    // Bumped 39→40: SpeedTree bark now carries TBN + branch-wind payload, and the per-submesh
-    // cache persists the branch route plus TREE.CNAM rock/rustle speeds.
-    // Bumped 40→41: particle meshes now retain authored surface emission, capacity, atlas UVs,
-    // rotation/aspect, and corrected declination; shader/BGSM UV transforms and unclipped effect
-    // alpha/HDR scales also change decoded submesh data. Warm v40 entries contain the old geometry.
-    // Bumped 41→42: external-material TileU/TileV now reach the CPU/GPU sampler-addressing state;
-    // the per-submesh payload gains independent U/V clamp flags. Warm v41 entries always wrap.
-    // Bumped 42→43: particle clouds carry an explicit marker so their four-vertex quads can be
-    // camera-sorted independently inside the blended submesh. Warm v42 entries lack the marker.
-    // Bumped 43→44: legacy emitter birth rates now sample their authored controller clock instead of
-    // holding the peak key, changing static time-zero particle counts/positions. The opt-in live path
-    // bypasses this disk payload because its parsed runtime graph is deliberately CPU-only/non-persisted.
-    // Bumped 44→45: Skyrim LE and FO4 NiParticleSystem blocks now use their actual Bethesda geometry
-    // inheritance layouts. Warm v44 entries decoded those systems as null and therefore lack their clouds.
-    // Bumped 45→46: the mesh payload now retains particle-SOURCE provenance independently of baked
-    // particle-cloud geometry. A controller-delayed system in a mixed NIF can emit nothing at time zero;
-    // live mode must still reject that positive warm entry and recover its non-persisted runtime graph.
-    // Bumped 46→47: FO3/FNV TallGrassShaderProperty now resolves its inline File Name using the
-    // direct BSShaderProperty layout. Warm v46 entries cache GRAS cards with no diffuse texture.
-    // Bumped 47→48: the per-submesh payload now retains authored BSEffect SoftFalloffDepth for
-    // scene-depth particle feathering. Warm v47 entries lack the trailing field.
-    // Bumped 48→49: manager-driven NiAlphaController curves are persisted per submesh. Warm v48
-    // effects discard SandDust02's 0.50/0.35/0.05 authored layer fades and render at alpha 1.
-    // Bumped 49→50: FO3/FNV BSShaderPPLightingProperty specular selection now follows the authored
-    // Specular flag + usable normal/TBN inputs. Warm v49 entries incorrectly cache SpecularEnabled=false
-    // whenever retail NiMaterialProperty.SpecularColor is black, despite SLS2047 using light color.
-    // Bumped 50→51: strict FNV BS34 Havok-lite descriptors now persist per routed submesh. Warm v50
-    // entries have no root-local hinge pivot/axis and would silently keep hanging fixtures static.
-    // Bumped 51→52: classic FO3/FNV Lighting30 shader identity, raw material emission/multiplier,
-    // and classified glow-map path now persist per submesh. Warm v51 entries silently omit neon glow.
-    // Bumped 52→53: the payload now identifies TallGrassShaderProperty submeshes. Their existing
-    // VertexColor.w stores raw authored wind weight in the reference cache; the specialized VS
-    // resets coverage alpha after consuming it. Warm v52 entries contain policy-normalized alpha.
-    // Bumped 53→54: classic FO3/FNV environment mapping now persists its separate slot-4 cube,
-    // optional slot-5 red-channel mask, authored EnvMapScale, and bit-21/SLS2058 window direction.
-    // Warm v53 entries silently drop the retail SLS environment pass and make metal/glass matte.
-    // Bumped 54→55: classic simple-parallax materials now persist their policy-gated slot-3
-    // height-map path. Warm v54 entries silently flatten bit-11 rubble/cave/architecture materials.
-    // Bumped 55→56: persist the transformed authored NiBound radius beside its center. Warm v55
-    // entries cannot reproduce the engine's sphere-surface specular LOD distance.
-    // Bumped 56→57: persist the strict PC-final basic bump shader mode (SLS1009 or SLS1013).
-    // Warm v56 entries cannot distinguish the vertex-color permutation or prove that
-    // neighboring specular/environment/parallax/glow/effect families were excluded.
-    // Bumped 57→58: SLS1009/1013 eligibility now requires finite UV and usable N/T/B data at every
-    // vertex plus valid triangle indices. Warm v57 entries can retain a mode selected from one good
-    // vertex even when another vertex would poison the recovered guard-free shader interpolation.
-    // Bumped 58→59: the exact static SLS route now excludes internally skinned meshes until their
-    // distinct retail VSS is recovered, and resolves eligibility against effective MODS/TXST paths.
-    // Warm v58 entries can misclassify both skinned geometry and alternate-texture variants.
-    // Bumped 59→60: baked rigid/uniform node transforms now preserve the authored N/T/B vector
-    // magnitudes consumed by the retail raw-dp3 vertex shader. Warm v59 entries normalize those
-    // streams on transformed meshes and can materially change basic-bump illumination.
+
+    // DecoderVersion versions the decoded payload: ANY change to the decode output (geometry,
+    // payload fields, classification, animation, collision) requires a bump so warm cache
+    // entries written by the old decoder are discarded rather than misread. Most recent bumps:
     // Bumped 60→61: baked particle-cloud emissive state now follows the attached shader property.
     // Warm v60 entries can keep standard-alpha BSShaderNoLighting dust incorrectly scene-lit.
     // Bumped 61→62: the active FNV ID193 classifier now rejects shader type 29 and raw flags1
@@ -222,6 +43,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // v63 flattened every billboard to rotate-about-up and rendered them as a horizontal glow.
     // v65: honor Skyrim BSLightingShaderProperty SLSF2 Double_Sided. Warm v64 grass cards keep
     // their incorrect backface-culling state and appear partial or as isolated floating triangles.
+    // (Full bump history for this constant lives in git blame.)
     internal const int DecoderVersion = 65;
 
     private const int MaxSubmeshes = 16_384;

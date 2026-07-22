@@ -50,8 +50,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     private const long CollisionMeshCacheByteBudget = 128L * 1024L * 1024L;
     // Tangent-space normal-map perturbation scale (reference.frag.hlsl: mapN.xy *= vRenderState.z).
     // The FNV SLS pixel shader applies the sampled tangent-space normal at full strength, so this is
-    // 1.0 (engine-faithful). It was previously 0.35, which flattened the perturbation to ~a third and
-    // made bump mapping read as "not applied" under the viewer's lighting.
+    // 1.0 (engine-faithful).
     private const float ReferenceBumpStrength = 1.0f;
 
     // Size-aware ceiling on render-thread mesh-upload work per frame. The integer upload budget
@@ -774,11 +773,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
         lock (_decodedCacheLock)
         {
-            // Set replaces an existing entry and evicts LRU entries over the byte budget. One
-            // deliberate delta vs the old hand-rolled loop: an entry larger than the whole
-            // budget now SURVIVES its own insert (alone, over budget) instead of self-evicting —
-            // the old behavior was a decode→store→self-evict→re-decode livelock for any mesh
-            // whose estimate exceeded a (diagnostically) tiny budget.
+            // Set replaces an existing entry and evicts LRU entries over the byte budget. An entry
+            // larger than the whole budget SURVIVES its own insert (alone, over budget) — this
+            // prevents a decode→store→self-evict→re-decode livelock for any mesh whose estimate
+            // exceeds a (diagnostically) tiny budget.
             _decodedLru.Set(modelPath, value);
         }
     }
@@ -1306,10 +1304,15 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // Emissive shapes ride their material glow tint in the otherwise-unused xyz (the decoder put it
     // there; see ReferenceMeshDecoder12) with w = 0 so the specular sentinel stays off — the PS's
     // emissive branch reads vSpecular.rgb as the glow color.
-    private static Vector4 BuildSpecular(DecodedSubmesh12 sub) =>
-        sub.SpecularEnabled ? new Vector4(sub.SpecularColor, MathF.Max(sub.Glossiness, 1f))
-        : sub.IsEmissive ? new Vector4(sub.SpecularColor, 0f)
-        : Vector4.Zero;
+    private static Vector4 BuildSpecular(DecodedSubmesh12 sub)
+    {
+        if (sub.SpecularEnabled)
+        {
+            return new Vector4(sub.SpecularColor, MathF.Max(sub.Glossiness, 1f));
+        }
+
+        return sub.IsEmissive ? new Vector4(sub.SpecularColor, 0f) : Vector4.Zero;
+    }
 
     private static uint CheckedByteSize(int elementCount, uint elementSize) =>
         checked((uint)((long)elementCount * elementSize));

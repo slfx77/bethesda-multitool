@@ -211,15 +211,8 @@ internal static class NifSoftParticleDepthBinding
 
     internal static float Encode(uint bindlessIndex, int sampleCount)
     {
-        if (bindlessIndex > LargestExactlyRepresentableSlot)
-        {
-            throw new ArgumentOutOfRangeException(nameof(bindlessIndex));
-        }
-
-        if (sampleCount < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(sampleCount));
-        }
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(bindlessIndex, LargestExactlyRepresentableSlot);
+        ArgumentOutOfRangeException.ThrowIfLessThan(sampleCount, 1);
 
         var encoded = bindlessIndex + 1f;
         return sampleCount > 1 ? -encoded : encoded;
@@ -229,7 +222,9 @@ internal static class NifSoftParticleDepthBinding
     {
         bindlessIndex = 0;
         multisampled = false;
+#pragma warning disable S1244 // Disabled is the exact 0f sentinel; Encode never produces magnitudes below 1
         if (!float.IsFinite(encoded) || encoded == Disabled)
+#pragma warning restore S1244
         {
             return false;
         }

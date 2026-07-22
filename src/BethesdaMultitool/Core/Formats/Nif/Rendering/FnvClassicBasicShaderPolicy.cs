@@ -113,7 +113,9 @@ internal static class FnvClassicBasicShaderPolicy
     }
 
     private static bool HasEmission((float R, float G, float B)? emission) =>
+#pragma warning disable S1244 // authored emission of exactly (0,0,0) means none; any non-zero component counts
         emission is { } value && (value.R != 0f || value.G != 0f || value.B != 0f);
+#pragma warning restore S1244
 
     private static bool HasCompleteVertexColorData(RenderableSubmesh submesh) =>
         submesh.UseVertexColors &&

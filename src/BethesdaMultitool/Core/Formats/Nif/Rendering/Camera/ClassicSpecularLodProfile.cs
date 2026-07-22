@@ -43,7 +43,7 @@ internal static class ClassicSpecularLodFade
         in ClassicSpecularLodProfile profile,
         Vector3 localCenter,
         float localRadius,
-        in Matrix4x4 world,
+        Matrix4x4 world,
         Vector3 cameraPosition,
         bool specularEligible = true,
         bool isStinger = false)

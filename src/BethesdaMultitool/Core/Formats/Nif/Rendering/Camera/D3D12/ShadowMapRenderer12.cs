@@ -264,7 +264,12 @@ internal sealed class ShadowMapRenderer12 : IDisposable
             return 2048;
         }
 
-        var resolution = budgetMb >= 8192 ? 4096 : budgetMb >= 3072 ? 2048 : 1024;
+        var resolution = budgetMb switch
+        {
+            >= 8192 => 4096,
+            >= 3072 => 2048,
+            _ => 1024,
+        };
         Log.Info("[Shadow] cascade resolution {0}² × {1} ({2} MB) from VRAM budget {3} MB",
             resolution, CascadeCount,
             (long)resolution * resolution * 4 * CascadeCount / (1024 * 1024), budgetMb);

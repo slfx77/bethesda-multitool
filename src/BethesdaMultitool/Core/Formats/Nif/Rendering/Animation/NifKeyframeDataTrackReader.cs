@@ -59,7 +59,9 @@ internal static class NifKeyframeDataTrackReader
 
         return new NifNodeTrack(
             nodeName,
+#pragma warning disable S1244 // 0 is the authored "unset" frequency sentinel; exact comparison intended
             frequency == 0f ? 1f : frequency,
+#pragma warning restore S1244
             phase,
             rotInterp, rotKeys,
             transInterp, transKeys,

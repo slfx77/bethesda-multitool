@@ -23,7 +23,7 @@ internal static class NifLocalBoundsResolver
     /// </summary>
     internal static NifLocalBounds? TransformAuthored(
         NifLocalBounds? authored,
-        in Matrix4x4 transform,
+        Matrix4x4 transform,
         ReadOnlySpan<float> transformedPositions,
         bool sourceDeformed)
     {
@@ -47,7 +47,9 @@ internal static class NifLocalBoundsResolver
         // A zero-radius NiBound is valid only for genuinely point-degenerate geometry. Shipped
         // meshes occasionally contain cleared/corrupt bound bytes; do not collapse their distance
         // metric to an arbitrary point when real vertices establish a usable fallback sphere.
+#pragma warning disable S1244 // cleared/corrupt bound bytes serialize a radius of exactly 0; tiny non-zero spheres are valid
         if (radius == 0f && HasPositionAwayFrom(transformedPositions, center))
+#pragma warning restore S1244
         {
             return null;
         }

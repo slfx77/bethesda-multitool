@@ -204,7 +204,7 @@ internal sealed class CpuMeshSkinner12
         }
     }
 
-    private bool SkinMesh(Entry entry, int frameIndex, GpuRingBuffer12 ring, double clockSeconds, ref int vertexBudget)
+    private static bool SkinMesh(Entry entry, int frameIndex, GpuRingBuffer12 ring, double clockSeconds, ref int vertexBudget)
     {
         var animation = entry.Mesh.Animation!;
         NifAnimationPoseEvaluator.EvaluateBoneWorlds(animation, (float)clockSeconds, entry.BoneWorlds);

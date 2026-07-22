@@ -60,7 +60,12 @@ internal static class ModernWaterPipeline
         bool prepassesRecorded,
         ModernWaterTechnique technique = ModernWaterTechnique.Baseline)
     {
-        var prefix = game == BethesdaGame.Fallout76 ? "fo76" : game == BethesdaGame.Fallout4 ? "fo4" : "legacy";
+        var prefix = game switch
+        {
+            BethesdaGame.Fallout76 => "fo76",
+            BethesdaGame.Fallout4 => "fo4",
+            _ => "legacy",
+        };
         if (!ShouldUse(explicitlyEnabled, game)) return $"{prefix}-standin";
         if (!resourcesReady) return $"{prefix}-modern-unavailable-standin";
         if (!prepassesRecorded) return $"{prefix}-modern-prepass-fallback";

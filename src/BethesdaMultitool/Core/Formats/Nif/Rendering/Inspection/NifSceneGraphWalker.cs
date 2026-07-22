@@ -294,6 +294,32 @@ internal static class NifSceneGraphWalker
         }
     }
 
+    private static void CollectDescendantShapes(int nodeIdx, Dictionary<int, List<int>> nodeChildren,
+        NifInfo nif, HashSet<int> shapes)
+    {
+        if (!nodeChildren.TryGetValue(nodeIdx, out var children))
+        {
+            return;
+        }
+
+        foreach (var childIdx in children)
+        {
+            if (childIdx < 0 || childIdx >= nif.Blocks.Count)
+            {
+                continue;
+            }
+
+            if (ShapeTypes.Contains(nif.Blocks[childIdx].TypeName))
+            {
+                shapes.Add(childIdx);
+            }
+            else if (NodeTypes.Contains(nif.Blocks[childIdx].TypeName))
+            {
+                CollectDescendantShapes(childIdx, nodeChildren, nif, shapes);
+            }
+        }
+    }
+
     /// <summary>
     ///     Appends each rendered shape's ancestor-NiNode property refs to its own (NetImmerse property
     ///     inheritance). The shape's own refs stay first so they win per type — the property readers take
@@ -799,32 +825,6 @@ internal static class NifSceneGraphWalker
     internal static HashSet<int> FindVisControlledShapeIndices(byte[] data, NifInfo nif)
     {
         return AnalyzeVisControllers(data, nif).VisControlledShapeIndices;
-    }
-
-    private static void CollectDescendantShapes(int nodeIdx, Dictionary<int, List<int>> nodeChildren,
-        NifInfo nif, HashSet<int> shapes)
-    {
-        if (!nodeChildren.TryGetValue(nodeIdx, out var children))
-        {
-            return;
-        }
-
-        foreach (var childIdx in children)
-        {
-            if (childIdx < 0 || childIdx >= nif.Blocks.Count)
-            {
-                continue;
-            }
-
-            if (ShapeTypes.Contains(nif.Blocks[childIdx].TypeName))
-            {
-                shapes.Add(childIdx);
-            }
-            else if (NodeTypes.Contains(nif.Blocks[childIdx].TypeName))
-            {
-                CollectDescendantShapes(childIdx, nodeChildren, nif, shapes);
-            }
-        }
     }
 
     /// <summary>Result of NiVisController analysis for a weapon NIF.</summary>

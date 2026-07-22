@@ -375,11 +375,12 @@ internal static class FnvHavokConstraintParser
             // bhkRigidBodyT applies them relative to its collision object's target NiAVObject. This
             // is the same composition used by HavokCollisionExtractor and is byte-verified by the
             // two-body office hanging-light retail fixture.
-            var bodyRelative = bodyBlock.TypeName == "bhkRigidBodyT"
-                ? TryReadRigidBodyTTransform(data, bodyBlock, nif.IsBigEndian)
-                : bodyBlock.TypeName == "bhkRigidBody"
-                    ? Matrix4x4.Identity
-                    : null;
+            Matrix4x4? bodyRelative = bodyBlock.TypeName switch
+            {
+                "bhkRigidBodyT" => TryReadRigidBodyTTransform(data, bodyBlock, nif.IsBigEndian),
+                "bhkRigidBody" => Matrix4x4.Identity,
+                _ => null,
+            };
             if (bodyRelative is { } relative)
             {
                 var candidate = relative * targetToRoot;
@@ -498,7 +499,7 @@ internal static class FnvHavokConstraintParser
         return result;
     }
 
-    private static IReadOnlyList<int> CollectSubtree(
+    private static List<int> CollectSubtree(
         int root,
         int blockCount,
         IReadOnlyDictionary<int, List<int>> nodeChildren)

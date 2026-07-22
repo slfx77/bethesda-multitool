@@ -211,7 +211,9 @@ internal static class WalkHorizontalCollision
 
         hitTime = bestTime;
         hitNormal = bestNormal;
+#pragma warning disable S1244 // float.MaxValue is the verbatim "no hit" sentinel; exact comparison intended
         return bestTime != float.MaxValue;
+#pragma warning restore S1244
 
         void TestBox(Vector3 min, Vector3 max)
         {
@@ -292,7 +294,9 @@ internal static class WalkHorizontalCollision
             TestEndpoint(segmentStart);
             hitTime = bestTime;
             hitNormal = bestNormal;
+#pragma warning disable S1244 // float.MaxValue is the verbatim "no hit" sentinel; exact comparison intended
             return bestTime != float.MaxValue;
+#pragma warning restore S1244
         }
 
         var edgeLength = MathF.Sqrt(edgeLengthSquared);
@@ -335,7 +339,9 @@ internal static class WalkHorizontalCollision
         TestEndpoint(segmentEnd);
         hitTime = bestTime;
         hitNormal = bestNormal;
+#pragma warning disable S1244 // float.MaxValue is the verbatim "no hit" sentinel; exact comparison intended
         return bestTime != float.MaxValue;
+#pragma warning restore S1244
 
         void TestSide(float targetDistance, Vector2 normal)
         {

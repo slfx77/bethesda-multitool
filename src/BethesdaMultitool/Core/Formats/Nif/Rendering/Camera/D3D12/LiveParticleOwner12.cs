@@ -81,7 +81,9 @@ internal sealed class LiveParticleOwner12
         try
         {
             var sampleTime = ParticleLiveSettings.QuantizeFrameTime(elapsedSeconds);
+#pragma warning disable S1244 // change detection against the identically-quantized cached tick; exact comparison intended
             if (_cachedSnapshot is null || sampleTime != _cachedSampleTime)
+#pragma warning restore S1244
             {
                 _cachedSnapshot = ParticleLiveSnapshotBuilder.Build(_runtime, sampleTime);
                 _cachedSampleTime = sampleTime;

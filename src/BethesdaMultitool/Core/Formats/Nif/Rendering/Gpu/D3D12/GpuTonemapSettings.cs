@@ -454,6 +454,7 @@ internal readonly record struct GpuTonemapSettings
         };
     }
 
+#pragma warning disable S1244 // exact all-zero HNAM placeholder detection by design (see comment above)
     private static bool IsEmptyOblivionWeatherHdr(WeatherHdr hdr) =>
         hdr.EyeAdaptSpeed == 0f &&
         hdr.BlurRadius == 0f &&
@@ -469,6 +470,7 @@ internal readonly record struct GpuTonemapSettings
         hdr.SunlightDimmer == 0f &&
         hdr.GrassDimmer == 0f &&
         hdr.TreeDimmer == 0f;
+#pragma warning restore S1244
 
     /// <summary>Env overrides: mode swap for A/Bs, bloom kill-switch, + the existing exposure knob.</summary>
     public static GpuTonemapSettings ApplyOverrides(GpuTonemapSettings settings)

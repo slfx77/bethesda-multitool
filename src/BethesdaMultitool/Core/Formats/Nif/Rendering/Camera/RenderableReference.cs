@@ -163,7 +163,7 @@ internal readonly record struct RenderableReference(
     ///     225 refs). Drawing it double-renders the full mesh on top of itself (z-fighting). The
     ///     model PATH is the normal mesh, so <see cref="IsImposterModelPath" /> cannot catch these;
     ///     the EditorID suffix is the stable marker (no <c>*_LOD</c> STATs exist in the FNV or
-    ///     Skyrim SE masters — verified by header sweep 2026-07-06).
+    ///     Skyrim SE masters).
     /// </summary>
     public static bool IsLodDuplicateBaseEditorId(string? baseEditorId)
         => !string.IsNullOrEmpty(baseEditorId) &&

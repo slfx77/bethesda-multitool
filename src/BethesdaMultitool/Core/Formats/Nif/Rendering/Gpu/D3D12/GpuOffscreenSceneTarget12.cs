@@ -64,7 +64,6 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     private readonly CpuDescriptorHandle _ldrRtvHandle; // tonemap output RTV
     private readonly CpuDescriptorHandle _dsvHandle;
     private readonly CpuDescriptorHandle _readOnlyDsvHandle;
-    private readonly uint _rtvDescriptorSize;
     private ID3D12Resource? _readback;
     private PlacedSubresourceFootPrint _readbackFootprint;
     private uint _readbackRowPitch;
@@ -220,10 +219,10 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
             DescriptorCount = 2, // writable + read-only views of the same depth resource
             Flags = DescriptorHeapFlags.None,
         });
-        _rtvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
+        var rtvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
         _rtvHandle = _rtvHeap.GetCPUDescriptorHandleForHeapStart();
         _ldrRtvHandle = _rtvHandle;
-        _ldrRtvHandle.Ptr += (nuint)_rtvDescriptorSize;
+        _ldrRtvHandle.Ptr += (nuint)rtvDescriptorSize;
         _dsvHandle = _dsvHeap.GetCPUDescriptorHandleForHeapStart();
         var dsvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.DepthStencilView);
         _readOnlyDsvHandle = new CpuDescriptorHandle(_dsvHandle, 1, dsvDescriptorSize);
