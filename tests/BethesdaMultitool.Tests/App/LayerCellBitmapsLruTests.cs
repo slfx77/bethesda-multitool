@@ -11,7 +11,7 @@ namespace BethesdaMultitool.Tests.App;
 ///     calls reused the most-recently-freed slot at a high index, so <c>Keys.First()</c>
 ///     walked past every free slot and returned the newly-added entry. Every cell in the
 ///     viewport appeared in the cache for one frame, then was immediately re-evicted —
-///     the disappearing-cells bug reproduced in the 2026-06-05 Map2DProfiler trace.
+///     the disappearing-cells bug reproduced in a Map2DProfiler trace.
 ///     <para>
 ///         These tests assert the actual invariant the cache needs:
 ///         (1) <see cref="OrderedDictionary{TKey,TValue}.GetAt" /> at index 0 is the

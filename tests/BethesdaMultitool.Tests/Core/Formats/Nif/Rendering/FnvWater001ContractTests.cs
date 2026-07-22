@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -21,7 +22,7 @@ public sealed class FnvWater001ContractTests
             out var scenePoint);
 
         Assert.True(ok);
-        AssertVector(new Vector3(30f, 0f, -20f), scenePoint);
+        VectorAssert.Equal(new Vector3(30f, 0f, -20f), scenePoint, 1e-6f);
         Assert.Equal(0.2828427f, depth.X, 6);
         Assert.Equal(0.2f, depth.Y, 6);
         Assert.NotEqual(depth.X, depth.Y);
@@ -99,7 +100,7 @@ public sealed class FnvWater001ContractTests
 
         taps[2] = safe with { SceneDistance = 8f, ScenePointZ = 2f };
         Assert.False(FnvWater001Contract.IsValidDisplacedRefractionFootprint(taps, 0f));
-        Assert.False(FnvWater001Contract.IsValidDisplacedRefractionFootprint(taps[..3], 0f));
+        Assert.False(FnvWater001Contract.IsValidDisplacedRefractionFootprint(taps.AsSpan(..3), 0f));
     }
 
     [Fact]
@@ -122,9 +123,9 @@ public sealed class FnvWater001ContractTests
         Assert.Equal(new Vector2(0.7f, 0.625f), correctedDepth);
         Assert.Equal(0.375f, depthT, 6);
         Assert.Equal(0.57f, aboveFog, 6);
-        AssertVector(new Vector3(0.2171f, 0.312825f, 0.40855f), transmitted);
-        AssertVector(new Vector3(0.28921357f, 0.36602426f, 0.44283494f), bodyReflection);
-        AssertVector(new Vector3(0.26217097f, 0.34607452f, 0.42997807f), composite);
+        VectorAssert.Equal(new Vector3(0.2171f, 0.312825f, 0.40855f), transmitted, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.28921357f, 0.36602426f, 0.44283494f), bodyReflection, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.26217097f, 0.34607452f, 0.42997807f), composite, 1e-6f);
     }
 
     [Fact]
@@ -211,11 +212,4 @@ public sealed class FnvWater001ContractTests
         AboveWaterFogAmount: 0.75f,
         RefractionDistortionAmount: 600f,
         EffectiveWaterFormId: 0x001009CA);
-
-    private static void AssertVector(Vector3 expected, Vector3 actual)
-    {
-        Assert.Equal(expected.X, actual.X, 6);
-        Assert.Equal(expected.Y, actual.Y, 6);
-        Assert.Equal(expected.Z, actual.Z, 6);
-    }
 }

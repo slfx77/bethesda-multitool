@@ -115,8 +115,12 @@ public sealed class GrassPlacementBuilderTests
     {
         var heights = new float[33 * 33];
         for (var y = 0; y < 33; y++)
-        for (var x = 0; x < 33; x++)
-            heights[y * 33 + x] = ((x + y) & 1) == 0 ? 0f : 80.75f;
+        {
+            for (var x = 0; x < 33; x++)
+            {
+                heights[y * 33 + x] = ((x + y) & 1) == 0 ? 0f : 80.75f;
+            }
+        }
         var fixture = CreateFixture(
             heights,
             density: 100,

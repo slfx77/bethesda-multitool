@@ -38,10 +38,10 @@ public sealed class FnvImageSpaceSelectionRetailTests(SampleFileFixture samples)
         Assert.Equal(NvDefaultExteriorFormId, wasteland.ImageSpaceFormId);
         Assert.Equal(WastelandBaseImageSpaceFormId, encounter.ImageSpaceFormId);
 
-        var exteriorXcim = Assert.Single(wasteland.Cells.Where(cell =>
+        var exteriorXcim = Assert.Single(wasteland.Cells, cell =>
             cell.GridX.HasValue &&
             cell.GridY.HasValue &&
-            cell.ImageSpaceFormId.GetValueOrDefault() != 0));
+            cell.ImageSpaceFormId.GetValueOrDefault() != 0);
         Assert.Equal(WastelandExteriorXcimCellFormId, exteriorXcim.FormId);
         Assert.Equal((6, -5), (exteriorXcim.GridX, exteriorXcim.GridY));
         Assert.Equal(NvDefaultExteriorFormId, exteriorXcim.ImageSpaceFormId);

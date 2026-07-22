@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -95,10 +96,10 @@ public sealed class TallGrassRenderTelemetryTests
     [Fact]
     public void RendererAndCaptureSources_ExposeAllTallGrassDrawRoutesWithAppendOnlyConstantAbi()
     {
-        var renderer = ReadSource(
+        var renderer = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferenceRenderer12.cs");
-        var capture = ReadSource(
+        var capture = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.SceneCapture.cs");
         var compactRenderer = string.Concat(renderer.Where(c => !char.IsWhiteSpace(c)));
         var compactCapture = string.Concat(capture.Where(c => !char.IsWhiteSpace(c)));
@@ -124,8 +125,8 @@ public sealed class TallGrassRenderTelemetryTests
             StringComparison.Ordinal);
         Assert.True(supportBranch > supportAssignment);
         Assert.Contains(
-            "fields[\"tallGrassWind\"]=referenceStatsisnot" +
-            "{ReferenceTallGrassWindSupported:true}?null:",
+            "if(referenceStatsisnot{ReferenceTallGrassWindSupported:true})" +
+            "{fields[\"tallGrassWind\"]=null;}else{fields[\"tallGrassWind\"]=",
             compactCapture,
             StringComparison.Ordinal);
 
@@ -140,21 +141,5 @@ public sealed class TallGrassRenderTelemetryTests
         {
             Assert.Contains($"[\"{key}\"]", capture, StringComparison.Ordinal);
         }
-    }
-
-    private static string ReadSource(params string[] relativePath) =>
-        File.ReadAllText(Path.Combine(FindRepoRoot(), Path.Combine(relativePath)));
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null &&
-               !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory.FullName;
     }
 }

@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -42,7 +43,7 @@ public sealed class RecoveredClassicMaterialShaderReferenceTests
             imagespaceEmissiveMult: 1.5f,
             materialEmitMult: 2f);
 
-        AssertVector(new Vector3(0.275f, 0.95f, 2.025f), output);
+        VectorAssert.Equal(new Vector3(0.275f, 0.95f, 2.025f), output, 1e-6f);
     }
 
     [Fact]
@@ -57,7 +58,7 @@ public sealed class RecoveredClassicMaterialShaderReferenceTests
             imagespaceEmissiveMult: 9f,
             materialEmitMult: 7f);
 
-        AssertVector(new Vector3(0.35f, 0.55f, 1.125f), output);
+        VectorAssert.Equal(new Vector3(0.35f, 0.55f, 1.125f), output, 1e-6f);
     }
 
     [Fact]
@@ -73,7 +74,7 @@ public sealed class RecoveredClassicMaterialShaderReferenceTests
             imagespaceEmissiveMult: 1.5f,
             materialEmitMult: 2f);
 
-        AssertVector(new Vector3(0.2f, 0.5f, 2.025f), output);
+        VectorAssert.Equal(new Vector3(0.2f, 0.5f, 2.025f), output, 1e-6f);
     }
 
     [Fact]
@@ -89,7 +90,7 @@ public sealed class RecoveredClassicMaterialShaderReferenceTests
             imagespaceEmissiveMult: 9f,
             materialEmitMult: 7f);
 
-        AssertVector(new Vector3(0.25f, 0.4f, 1.425f), output);
+        VectorAssert.Equal(new Vector3(0.25f, 0.4f, 1.425f), output, 1e-6f);
     }
 
     [Fact]
@@ -161,12 +162,5 @@ public sealed class RecoveredClassicMaterialShaderReferenceTests
             : Vector3.Min(rawEmission, Vector3.One);
         var shade = ambient + direct + Vector3.Multiply(emission, glowMap);
         return Vector3.Multiply(albedo, shade);
-    }
-
-    private static void AssertVector(Vector3 expected, Vector3 actual)
-    {
-        Assert.Equal(expected.X, actual.X, 6);
-        Assert.Equal(expected.Y, actual.Y, 6);
-        Assert.Equal(expected.Z, actual.Z, 6);
     }
 }

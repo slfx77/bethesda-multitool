@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
@@ -12,8 +13,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
 ///     fixtures pin byte offsets; this gate pins the cross-block coordinate frame and source-shape
 ///     routing that cannot be inferred from an isolated constraint payload.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class FnvPhysicsLiteRetailTests
 {
+    public FnvPhysicsLiteRetailTests()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+    }
+
     private const string MeshesBsaRelative =
         @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
     private const string HangingLightPath =
@@ -46,8 +53,8 @@ public sealed class FnvPhysicsLiteRetailTests
         // rooted at node 6. Converting either authored frame lands on the same physical hanger.
         var plan = PhysicsLiteSway.CreatePlan(set, limitedHinge, stableSeed: 0);
         var descriptor = Assert.IsType<PhysicsLiteSwayDescriptor>(plan.Descriptor);
-        AssertVector(new Vector3(-55.7041f, 0.05523f, -19.1407f), descriptor.Pivot, 0.02f);
-        AssertVector(-Vector3.UnitY, descriptor.Axis, 0.0001f);
+        VectorAssert.Equal(new Vector3(-55.7041f, 0.05523f, -19.1407f), descriptor.Pivot, 0.02f);
+        VectorAssert.Equal(-Vector3.UnitY, descriptor.Axis, 0.0001f);
         Assert.Equal(-MathF.PI / 2f, descriptor.MinimumAngle, 4);
         Assert.Equal(MathF.PI / 2f, descriptor.MaximumAngle, 4);
 
@@ -92,12 +99,5 @@ public sealed class FnvPhysicsLiteRetailTests
     {
         Assert.True(archives.TryExtractFile(path, out var data, out _), $"Retail NIF missing: {path}");
         return (data, Assert.IsType<NifInfo>(NifParser.Parse(data)));
-    }
-
-    private static void AssertVector(Vector3 expected, Vector3 actual, float tolerance)
-    {
-        Assert.InRange(actual.X, expected.X - tolerance, expected.X + tolerance);
-        Assert.InRange(actual.Y, expected.Y - tolerance, expected.Y + tolerance);
-        Assert.InRange(actual.Z, expected.Z - tolerance, expected.Z + tolerance);
     }
 }

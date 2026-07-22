@@ -87,7 +87,8 @@ public sealed class StreamingQuiescenceTests
         var calls = 0;
         var settled = await StreamingQuiescence.PollAsync(
             () => { calls++; return true; },
-            timeout: TimeSpan.FromSeconds(5), interval: TimeSpan.FromMilliseconds(10));
+            timeout: TimeSpan.FromSeconds(5), interval: TimeSpan.FromMilliseconds(10),
+            TestContext.Current.CancellationToken);
         Assert.True(settled);
         Assert.Equal(1, calls);
     }
@@ -97,7 +98,8 @@ public sealed class StreamingQuiescenceTests
     {
         var settled = await StreamingQuiescence.PollAsync(
             () => false,
-            timeout: TimeSpan.FromMilliseconds(50), interval: TimeSpan.FromMilliseconds(10));
+            timeout: TimeSpan.FromMilliseconds(50), interval: TimeSpan.FromMilliseconds(10),
+            TestContext.Current.CancellationToken);
         Assert.False(settled);
     }
 
@@ -107,7 +109,8 @@ public sealed class StreamingQuiescenceTests
         var calls = 0;
         var settled = await StreamingQuiescence.PollAsync(
             () => ++calls >= 3,
-            timeout: TimeSpan.FromSeconds(5), interval: TimeSpan.FromMilliseconds(10));
+            timeout: TimeSpan.FromSeconds(5), interval: TimeSpan.FromMilliseconds(10),
+            TestContext.Current.CancellationToken);
         Assert.True(settled);
     }
 }

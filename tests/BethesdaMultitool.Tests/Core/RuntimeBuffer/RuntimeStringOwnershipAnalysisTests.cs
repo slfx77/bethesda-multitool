@@ -252,33 +252,20 @@ public sealed class RuntimeStringOwnershipAnalysisTests
         IReadOnlyList<RuntimeEditorIdEntry>? runtimeEditorIds = null,
         IReadOnlyList<DetectedMainRecord>? mainRecords = null)
     {
-        var tempFile = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        try
-        {
-            File.WriteAllBytes(tempFile, data);
+        using var mmf = MemoryMappedFile.CreateNew(null, data.Length);
+        using var accessor = mmf.CreateViewAccessor(0, data.Length);
+        accessor.WriteArray(0, data, 0, data.Length);
 
-            using var mmf = MemoryMappedFile.CreateFromFile(tempFile, FileMode.Open, null, data.Length,
-                MemoryMappedFileAccess.Read);
-            using var accessor = mmf.CreateViewAccessor(0, data.Length, MemoryMappedFileAccess.Read);
+        var analyzer = new RuntimeBufferAnalyzer(
+            accessor,
+            data.Length,
+            CreateMinidumpInfo(data.Length),
+            coverage,
+            null,
+            runtimeEditorIds,
+            mainRecords: mainRecords);
 
-            var analyzer = new RuntimeBufferAnalyzer(
-                accessor,
-                data.Length,
-                CreateMinidumpInfo(data.Length),
-                coverage,
-                null,
-                runtimeEditorIds,
-                mainRecords: mainRecords);
-
-            return analyzer.ExtractStringDataOnly();
-        }
-        finally
-        {
-            if (File.Exists(tempFile))
-            {
-                File.Delete(tempFile);
-            }
-        }
+        return analyzer.ExtractStringDataOnly();
     }
 
     private static CoverageResult CreateCoverage(int fileSize, params CoverageGap[] gaps)

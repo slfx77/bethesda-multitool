@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -109,6 +110,7 @@ public sealed class WalkHorizontalCollisionTests
     [Fact]
     public void RetailCliffVertiC2_PlacedHavokSoupBlocksWarmWalkSweep()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var bsaPath = FindRetailMeshesBsa();
         Assert.SkipWhen(bsaPath is null, "Retail Fallout - Meshes.bsa is not available.");
 
@@ -131,8 +133,8 @@ public sealed class WalkHorizontalCollisionTests
         Assert.Equal(819, extracted.Positions.Length);
         Assert.Equal(4_380, extracted.Triangles.Length);
         var mesh = new CollisionMesh(extracted.Positions, extracted.Triangles);
-        AssertVec(new Vector3(-2741.1003f, -2178.751f, -1538.8652f), mesh.LocalMin);
-        AssertVec(new Vector3(2964.1914f, 1103.8661f, 1148.2733f), mesh.LocalMax);
+        VectorAssert.Equal(new Vector3(-2741.1003f, -2178.751f, -1538.8652f), mesh.LocalMin, 1e-3f);
+        VectorAssert.Equal(new Vector3(2964.1914f, 1103.8661f, 1148.2733f), mesh.LocalMax, 1e-3f);
 
         var world = PlacedReferenceTransform.ComposeWorldMatrix(
             108807.24f, 25761.17f, 5273.787f,
@@ -171,6 +173,7 @@ public sealed class WalkHorizontalCollisionTests
     [Fact]
     public void RetailNamedEffectCards_HaveNoAuthoredHavok()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var bsaPath = FindRetailMeshesBsa();
         Assert.SkipWhen(bsaPath is null, "Retail Fallout - Meshes.bsa is not available.");
 
@@ -195,6 +198,7 @@ public sealed class WalkHorizontalCollisionTests
     [Fact]
     public void RetailEffectPathWithAuthoredHavok_RemainsCollisionEligible()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var bsaPath = FindRetailMeshesBsa();
         Assert.SkipWhen(bsaPath is null, "Retail Fallout - Meshes.bsa is not available.");
 
@@ -245,13 +249,6 @@ public sealed class WalkHorizontalCollisionTests
         };
         var mesh = new CollisionMesh(positions, [0, 1, 2, 0, 2, 3]);
         return WalkCollisionInstance.FromMesh(mesh, Matrix4x4.Identity);
-    }
-
-    private static void AssertVec(Vector3 expected, Vector3 actual)
-    {
-        Assert.Equal(expected.X, actual.X, 3);
-        Assert.Equal(expected.Y, actual.Y, 3);
-        Assert.Equal(expected.Z, actual.Z, 3);
     }
 
     private static string? FindRetailMeshesBsa()

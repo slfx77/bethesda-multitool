@@ -28,7 +28,7 @@ public sealed class ImadOffsetReaderTests
         Size: 0x748, Data: 0x30, ParameterPointers: 0x664,
         NamedPointers: 0x70C, Name: 0x740, HasSounds: true);
 
-    private static readonly IReadOnlyDictionary<string, int> NamedPointerOrdinals =
+    private static readonly Dictionary<string, int> NamedPointerOrdinals =
         new Dictionary<string, int>(StringComparer.Ordinal)
         {
             ["BNAM"] = 0,
@@ -376,9 +376,16 @@ public sealed class ImadOffsetReaderTests
             {
                 for (var word = 0; word < table.ElementSize / 4; word++)
                 {
-                    var value = word == 0 && animatable
-                        ? count == 1 ? 0f : row / (float)(count - 1)
-                        : rank + 0.25f + word * 0.25f + row * 100f;
+                    float value;
+                    if (word == 0 && animatable)
+                    {
+                        value = count == 1 ? 0f : row / (float)(count - 1);
+                    }
+                    else
+                    {
+                        value = rank + 0.25f + word * 0.25f + row * 100f;
+                    }
+
                     WriteFloatBE(bytes, keyCursor, value);
                     keyCursor += 4;
                 }

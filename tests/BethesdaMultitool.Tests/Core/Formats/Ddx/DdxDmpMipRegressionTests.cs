@@ -13,6 +13,7 @@ using Xunit.Sdk;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Ddx;
 
+[Collection(SequentialIntegrationGroup.Name)]
 [Trait("Category", BucketBTestGuard.Category)]
 public sealed class DdxDmpMipRegressionTests
 {

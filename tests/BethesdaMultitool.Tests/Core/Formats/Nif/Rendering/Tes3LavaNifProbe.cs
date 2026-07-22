@@ -18,6 +18,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     chains (Tx_lava_molten/crust.tga) — all of which must classify + resolve like any NiNode
 ///     scene. Reads the real Morrowind.bsa; skips when absent (CI).
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class Tes3LavaNifProbe
 {
     private const string Bsa = @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Morrowind.bsa";

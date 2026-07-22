@@ -44,7 +44,7 @@ public sealed class FnvGeometryArtifactRetailTests
         Assert.Equal(228, decal.TriangleCount);
 
         var components = Components(decal);
-        Assert.Equal(38, components.Count);
+        Assert.Equal(38, components.Length);
         Assert.All(components, component =>
         {
             Assert.Equal(8, component.VertexCount);
@@ -172,7 +172,7 @@ public sealed class FnvGeometryArtifactRetailTests
             .Distinct()
             .ToArray();
 
-    private static IReadOnlyList<ComponentSummary> Components(RenderableSubmesh submesh)
+    private static ComponentSummary[] Components(RenderableSubmesh submesh)
     {
         var parent = Enumerable.Range(0, submesh.VertexCount).ToArray();
         int Find(int value)
@@ -210,7 +210,7 @@ public sealed class FnvGeometryArtifactRetailTests
             .ToArray();
     }
 
-    private NifTextureResolver OpenRetailTextures() => new(
+    private static NifTextureResolver OpenRetailTextures() => new(
     [
         FindRetailArchive(TexturesBsaRelative, "textures"),
         FindRetailArchive(Textures2BsaRelative, "textures2"),

@@ -1,3 +1,4 @@
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Architecture;
@@ -15,7 +16,7 @@ public sealed class LineCountInvariantTests
     [Fact]
     public void Every_Planner_And_PlannedWriter_File_Is_Within_The_Line_Ceiling()
     {
-        var repoRoot = FindRepoRoot();
+        var repoRoot = SourceContract.RepoRoot;
         var directories = new[]
         {
             Path.Combine(repoRoot, "src", "BethesdaMultitool",
@@ -47,17 +48,5 @@ public sealed class LineCountInvariantTests
         Assert.True(offenders.Count == 0,
             "The following Planner / PlannedWriter files exceed the 500-LOC ceiling:" +
             Environment.NewLine + string.Join(Environment.NewLine, offenders));
-    }
-
-    private static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Directory.Build.props")))
-        {
-            dir = dir.Parent;
-        }
-
-        Assert.NotNull(dir);
-        return dir!.FullName;
     }
 }

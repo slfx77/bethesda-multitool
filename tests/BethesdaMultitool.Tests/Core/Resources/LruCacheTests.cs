@@ -96,7 +96,7 @@ public sealed class LruCacheTests
     [Fact]
     public void Remove_then_re_add_keeps_ordering_consistent()
     {
-        // Pins the invariant behind the 2026-06-05 disappearing-cells bug: a removed key must be
+        // Pins the invariant behind the disappearing-cells bug: a removed key must be
         // fully detached from the recency list so its re-add cannot corrupt eviction order.
         var cache = CreateCache(2);
         cache.Set("a", "1");

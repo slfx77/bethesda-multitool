@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -81,13 +82,13 @@ public sealed class ClassicSpecularLodTests
         var worldCenter = Vector3.Transform(localCenter, absoluteWorld);
         var absoluteCamera = worldCenter + new Vector3(654f, 0f, 0f);
         var absoluteFade = ClassicSpecularLodFade.Compute(
-            in profile, localCenter, localRadius, in absoluteWorld, absoluteCamera);
+            in profile, localCenter, localRadius, absoluteWorld, absoluteCamera);
 
         var renderOrigin = new Vector3(960f, 1_984f, 0f);
         var relativeWorld = absoluteWorld;
         relativeWorld.Translation -= renderOrigin;
         var relativeFade = ClassicSpecularLodFade.Compute(
-            in profile, localCenter, localRadius, in relativeWorld, absoluteCamera - renderOrigin);
+            in profile, localCenter, localRadius, relativeWorld, absoluteCamera - renderOrigin);
 
         Assert.Equal(0.5f, absoluteFade, 5);
         Assert.Equal(absoluteFade, relativeFade, 5);
@@ -106,13 +107,13 @@ public sealed class ClassicSpecularLodTests
         Assert.Equal(224, RecordFieldOffset(instanceDrawType, "SpecularLodBounds"));
         Assert.Equal(240, RecordFieldOffset(instanceDrawType, "SpecularLodParams"));
 
-        var renderer = ReadSource(
+        var renderer = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferenceRenderer12.cs");
-        var rendererConstants = ReadSource(
+        var rendererConstants = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferenceRendererConstants12.cs");
-        var topDown = ReadSource(
+        var topDown = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.TopDown.cs");
         var directVertex = ReadEmbeddedShader("reference.vert.hlsl");
         var instancedVertex = ReadEmbeddedShader("reference_instanced.vert.hlsl");
@@ -199,21 +200,5 @@ public sealed class ClassicSpecularLodTests
         using var stream = assembly.GetManifestResourceStream(resourceName)!;
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
-    }
-
-    private static string ReadSource(params string[] relativePath) =>
-        File.ReadAllText(Path.Combine(FindRepoRoot(), Path.Combine(relativePath)));
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null &&
-               !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory.FullName;
     }
 }

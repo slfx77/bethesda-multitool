@@ -2,10 +2,12 @@ using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class IdleRecordScannerTests(SampleFileFixture samples)
 {
     private const uint NpcWeaponIdlesFormId = 0x0005C364;
@@ -46,6 +48,7 @@ public sealed class IdleRecordScannerTests(SampleFileFixture samples)
     [Fact]
     public void IdleIndexBuilder_FinalXboxEsm_IndexesWeaponIdleRootsAndPowerFistLeaf()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
         var esm = EsmFileLoader.Load(samples.Xbox360FinalEsm!, false);
@@ -76,6 +79,7 @@ public sealed class IdleRecordScannerTests(SampleFileFixture samples)
     [Fact]
     public void IdleIndexBuilder_FinalXboxEsm_PowerFistIdlesAreVatsOnly()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
         var esm = EsmFileLoader.Load(samples.Xbox360FinalEsm!, false);

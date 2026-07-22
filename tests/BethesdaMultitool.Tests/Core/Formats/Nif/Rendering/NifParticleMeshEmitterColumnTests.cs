@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -16,8 +17,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     retail-asset gate independently proves the resolved source mesh reaches both static and live extraction.
 ///     Sample-gated — skips when the FNV meshes BSA isn't present (e.g. CI).
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class NifParticleMeshEmitterColumnTests
 {
+    public NifParticleMeshEmitterColumnTests()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+    }
+
     private const string MeshesBsaRelative =
         @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
     private const string FxDustPath = @"meshes\effects\ambient\fxdustwhirlwind01.nif";

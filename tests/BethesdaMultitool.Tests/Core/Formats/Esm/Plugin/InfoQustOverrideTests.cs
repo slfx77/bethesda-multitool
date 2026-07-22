@@ -168,7 +168,7 @@ public class InfoQustOverrideTests
         // StartGameEnabled bit (Doc Mitchell's VMS01 intro never auto-starts; player stuck
         // in bed) or carries a runtime Started bit (Sunny Smiles' "Back in the Saddle"
         // appears already in progress before the player meets her). Both symptoms surfaced
-        // in the 2026-05-27 xex44 capture. Pin the contract: DATA is never emitted, even
+        // in a captured dump. Pin the contract: DATA is never emitted, even
         // when FULL is, so the merge engine retains master's authoring bytes verbatim.
         var quest = new QuestRecord
         {

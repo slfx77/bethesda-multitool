@@ -487,6 +487,175 @@ public class EsmParserTests
 
     #endregion
 
+    #region EnumerateRecordsWithGrups — malformed input
+
+    private const int Tes4HeaderTotal = 24 + 18; // TES4 record header + HEDR subrecord
+
+    /// <summary>Write the minimal TES4 preamble every walk test needs; returns the next offset.</summary>
+    private static int WriteTes4Preamble(byte[] buf)
+    {
+        WriteSig(buf, 0, "TES4");
+        WriteUInt32LE(buf, 4, 18);
+        WriteSig(buf, 24, "HEDR");
+        WriteUInt16LE(buf, 28, 12);
+        WriteUInt32LE(buf, 30, BitConverter.SingleToUInt32Bits(1.34f));
+        return Tes4HeaderTotal;
+    }
+
+    private static int WriteGrupHeader(byte[] buf, int off, uint groupSize, string label)
+    {
+        WriteSig(buf, off, "GRUP");
+        WriteUInt32LE(buf, off + 4, groupSize);
+        WriteSig(buf, off + 8, label);
+        WriteUInt32LE(buf, off + 12, 0); // GroupType = top-level
+        return off + 24;
+    }
+
+    private static int WriteRecordWithEdid(byte[] buf, int off, string sig, uint formId, string editorId)
+    {
+        var edid = Encoding.ASCII.GetBytes(editorId + "\0");
+        WriteSig(buf, off, sig);
+        WriteUInt32LE(buf, off + 4, (uint)(6 + edid.Length));
+        WriteUInt32LE(buf, off + 12, formId);
+        WriteSig(buf, off + 24, "EDID");
+        WriteUInt16LE(buf, off + 28, (ushort)edid.Length);
+        Array.Copy(edid, 0, buf, off + 30, edid.Length);
+        return off + 24 + 6 + edid.Length;
+    }
+
+    [Fact]
+    public void EnumerateRecordsWithGrups_RecordDataSizeExceedsFile_StopsWithoutThrowing()
+    {
+        // rec1 is valid; rec2 declares DataSize 0x1000 but only 8 bytes exist before EOF.
+        var buf = new byte[Tes4HeaderTotal + 24 + 38 + 24 + 8];
+        var off = WriteTes4Preamble(buf);
+        off = WriteGrupHeader(buf, off, (uint)(buf.Length - Tes4HeaderTotal), "WEAP");
+        off = WriteRecordWithEdid(buf, off, "WEAP", 0x100, "TestOne");
+
+        WriteSig(buf, off, "WEAP");
+        WriteUInt32LE(buf, off + 4, 0x1000); // size lie
+        WriteUInt32LE(buf, off + 12, 0x101);
+        WriteSig(buf, off + 24, "EDID"); // 8 real bytes of data: one tiny subrecord
+        WriteUInt16LE(buf, off + 28, 2);
+        buf[off + 30] = (byte)'A';
+
+        var (records, _) = EsmParser.EnumerateRecordsWithGrups(buf);
+
+        Assert.Equal(2, records.Count);
+        Assert.Equal(0x100u, records[0].Header.FormId);
+        // The lying record still yields the subrecords that physically fit (clamped slice).
+        var clamped = Assert.Single(records[1].Subrecords);
+        Assert.Equal("EDID", clamped.Signature);
+    }
+
+    [Fact]
+    public void EnumerateRecordsWithGrups_GrupSizeExceedsFile_ParsesContainedRecordsWithoutThrowing()
+    {
+        var buf = new byte[Tes4HeaderTotal + 24 + 38];
+        var off = WriteTes4Preamble(buf);
+        off = WriteGrupHeader(buf, off, 0x10000, "WEAP"); // declared size far past EOF
+        WriteRecordWithEdid(buf, off, "WEAP", 0x200, "TestTwo");
+
+        var (records, grups) = EsmParser.EnumerateRecordsWithGrups(buf);
+
+        Assert.Single(grups);
+        var record = Assert.Single(records);
+        Assert.Equal(0x200u, record.Header.FormId);
+    }
+
+    [Fact]
+    public void EnumerateRecordsWithGrups_DeeplyNestedGrups_StopsAtDepthCap()
+    {
+        // 200 nested GRUPs — without the depth cap this would recurse to a stack overflow.
+        const int nesting = 200;
+        var buf = new byte[Tes4HeaderTotal + (nesting * 24)];
+        var off = WriteTes4Preamble(buf);
+        for (var i = 0; i < nesting; i++)
+        {
+            off = WriteGrupHeader(buf, off, (uint)(buf.Length - off), "CELL");
+        }
+
+        var (records, grups) = EsmParser.EnumerateRecordsWithGrups(buf);
+
+        Assert.Empty(records);
+        // Groups past MaxGrupNestingDepth are skipped, not walked.
+        Assert.Equal(EsmParser.MaxGrupNestingDepth, grups.Count);
+    }
+
+    [Fact]
+    public void EnumerateRecordsWithGrups_GrupSizeSmallerThanHeader_SkipsGroup()
+    {
+        var buf = new byte[Tes4HeaderTotal + 24 + 38];
+        var off = WriteTes4Preamble(buf);
+        off = WriteGrupHeader(buf, off, 10, "WEAP"); // declared size below the header size
+        WriteRecordWithEdid(buf, off, "WEAP", 0x300, "TestGon");
+
+        var (records, grups) = EsmParser.EnumerateRecordsWithGrups(buf);
+
+        // The malformed group terminates the walk without throwing.
+        Assert.Empty(records);
+        Assert.Empty(grups);
+    }
+
+    [Fact]
+    public void EnumerateRecordsWithGrups_ZeroDataSizeRecordsInGrup_Terminates()
+    {
+        var buf = new byte[Tes4HeaderTotal + 24 + (3 * 24)];
+        var off = WriteTes4Preamble(buf);
+        off = WriteGrupHeader(buf, off, (uint)(buf.Length - Tes4HeaderTotal), "WEAP");
+        for (var i = 0; i < 3; i++)
+        {
+            WriteSig(buf, off, "WEAP");
+            WriteUInt32LE(buf, off + 4, 0); // zero DataSize — must still advance
+            WriteUInt32LE(buf, off + 12, (uint)(0x400 + i));
+            off += 24;
+        }
+
+        var (records, _) = EsmParser.EnumerateRecordsWithGrups(buf);
+
+        Assert.Equal(3, records.Count);
+        Assert.All(records, r => Assert.Empty(r.Subrecords));
+    }
+
+    [Fact]
+    public void EnumerateRecordsWithGrups_TruncatedMidRecordHeader_ReturnsParsedPrefix()
+    {
+        var buf = new byte[Tes4HeaderTotal + 24 + 38 + 10]; // 10 bytes = partial next header
+        var off = WriteTes4Preamble(buf);
+        off = WriteGrupHeader(buf, off, (uint)(buf.Length - Tes4HeaderTotal), "WEAP");
+        off = WriteRecordWithEdid(buf, off, "WEAP", 0x500, "TestFive");
+        WriteSig(buf, off, "WEAP"); // header cut off after 10 bytes
+
+        var (records, _) = EsmParser.EnumerateRecordsWithGrups(buf);
+
+        var record = Assert.Single(records);
+        Assert.Equal(0x500u, record.Header.FormId);
+    }
+
+    [Fact]
+    public void EnumerateRecordsWithGrups_CompressedRecordSizeLie_ReturnsRecordWithEmptySubrecords()
+    {
+        var buf = new byte[Tes4HeaderTotal + 24 + 24 + 8];
+        var off = WriteTes4Preamble(buf);
+        off = WriteGrupHeader(buf, off, (uint)(buf.Length - Tes4HeaderTotal), "WEAP");
+
+        WriteSig(buf, off, "WEAP");
+        WriteUInt32LE(buf, off + 4, 0x2000); // size lie
+        WriteUInt32LE(buf, off + 8, EsmParser.CompressedFlag);
+        WriteUInt32LE(buf, off + 12, 0x600);
+        WriteUInt32LE(buf, off + 24, 0xDEADBEEF); // 8 bytes of non-zlib garbage
+        WriteUInt32LE(buf, off + 28, 0xDEADBEEF);
+
+        var (records, _) = EsmParser.EnumerateRecordsWithGrups(buf);
+
+        // Clamped slice fails zlib inflation → DecompressRecordData null → empty subrecords.
+        var record = Assert.Single(records);
+        Assert.Equal(0x600u, record.Header.FormId);
+        Assert.Empty(record.Subrecords);
+    }
+
+    #endregion
+
     #region ScanRecords
 
     [Fact]

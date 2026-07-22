@@ -16,8 +16,8 @@ public sealed class MapMarkerAutomationLayoutTests
             200f, 200f, metrics, 1f, hasIcon: true);
 
         Assert.NotNull(bounds);
-        Assert.Equal(24f, (float)bounds.Value.Width, 3);
-        Assert.Equal(24f, (float)bounds.Value.Height, 3);
+        Assert.Equal(24f, bounds.Value.Width, 3);
+        Assert.Equal(24f, bounds.Value.Height, 3);
     }
 
     [Fact]
@@ -30,8 +30,8 @@ public sealed class MapMarkerAutomationLayoutTests
             200f, 200f, metrics, 1f, hasIcon: true);
 
         Assert.NotNull(bounds);
-        Assert.Equal(40f, (float)bounds.Value.Width, 3);
-        Assert.Equal(40f, (float)bounds.Value.Height, 3);
+        Assert.Equal(40f, bounds.Value.Width, 3);
+        Assert.Equal(40f, bounds.Value.Height, 3);
     }
 
     [Fact]
@@ -44,8 +44,8 @@ public sealed class MapMarkerAutomationLayoutTests
             200f, 200f, metrics, 2f, hasIcon: true);
 
         Assert.NotNull(bounds);
-        Assert.Equal(48f, (float)bounds.Value.Width, 3);
-        Assert.Equal(40f, (float)bounds.Value.Height, 3);
+        Assert.Equal(48f, bounds.Value.Width, 3);
+        Assert.Equal(40f, bounds.Value.Height, 3);
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -18,7 +19,7 @@ public sealed class FnvActiveLocalLightOracleTests
     [Fact]
     public void Contract_HasNoProductionConsumerWhileRuntimeSupportIsDisabled()
     {
-        var root = FindRepoRoot();
+        var root = SourceContract.RepoRoot;
         var sourceRoot = Path.Combine(root, "src");
         var oraclePath = Path.GetFullPath(Path.Combine(
             root,
@@ -72,7 +73,9 @@ public sealed class FnvActiveLocalLightOracleTests
             {
                 Assert.Equal(At(red, x, y), At(red, 127 - x, y));
                 Assert.Equal(At(red, x, y), At(red, x, 127 - y));
-                Assert.Equal(At(red, x, y), At(red, y, x));
+                var transposedX = y; // transpose symmetry: sample the mirrored coordinate
+                var transposedY = x;
+                Assert.Equal(At(red, x, y), At(red, transposedX, transposedY));
             }
         }
 
@@ -92,7 +95,7 @@ public sealed class FnvActiveLocalLightOracleTests
             lodDimmer: 0.25f,
             shadowLodDimmer: 0.75f);
 
-        AssertVector(new Vector3(8f, 4f, 2f) / 255f, prepared.Rgb);
+        VectorAssert.Equal(new Vector3(8f, 4f, 2f) / 255f, prepared.Rgb, 1e-6f);
         Assert.Equal(0.75f, prepared.ShadowLodDimmer, 6);
     }
 
@@ -108,10 +111,10 @@ public sealed class FnvActiveLocalLightOracleTests
         var negativeLightAndFade = FnvActiveLocalLightOracle.PreparePointLightColor(
             0x000000ff, true, -0.5f, hdr: false, 1f, 1f, 0f);
 
-        AssertVector(Vector3.UnitX, nonHdr.Rgb);
-        AssertVector(new Vector3(2f, 0f, 0f), hdr.Rgb);
-        AssertVector(new Vector3(-0.5f, 0f, 0f), negativeFade.Rgb);
-        AssertVector(new Vector3(0.5f, 0f, 0f), negativeLightAndFade.Rgb);
+        VectorAssert.Equal(Vector3.UnitX, nonHdr.Rgb, 1e-6f);
+        VectorAssert.Equal(new Vector3(2f, 0f, 0f), hdr.Rgb, 1e-6f);
+        VectorAssert.Equal(new Vector3(-0.5f, 0f, 0f), negativeFade.Rgb, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.5f, 0f, 0f), negativeLightAndFade.Rgb, 1e-6f);
     }
 
     [Fact]
@@ -122,8 +125,8 @@ public sealed class FnvActiveLocalLightOracleTests
         var amplified = FnvActiveLocalLightOracle.PreparePointLightColor(
             0x00ffffff, false, 1f, hdr: false, 1.5f, 2f, 0f);
 
-        AssertVector(Vector3.Zero, darkened.Rgb);
-        AssertVector(new Vector3(3f), amplified.Rgb);
+        VectorAssert.Equal(Vector3.Zero, darkened.Rgb, 1e-6f);
+        VectorAssert.Equal(new Vector3(3f), amplified.Rgb, 1e-6f);
     }
 
     [Fact]
@@ -156,12 +159,12 @@ public sealed class FnvActiveLocalLightOracleTests
             sunLightData: new Vector3(1f, 2f, 0f));
 
         var inverseSqrt10 = 1f / MathF.Sqrt(10f);
-        AssertVector(
+        VectorAssert.Equal(
             new Vector3(inverseSqrt10, 3f * inverseSqrt10, 0f),
-            interpolants.SunTangentSpace);
-        AssertVector(new Vector3(2f, 0f, 0f), interpolants.LocalTangentSpace);
-        AssertVector(new Vector4(0.75f, 0.5f, 0.5f, 0.5f),
-            interpolants.AttenuationCoordinates);
+            interpolants.SunTangentSpace, 1e-6f);
+        VectorAssert.Equal(new Vector3(2f, 0f, 0f), interpolants.LocalTangentSpace, 1e-6f);
+        VectorAssert.Equal(new Vector4(0.75f, 0.5f, 0.5f, 0.5f),
+            interpolants.AttenuationCoordinates, 1e-6f);
     }
 
     [Fact]
@@ -183,9 +186,9 @@ public sealed class FnvActiveLocalLightOracleTests
         Assert.Equal(-1f, result.RawSignedSunDot, 6);
         Assert.Equal(1f, result.RawSignedLocalDot, 6);
         Assert.Equal(-0.25f, result.RawAttenuation, 6);
-        AssertVector(new Vector3(0.7f, -0.25f, -0.1f), result.TotalBeforeClamp);
-        AssertVector(new Vector3(0.7f, 0f, 0f), result.Shade);
-        AssertVector(new Vector3(0.35f, 0f, 0f), result.Rgb);
+        VectorAssert.Equal(new Vector3(0.7f, -0.25f, -0.1f), result.TotalBeforeClamp, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.7f, 0f, 0f), result.Shade, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.35f, 0f, 0f), result.Rgb, 1e-6f);
     }
 
     [Fact]
@@ -205,7 +208,7 @@ public sealed class FnvActiveLocalLightOracleTests
             vertexRgb: Vector3.One);
 
         Assert.Equal(0.25f, result.RawSignedSunDot, 6);
-        AssertVector(new Vector3(0.25f), result.Shade);
+        VectorAssert.Equal(new Vector3(0.25f), result.Shade, 1e-6f);
     }
 
     [Fact]
@@ -224,8 +227,8 @@ public sealed class FnvActiveLocalLightOracleTests
             vertexNormal: Vector3.UnitZ);
 
         var inverseSqrt10 = 1f / MathF.Sqrt(10f);
-        AssertVector(new Vector3(inverseSqrt10, 3f * inverseSqrt10, 0f), sun);
-        AssertVector(new Vector3(2f, 0f, 0f), interpolants.TangentSpaceDirection);
+        VectorAssert.Equal(new Vector3(inverseSqrt10, 3f * inverseSqrt10, 0f), sun, 1e-6f);
+        VectorAssert.Equal(new Vector3(2f, 0f, 0f), interpolants.TangentSpaceDirection, 1e-6f);
     }
 
     [Fact]
@@ -252,10 +255,10 @@ public sealed class FnvActiveLocalLightOracleTests
         Assert.Equal(0.75f, twoLocals.Local0.RawAttenuation, 6);
         Assert.Equal(-1f, twoLocals.Local1.RawSignedDot, 6);
         Assert.Equal(0f, twoLocals.Local2.RawAttenuation, 6);
-        AssertVector(Vector3.Zero, twoLocals.Local2.PointDeltaOverRadius);
-        AssertVector(Vector3.Zero, twoLocals.Local2.Contribution);
-        AssertVector(new Vector3(0.85f, -0.8f, 3.2f), twoLocals.TotalBeforeClamp);
-        AssertVector(new Vector3(0.85f, 0f, 3.2f), twoLocals.Shade);
+        VectorAssert.Equal(Vector3.Zero, twoLocals.Local2.PointDeltaOverRadius, 1e-6f);
+        VectorAssert.Equal(Vector3.Zero, twoLocals.Local2.Contribution, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.85f, -0.8f, 3.2f), twoLocals.TotalBeforeClamp, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.85f, 0f, 3.2f), twoLocals.Shade, 1e-6f);
 
         var threeLocals = EvaluateId143(
             local0, local0Constants,
@@ -263,11 +266,11 @@ public sealed class FnvActiveLocalLightOracleTests
             local2, local2Constants,
             totalLightCountGate: 4f);
         Assert.True(threeLocals.Local2.Enabled);
-        AssertVector(new Vector3(2f, 0f, 0f), threeLocals.Local2.PointDeltaOverRadius);
+        VectorAssert.Equal(new Vector3(2f, 0f, 0f), threeLocals.Local2.PointDeltaOverRadius, 1e-6f);
         Assert.Equal(-3f, threeLocals.Local2.RawAttenuation, 6);
-        AssertVector(new Vector3(0f, 0f, -3f), threeLocals.Local2.Contribution);
-        AssertVector(new Vector3(0.85f, -0.8f, 0.2f), threeLocals.TotalBeforeClamp);
-        AssertVector(new Vector3(0.85f, 0f, 0.2f), threeLocals.Shade);
+        VectorAssert.Equal(new Vector3(0f, 0f, -3f), threeLocals.Local2.Contribution, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.85f, -0.8f, 0.2f), threeLocals.TotalBeforeClamp, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.85f, 0f, 0.2f), threeLocals.Shade, 1e-6f);
     }
 
     [Theory]
@@ -329,7 +332,7 @@ public sealed class FnvActiveLocalLightOracleTests
             vertexRgb: Vector3.One);
 
         Assert.Equal(0.25f, result.RawSignedSunDot, 6);
-        AssertVector(new Vector3(0.25f), result.Shade);
+        VectorAssert.Equal(new Vector3(0.25f), result.Shade, 1e-6f);
     }
 
     [Fact]
@@ -355,7 +358,7 @@ public sealed class FnvActiveLocalLightOracleTests
             baseRgb: Vector3.One,
             vertexRgb: Vector3.One);
 
-        AssertVector(new Vector3(2f, 0f, 0f), result.Local0.PointDeltaOverRadius);
+        VectorAssert.Equal(new Vector3(2f, 0f, 0f), result.Local0.PointDeltaOverRadius, 1e-6f);
         Assert.Equal(-3f, result.Local0.RawAttenuation, 6);
     }
 
@@ -401,9 +404,9 @@ public sealed class FnvActiveLocalLightOracleTests
         var ordinary = EvaluateId220(FnvClassicBasicShaderMode.Sls1009);
         var vertexColor = EvaluateId220(FnvClassicBasicShaderMode.Sls1013VertexColor);
 
-        AssertVector(new Vector3(0.5f, 0.25f, 0.75f), ordinary.Rgb);
-        AssertVector(new Vector3(0.4f, 0.1f, 0.15f), vertexColor.Rgb);
-        AssertVector(ordinary.Shade, vertexColor.Shade);
+        VectorAssert.Equal(new Vector3(0.5f, 0.25f, 0.75f), ordinary.Rgb, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.4f, 0.1f, 0.15f), vertexColor.Rgb, 1e-6f);
+        VectorAssert.Equal(ordinary.Shade, vertexColor.Shade, 1e-6f);
     }
 
     [Fact]
@@ -472,32 +475,4 @@ public sealed class FnvActiveLocalLightOracleTests
             vertexRgb: Vector3.One);
 
     private static byte At(byte[] red, int x, int y) => red[(y * 128) + x];
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null &&
-               !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory.FullName;
-    }
-
-    private static void AssertVector(Vector3 expected, Vector3 actual)
-    {
-        Assert.Equal(expected.X, actual.X, 6);
-        Assert.Equal(expected.Y, actual.Y, 6);
-        Assert.Equal(expected.Z, actual.Z, 6);
-    }
-
-    private static void AssertVector(Vector4 expected, Vector4 actual)
-    {
-        Assert.Equal(expected.X, actual.X, 6);
-        Assert.Equal(expected.Y, actual.Y, 6);
-        Assert.Equal(expected.Z, actual.Z, 6);
-        Assert.Equal(expected.W, actual.W, 6);
-    }
 }

@@ -1193,7 +1193,7 @@ public sealed class DialogGrupBuilderTests
         // reconstruction: empty NAM1, only TCLT links) must NOT attach to a shared master
         // topic — chained ahead of the retail greetings it shadows them: the engine picks
         // the empty stub, renders nothing, and the conversation instantly closes (Victor /
-        // Doc Mitchell, xex22.v113 in-game).
+        // Doc Mitchell, observed in-game).
         const uint sourceQuest = 0x00020000;
         const uint sourceSpeaker = 0x00030000;
         const uint masterGreeting = 0x000000C8;
@@ -1267,7 +1267,7 @@ public sealed class DialogGrupBuilderTests
     public void BuildDialogSection_KeepsSynthesizedGreetingEntryDespiteEmptyResponse()
     {
         // The GreetingEntrySynthesizer's deliberately-silent greeting IS the topic-tree
-        // entry mechanism — the empty-stub gate must exempt it (Ulysses' menu, xex21.v115:
+        // entry mechanism — the empty-stub gate must exempt it (Ulysses' menu:
         // dropping it left the NPC with only Goodbye).
         const uint sourceQuest = 0x00020000;
         const uint sourceSpeaker = 0x00030000;
@@ -1317,7 +1317,7 @@ public sealed class DialogGrupBuilderTests
     [Fact]
     public void BuildDialogSection_SynthEntryFiresWhenOnlyGreetingIsDoomedStub()
     {
-        // Existence-check hole (Ulysses, xex21.v116): a content-less runtime greeting stub
+        // Existence-check hole (Ulysses): a content-less runtime greeting stub
         // counted as "pair already has a greeting", suppressed the synthesizer, then died at
         // the empty-stub gate — leaving the NPC with only Goodbye. The pair must not count
         // as covered unless its greeting survives the gates.

@@ -1,11 +1,18 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class TriNifGeometryInspectorTests
 {
+    public TriNifGeometryInspectorTests()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+    }
+
     [Fact]
     public void Inspect_HeadHumanSiblingNif_HasExactGeometryMatch()
     {

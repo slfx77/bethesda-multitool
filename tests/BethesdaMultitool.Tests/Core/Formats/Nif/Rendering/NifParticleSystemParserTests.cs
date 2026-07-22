@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -13,8 +14,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     when the FNV meshes BSA isn't present (e.g. CI). Layout independently verified against the block-46
 ///     hex (Data ref 51, World Space, 9 modifiers = blocks 52-60).
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class NifParticleSystemParserTests
 {
+    public NifParticleSystemParserTests()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+    }
+
     private const string MeshesBsaRelative =
         @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
     private const string FxDustPath = @"meshes\effects\ambient\fxdustwhirlwind01.nif";

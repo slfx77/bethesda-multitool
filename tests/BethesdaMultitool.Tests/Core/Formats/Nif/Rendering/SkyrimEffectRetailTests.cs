@@ -1,14 +1,23 @@
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
 /// <summary>Installed Skyrim LE effect regressions for the named snow and fire assets.</summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class SkyrimEffectRetailTests
 {
+    public SkyrimEffectRetailTests()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+    }
+
     private const string ArchivePath = @"E:\SteamLibrary\SteamApps\common\Skyrim\Data\Skyrim - Meshes.bsa";
+
+    private static readonly float[] ExpectedBlowingSnowMaterialAlphas = [0.6f, 0.4f, 0.4f, 0.6f];
 
     [Fact]
     public void BlowingSnow_ComposesInlineEffectOpacityWithMaterialAlpha()
@@ -16,7 +25,7 @@ public sealed class SkyrimEffectRetailTests
         var model = Extract(@"meshes\effects\fxambsnowblowingplane.nif");
 
         Assert.Equal(4, model.Submeshes.Count);
-        Assert.Equal(new[] { 0.6f, 0.4f, 0.4f, 0.6f },
+        Assert.Equal(ExpectedBlowingSnowMaterialAlphas,
             model.Submeshes.Select(static sub => sub.MaterialAlpha).ToArray());
         Assert.All(model.Submeshes, static sub =>
         {

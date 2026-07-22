@@ -33,8 +33,8 @@ public sealed class FnvClassicParallaxRetailTests
         Assert.NotNull(NifClassicParallaxPolicy.Resolve(silverMetadata));
 
         var silverModel = ExtractModel(silverData, silverNif);
-        var silverShape = Assert.Single(silverModel.Submeshes.Where(static submesh =>
-            submesh.ShapeName == "Silverrush09:0"));
+        var silverShape = Assert.Single(silverModel.Submeshes, static submesh =>
+            submesh.ShapeName == "Silverrush09:0");
         Assert.Equal(silverMetadata.HeightMapPath, silverShape.ClassicParallaxHeightMapTexturePath);
 
         var (sulfurData, sulfurNif) = ReadNif(archive, SulfurCavePath);
@@ -45,8 +45,8 @@ public sealed class FnvClassicParallaxRetailTests
         Assert.NotNull(NifClassicParallaxPolicy.Resolve(sulfurMetadata));
 
         var sulfurModel = ExtractModel(sulfurData, sulfurNif);
-        var sulfurShape = Assert.Single(sulfurModel.Submeshes.Where(static submesh =>
-            submesh.ShapeName == "NVSulfurCaveRoomDoor01:3"));
+        var sulfurShape = Assert.Single(sulfurModel.Submeshes, static submesh =>
+            submesh.ShapeName == "NVSulfurCaveRoomDoor01:3");
         Assert.Equal(sulfurMetadata.HeightMapPath, sulfurShape.ClassicParallaxHeightMapTexturePath);
 
         var (pomData, pomNif) = ReadNif(archive, PomPath);
@@ -148,9 +148,9 @@ public sealed class FnvClassicParallaxRetailTests
                     classicRouteOverlapProperties++;
                 }
 
-                if (metadata.ParallaxMaxPasses == 4f) maxPassesFourProperties++;
-                if (metadata.ParallaxScale == 1f) scaleOneProperties++;
-                if (metadata.ParallaxScale == 20f) scaleTwentyProperties++;
+                if (IsExactly(4f, metadata.ParallaxMaxPasses)) maxPassesFourProperties++;
+                if (IsExactly(1f, metadata.ParallaxScale)) scaleOneProperties++;
+                if (IsExactly(20f, metadata.ParallaxScale)) scaleTwentyProperties++;
             }
         }
 
@@ -170,6 +170,11 @@ public sealed class FnvClassicParallaxRetailTests
         Assert.Equal(467, scaleOneProperties);
         Assert.Equal(14, scaleTwentyProperties);
     }
+
+    /// <summary>Bitwise float equality — these are exact authored constants decoded from retail NIFs.</summary>
+    private static bool IsExactly(float authored, float? value) =>
+        value is { } present
+        && BitConverter.SingleToInt32Bits(present) == BitConverter.SingleToInt32Bits(authored);
 
     private static (byte[] Data, NifInfo Nif) ReadNif(ArchiveReader archive, string path)
     {

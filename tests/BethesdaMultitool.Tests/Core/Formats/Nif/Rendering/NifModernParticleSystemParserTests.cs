@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -58,6 +59,8 @@ public sealed class NifModernParticleSystemParserTests
     [Fact]
     public void Parse_InstalledSkyrimFixture_NormalizesBothRetailSystems()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var path = SampleFileFixture.FindSamplePath(SkyrimFixture);
         Assert.SkipWhen(path is null, "installed Skyrim particle fixture not available");
 
@@ -81,6 +84,8 @@ public sealed class NifModernParticleSystemParserTests
     [Fact]
     public void Parse_InstalledFallout4Fixture_NormalizesRetailSystem()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var path = SampleFileFixture.FindSamplePath(Fallout4Fixture);
         Assert.SkipWhen(path is null, "installed Fallout 4 particle fixture not available");
 

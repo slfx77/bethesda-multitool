@@ -58,6 +58,8 @@ public sealed class SkyrimTreeFullDetailTests
         Assert.Equal(new ushort[] { 0, 1, 2 }, submesh.Triangles);
     }
 
+    private static readonly int[] ExpectedInactiveFallbackShapes = [5, 6];
+
     [Fact]
     public void SwitchNode_PrunesStaticFallbackAndKeepsActiveFullDetailSubtree()
     {
@@ -100,7 +102,7 @@ public sealed class SkyrimTreeFullDetailTests
 
         Assert.Contains("BSTreeNode", NifSceneGraphWalker.NodeTypes);
         Assert.Contains("NiSwitchNode", NifSceneGraphWalker.NodeTypes);
-        Assert.Equal(new[] { 5, 6 }, inactive.Order());
+        Assert.Equal(ExpectedInactiveFallbackShapes, inactive.Order());
         Assert.DoesNotContain(3, inactive);
         Assert.DoesNotContain(4, inactive);
     }

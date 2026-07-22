@@ -12,6 +12,7 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
+[Collection(SequentialIntegrationGroup.Name)]
 [Trait("Category", BucketBTestGuard.Category)]
 public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
 {

@@ -271,7 +271,7 @@ public sealed class OrthoViewProjBuilderTests
     [Fact]
     public void CoverRadius_TiltedRelief_CoversOnScreenPeak()
     {
-        // THE regression (2026-07-09 note): a peak Δz above the focus plane stays on screen while its
+        // THE regression: a peak Δz above the focus plane stays on screen while its
         // horizontal distance toward the camera reaches halfH/sin(el) + Δz·cot(el) — beyond the flat
         // footprint radius, so its whole cell culled while visible. Build that worst-case point (bottom
         // screen edge, camera side), prove it renders inside NDC, and assert the old radius missed it

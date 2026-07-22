@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
@@ -50,7 +51,7 @@ public sealed class PhysicsLiteSwayTests
         var sample = PhysicsLiteSway.CreatePlan(set, constraint, stableSeed: 42).Evaluate(3.75);
         var transformedPivot = Vector3.Transform(pivot, sample.Transform);
 
-        AssertVector(pivot, transformedPivot, tolerance: 0.0001f);
+        VectorAssert.Equal(pivot, transformedPivot, epsilon: 0.0001f);
     }
 
     [Fact]
@@ -210,12 +211,5 @@ public sealed class PhysicsLiteSwayTests
     {
         var bits = BitConverter.SingleToInt32Bits(value);
         System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(offset, 4), bits);
-    }
-
-    private static void AssertVector(Vector3 expected, Vector3 actual, float tolerance)
-    {
-        Assert.InRange(actual.X, expected.X - tolerance, expected.X + tolerance);
-        Assert.InRange(actual.Y, expected.Y - tolerance, expected.Y + tolerance);
-        Assert.InRange(actual.Z, expected.Z - tolerance, expected.Z + tolerance);
     }
 }

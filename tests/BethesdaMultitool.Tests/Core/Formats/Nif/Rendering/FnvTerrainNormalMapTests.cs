@@ -273,13 +273,13 @@ public sealed class FnvTerrainNormalMapTests
     [Fact]
     public void PerCellNormalIndicesPreserveDiffuseOffsetsAndStillConsumeOneRingStride()
     {
-        var cachedCell = ReadSource(
+        var cachedCell = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "CachedCellMesh12.cs");
-        var renderer = ReadSource(
+        var renderer = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "TerrainRenderer12.cs");
-        var ring = ReadSource(
+        var ring = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             "GpuRingBuffer12.cs");
 
@@ -336,13 +336,13 @@ public sealed class FnvTerrainNormalMapTests
     [Fact]
     public void TerrainNormalHostRoutingIsFNVOnlyAndPopulatesEverySlotWithAFlatSafeFallback()
     {
-        var resolver = ReadSource(
+        var resolver = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "TerrainTextureResolver12.cs");
-        var renderer = ReadSource(
+        var renderer = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "TerrainRenderer12.cs");
-        var textureCache = ReadSource(
+        var textureCache = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             "GpuTextureCache12.cs");
 
@@ -428,12 +428,12 @@ public sealed class FnvTerrainNormalMapTests
     }
 
     private static Vector3 BlendPackedNormals(
-        IReadOnlyList<Vector3?> packedNormals,
-        IReadOnlyList<float> weights)
+        Vector3?[] packedNormals,
+        float[] weights)
     {
-        Assert.Equal(packedNormals.Count, weights.Count);
+        Assert.Equal(packedNormals.Length, weights.Length);
         var sum = Vector3.Zero;
-        for (var i = 0; i < weights.Count; i++)
+        for (var i = 0; i < weights.Length; i++)
         {
             // Exact recovered DirectX decode. A missing TX01 contributes flat identity and does not
             // steal or alter the diffuse layer's independently authored blend weight.
@@ -523,9 +523,6 @@ public sealed class FnvTerrainNormalMapTests
         return source[start..end];
     }
 
-    private static string ReadSource(params string[] relativePath) =>
-        File.ReadAllText(Path.Combine(FindRepoRoot(), Path.Combine(relativePath)));
-
     private static uint ReadUnsignedConstant(string source, string name)
     {
         var match = Regex.Match(
@@ -538,18 +535,6 @@ public sealed class FnvTerrainNormalMapTests
 
     private static uint DivideRoundUp(uint value, uint alignment) =>
         (value + alignment - 1) / alignment;
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory.FullName;
-    }
 
     public enum BrokenNormalChain
     {

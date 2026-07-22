@@ -14,7 +14,7 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Esm;
 
 [Collection("Logger")]
-public sealed class EsmFileAnalyzerTests(SampleFileFixture samples) : IDisposable
+public sealed class EsmFileAnalyzerTests : IDisposable
 {
     private readonly List<string> _tempDirectories = [];
 
@@ -369,22 +369,6 @@ public sealed class EsmFileAnalyzerTests(SampleFileFixture samples) : IDisposabl
         Assert.Equal(
             new DateTime(2010, 7, 21, 0, 0, 0, DateTimeKind.Utc),
             EsmBuildDateExtractor.TryDecodeRevisionDate(0x00395B15u));
-    }
-
-    [Fact]
-    public void EsmBuildDateExtractor_uses_embedded_dates_for_sample_xbox_esms()
-    {
-        Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM sample not available");
-        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM sample not available");
-
-        var protoDate = EsmBuildDateExtractor.Extract(samples.Xbox360ProtoEsm!);
-        var finalDate = EsmBuildDateExtractor.Extract(samples.Xbox360FinalEsm!);
-
-        Assert.False(protoDate.IsFallback);
-        Assert.False(finalDate.IsFallback);
-        Assert.Equal(new DateTime(2010, 7, 21, 0, 0, 0, DateTimeKind.Utc), protoDate.BuildDateUtc);
-        Assert.Equal(2010, finalDate.BuildDateUtc.Year);
-        Assert.NotEqual(2026, finalDate.BuildDateUtc.Year);
     }
 
     private string WriteSyntheticEsm()

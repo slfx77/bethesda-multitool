@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using Xunit;
@@ -87,22 +88,45 @@ public class TextureHashIconEncoderTests
         Assert.Equal(["EDID", "MODL", "MODT", "SCRI"], encoded.Subrecords.Select(s => s.Signature));
     }
 
-    [Fact]
-    public void DoorEncoder_EncodeNew_EmitsModt()
+    [Theory]
+    [InlineData("DOOR")]
+    [InlineData("FURN")]
+    [InlineData("CONT")]
+    public void ModtOnlyEncoder_EncodeNew_EmitsModt(string recordType)
     {
-        var door = new DoorRecord
+        // DOOR / FURN / CONT share the same MODT emission rule.
+        var encoded = EncodeModtOnlyRecord(recordType);
+
+        Assert.Contains(encoded.Subrecords, s => s.Signature == "MODT");
+    }
+
+    private static EncodedRecord EncodeModtOnlyRecord(string recordType) => recordType switch
+    {
+        "DOOR" => DoorEncoder.EncodeNew(new DoorRecord
         {
             FormId = 0x400,
             EditorId = "D",
             ModelPath = "d.nif",
             TextureHashData = SampleModt,
             Flags = 0x01
-        };
-
-        var encoded = DoorEncoder.EncodeNew(door);
-
-        Assert.Contains(encoded.Subrecords, s => s.Signature == "MODT");
-    }
+        }),
+        "FURN" => FurnEncoder.EncodeNew(new FurnitureRecord
+        {
+            FormId = 0x200,
+            EditorId = "F",
+            ModelPath = "f.nif",
+            TextureHashData = SampleModt,
+            MarkerFlags = 0
+        }),
+        "CONT" => ContEncoder.EncodeNew(new ContainerRecord
+        {
+            FormId = 0x600,
+            EditorId = "C",
+            ModelPath = "c.nif",
+            TextureHashData = SampleModt
+        }),
+        _ => throw new ArgumentOutOfRangeException(nameof(recordType))
+    };
 
     [Fact]
     public void LighEncoder_EncodeNew_EmitsModtBetweenModlAndFullAndData()
@@ -119,39 +143,6 @@ public class TextureHashIconEncoderTests
         var encoded = LighEncoder.EncodeNew(ligh);
 
         Assert.Equal(["EDID", "MODL", "MODT", "FULL", "DATA"], encoded.Subrecords.Select(s => s.Signature));
-    }
-
-    [Fact]
-    public void FurnEncoder_EncodeNew_EmitsModt()
-    {
-        var furn = new FurnitureRecord
-        {
-            FormId = 0x200,
-            EditorId = "F",
-            ModelPath = "f.nif",
-            TextureHashData = SampleModt,
-            MarkerFlags = 0
-        };
-
-        var encoded = FurnEncoder.EncodeNew(furn);
-
-        Assert.Contains(encoded.Subrecords, s => s.Signature == "MODT");
-    }
-
-    [Fact]
-    public void ContEncoder_EncodeNew_EmitsModt()
-    {
-        var cont = new ContainerRecord
-        {
-            FormId = 0x600,
-            EditorId = "C",
-            ModelPath = "c.nif",
-            TextureHashData = SampleModt
-        };
-
-        var encoded = ContEncoder.EncodeNew(cont);
-
-        Assert.Contains(encoded.Subrecords, s => s.Signature == "MODT");
     }
 
     // ====================================================================================
@@ -195,10 +186,23 @@ public class TextureHashIconEncoderTests
         Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "MICO");
     }
 
-    [Fact]
-    public void KeymEncoder_EncodeNew_EmitsModtIconMico()
+    [Theory]
+    [InlineData("KEYM")]
+    [InlineData("AMMO")]
+    [InlineData("ALCH")]
+    public void InventoryItemEncoder_EncodeNew_EmitsModtIconMico(string recordType)
     {
-        var key = new KeyRecord
+        // KEYM / AMMO / ALCH share the same MODT + ICON + MICO emission rule.
+        var encoded = EncodeInventoryItemRecord(recordType);
+
+        Assert.Contains(encoded.Subrecords, s => s.Signature == "MODT");
+        Assert.Contains(encoded.Subrecords, s => s.Signature == "ICON");
+        Assert.Contains(encoded.Subrecords, s => s.Signature == "MICO");
+    }
+
+    private static EncodedRecord EncodeInventoryItemRecord(string recordType) => recordType switch
+    {
+        "KEYM" => KeymEncoder.EncodeNew(new KeyRecord
         {
             FormId = 0x100,
             EditorId = "K",
@@ -206,14 +210,27 @@ public class TextureHashIconEncoderTests
             TextureHashData = SampleModt,
             IconPath = "icons/k.dds",
             MessageIconPath = "icons/k_mini.dds"
-        };
-
-        var encoded = KeymEncoder.EncodeNew(key);
-
-        Assert.Contains(encoded.Subrecords, s => s.Signature == "MODT");
-        Assert.Contains(encoded.Subrecords, s => s.Signature == "ICON");
-        Assert.Contains(encoded.Subrecords, s => s.Signature == "MICO");
-    }
+        }),
+        "AMMO" => AmmoEncoder.EncodeNew(new AmmoRecord
+        {
+            FormId = 0x100,
+            EditorId = "A",
+            ModelPath = "a.nif",
+            TextureHashData = SampleModt,
+            IconPath = "icons/a.dds",
+            MessageIconPath = "icons/a_mini.dds"
+        }),
+        "ALCH" => AlchEncoder.EncodeNew(new ConsumableRecord
+        {
+            FormId = 0x100,
+            EditorId = "A",
+            ModelPath = "a.nif",
+            TextureHashData = SampleModt,
+            IconPath = "icons/a.dds",
+            MessageIconPath = "icons/a_mini.dds"
+        }),
+        _ => throw new ArgumentOutOfRangeException(nameof(recordType))
+    };
 
     [Fact]
     public void ArmoEncoder_EncodeNew_EmitsBmdtBeforeModlModtIconMico()
@@ -244,46 +261,6 @@ public class TextureHashIconEncoderTests
         Assert.True(modlIdx < modtIdx);
         Assert.True(modtIdx < iconIdx);
         Assert.True(iconIdx < micoIdx);
-    }
-
-    [Fact]
-    public void AmmoEncoder_EncodeNew_EmitsModtIconMico()
-    {
-        var ammo = new AmmoRecord
-        {
-            FormId = 0x100,
-            EditorId = "A",
-            ModelPath = "a.nif",
-            TextureHashData = SampleModt,
-            IconPath = "icons/a.dds",
-            MessageIconPath = "icons/a_mini.dds"
-        };
-
-        var encoded = AmmoEncoder.EncodeNew(ammo);
-
-        Assert.Contains(encoded.Subrecords, s => s.Signature == "MODT");
-        Assert.Contains(encoded.Subrecords, s => s.Signature == "ICON");
-        Assert.Contains(encoded.Subrecords, s => s.Signature == "MICO");
-    }
-
-    [Fact]
-    public void AlchEncoder_EncodeNew_EmitsModtIconMico()
-    {
-        var alch = new ConsumableRecord
-        {
-            FormId = 0x100,
-            EditorId = "A",
-            ModelPath = "a.nif",
-            TextureHashData = SampleModt,
-            IconPath = "icons/a.dds",
-            MessageIconPath = "icons/a_mini.dds"
-        };
-
-        var encoded = AlchEncoder.EncodeNew(alch);
-
-        Assert.Contains(encoded.Subrecords, s => s.Signature == "MODT");
-        Assert.Contains(encoded.Subrecords, s => s.Signature == "ICON");
-        Assert.Contains(encoded.Subrecords, s => s.Signature == "MICO");
     }
 
     [Fact]

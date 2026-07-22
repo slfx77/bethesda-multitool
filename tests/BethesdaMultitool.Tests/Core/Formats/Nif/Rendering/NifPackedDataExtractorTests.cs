@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.GeometryAnalysis;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -46,6 +47,8 @@ public sealed class NifPackedDataExtractorTests
     [InlineData(@"Sample\Meshes\meshes_360_final\meshes\armor\leatherarmor\f\outfitf.nif")]
     public void XboxPackedBoneWeights_KnownProblemMeshesStayNormalized(string relativePath)
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var nifPath = SampleFileFixture.FindSamplePath(relativePath);
         Assert.SkipWhen(nifPath is null, $"Sample NIF not available: {relativePath}");
 

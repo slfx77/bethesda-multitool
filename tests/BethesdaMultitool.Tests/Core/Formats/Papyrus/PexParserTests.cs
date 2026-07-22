@@ -1,5 +1,6 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Papyrus;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Papyrus;
@@ -201,6 +202,7 @@ public sealed class PexParserTests
     [InlineData(@"E:\SteamLibrary\SteamApps\common\Fallout 4\Data\Scripts\ObjectReference.pex", PexGameId.Fallout4)]
     public void Parse_InstalledBethesdaFixture_ConsumesCompleteFile(string path, PexGameId expectedGame)
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(File.Exists(path), $"Installed PEX fixture not available: {path}");
 
         var file = PexParser.Parse(path);
@@ -217,6 +219,7 @@ public sealed class PexParserTests
     [InlineData(@"E:\SteamLibrary\SteamApps\common\Fallout 4\Data\Scripts", PexGameId.Fallout4)]
     public void Parse_AllInstalledLooseBethesdaScripts(string directory, PexGameId expectedGame)
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(Directory.Exists(directory), $"Installed script directory not available: {directory}");
         var paths = Directory.GetFiles(directory, "*.pex", SearchOption.AllDirectories);
         Assert.SkipWhen(paths.Length == 0, $"No installed PEX fixtures found under: {directory}");

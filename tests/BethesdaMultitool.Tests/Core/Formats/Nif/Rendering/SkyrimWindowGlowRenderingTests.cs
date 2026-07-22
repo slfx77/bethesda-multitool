@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -12,8 +13,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     lives in the texture, BaseColorScale is 2, and LightingInfluence blends toward the external
 ///     XEMI emittance color. The available Lit permutation is gated off by retail's unwritten static.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class SkyrimWindowGlowRenderingTests
 {
+    public SkyrimWindowGlowRenderingTests()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+    }
+
     private const string ArchivePath = @"E:\SteamLibrary\SteamApps\common\Skyrim\Data\Skyrim - Meshes.bsa";
     private const string AssetPath =
         @"meshes\architecture\whiterun\wrbuildings\wrlodwindowglow01.nif";

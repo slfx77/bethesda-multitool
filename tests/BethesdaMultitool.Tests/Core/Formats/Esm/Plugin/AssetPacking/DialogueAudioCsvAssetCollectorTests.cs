@@ -75,8 +75,8 @@ public class DialogueAudioCsvAssetCollectorTests
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var renames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         // INFO with source FormID 0x00133FCD was remapped to allocated 0x01001234 — the
-        // engine looks for the file under v37-xex43.esp\... with the allocated bottom-24-bit
-        // FormID 001234 in the filename.
+        // engine looks for the file under the output plugin's voice folder with the
+        // allocated bottom-24-bit FormID 001234 in the filename.
         var remap = new Dictionary<uint, uint> { [0x00133FCDu] = 0x01001234u };
         var result = DialogueAudioCsvAssetCollector.CollectFromCsv(
             csv.Path,
@@ -177,7 +177,7 @@ public class DialogueAudioCsvAssetCollectorTests
     public void CollectFromCsv_MatchesViaTripleKeyFallbackWhenFormIdDrifted()
     {
         // CSV references an April-era FormID (0x00133FCD) that doesn't exist in our remap
-        // (no xex21-runtime ID matches). The triple-key index says the same line was
+        // (no runtime ID from the captured dump matches). The triple-key index says the same line was
         // emitted under our allocated FormID 0x010040AB. The pack-path rewrite should
         // redirect onto the new ESP shape using the binding's allocated FormID.
         using var csv = new TempFile();
@@ -219,8 +219,8 @@ public class DialogueAudioCsvAssetCollectorTests
             "sound\\voice\\falloutnv.esm\\maleadult01default\\tempvdialogueulysses_greeting_00133fcd_1.ogg",
             paths);
 
-        // pack rename redirects onto v39-xex21.esp using the binding's allocated FormID
-        // (bottom 24 bits = 0x0040AB → "000040ab").
+        // pack rename redirects onto the output plugin's voice folder using the binding's
+        // allocated FormID (bottom 24 bits = 0x0040AB → "000040ab").
         Assert.True(renames.TryGetValue(
             "sound\\voice\\falloutnv.esm\\maleadult01default\\tempvdialogueulysses_greeting_00133fcd_1.ogg",
             out var renamed));

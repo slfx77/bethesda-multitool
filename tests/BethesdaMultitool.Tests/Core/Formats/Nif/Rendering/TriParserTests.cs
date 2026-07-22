@@ -1,15 +1,19 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class TriParserTests
 {
     [Fact]
     public void Parse_HeadHumanSample_ParsesStableHeaderCounts()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var path = SampleFileFixture.FindSamplePath(
             @"Sample\Meshes\meshes_pc\meshes\characters\head\headhuman.tri");
         Assert.SkipWhen(path == null, "Sample headhuman.tri not available.");
@@ -187,6 +191,8 @@ public sealed class TriParserTests
     [Fact]
     public void Parse_EyeLeftHumanSample_ParsesStableHeaderCounts()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var path = SampleFileFixture.FindSamplePath(
             @"Sample\Meshes\meshes_pc\meshes\characters\head\eyelefthuman.tri");
         Assert.SkipWhen(path == null, "Sample eyelefthuman.tri not available.");
@@ -295,6 +301,8 @@ public sealed class TriParserTests
     [Fact]
     public void Parse_TeethLowerHumanSample_EarlyMixedRegionTracksFloatTailOutlier()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var path = SampleFileFixture.FindSamplePath(
             @"Sample\Meshes\meshes_pc\meshes\characters\head\teethlowerhuman.tri");
         Assert.SkipWhen(path == null, "Sample teethlowerhuman.tri not available.");

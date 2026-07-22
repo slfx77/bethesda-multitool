@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Text;
 using BethesdaMultitool.Core.Formats.SpeedTree;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.SpeedTree;
@@ -67,6 +68,7 @@ public class SptFileTests
     [Fact]
     public void Parse_WastelandShrub01_HasBranchesLeavesAndBarkTexture()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var path = ResolveShrub();
         Assert.SkipWhen(path is null, "Missing sample: wastelandshrub01.spt");
 
@@ -115,6 +117,7 @@ public class SptFileTests
         float firstBranch6012,
         float firstLeafCorner1X)
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var path = SampleFileFixture.FindSamplePath(relativePath);
         Assert.SkipWhen(path is null, "Missing sample: " + relativePath);
 

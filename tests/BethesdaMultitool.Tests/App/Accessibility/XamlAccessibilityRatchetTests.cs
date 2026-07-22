@@ -1,3 +1,4 @@
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.App.Accessibility;
@@ -20,23 +21,11 @@ namespace BethesdaMultitool.Tests.App.Accessibility;
 public sealed class XamlAccessibilityRatchetTests
 {
     private static string AppDirectory =>
-        Path.Combine(FindRepoRoot(), "src", "BethesdaMultitool", "App");
+        Path.Combine(SourceContract.RepoRoot, "src", "BethesdaMultitool", "App");
 
     private static string BaselinePath =>
-        Path.Combine(FindRepoRoot(), "tests", "BethesdaMultitool.Tests",
+        Path.Combine(SourceContract.RepoRoot, "tests", "BethesdaMultitool.Tests",
             "App", "Accessibility", "a11y-baseline.txt");
-
-    private static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Directory.Build.props")))
-        {
-            dir = dir.Parent;
-        }
-
-        Assert.NotNull(dir);
-        return dir.FullName;
-    }
 
     [Fact]
     public void InteractiveControls_Have_AccessibleNames_OrAreListedInBaseline()

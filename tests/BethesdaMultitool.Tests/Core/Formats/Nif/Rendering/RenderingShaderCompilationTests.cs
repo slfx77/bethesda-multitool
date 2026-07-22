@@ -1,5 +1,6 @@
 using System.Reflection;
 using BethesdaMultitool.Core.Formats.SpeedTree;
+using BethesdaMultitool.Tests.Helpers;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Xunit;
@@ -259,7 +260,11 @@ public sealed class RenderingShaderCompilationTests
         Assert.DoesNotContain("specSmoothScale", classic, StringComparison.Ordinal);
         Assert.DoesNotContain("gEnv", classic, StringComparison.Ordinal);
         Assert.DoesNotContain("SampleLevel", classic, StringComparison.Ordinal);
+    }
 
+    [Fact]
+    public void FnvClassicEnvironmentMappingEntryPointCompiles()
+    {
         // This entry point is also the runtime compile gate for the new bindless cube/mask branch.
         Compile("reference.frag.hlsl", "main", "ps_5_1", []);
     }
@@ -292,7 +297,11 @@ public sealed class RenderingShaderCompilationTests
         Assert.Contains("input.vTexIndices.z, materialUv, input.vTextureState.z", source,
             StringComparison.Ordinal);
         Assert.DoesNotContain("ParallaxScale", parallax, StringComparison.OrdinalIgnoreCase);
+    }
 
+    [Fact]
+    public void FnvClassicParallaxReferenceDrawPathsCompile()
+    {
         // The same PS consumes interpolants from the direct/blended and instanced reference VS paths.
         Compile("reference.vert.hlsl", "main", "vs_5_1", []);
         Compile("reference_instanced.vert.hlsl", "main", "vs_5_1", []);
@@ -301,6 +310,8 @@ public sealed class RenderingShaderCompilationTests
 
     private static void Compile(string name, string entryPoint, string profile, ShaderMacro[] macros)
     {
+        ShaderCompileTestGuard.SkipUnlessEnabled();
+
         var source = ReadEmbeddedShader(name);
         // Match the runtime compiler's declaration-shape check so named tables such as
         // gWaterTextures[] and textures[] both receive D3DCOMPILE_ENABLE_UNBOUNDED_DESCRIPTOR_TABLES.

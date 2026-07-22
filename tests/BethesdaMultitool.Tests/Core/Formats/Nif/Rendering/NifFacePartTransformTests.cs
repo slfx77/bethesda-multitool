@@ -7,9 +7,15 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class NifFacePartTransformTests
 {
     private static readonly string SampleRoot = NifSampleLoader.FindCharactersSampleRoot();
+
+    public NifFacePartTransformTests()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+    }
 
     [Theory]
     [InlineData(@"head\mouthhuman.nif")]

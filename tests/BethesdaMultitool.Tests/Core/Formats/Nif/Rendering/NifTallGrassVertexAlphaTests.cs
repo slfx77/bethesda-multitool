@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -62,6 +63,7 @@ public sealed class NifTallGrassVertexAlphaTests
     [Fact]
     public void RetailFNVGreenGrass_ExtractionUsesTextureOnlyForCutoutCoverage()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var assetRoot = Path.Combine(
             Path.GetTempPath(),
             "fnv-grass-assets-retail-20260716",

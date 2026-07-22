@@ -77,9 +77,14 @@ public class ScolParserCoverageTests
         Assert.Equal("SCOLParkingLotChunk03", scol.EditorId);
         Assert.Single(scol.Parts);
         Assert.Equal(0xDEADBEEFu, scol.Parts[0].OnamFormId);
-        Assert.Single(scol.Parts[0].Placements);
-        Assert.Equal(42.5f, scol.Parts[0].Placements[0].X);
-        Assert.Equal(2.0f, scol.Parts[0].Placements[0].Scale);
+        var placement = Assert.Single(scol.Parts[0].Placements);
+        Assert.Equal(42.5f, placement.X);
+        Assert.Equal(-7.25f, placement.Y);
+        Assert.Equal(13.5f, placement.Z);
+        Assert.Equal(0.5f, placement.RotX);
+        Assert.Equal(1.25f, placement.RotY);
+        Assert.Equal(-2.75f, placement.RotZ);
+        Assert.Equal(2.0f, placement.Scale);
     }
 
     [Fact]
@@ -165,9 +170,12 @@ public class ScolParserCoverageTests
 
         var onam = new byte[4];
         BinaryPrimitives.WriteUInt32BigEndian(onam, 0xDEADBEEFu);
+
+        // Distinct values in all seven placement slots so a swapped/mis-offset field
+        // (X/Y/Z vs RotX/RotY/RotZ vs Scale) cannot decode to a passing value.
         var data = BuildPlacementBytes(new[]
         {
-            (42.5f, 0f, 0f, 0f, 0f, 0f, 2.0f)
+            (42.5f, -7.25f, 13.5f, 0.5f, 1.25f, -2.75f, 2.0f)
         }, true);
 
         return BuildRecordBytes(0x0003D377, "SCOL", true,

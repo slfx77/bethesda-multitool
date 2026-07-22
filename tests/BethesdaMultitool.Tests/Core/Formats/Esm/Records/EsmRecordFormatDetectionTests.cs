@@ -485,24 +485,15 @@ public class EsmRecordFormatDetectionTests(ITestOutputHelper output)
     }
 
     /// <summary>
-    ///     Helper: writes data to a temp file and scans via ScanForRecordsMemoryMapped,
+    ///     Helper: memory-maps data and scans via ScanForRecordsMemoryMapped,
     ///     exercising the production fast-reject + unified dispatch code path.
     /// </summary>
     private static EsmRecordScanResult ScanViaMemoryMappedFile(byte[] data)
     {
-        var tmpFile = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        try
-        {
-            File.WriteAllBytes(tmpFile, data);
-            using var mmf = MemoryMappedFile.CreateFromFile(
-                tmpFile, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-            using var accessor = mmf.CreateViewAccessor(0, data.Length, MemoryMappedFileAccess.Read);
-            return EsmRecordScanner.ScanForRecordsMemoryMapped(accessor, data.Length);
-        }
-        finally
-        {
-            File.Delete(tmpFile);
-        }
+        using var mmf = MemoryMappedFile.CreateNew(null, data.Length);
+        using var accessor = mmf.CreateViewAccessor(0, data.Length);
+        accessor.WriteArray(0, data, 0, data.Length);
+        return EsmRecordScanner.ScanForRecordsMemoryMapped(accessor, data.Length);
     }
 
     #endregion

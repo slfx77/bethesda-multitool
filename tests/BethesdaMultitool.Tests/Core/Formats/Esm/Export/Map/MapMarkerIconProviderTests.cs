@@ -60,15 +60,17 @@ public class MapMarkerIconProviderTests
         using var image = Image.Load<Rgba32>(png!);
         var hasVisibleColor = false;
         for (var y = 0; y < image.Height && !hasVisibleColor; y++)
-        for (var x = 0; x < image.Width; x++)
         {
-            var pixel = image[x, y];
-            var channelRange = Math.Max(pixel.R, Math.Max(pixel.G, pixel.B))
-                               - Math.Min(pixel.R, Math.Min(pixel.G, pixel.B));
-            if (pixel.A >= 64 && channelRange >= 8)
+            for (var x = 0; x < image.Width; x++)
             {
-                hasVisibleColor = true;
-                break;
+                var pixel = image[x, y];
+                var channelRange = Math.Max(pixel.R, Math.Max(pixel.G, pixel.B))
+                                   - Math.Min(pixel.R, Math.Min(pixel.G, pixel.B));
+                if (pixel.A >= 64 && channelRange >= 8)
+                {
+                    hasVisibleColor = true;
+                    break;
+                }
             }
         }
 

@@ -14,11 +14,11 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     FNV cloth flags) must skin against their own authored node transforms — the rest pose —
 ///     instead of rendering raw bind-pose geometry. Reads real game BSAs; skips when absent (CI).
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class InternallySkinnedNifRestPoseProbe
 {
     private const string MorrowindBsa = @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Morrowind.bsa";
-    private const string FnvMeshesBsa =
-        @"C:\Users\mmc99\source\repos\Xbox360MemoryCarver\Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+    private static readonly string FnvMeshesBsa = SampleBsaLocator.ResolveFnvMeshesBsa();
 
     [Fact]
     public void Banner_DetectsInternalSkin_AndRestPoseDiffersFromBindPose()

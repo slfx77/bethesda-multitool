@@ -35,7 +35,7 @@ public sealed class HouseToolsTerminalDataOffsetTests
     private const int TermStructSize = 184; // 168 (PDB-baseline) + _s(16)
     private const int RuntimeDataOffset = 176; // (NOT PDB's +180)
 
-    // Captured 2026-05-27 from Sample/ESM/pc_final/FalloutNV.esm at TERM record
+    // Captured from Sample/ESM/pc_final/FalloutNV.esm at TERM record
     // 0x000EBA3A (HouseToolsTerminal) DNAM subrecord payload. Verified
     // byte-for-byte against runtime memdebug_dump @ TesFormOffset+176 in Tier 3.2.
     private static readonly byte[] HouseToolsTerminalDnamPayload =

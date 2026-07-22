@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -28,13 +29,15 @@ public sealed class NifWaterGeometryTests
                     * Matrix4x4.CreateTranslation(10f, 20f, 30f);
         var placed = Assert.IsType<NifWaterGeometry>(local!.Transform(world));
 
-        AssertVector(new Vector3(12f, 17f, 30f), placed.Positions.Span[0]);
-        AssertVector(new Vector3(12f, 23f, 30f), placed.Positions.Span[1]);
-        AssertVector(new Vector3(8f, 17f, 30f), placed.Positions.Span[2]);
+        VectorAssert.Equal(new Vector3(12f, 17f, 30f), placed.Positions.Span[0], 1e-4f);
+        VectorAssert.Equal(new Vector3(12f, 23f, 30f), placed.Positions.Span[1], 1e-4f);
+        VectorAssert.Equal(new Vector3(8f, 17f, 30f), placed.Positions.Span[2], 1e-4f);
         Assert.Equal(indices, placed.Indices.ToArray());
-        AssertVector(new Vector3(8f, 17f, 30f), placed.BoundsMin);
-        AssertVector(new Vector3(12f, 23f, 30f), placed.BoundsMax);
+        VectorAssert.Equal(new Vector3(8f, 17f, 30f), placed.BoundsMin, 1e-4f);
+        VectorAssert.Equal(new Vector3(12f, 23f, 30f), placed.BoundsMax, 1e-4f);
     }
+
+    private static readonly float[] ExpectedSlopedVertexHeights = [11f, 12f, 17f, 21f];
 
     [Fact]
     public void Transform_retains_each_sloped_vertex_height_instead_of_one_plane_height()
@@ -50,7 +53,7 @@ public sealed class NifWaterGeometryTests
 
         var placed = Assert.IsType<NifWaterGeometry>(local!.Transform(Matrix4x4.CreateTranslation(2f, 3f, 10f)));
 
-        Assert.Equal(new[] { 11f, 12f, 17f, 21f }, placed.Positions.Span.ToArray().Select(static p => p.Z));
+        Assert.Equal(ExpectedSlopedVertexHeights, placed.Positions.Span.ToArray().Select(static p => p.Z));
         Assert.Equal(11f, placed.BoundsMin.Z);
         Assert.Equal(21f, placed.BoundsMax.Z);
     }
@@ -73,8 +76,8 @@ public sealed class NifWaterGeometryTests
         Assert.Equal(4, geometry.TriangleCount);
         Assert.Equal(indices, geometry.Indices.ToArray());
         Assert.DoesNotContain(new Vector3(2f, 2f, 3f), geometry.Positions.ToArray());
-        AssertVector(new Vector3(-2f, -2f, 3f), geometry.BoundsMin);
-        AssertVector(new Vector3(2f, 2f, 3f), geometry.BoundsMax);
+        VectorAssert.Equal(new Vector3(-2f, -2f, 3f), geometry.BoundsMin, 1e-4f);
+        VectorAssert.Equal(new Vector3(2f, 2f, 3f), geometry.BoundsMax, 1e-4f);
     }
 
     [Fact]
@@ -134,19 +137,12 @@ public sealed class NifWaterGeometryTests
         Vector3[] positions = [new(10f, 20f, 1f), new(14f, 20f, 4f), new(12f, 26f, 2f)];
         Assert.True(NifWaterGeometry.TryCreate(positions, [0, 1, 2], out var geometry));
 
-        AssertVector(new Vector3(10f, 20f, 1f), geometry!.BoundsMin);
-        AssertVector(new Vector3(14f, 26f, 4f), geometry.BoundsMax);
+        VectorAssert.Equal(new Vector3(10f, 20f, 1f), geometry!.BoundsMin, 1e-4f);
+        VectorAssert.Equal(new Vector3(14f, 26f, 4f), geometry.BoundsMax, 1e-4f);
         Assert.True(geometry.IntersectsXY(new Vector2(8f, 23f), 2f));
         Assert.False(geometry.IntersectsXY(new Vector2(7.9f, 23f), 2f));
         // VisibilityCylinder is a Chebyshev square: this corner is inside even though its Euclidean
         // distance from the geometry AABB is sqrt(8), outside an inscribed radius-2 circle.
         Assert.True(geometry.IntersectsXY(new Vector2(8f, 18f), 2f));
-    }
-
-    private static void AssertVector(Vector3 expected, Vector3 actual)
-    {
-        Assert.Equal(expected.X, actual.X, 4);
-        Assert.Equal(expected.Y, actual.Y, 4);
-        Assert.Equal(expected.Z, actual.Z, 4);
     }
 }

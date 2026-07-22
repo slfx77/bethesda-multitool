@@ -153,7 +153,7 @@ public sealed class FnvActiveLightingRetailTests(
             model.Submeshes.Max(static submesh => MaximumComponent(submesh.Positions, 1)),
             model.Submeshes.Max(static submesh => MaximumComponent(submesh.Positions, 2)));
         var localCenter = (localMinimum + localMaximum) * 0.5f;
-        AssertVector(new Vector3(0.0001f, -26.0110f, 174.81065f), localCenter, 0.001f);
+        VectorAssert.Equal(new Vector3(0.0001f, -26.0110f, 174.81065f), localCenter, 0.001f);
 
         var placementPosition = new Vector3(placement.X, placement.Y, placement.Z);
         var focus = placementPosition + RotateZ(localCenter * placement.Scale, -placement.RotZ);
@@ -175,7 +175,7 @@ public sealed class FnvActiveLightingRetailTests(
         // retail scene deliberately reports larger aggregate draw/instance counts from neighboring
         // eligible geometry and retains alpha-tested fallback submissions for blocks 15 and 25.
         Assert.Single(active);
-        AssertVector(new Vector3(-55_889.066f, -46_366.82f, 5_978.201f), camera, 0.01f);
+        VectorAssert.Equal(new Vector3(-55_889.066f, -46_366.82f, 5_978.201f), camera, 0.01f);
         Assert.InRange(pitchDegrees, -4.399f, -4.398f);
         Assert.InRange(MathF.Abs(yawDegrees), 179.999f, 180.001f);
     }
@@ -374,12 +374,5 @@ public sealed class FnvActiveLightingRetailTests(
             (value.X * cos) - (value.Y * sin),
             (value.X * sin) + (value.Y * cos),
             value.Z);
-    }
-
-    private static void AssertVector(Vector3 expected, Vector3 actual, float tolerance)
-    {
-        Assert.InRange(actual.X, expected.X - tolerance, expected.X + tolerance);
-        Assert.InRange(actual.Y, expected.Y - tolerance, expected.Y + tolerance);
-        Assert.InRange(actual.Z, expected.Z - tolerance, expected.Z + tolerance);
     }
 }

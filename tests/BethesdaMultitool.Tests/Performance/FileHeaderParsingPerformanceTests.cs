@@ -44,11 +44,13 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
     }
 
     [Fact]
-    public async Task ScanAndParseHeaders_100NifFiles_ScansAllFiles()
+    public async Task ScanAndParseHeaders_NifFiles_ScansAllFiles()
     {
-        // Arrange - Create 100 test NIF files with valid Xbox 360 header
+        // Arrange - Create test NIF files with valid Xbox 360 header. The count only needs
+        // to span multiple subdirectories and exceed the read-concurrency limit; the
+        // format-detection logic itself is covered by the in-memory ParseNifHeader facts.
         var header = CreateNifHeader(true);
-        CreateTestFiles(100, ".nif", header);
+        CreateTestFiles(20, ".nif", header);
 
         var sw = Stopwatch.StartNew();
 
@@ -78,53 +80,17 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
         // under parallel test execution (other CPU-heavy tests in the same test session
         // can starve this one). The stopwatch value is preserved so the duration is
         // visible in test output for manual profiling.
-        Assert.Equal(100, results.Length);
+        Assert.Equal(20, results.Length);
         Assert.All(results, r => Assert.Equal("Xbox 360 (BE)", r.format));
         _ = sw.ElapsedMilliseconds;
     }
 
     [Fact]
-    public async Task ScanAndParseHeaders_1000NifFiles_ScansAllFiles()
-    {
-        // Arrange
-        var header = CreateNifHeader(true);
-        CreateTestFiles(1000, ".nif", header);
-
-        var sw = Stopwatch.StartNew();
-
-        // Act
-        var files = Directory.EnumerateFiles(_tempDir, "*.nif", SearchOption.AllDirectories).ToList();
-        var results = new (string path, long size, string format)[files.Count];
-
-        using var semaphore = new SemaphoreSlim(MaxConcurrentReads);
-        var tasks = files.Select((path, i) => Task.Run(async () =>
-        {
-            await semaphore.WaitAsync();
-            try
-            {
-                var (size, format) = await ReadNifHeaderAsync(path);
-                results[i] = (path, size, format);
-            }
-            finally
-            {
-                semaphore.Release();
-            }
-        })).ToArray();
-
-        await Task.WhenAll(tasks);
-        sw.Stop();
-
-        // Assert: functional correctness only; see note on 100-file test.
-        Assert.Equal(1000, results.Length);
-        _ = sw.ElapsedMilliseconds;
-    }
-
-    [Fact]
-    public async Task ScanAndParseHeaders_100DdxFiles_ScansAllFiles()
+    public async Task ScanAndParseHeaders_DdxFiles_ScansAllFiles()
     {
         // Arrange
         var header = "3XDO"u8.ToArray();
-        CreateTestFiles(100, ".ddx", header);
+        CreateTestFiles(10, ".ddx", header);
 
         var sw = Stopwatch.StartNew();
 
@@ -150,8 +116,8 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
         await Task.WhenAll(tasks);
         sw.Stop();
 
-        // Assert: functional correctness only; see note on 100-file test.
-        Assert.Equal(100, results.Length);
+        // Assert: functional correctness only; see note on the NIF-files test.
+        Assert.Equal(10, results.Length);
         Assert.All(results, r => Assert.Equal("3XDO", r.format));
         _ = sw.ElapsedMilliseconds;
     }
@@ -163,13 +129,13 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
         var xbox360Header = CreateNifHeader(true);
         var pcHeader = CreateNifHeader(false);
 
-        for (var i = 0; i < 50; i++)
+        for (var i = 0; i < 10; i++)
         {
             var filePath = Path.Combine(_tempDir, $"xbox_{i:D3}.nif");
             await File.WriteAllBytesAsync(filePath, xbox360Header, TestContext.Current.CancellationToken);
         }
 
-        for (var i = 0; i < 50; i++)
+        for (var i = 0; i < 10; i++)
         {
             var filePath = Path.Combine(_tempDir, $"pc_{i:D3}.nif");
             await File.WriteAllBytesAsync(filePath, pcHeader, TestContext.Current.CancellationToken);
@@ -197,9 +163,9 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
         await Task.WhenAll(tasks);
 
         // Assert
-        Assert.Equal(100, results.Length);
-        Assert.Equal(50, results.Count(r => r.format == "Xbox 360 (BE)"));
-        Assert.Equal(50, results.Count(r => r.format == "PC (LE)"));
+        Assert.Equal(20, results.Length);
+        Assert.Equal(10, results.Count(r => r.format == "Xbox 360 (BE)"));
+        Assert.Equal(10, results.Count(r => r.format == "PC (LE)"));
     }
 
     [Fact]

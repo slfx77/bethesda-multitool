@@ -17,6 +17,8 @@ public class NifSkinBlockParserVersionTests
     private const uint Morrowind = 0x04000002;  // 4.0.0.2
     private const uint Modern = 0x14020007;     // 20.2.0.7 (FO3+)
 
+    private static readonly int[] ExpectedBoneRefs = [3, 5];
+
     [Fact]
     public void ParseNiSkinInstance_MorrowindLayout_HasNoPartitionRef()
     {
@@ -35,7 +37,7 @@ public class NifSkinBlockParserVersionTests
         Assert.NotNull(parsed);
         Assert.Equal(7, parsed.DataRef);
         Assert.Equal(1, parsed.SkeletonRootRef);
-        Assert.Equal(new[] { 3, 5 }, parsed.BoneRefs);
+        Assert.Equal(ExpectedBoneRefs, parsed.BoneRefs);
         Assert.Equal(-1, parsed.SkinPartitionRef); // absent pre-10.1.0.101
     }
 
@@ -59,7 +61,7 @@ public class NifSkinBlockParserVersionTests
         Assert.Equal(7, parsed.DataRef);
         Assert.Equal(9, parsed.SkinPartitionRef);
         Assert.Equal(1, parsed.SkeletonRootRef);
-        Assert.Equal(new[] { 3, 5 }, parsed.BoneRefs);
+        Assert.Equal(ExpectedBoneRefs, parsed.BoneRefs);
     }
 
     [Theory]

@@ -19,6 +19,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     and the skin export must cover every vertex. Reads the real Morrowind.bsa; skips when
 ///     absent (CI).
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class Tes3BannerAnimationProbe
 {
     private const string Bsa = @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Morrowind.bsa";

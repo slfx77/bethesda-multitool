@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -146,10 +147,10 @@ public sealed class GrassDistanceEnvelopeTests
     [Fact]
     public void WindowsRenderer_WiresEnvelopePolicyThroughEveryDistanceCullRoute()
     {
-        var renderer = ReadSource(
+        var renderer = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferenceRenderer12.cs");
-        var batches = ReadSource(
+        var batches = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "OpaqueBatchRegistry12.cs");
         var compactRenderer = RemoveWhitespace(renderer);
@@ -179,7 +180,7 @@ public sealed class GrassDistanceEnvelopeTests
             StringComparison.Ordinal);
         Assert.Equal(
             2,
-            CountOccurrences(
+            SourceContract.CountOccurrences(
                 compactRenderer,
                 "_opaqueBatches.GetOrCreate(sub,pso," +
                 "usesGrassDistanceEnvelope,usesTallGrassWind," +
@@ -190,18 +191,18 @@ public sealed class GrassDistanceEnvelopeTests
         // cull remains independently guarded, so a disabled frustum is never sampled by this route.
         Assert.Equal(
             2,
-            CountOccurrences(renderer, "GrassDistanceCullPolicy.RequiresExactPerInstanceFiltering("));
+            SourceContract.CountOccurrences(renderer, "GrassDistanceCullPolicy.RequiresExactPerInstanceFiltering("));
         Assert.Contains(
             "_frameRefilterActive = _batchesWidened && hasFrustum;",
             renderer,
             StringComparison.Ordinal);
-        Assert.Equal(2, CountOccurrences(renderer, "if (!exactMainPerInstance &&"));
+        Assert.Equal(2, SourceContract.CountOccurrences(renderer, "if (!exactMainPerInstance &&"));
         Assert.Equal(
             2,
-            CountOccurrences(renderer, "if (filterMainGrassDistance && !PassesExactGrassDistance("));
+            SourceContract.CountOccurrences(renderer, "if (filterMainGrassDistance && !PassesExactGrassDistance("));
         Assert.Equal(
             2,
-            CountOccurrences(renderer, "if (refilter && !PassesExactCull(in boundsSpan[i]))"));
+            SourceContract.CountOccurrences(renderer, "if (refilter && !PassesExactCull(boundsSpan[i]))"));
         Assert.Contains(
             "r.WorldMatrix.Translation, mesh.LocalBoundsRadius * boundsScaleBasis.Length()",
             renderer,
@@ -213,7 +214,7 @@ public sealed class GrassDistanceEnvelopeTests
         Assert.Contains("float GrassWaveMultiplier,", renderer, StringComparison.Ordinal);
         Assert.Equal(
             2,
-            CountOccurrences(renderer, "PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)"));
+            SourceContract.CountOccurrences(renderer, "PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)"));
         Assert.Contains("draws[i].SourceWorld.Translation", renderer, StringComparison.Ordinal);
         Assert.Contains("draws[i].IsGrass", renderer, StringComparison.Ordinal);
 
@@ -221,40 +222,12 @@ public sealed class GrassDistanceEnvelopeTests
         // both shared-ring and fallback-ring copies.
         Assert.Equal(
             2,
-            CountOccurrences(renderer, "var filterGrassDistance = batchState.UsesGrassDistanceEnvelope;"));
+            SourceContract.CountOccurrences(renderer, "var filterGrassDistance = batchState.UsesGrassDistanceEnvelope;"));
         Assert.Equal(
             2,
-            CountOccurrences(renderer, "shadowSpan[i].Translation + _frameRenderOrigin"));
-    }
-
-    private static int CountOccurrences(string source, string value)
-    {
-        var count = 0;
-        var start = 0;
-        while ((start = source.IndexOf(value, start, StringComparison.Ordinal)) >= 0)
-        {
-            count++;
-            start += value.Length;
-        }
-
-        return count;
+            SourceContract.CountOccurrences(renderer, "shadowSpan[i].Translation + _frameRenderOrigin"));
     }
 
     private static string RemoveWhitespace(string source) =>
         new string(source.Where(character => !char.IsWhiteSpace(character)).ToArray());
-
-    private static string ReadSource(params string[] relativePath) =>
-        File.ReadAllText(Path.Combine(FindRepoRoot(), Path.Combine(relativePath)));
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory.FullName;
-    }
 }

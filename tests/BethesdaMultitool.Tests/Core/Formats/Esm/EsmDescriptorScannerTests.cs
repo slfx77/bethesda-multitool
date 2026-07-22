@@ -79,31 +79,15 @@ public sealed class EsmDescriptorScannerTests
         var fileData = BuildSyntheticEsm();
         var scan = EsmDescriptorScanner.Scan(fileData).ScanResult;
         scan.RefrRecords.Clear();
-        var tempPath = Path.GetTempFileName();
-        try
-        {
-            File.WriteAllBytes(tempPath, fileData);
-            using var mmf = MemoryMappedFile.CreateFromFile(
-                tempPath,
-                FileMode.Open,
-                null,
-                0,
-                MemoryMappedFileAccess.Read);
-            using var accessor = mmf.CreateViewAccessor(
-                0,
-                fileData.Length,
-                MemoryMappedFileAccess.Read);
+        using var mmf = MemoryMappedFile.CreateNew(null, fileData.Length);
+        using var accessor = mmf.CreateViewAccessor(0, fileData.Length);
+        accessor.WriteArray(0, fileData, 0, fileData.Length);
 
-            EsmWorldExtractor.ExtractRefrRecords(accessor, fileData.Length, scan);
+        EsmWorldExtractor.ExtractRefrRecords(accessor, fileData.Length, scan);
 
-            var refr = Assert.Single(scan.RefrRecords);
-            Assert.Equal(-500f, refr.Radius);
-            Assert.Equal(0.84f, refr.Scale);
-        }
-        finally
-        {
-            File.Delete(tempPath);
-        }
+        var refr = Assert.Single(scan.RefrRecords);
+        Assert.Equal(-500f, refr.Radius);
+        Assert.Equal(0.84f, refr.Scale);
     }
 
     private static byte[] BuildSyntheticEsm()

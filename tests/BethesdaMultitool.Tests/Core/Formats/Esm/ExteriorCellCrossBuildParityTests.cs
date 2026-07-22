@@ -21,6 +21,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm;
 ///         is the right gate even though new synthetic tests are normally preferred.
 ///     </para>
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 [Trait("Category", BucketBTestGuard.Category)]
 public sealed class ExteriorCellCrossBuildParityTests(SampleFileFixture samples)
 {

@@ -1,3 +1,4 @@
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -13,7 +14,7 @@ public sealed class WaterMsaaDepthPipelineSourceTests
     [Fact]
     public void SharedRootSignatureAliasesBindlessMsaaDepthInSpaceThree()
     {
-        var source = ReadSource(
+        var source = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             "GpuRootSignature12.cs");
         var rangeStart = source.IndexOf("var bindlessDepthMsaa = new DescriptorRange1", StringComparison.Ordinal);
@@ -35,9 +36,9 @@ public sealed class WaterMsaaDepthPipelineSourceTests
     [Fact]
     public void LiveAndCaptureWaterRoutesPassTheActualDepthSampleCount()
     {
-        var frame = ReadSource(
+        var frame = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Frame.cs");
-        var capture = ReadSource(
+        var capture = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.SceneCapture.cs");
 
         var liveStart = frame.IndexOf("var waterUsesDepth =", StringComparison.Ordinal);
@@ -73,11 +74,11 @@ public sealed class WaterMsaaDepthPipelineSourceTests
     [Fact]
     public void LiveAndCaptureDepthFactoriesAndTransitionsPreserveTheMsaaViewContract()
     {
-        var lifecycle = ReadSource(
+        var lifecycle = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Lifecycle.cs");
-        var frame = ReadSource(
+        var frame = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Frame.cs");
-        var capture = ReadSource(
+        var capture = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.SceneCapture.cs");
 
         var liveFactoryStart = lifecycle.IndexOf("private void EnsureDepthSrv()", StringComparison.Ordinal);
@@ -110,7 +111,7 @@ public sealed class WaterMsaaDepthPipelineSourceTests
     [Fact]
     public void WaterTelemetryNamesRtFreeTechniqueAndDepthRouteTruthfully()
     {
-        var source = ReadSource(
+        var source = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "WaterRenderer12.cs");
         var callStart = source.IndexOf("LastStats.WaterTechnique = DescribeTechnique(", StringComparison.Ordinal);
@@ -150,7 +151,7 @@ public sealed class WaterMsaaDepthPipelineSourceTests
     [Fact]
     public void WaterSampleCountUsesTheExistingUniformSpareWithoutGrowingTheAbi()
     {
-        var source = ReadSource(
+        var source = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "WaterRenderer12.cs");
 
@@ -165,7 +166,7 @@ public sealed class WaterMsaaDepthPipelineSourceTests
     [Fact]
     public void InvalidEnabledDepthMetadataIsRejectedInsteadOfChangingHostRouting()
     {
-        var source = ReadSource(
+        var source = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "WaterRenderer12.cs");
         var methodStart = source.IndexOf("public void SetSceneDepth(", StringComparison.Ordinal);
@@ -179,20 +180,5 @@ public sealed class WaterMsaaDepthPipelineSourceTests
         Assert.Contains("throw new ArgumentOutOfRangeException(nameof(sampleCount)", method,
             StringComparison.Ordinal);
         Assert.DoesNotContain("Math.Max(sampleCount, 1)", method, StringComparison.Ordinal);
-    }
-
-    private static string ReadSource(params string[] relativePath) =>
-        File.ReadAllText(Path.Combine(FindRepoRoot(), Path.Combine(relativePath)));
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory.FullName;
     }
 }

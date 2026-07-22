@@ -174,7 +174,7 @@ public class CellEncoderTests
         // Worldspace persistent cells (block -1, sub-block -1 of each WRLD) have no EDID
         // in master FalloutNV.esm. Appending an empty EDID subrecord via the merge engine
         // crashes the engine's special-case handling of the persistent cell during havok
-        // cell-attach — confirmed across 13 master worldspaces in the v52-xex44 crash.
+        // cell-attach — confirmed across 13 master worldspaces in a converted-plugin crash.
         // The encoder must emit zero EDID subrecords when EditorId is null/empty so the
         // merge engine retains master's "no EDID" shape.
         var nullEdid = new CellRecord { FormId = 0x42, EditorId = null, Flags = 0x00 };

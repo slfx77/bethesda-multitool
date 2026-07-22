@@ -42,25 +42,12 @@ public sealed class RuntimeParityParserTests : IDisposable
     private MemoryMappedViewAccessor? _accessor;
 
     private MemoryMappedFile? _mmf;
-    private string? _tempFilePath;
 
     public void Dispose()
     {
         GC.SuppressFinalize(this);
         _accessor?.Dispose();
         _mmf?.Dispose();
-
-        if (_tempFilePath != null && File.Exists(_tempFilePath))
-        {
-            try
-            {
-                File.Delete(_tempFilePath);
-            }
-            catch
-            {
-                // Best-effort temp cleanup only.
-            }
-        }
     }
 
     [Fact]
@@ -2028,12 +2015,9 @@ public sealed class RuntimeParityParserTests : IDisposable
 
     private RecordParser CreateParser(EsmRecordScanResult scanResult, byte[] data)
     {
-        _tempFilePath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        File.WriteAllBytes(_tempFilePath, data);
-
-        _mmf = MemoryMappedFile.CreateFromFile(_tempFilePath, FileMode.Open, null, data.Length,
-            MemoryMappedFileAccess.Read);
-        _accessor = _mmf.CreateViewAccessor(0, data.Length, MemoryMappedFileAccess.Read);
+        _mmf = MemoryMappedFile.CreateNew(null, data.Length);
+        _accessor = _mmf.CreateViewAccessor(0, data.Length);
+        _accessor.WriteArray(0, data, 0, data.Length);
 
         var minidumpInfo = new MinidumpInfo
         {

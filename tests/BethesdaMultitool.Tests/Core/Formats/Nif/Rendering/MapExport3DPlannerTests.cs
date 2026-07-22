@@ -79,7 +79,7 @@ public sealed class MapExport3DPlannerTests
     [Fact]
     public void NonTiled_BeyondOneTile_TilesInternallyUpToImageCap()
     {
-        // THE regression (2026-07-09 note): a non-tiled export used to collapse to a 2048px-long-edge
+        // THE regression: a non-tiled export used to collapse to a 2048px-long-edge
         // thumbnail because the per-tile GPU cap doubled as the output cap. It must now keep full
         // resolution via an internal grid — this area wants 20000×12000 px at 1×, under the 16384
         // image cap after long-edge scaling.

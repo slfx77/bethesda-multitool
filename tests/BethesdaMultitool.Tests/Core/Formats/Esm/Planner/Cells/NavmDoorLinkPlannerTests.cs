@@ -19,7 +19,7 @@ public sealed class NavmDoorLinkPlannerTests
     [Fact]
     public void Build_MapsClonedDoorAndKeepsMasterAndCloneLive()
     {
-        var plan = MakePlan([MakeDoorClone(EmittedDoorRef)]);
+        var plan = MakePlan(new RecordPlan[] { MakeDoorClone(EmittedDoorRef) });
         var master = MakeMasterRecords();
 
         var result = NavmDoorLinkPlanner.Build(plan, master);
@@ -56,10 +56,11 @@ public sealed class NavmDoorLinkPlannerTests
     [Fact]
     public void Build_AmbiguousDuplicateCloneFails()
     {
-        var plan = MakePlan([
+        var plan = MakePlan(new RecordPlan[]
+        {
             MakeDoorClone(EmittedDoorRef),
             MakeDoorClone(EmittedDoorRef + 1),
-        ]);
+        });
 
         var error = Assert.Throws<InvalidOperationException>(
             () => NavmDoorLinkPlanner.Build(plan, MakeMasterRecords()));

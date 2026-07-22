@@ -17,6 +17,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     textured shapes must be. Without this, the untextured collision hull renders as white panels /
 ///     a dark blob over the mesh. Reads the real Morrowind.bsa; skips when it isn't present (CI).
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class Tes3NifStructureProbe
 {
     private const string Bsa = @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Morrowind.bsa";

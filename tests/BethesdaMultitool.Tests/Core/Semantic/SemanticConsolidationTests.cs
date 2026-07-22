@@ -27,6 +27,7 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Semantic;
 
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDisposable
 {
     private readonly List<string> _tempDirectories = [];

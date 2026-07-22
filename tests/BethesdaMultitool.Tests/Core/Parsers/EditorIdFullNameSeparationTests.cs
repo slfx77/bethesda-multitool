@@ -30,75 +30,64 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
         };
 
         var esmData = CreateMinimalEsmWithRecords(records, false);
-        var tempFile = Path.Combine(Path.GetTempPath(), $"test_edid_full_{Guid.NewGuid()}.esm");
-        try
+        var (scanResult, parsedRecords) = BuildScanResult(esmData);
+
+        // Build EDID-only FormIdMap (the fixed behavior)
+        var edidOnlyMap = new Dictionary<uint, string>();
+        foreach (var record in parsedRecords)
         {
-            File.WriteAllBytes(tempFile, esmData);
-
-            var (scanResult, parsedRecords) = BuildScanResult(esmData);
-
-            // Build EDID-only FormIdMap (the fixed behavior)
-            var edidOnlyMap = new Dictionary<uint, string>();
-            foreach (var record in parsedRecords)
+            var edid = record.Subrecords.FirstOrDefault(s => s.Signature == "EDID")?.DataAsString;
+            if (!string.IsNullOrEmpty(edid) && record.Header.FormId != 0)
             {
-                var edid = record.Subrecords.FirstOrDefault(s => s.Signature == "EDID")?.DataAsString;
-                if (!string.IsNullOrEmpty(edid) && record.Header.FormId != 0)
-                {
-                    edidOnlyMap[record.Header.FormId] = edid;
-                }
+                edidOnlyMap[record.Header.FormId] = edid;
             }
-
-            _output.WriteLine("EDID-only FormIdMap entries:");
-            foreach (var (formId, name) in edidOnlyMap)
-            {
-                _output.WriteLine($"  0x{formId:X8} -> {name}");
-            }
-
-            // Act: Create parser with EDID-only correlations
-            using var mmf = MemoryMappedFile.CreateFromFile(tempFile, FileMode.Open, null, 0,
-                MemoryMappedFileAccess.Read);
-            using var accessor = mmf.CreateViewAccessor(0, esmData.Length, MemoryMappedFileAccess.Read);
-
-            var parser = new RecordParser(
-                scanResult, edidOnlyMap, accessor, esmData.Length);
-
-            // Assert: GetEditorId returns EDID values
-            foreach (var (_, expectedEditorId, expectedFullName, formId) in records)
-            {
-                var actualEditorId = parser.GetEditorId(formId);
-                _output.WriteLine(
-                    $"  FormId=0x{formId:X8}: EditorId={actualEditorId ?? "(null)"}, Expected={expectedEditorId}");
-
-                Assert.NotNull(actualEditorId);
-                Assert.Equal(expectedEditorId, actualEditorId);
-                Assert.NotEqual(expectedFullName, actualEditorId);
-            }
-
-            // Verify through parsing that EditorId != FullName
-            var npcs = parser.ParseNpcs();
-            Assert.Single(npcs);
-            Assert.Equal("CraigBoone", npcs[0].EditorId);
-            Assert.Equal("Craig Boone", npcs[0].FullName);
-            Assert.NotEqual(npcs[0].EditorId, npcs[0].FullName);
-            _output.WriteLine(
-                $"NPC: EditorId={npcs[0].EditorId}, FullName={npcs[0].FullName} - correctly separated");
-
-            var keys = parser.ParseKeys();
-            Assert.Single(keys);
-            Assert.Equal("KeyVault13", keys[0].EditorId);
-            Assert.Equal("Vault 13 Keycard", keys[0].FullName);
-            Assert.Equal("Clutter\\Keycard.nif", keys[0].ModelPath);
-            Assert.Equal(25, keys[0].Value);
-            Assert.Equal(0.1f, keys[0].Weight, 3);
-            Assert.NotEqual(keys[0].EditorId, keys[0].FullName);
-            _output.WriteLine(
-                $"Key: EditorId={keys[0].EditorId}, FullName={keys[0].FullName} - correctly separated");
         }
-        finally
+
+        _output.WriteLine("EDID-only FormIdMap entries:");
+        foreach (var (formId, name) in edidOnlyMap)
         {
-            if (File.Exists(tempFile))
-                File.Delete(tempFile);
+            _output.WriteLine($"  0x{formId:X8} -> {name}");
         }
+
+        // Act: Create parser with EDID-only correlations
+        using var mmf = MemoryMappedFile.CreateNew(null, esmData.Length);
+        using var accessor = mmf.CreateViewAccessor(0, esmData.Length);
+        accessor.WriteArray(0, esmData, 0, esmData.Length);
+
+        var parser = new RecordParser(
+            scanResult, edidOnlyMap, accessor, esmData.Length);
+
+        // Assert: GetEditorId returns EDID values
+        foreach (var (_, expectedEditorId, expectedFullName, formId) in records)
+        {
+            var actualEditorId = parser.GetEditorId(formId);
+            _output.WriteLine(
+                $"  FormId=0x{formId:X8}: EditorId={actualEditorId ?? "(null)"}, Expected={expectedEditorId}");
+
+            Assert.NotNull(actualEditorId);
+            Assert.Equal(expectedEditorId, actualEditorId);
+            Assert.NotEqual(expectedFullName, actualEditorId);
+        }
+
+        // Verify through parsing that EditorId != FullName
+        var npcs = parser.ParseNpcs();
+        Assert.Single(npcs);
+        Assert.Equal("CraigBoone", npcs[0].EditorId);
+        Assert.Equal("Craig Boone", npcs[0].FullName);
+        Assert.NotEqual(npcs[0].EditorId, npcs[0].FullName);
+        _output.WriteLine(
+            $"NPC: EditorId={npcs[0].EditorId}, FullName={npcs[0].FullName} - correctly separated");
+
+        var keys = parser.ParseKeys();
+        Assert.Single(keys);
+        Assert.Equal("KeyVault13", keys[0].EditorId);
+        Assert.Equal("Vault 13 Keycard", keys[0].FullName);
+        Assert.Equal("Clutter\\Keycard.nif", keys[0].ModelPath);
+        Assert.Equal(25, keys[0].Value);
+        Assert.Equal(0.1f, keys[0].Weight, 3);
+        Assert.NotEqual(keys[0].EditorId, keys[0].FullName);
+        _output.WriteLine(
+            $"Key: EditorId={keys[0].EditorId}, FullName={keys[0].FullName} - correctly separated");
     }
 
     [Fact]
@@ -112,63 +101,52 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
         };
 
         var esmData = CreateMinimalEsmWithRecords(records, false);
-        var tempFile = Path.Combine(Path.GetTempPath(), $"test_buggy_{Guid.NewGuid()}.esm");
-        try
+        var (scanResult, parsedRecords) = BuildScanResult(esmData);
+
+        // Build the OLD buggy map that prefers FULL over EDID
+        var buggyMap = new Dictionary<uint, string>();
+        foreach (var record in parsedRecords)
         {
-            File.WriteAllBytes(tempFile, esmData);
-
-            var (scanResult, parsedRecords) = BuildScanResult(esmData);
-
-            // Build the OLD buggy map that prefers FULL over EDID
-            var buggyMap = new Dictionary<uint, string>();
-            foreach (var record in parsedRecords)
+            var full = record.Subrecords.FirstOrDefault(s => s.Signature == "FULL")?.DataAsString;
+            var edid = record.Subrecords.FirstOrDefault(s => s.Signature == "EDID")?.DataAsString;
+            var displayName = !string.IsNullOrEmpty(full) ? full : edid;
+            if (!string.IsNullOrEmpty(displayName) && record.Header.FormId != 0)
             {
-                var full = record.Subrecords.FirstOrDefault(s => s.Signature == "FULL")?.DataAsString;
-                var edid = record.Subrecords.FirstOrDefault(s => s.Signature == "EDID")?.DataAsString;
-                var displayName = !string.IsNullOrEmpty(full) ? full : edid;
-                if (!string.IsNullOrEmpty(displayName) && record.Header.FormId != 0)
-                {
-                    buggyMap[record.Header.FormId] = displayName;
-                }
+                buggyMap[record.Header.FormId] = displayName;
             }
-
-            _output.WriteLine("Buggy FormIdMap entries (FULL preferred):");
-            foreach (var (formId, name) in buggyMap)
-            {
-                _output.WriteLine($"  0x{formId:X8} -> {name}");
-            }
-
-            // Act: Create parser with buggy correlations
-            using var mmf = MemoryMappedFile.CreateFromFile(tempFile, FileMode.Open, null, 0,
-                MemoryMappedFileAccess.Read);
-            using var accessor = mmf.CreateViewAccessor(0, esmData.Length, MemoryMappedFileAccess.Read);
-
-            var parser = new RecordParser(
-                scanResult, buggyMap, accessor, esmData.Length);
-
-            // With the buggy map, GetEditorId returns the FullName instead of EditorId
-            var editorId = parser.GetEditorId(0x00000005);
-            _output.WriteLine($"GetEditorId(0x00000005) = {editorId ?? "(null)"}");
-
-            // This demonstrates the bug: GetEditorId returns FullName text
-            Assert.Equal("Vault 13 Keycard", editorId);
-
-            // KEYM now parses its own EDID/FULL subrecords, so a bad external correlation map
-            // must not poison the record's semantic EditorId.
-            var keys = parser.ParseKeys();
-            Assert.Single(keys);
-            Assert.Equal("KeyVault13", keys[0].EditorId);
-            Assert.Equal("Vault 13 Keycard", keys[0].FullName);
-            Assert.NotEqual(keys[0].EditorId, keys[0].FullName);
-            _output.WriteLine(
-                $"Key: EditorId={keys[0].EditorId}, FullName={keys[0].FullName} " +
-                "- fixed: parsed EDID wins over the bad correlation map");
         }
-        finally
+
+        _output.WriteLine("Buggy FormIdMap entries (FULL preferred):");
+        foreach (var (formId, name) in buggyMap)
         {
-            if (File.Exists(tempFile))
-                File.Delete(tempFile);
+            _output.WriteLine($"  0x{formId:X8} -> {name}");
         }
+
+        // Act: Create parser with buggy correlations
+        using var mmf = MemoryMappedFile.CreateNew(null, esmData.Length);
+        using var accessor = mmf.CreateViewAccessor(0, esmData.Length);
+        accessor.WriteArray(0, esmData, 0, esmData.Length);
+
+        var parser = new RecordParser(
+            scanResult, buggyMap, accessor, esmData.Length);
+
+        // With the buggy map, GetEditorId returns the FullName instead of EditorId
+        var editorId = parser.GetEditorId(0x00000005);
+        _output.WriteLine($"GetEditorId(0x00000005) = {editorId ?? "(null)"}");
+
+        // This demonstrates the bug: GetEditorId returns FullName text
+        Assert.Equal("Vault 13 Keycard", editorId);
+
+        // KEYM now parses its own EDID/FULL subrecords, so a bad external correlation map
+        // must not poison the record's semantic EditorId.
+        var keys = parser.ParseKeys();
+        Assert.Single(keys);
+        Assert.Equal("KeyVault13", keys[0].EditorId);
+        Assert.Equal("Vault 13 Keycard", keys[0].FullName);
+        Assert.NotEqual(keys[0].EditorId, keys[0].FullName);
+        _output.WriteLine(
+            $"Key: EditorId={keys[0].EditorId}, FullName={keys[0].FullName} " +
+            "- fixed: parsed EDID wins over the bad correlation map");
     }
 
     [Fact]
@@ -180,34 +158,24 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
         };
 
         var esmData = CreateMinimalEsmWithRecords(records, false);
-        var tempFile = Path.Combine(Path.GetTempPath(), $"test_recipe_{Guid.NewGuid()}.esm");
-        try
-        {
-            File.WriteAllBytes(tempFile, esmData);
-            var (scanResult, _) = BuildScanResult(esmData);
+        var (scanResult, _) = BuildScanResult(esmData);
 
-            using var mmf = MemoryMappedFile.CreateFromFile(tempFile, FileMode.Open, null, 0,
-                MemoryMappedFileAccess.Read);
-            using var accessor = mmf.CreateViewAccessor(0, esmData.Length, MemoryMappedFileAccess.Read);
+        using var mmf = MemoryMappedFile.CreateNew(null, esmData.Length);
+        using var accessor = mmf.CreateViewAccessor(0, esmData.Length);
+        accessor.WriteArray(0, esmData, 0, esmData.Length);
 
-            var parser = new RecordParser(scanResult, new Dictionary<uint, string>(), accessor, esmData.Length);
-            var recipes = parser.ParseRecipes();
+        var parser = new RecordParser(scanResult, new Dictionary<uint, string>(), accessor, esmData.Length);
+        var recipes = parser.ParseRecipes();
 
-            var recipe = Assert.Single(recipes);
-            Assert.Equal("RecipeTest", recipe.EditorId);
-            Assert.Equal("Test Recipe", recipe.FullName);
-            var ingredient = Assert.Single(recipe.Ingredients);
-            Assert.Equal(0x00001000u, ingredient.ItemFormId);
-            Assert.Equal(2u, ingredient.Count);
-            var recipeOutput = Assert.Single(recipe.Outputs);
-            Assert.Equal(0x00002000u, recipeOutput.ItemFormId);
-            Assert.Equal(1u, recipeOutput.Count);
-        }
-        finally
-        {
-            if (File.Exists(tempFile))
-                File.Delete(tempFile);
-        }
+        var recipe = Assert.Single(recipes);
+        Assert.Equal("RecipeTest", recipe.EditorId);
+        Assert.Equal("Test Recipe", recipe.FullName);
+        var ingredient = Assert.Single(recipe.Ingredients);
+        Assert.Equal(0x00001000u, ingredient.ItemFormId);
+        Assert.Equal(2u, ingredient.Count);
+        var recipeOutput = Assert.Single(recipe.Outputs);
+        Assert.Equal(0x00002000u, recipeOutput.ItemFormId);
+        Assert.Equal(1u, recipeOutput.Count);
     }
 
     #region Test Helpers

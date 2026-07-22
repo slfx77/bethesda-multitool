@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -69,7 +70,7 @@ public sealed class FnvLocalLightAssociationObservationTests
     public void Contract_HasNoProductionConsumerWhileRenderingIsDisabled()
     {
         Assert.False(FnvLocalLightAssociationObservation.CanDriveRendering);
-        var root = FindRepoRoot();
+        var root = SourceContract.RepoRoot;
         var sourceRoot = Path.Combine(root, "src");
         var contractPath = Path.GetFullPath(Path.Combine(
             sourceRoot,
@@ -137,18 +138,5 @@ public sealed class FnvLocalLightAssociationObservationTests
                 key,
                 [0x00100001],
                 evidenceSource!));
-    }
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null &&
-               !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory.FullName;
     }
 }

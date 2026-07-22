@@ -53,13 +53,13 @@ public sealed class RendererProfilerScenarioRunnerTests
         try
         {
             var run = new RendererProfilerScenarioRunner(host, events)
-                .RunAsync(plan!, output);
-            await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                .RunAsync(plan!, output, TestContext.Current.CancellationToken);
+            await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
             Assert.DoesNotContain("step:t-010", host.Calls);
             releaseFirst.SetResult();
 
-            var result = await run.WaitAsync(TimeSpan.FromSeconds(5));
+            var result = await run.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
             Assert.True(result.Passed);
             Assert.Contains("step:t-010", host.Calls);
         }
@@ -676,6 +676,305 @@ public sealed class RendererProfilerScenarioRunnerTests
             var result = ValidResult(plan, step, stepIndex);
             return Transform?.Invoke(result) ?? result;
         }
+
+        private static RendererProfilerScenarioStepResult ValidResult(
+            RendererProfilerScenarioPlan plan,
+            RendererProfilerScenarioStep step,
+            int stepIndex)
+        {
+            const float phaseLengthDays = 3;
+            var phase = (int)(MathF.Round(step.GameDay) % (phaseLengthDays * 8)) / (int)phaseLengthDays;
+            var sunZ = step.Id switch
+            {
+                "sunrise" => 0.2f,
+                "noon" => 0.9f,
+                "sunset" => 0.1f,
+                _ => 0.5f,
+            };
+            var sunDirection = UnitWithZ(sunZ);
+            var velocity = new Vector2(0.004f, -0.002f);
+            var clouds = new[]
+            {
+                new RendererProfilerCloudLayerSnapshot(
+                    0,
+                    velocity,
+                    WeatherCloudTransitionResolver.OffsetAtTime(velocity, step.AnimationTimeSeconds)),
+            };
+            var isHistoryScenario = plan.Name == RendererProfilerScenarioCatalog.FnvAdaptationHistory;
+            var isWeatherImageSpaceScenario =
+                plan.Name == RendererProfilerScenarioCatalog.FnvWeatherImageSpaceBands;
+            var isWaterNightScenario = plan.Name == RendererProfilerScenarioCatalog.FnvWaterNightMatrix;
+            var isWater001Scenario = plan.Name == RendererProfilerScenarioCatalog.FnvWater001Synthetic;
+            var isActiveAdtScenario = plan.Name == RendererProfilerScenarioCatalog.FnvActiveAdtBase;
+            var isWaterScenario = isWaterNightScenario || isWater001Scenario;
+            var sceneSampleCount = string.Equals(
+                Environment.GetEnvironmentVariable("FALLOUT_VIEWER_SCENE_SAMPLES"),
+                "1",
+                StringComparison.Ordinal)
+                ? 1
+                : 4;
+            var sceneDepthRoute = sceneSampleCount > 1 ? $"msaa{sceneSampleCount}x" : "1x";
+            string? waterTechnique = null;
+            if (isWater001Scenario)
+            {
+                waterTechnique = $"FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-{sceneDepthRoute}";
+            }
+            else if (isWaterNightScenario)
+            {
+                waterTechnique = $"FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-" +
+                                 $"{sceneDepthRoute}+multi-watr-2";
+            }
+
+            var waterFallbackReason = isWaterScenario
+                ? "selective-content-mask-approximated-by-main-depth"
+                : null;
+            var historyKey = isHistoryScenario && step.ClearAdaptedLightBeforeCapture
+                ? 0x200UL
+                : 0x100UL;
+            var historyReset = isHistoryScenario && (stepIndex == 0 || step.ClearAdaptedLightBeforeCapture);
+            string? historyResetReason = null;
+            if (historyReset)
+            {
+                historyResetReason = step.ClearAdaptedLightBeforeCapture
+                    ? "history-key"
+                    : "history-key,target-resource,target-size,target-format";
+            }
+            var climateTiming = new AtmosphereState.ClimateTiming(6f, 8f, 18f, 20f);
+            var atmosphericColorBand = AtmosphereState.SelectWeatherBandBlend(
+                step.GameHour,
+                climateTiming,
+                plan.ExpectedGame,
+                hasModernTransitions: false,
+                hasAuthoredHighNoon: true);
+            IReadOnlyList<RendererProfilerWeatherImageSpaceContributionSnapshot> weatherContributions = [];
+            var tonemap = new RendererProfilerTonemapSnapshot(
+                0.6f, 0.7768509f, 0.6247225f, 0.2386268f, 0.33f);
+            if (isWeatherImageSpaceScenario)
+            {
+                if (step.Id == "noon")
+                {
+                    weatherContributions =
+                    [
+                        new RendererProfilerWeatherImageSpaceContributionSnapshot(
+                            "Day", 0x00164BA6, "NVJacobstownIS", 1f, 0f),
+                    ];
+                    tonemap = new RendererProfilerTonemapSnapshot(
+                        7.4f, 0.6848657f, 0.5938973f, 0.3221909f, 0.33f);
+                }
+                else
+                {
+                    weatherContributions =
+                    [
+                        new RendererProfilerWeatherImageSpaceContributionSnapshot(
+                            "Day", 0x00164BA6, "NVJacobstownIS", 0.5f, 0f),
+                        new RendererProfilerWeatherImageSpaceContributionSnapshot(
+                            "HighNoon", 0x000CEE18, "NVWastelandIS", 0.5f, 0f),
+                    ];
+                    tonemap = new RendererProfilerTonemapSnapshot(
+                        4.4f, 0.7768509f, 0.6247225f, 0.2386268f, 0.33f);
+                }
+            }
+
+            var snapshot = new RendererProfilerScenarioSnapshot(
+                plan.ExpectedGame,
+                plan.WorldspaceEditorId,
+                step.WeatherEditorId,
+                step.GameHour,
+                step.GameDay,
+                step.AnimationTimeSeconds,
+                sunDirection,
+                sunDirection,
+                1,
+                Vector3.UnitY,
+                1f,
+                phase,
+                (int)phaseLengthDays,
+                clouds,
+                4,
+                "FNV",
+                true,
+                [true, true],
+                isWaterScenario ? 0x001009CAu : null,
+                isWaterScenario ? "NVCleanWater" : null,
+                isWaterScenario ? "cell-xcwt" : "unavailable",
+                isWaterScenario ? 0x000DDCF8u : null,
+                historyKey,
+                historyReset,
+                historyResetReason,
+                new RendererProfilerClimateTimingSnapshot(6f, 8f, 18f, 20f),
+                new RendererProfilerAtmosphericColorBandSnapshot(
+                    atmosphericColorBand.From.ToString(),
+                    atmosphericColorBand.To.ToString(),
+                    atmosphericColorBand.ToWeight),
+                weatherContributions,
+                tonemap,
+                waterTechnique,
+                waterFallbackReason,
+                sceneSampleCount,
+                FnvSls1009Draws: 0,
+                FnvSls1009Instances: 0,
+                FnvSls1013Draws: 0,
+                FnvSls1013Instances: 0,
+                PlacedLightCount: 0,
+                FnvClassicBasicLightingEnabled: false,
+                FnvClassicBasicFallbackDraws: 0,
+                FnvClassicBasicFallbackInstances: 0,
+                FnvClassicBasicFallbackReason: null,
+                FnvActiveAdtBaseDraws: isActiveAdtScenario ? 1 : 0,
+                FnvActiveAdtBaseInstances: isActiveAdtScenario ? 3 : 0,
+                FnvActiveAdtBaseVertexColorDraws: isActiveAdtScenario ? 1 : 0,
+                FnvActiveAdtBaseVertexColorInstances: isActiveAdtScenario ? 2 : 0,
+                FnvActiveAdtBaseEnabled: isActiveAdtScenario,
+                FnvActiveAdtBaseFallbackDraws: isActiveAdtScenario ? 2 : 0,
+                FnvActiveAdtBaseFallbackInstances: isActiveAdtScenario ? 3 : 0,
+                FnvActiveAdtBaseFallbackReason:
+                    isActiveAdtScenario ? "outside-active-adt-base-subset" : null);
+            var statistics = new RendererProfilerScenarioImageStatistics(
+                10,
+                10,
+                400,
+                100,
+                1,
+                0.95,
+                1,
+                240,
+                180,
+                220,
+                step.PostProcessSettings?.BloomEnabled == true ? 0.52 : 0.5);
+            var requested = step.PostProcessSettings;
+            var isSunlightScenario = plan.Name == RendererProfilerScenarioCatalog.FnvSunlightDimmer;
+            float resolvedSunlightScale;
+            if (isWeatherImageSpaceScenario)
+            {
+                resolvedSunlightScale = step.Id == "noon" ? 1.1f : 1.155f;
+            }
+            else if (!isSunlightScenario)
+            {
+                resolvedSunlightScale = 1.21f;
+            }
+            else if (requested is { HdrEnabled: false })
+            {
+                resolvedSunlightScale = 1.3f;
+            }
+            else
+            {
+                resolvedSunlightScale = requested is { ImagespaceEnabled: false } ? 1f : 1.21f;
+            }
+
+            var sceneSunlightScale = isSunlightScenario &&
+                                     requested is not { HdrEnabled: true, ImagespaceEnabled: true }
+                ? 1f
+                : resolvedSunlightScale;
+            var baseImageSpaceSource = isHistoryScenario && step.Id != "west-worldspace"
+                ? "cell-xcim"
+                : "worldspace-inam";
+            var applied = new RendererProfilerScenarioAppliedPostProcessSettings(
+                requested?.HdrEnabled ?? true,
+                requested?.BloomEnabled ?? true,
+                requested?.ImagespaceEnabled ?? true,
+                requested?.FogEnabled ?? true,
+                requested?.HdrEnabled ?? true,
+                requested is null || (requested.HdrEnabled && requested.BloomEnabled),
+                "EngineFo3Fnv",
+                "NVDefaultExterior",
+                baseImageSpaceSource,
+                resolvedSunlightScale,
+                sceneSunlightScale,
+                requested?.ShadowsEnabled ?? true);
+            var difference = stepIndex == 0
+                ? null
+                : new RendererProfilerScenarioImageDifferenceStatistics(
+                    plan.Steps[stepIndex - 1].Id,
+                    2,
+                    2,
+                    0,
+                    0.01,
+                    0.01,
+                    3,
+                    10,
+                    20);
+            IReadOnlyList<RendererProfilerScenarioImageRegionStatistics>? imageRegions = plan.Name switch
+            {
+                RendererProfilerScenarioCatalog.FnvWaterNightMatrix =>
+                    [
+                        new RendererProfilerScenarioImageRegionStatistics(
+                            "water-band",
+                            1,
+                            3,
+                            8,
+                            1,
+                            8,
+                            step.Id == "night" ? (byte)8 : (byte)20,
+                            step.Id == "night" ? (byte)14 : (byte)28,
+                            step.Id == "night" ? (byte)9 : (byte)12,
+                            step.Id == "night" ? (byte)12 : (byte)24,
+                            step.Id == "night" ? 12d / 255d : 24d / 255d,
+                            48,
+                            step.Id == "night" ? 2 : 4),
+                    ],
+                RendererProfilerScenarioCatalog.FnvCelestial when step.Id.StartsWith("night-", StringComparison.Ordinal) =>
+                    [
+                        new RendererProfilerScenarioImageRegionStatistics(
+                            "moon-window",
+                            4,
+                            2,
+                            2,
+                            4,
+                            8,
+                            32,
+                            32,
+                            32,
+                            32,
+                            32d / 255d,
+                            48,
+                            phase switch
+                            {
+                                0 => 80,
+                                1 => 40,
+                                4 => 0,
+                                _ => 20,
+                            }),
+                    ],
+                RendererProfilerScenarioCatalog.FnvActiveAdtBase =>
+                    [
+                        new RendererProfilerScenarioImageRegionStatistics(
+                            "active-adt-facade",
+                            2,
+                            2,
+                            6,
+                            6,
+                            36,
+                            90,
+                            90,
+                            90,
+                            90,
+                            90d / 255d,
+                            48,
+                            30),
+                    ],
+                _ => null,
+            };
+            var hashCharacter = "0123456789ABCDEF"[stepIndex % 16];
+            return new RendererProfilerScenarioStepResult(
+                step,
+                snapshot,
+                new RendererProfilerCameraPose(
+                    step.CameraPosition,
+                    step.CameraYawDegrees * (MathF.PI / 180f),
+                    step.CameraPitchDegrees * (MathF.PI / 180f),
+                    4f * 4096f),
+                applied,
+                $"{stepIndex:D2}-{step.Id}.png",
+                new string(hashCharacter, 64),
+                new string(hashCharacter, 64),
+                statistics,
+                difference,
+                1,
+                imageRegions);
+        }
+
+        private static Vector3 UnitWithZ(float z) =>
+            Vector3.Normalize(new Vector3(MathF.Sqrt(MathF.Max(0f, 1f - z * z)), 0f, z));
     }
 
     private sealed class FakeEvents : IRendererProfilerScenarioEventSink
@@ -701,298 +1000,4 @@ public sealed class RendererProfilerScenarioRunnerTests
         public void ScenarioCompleted(RendererProfilerScenarioRunResult result, long elapsedMilliseconds) =>
             LifecycleEvents.Add("complete");
     }
-
-    private static RendererProfilerScenarioStepResult ValidResult(
-        RendererProfilerScenarioPlan plan,
-        RendererProfilerScenarioStep step,
-        int stepIndex)
-    {
-        const float phaseLengthDays = 3;
-        var phase = (int)(MathF.Round(step.GameDay) % (phaseLengthDays * 8)) / (int)phaseLengthDays;
-        var sunZ = step.Id switch
-        {
-            "sunrise" => 0.2f,
-            "noon" => 0.9f,
-            "sunset" => 0.1f,
-            _ => 0.5f,
-        };
-        var sunDirection = UnitWithZ(sunZ);
-        var velocity = new Vector2(0.004f, -0.002f);
-        var clouds = new[]
-        {
-            new RendererProfilerCloudLayerSnapshot(
-                0,
-                velocity,
-                WeatherCloudTransitionResolver.OffsetAtTime(velocity, step.AnimationTimeSeconds)),
-        };
-        var isHistoryScenario = plan.Name == RendererProfilerScenarioCatalog.FnvAdaptationHistory;
-        var isWeatherImageSpaceScenario =
-            plan.Name == RendererProfilerScenarioCatalog.FnvWeatherImageSpaceBands;
-        var isWaterNightScenario = plan.Name == RendererProfilerScenarioCatalog.FnvWaterNightMatrix;
-        var isWater001Scenario = plan.Name == RendererProfilerScenarioCatalog.FnvWater001Synthetic;
-        var isActiveAdtScenario = plan.Name == RendererProfilerScenarioCatalog.FnvActiveAdtBase;
-        var isWaterScenario = isWaterNightScenario || isWater001Scenario;
-        var sceneSampleCount = string.Equals(
-            Environment.GetEnvironmentVariable("FALLOUT_VIEWER_SCENE_SAMPLES"),
-            "1",
-            StringComparison.Ordinal)
-            ? 1
-            : 4;
-        var sceneDepthRoute = sceneSampleCount > 1 ? $"msaa{sceneSampleCount}x" : "1x";
-        var waterTechnique = isWater001Scenario
-            ? $"FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-{sceneDepthRoute}"
-            : isWaterNightScenario
-                ? $"FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-" +
-                  $"{sceneDepthRoute}+multi-watr-2"
-                : null;
-        var waterFallbackReason = isWater001Scenario
-            ? "selective-content-mask-approximated-by-main-depth"
-            : isWaterNightScenario
-                ? "selective-content-mask-approximated-by-main-depth"
-                : null;
-        var historyKey = isHistoryScenario && step.ClearAdaptedLightBeforeCapture
-            ? 0x200UL
-            : 0x100UL;
-        var historyReset = isHistoryScenario && (stepIndex == 0 || step.ClearAdaptedLightBeforeCapture);
-        var historyResetReason = !historyReset
-            ? null
-            : step.ClearAdaptedLightBeforeCapture
-                ? "history-key"
-                : "history-key,target-resource,target-size,target-format";
-        var climateTiming = new AtmosphereState.ClimateTiming(6f, 8f, 18f, 20f);
-        var atmosphericColorBand = AtmosphereState.SelectWeatherBandBlend(
-            step.GameHour,
-            climateTiming,
-            plan.ExpectedGame,
-            hasModernTransitions: false,
-            hasAuthoredHighNoon: true);
-        IReadOnlyList<RendererProfilerWeatherImageSpaceContributionSnapshot> weatherContributions = [];
-        var tonemap = new RendererProfilerTonemapSnapshot(
-            0.6f, 0.7768509f, 0.6247225f, 0.2386268f, 0.33f);
-        if (isWeatherImageSpaceScenario)
-        {
-            if (step.Id == "noon")
-            {
-                weatherContributions =
-                [
-                    new RendererProfilerWeatherImageSpaceContributionSnapshot(
-                        "Day", 0x00164BA6, "NVJacobstownIS", 1f, 0f),
-                ];
-                tonemap = new RendererProfilerTonemapSnapshot(
-                    7.4f, 0.6848657f, 0.5938973f, 0.3221909f, 0.33f);
-            }
-            else
-            {
-                weatherContributions =
-                [
-                    new RendererProfilerWeatherImageSpaceContributionSnapshot(
-                        "Day", 0x00164BA6, "NVJacobstownIS", 0.5f, 0f),
-                    new RendererProfilerWeatherImageSpaceContributionSnapshot(
-                        "HighNoon", 0x000CEE18, "NVWastelandIS", 0.5f, 0f),
-                ];
-                tonemap = new RendererProfilerTonemapSnapshot(
-                    4.4f, 0.7768509f, 0.6247225f, 0.2386268f, 0.33f);
-            }
-        }
-
-        var snapshot = new RendererProfilerScenarioSnapshot(
-            plan.ExpectedGame,
-            plan.WorldspaceEditorId,
-            step.WeatherEditorId,
-            step.GameHour,
-            step.GameDay,
-            step.AnimationTimeSeconds,
-            sunDirection,
-            sunDirection,
-            1,
-            Vector3.UnitY,
-            1f,
-            phase,
-            (int)phaseLengthDays,
-            clouds,
-            4,
-            "FNV",
-            true,
-            [true, true],
-            isWaterScenario ? 0x001009CAu : null,
-            isWaterScenario ? "NVCleanWater" : null,
-            isWaterScenario ? "cell-xcwt" : "unavailable",
-            isWaterScenario ? 0x000DDCF8u : null,
-            historyKey,
-            historyReset,
-            historyResetReason,
-            new RendererProfilerClimateTimingSnapshot(6f, 8f, 18f, 20f),
-            new RendererProfilerAtmosphericColorBandSnapshot(
-                atmosphericColorBand.From.ToString(),
-                atmosphericColorBand.To.ToString(),
-                atmosphericColorBand.ToWeight),
-            weatherContributions,
-            tonemap,
-            waterTechnique,
-            waterFallbackReason,
-            sceneSampleCount,
-            FnvSls1009Draws: 0,
-            FnvSls1009Instances: 0,
-            FnvSls1013Draws: 0,
-            FnvSls1013Instances: 0,
-            PlacedLightCount: 0,
-            FnvClassicBasicLightingEnabled: false,
-            FnvClassicBasicFallbackDraws: 0,
-            FnvClassicBasicFallbackInstances: 0,
-            FnvClassicBasicFallbackReason: null,
-            FnvActiveAdtBaseDraws: isActiveAdtScenario ? 1 : 0,
-            FnvActiveAdtBaseInstances: isActiveAdtScenario ? 3 : 0,
-            FnvActiveAdtBaseVertexColorDraws: isActiveAdtScenario ? 1 : 0,
-            FnvActiveAdtBaseVertexColorInstances: isActiveAdtScenario ? 2 : 0,
-            FnvActiveAdtBaseEnabled: isActiveAdtScenario,
-            FnvActiveAdtBaseFallbackDraws: isActiveAdtScenario ? 2 : 0,
-            FnvActiveAdtBaseFallbackInstances: isActiveAdtScenario ? 3 : 0,
-            FnvActiveAdtBaseFallbackReason:
-                isActiveAdtScenario ? "outside-active-adt-base-subset" : null);
-        var statistics = new RendererProfilerScenarioImageStatistics(
-            10,
-            10,
-            400,
-            100,
-            1,
-            0.95,
-            1,
-            240,
-            180,
-            220,
-            step.PostProcessSettings?.BloomEnabled == true ? 0.52 : 0.5);
-        var requested = step.PostProcessSettings;
-        var isSunlightScenario = plan.Name == RendererProfilerScenarioCatalog.FnvSunlightDimmer;
-        float resolvedSunlightScale;
-        if (isWeatherImageSpaceScenario)
-        {
-            resolvedSunlightScale = step.Id == "noon" ? 1.1f : 1.155f;
-        }
-        else if (!isSunlightScenario)
-        {
-            resolvedSunlightScale = 1.21f;
-        }
-        else if (requested is { HdrEnabled: false })
-        {
-            resolvedSunlightScale = 1.3f;
-        }
-        else
-        {
-            resolvedSunlightScale = requested is { ImagespaceEnabled: false } ? 1f : 1.21f;
-        }
-
-        var sceneSunlightScale = isSunlightScenario &&
-                                 requested is not { HdrEnabled: true, ImagespaceEnabled: true }
-            ? 1f
-            : resolvedSunlightScale;
-        var baseImageSpaceSource = isHistoryScenario && step.Id != "west-worldspace"
-            ? "cell-xcim"
-            : "worldspace-inam";
-        var applied = new RendererProfilerScenarioAppliedPostProcessSettings(
-            requested?.HdrEnabled ?? true,
-            requested?.BloomEnabled ?? true,
-            requested?.ImagespaceEnabled ?? true,
-            requested?.FogEnabled ?? true,
-            requested?.HdrEnabled ?? true,
-            requested is null || (requested.HdrEnabled && requested.BloomEnabled),
-            "EngineFo3Fnv",
-            "NVDefaultExterior",
-            baseImageSpaceSource,
-            resolvedSunlightScale,
-            sceneSunlightScale,
-            requested?.ShadowsEnabled ?? true);
-        var difference = stepIndex == 0
-            ? null
-            : new RendererProfilerScenarioImageDifferenceStatistics(
-                plan.Steps[stepIndex - 1].Id,
-                2,
-                2,
-                0,
-                0.01,
-                0.01,
-                3,
-                10,
-                20);
-        IReadOnlyList<RendererProfilerScenarioImageRegionStatistics>? imageRegions = plan.Name switch
-        {
-            RendererProfilerScenarioCatalog.FnvWaterNightMatrix =>
-                [
-                    new RendererProfilerScenarioImageRegionStatistics(
-                        "water-band",
-                        1,
-                        3,
-                        8,
-                        1,
-                        8,
-                        step.Id == "night" ? (byte)8 : (byte)20,
-                        step.Id == "night" ? (byte)14 : (byte)28,
-                        step.Id == "night" ? (byte)9 : (byte)12,
-                        step.Id == "night" ? (byte)12 : (byte)24,
-                        step.Id == "night" ? 12d / 255d : 24d / 255d,
-                        48,
-                        step.Id == "night" ? 2 : 4),
-                ],
-            RendererProfilerScenarioCatalog.FnvCelestial when step.Id.StartsWith("night-", StringComparison.Ordinal) =>
-                [
-                    new RendererProfilerScenarioImageRegionStatistics(
-                        "moon-window",
-                        4,
-                        2,
-                        2,
-                        4,
-                        8,
-                        32,
-                        32,
-                        32,
-                        32,
-                        32d / 255d,
-                        48,
-                        phase switch
-                        {
-                            0 => 80,
-                            1 => 40,
-                            4 => 0,
-                            _ => 20,
-                        }),
-                ],
-            RendererProfilerScenarioCatalog.FnvActiveAdtBase =>
-                [
-                    new RendererProfilerScenarioImageRegionStatistics(
-                        "active-adt-facade",
-                        2,
-                        2,
-                        6,
-                        6,
-                        36,
-                        90,
-                        90,
-                        90,
-                        90,
-                        90d / 255d,
-                        48,
-                        30),
-                ],
-            _ => null,
-        };
-        var hashCharacter = "0123456789ABCDEF"[stepIndex % 16];
-        return new RendererProfilerScenarioStepResult(
-            step,
-            snapshot,
-            new RendererProfilerCameraPose(
-                step.CameraPosition,
-                step.CameraYawDegrees * (MathF.PI / 180f),
-                step.CameraPitchDegrees * (MathF.PI / 180f),
-                4f * 4096f),
-            applied,
-            $"{stepIndex:D2}-{step.Id}.png",
-            new string(hashCharacter, 64),
-            new string(hashCharacter, 64),
-            statistics,
-            difference,
-            1,
-            imageRegions);
-    }
-
-    private static Vector3 UnitWithZ(float z) =>
-        Vector3.Normalize(new Vector3(MathF.Sqrt(MathF.Max(0f, 1f - z * z)), 0f, z));
 }

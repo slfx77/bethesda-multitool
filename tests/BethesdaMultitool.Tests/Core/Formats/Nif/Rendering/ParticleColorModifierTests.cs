@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -13,6 +14,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     (invisible). Degenerate windows resolve to Color1, while FadeIn/FadeOut independently interpolate
 ///     the authored endpoint alpha values; RGB remains on the authored three-key curve.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class ParticleColorModifierTests
 {
     private const string RetailSandDust02 =
@@ -122,6 +124,7 @@ public sealed class ParticleColorModifierTests
     [Fact]
     public void RetailSandDust02_ParsesAndSamplesAuthoredSimpleColorWindows()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var path = SampleFileFixture.FindSamplePath(RetailSandDust02);
         Assert.SkipUnless(path is not null,
             "Extracted FNV SandDust02 NIF not present (dev-machine-only asset).");

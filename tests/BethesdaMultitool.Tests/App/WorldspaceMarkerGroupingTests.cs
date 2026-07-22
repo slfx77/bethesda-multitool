@@ -101,7 +101,7 @@ public sealed class WorldspaceMarkerGroupingTests
 
         var grouped = WorldspaceMarkerGrouping.GroupByWorldspace([parent, child]);
 
-        var parentCopy = Assert.Single(grouped[1].Where(item => item.FormId == marker.FormId));
+        var parentCopy = Assert.Single(grouped[1], item => item.FormId == marker.FormId);
         Assert.NotSame(marker, parentCopy);
         Assert.Equal(2100, parentCopy.X); // center 1000; scale to 2000; add 100
         Assert.Equal(3800, parentCopy.Y); // center 2000; scale to 4000; add -200

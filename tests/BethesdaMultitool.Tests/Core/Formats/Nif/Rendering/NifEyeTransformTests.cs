@@ -7,9 +7,16 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class NifEyeTransformTests
 {
     private const float PositionEpsilon = 0.01f;
+
+    public NifEyeTransformTests()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+    }
+
     private static readonly string SampleRoot = NifSampleLoader.FindCharactersSampleRoot();
     private static readonly string EyeLeftPath = Path.Combine(SampleRoot, "head", "eyelefthuman.nif");
     private static readonly string EyeRightPath = Path.Combine(SampleRoot, "head", "eyerighthuman.nif");

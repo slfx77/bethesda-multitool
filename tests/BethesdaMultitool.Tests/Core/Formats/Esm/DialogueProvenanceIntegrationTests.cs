@@ -12,6 +12,7 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm;
 
+[Collection(SequentialIntegrationGroup.Name)]
 [Trait("Category", BucketBTestGuard.Category)]
 public sealed class DialogueProvenanceIntegrationTests(SampleFileFixture samples)
 {

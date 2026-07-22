@@ -8,7 +8,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Runtime;
 
 /// <summary>
 ///     Shared fixture for RuntimeStructReader tests that work against a synthetic memory-mapped
-///     heap. Owns the MMF/accessor/temp-file lifecycle and provides the small set of helpers
+///     heap. Owns the MMF/accessor lifecycle and provides the small set of helpers
 ///     (CreateReader, FileOffsetToVa, WriteTesFormHeader) that every derived test needs.
 ///     Per-test specifics — MakeEntry variants, extra-data writers, struct-offset constants,
 ///     and DataSize — stay in the derived classes because they're shaped to each suite's needs.
@@ -23,7 +23,6 @@ public abstract class RuntimeStructReaderTestBase : IDisposable
 
     private MemoryMappedViewAccessor? _accessor;
     private MemoryMappedFile? _mmf;
-    private string? _tempFilePath;
     private bool _disposed;
 
     public void Dispose()
@@ -47,24 +46,12 @@ public abstract class RuntimeStructReaderTestBase : IDisposable
 
         _accessor?.Dispose();
         _mmf?.Dispose();
-
-        if (_tempFilePath != null && File.Exists(_tempFilePath))
-        {
-            try
-            {
-                File.Delete(_tempFilePath);
-            }
-            catch
-            {
-                // Best-effort cleanup; temp files are cleaned by OS eventually.
-            }
-        }
     }
 
     /// <summary>
-    ///     Low-level lifecycle primitive: writes <paramref name="data" /> to a temp file,
-    ///     memory-maps it, and returns the read-only accessor. The MMF / accessor / temp file
-    ///     are owned by this base class and torn down in <see cref="Dispose()" />.
+    ///     Low-level lifecycle primitive: copies <paramref name="data" /> into an in-memory
+    ///     MMF and returns the accessor. The MMF / accessor are owned by this base class and
+    ///     torn down in <see cref="Dispose()" />.
     ///     Use this overload when the test needs to build a custom <see cref="MinidumpInfo" />
     ///     (e.g. multi-region layouts for tests that exercise both heap and module regions, or
     ///     callers that invoke <c>RuntimeStructReader.CreateWithAutoDetect</c> directly).
@@ -78,19 +65,16 @@ public abstract class RuntimeStructReaderTestBase : IDisposable
                 "Synthetic heap is already set up for this test. The base class owns one MMF per test instance.");
         }
 
-        _tempFilePath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        File.WriteAllBytes(_tempFilePath, data);
-
-        _mmf = MemoryMappedFile.CreateFromFile(_tempFilePath, FileMode.Open, null, data.Length,
-            MemoryMappedFileAccess.Read);
-        _accessor = _mmf.CreateViewAccessor(0, data.Length, MemoryMappedFileAccess.Read);
+        _mmf = MemoryMappedFile.CreateNew(null, data.Length);
+        _accessor = _mmf.CreateViewAccessor(0, data.Length);
+        _accessor.WriteArray(0, data, 0, data.Length);
         return _accessor;
     }
 
     /// <summary>
-    ///     Writes <paramref name="data" /> to a temp file, memory-maps it, and returns a reader
-    ///     pointed at a single memory region spanning the file at VA <see cref="HeapBaseVa" />.
-    ///     Subsequent <see cref="Dispose()" /> tears the MMF / accessor / temp file down.
+    ///     Copies <paramref name="data" /> into an in-memory MMF and returns a reader
+    ///     pointed at a single memory region spanning the data at VA <see cref="HeapBaseVa" />.
+    ///     Subsequent <see cref="Dispose()" /> tears the MMF / accessor down.
     /// </summary>
     protected RuntimeStructReader CreateReader(byte[] data)
     {

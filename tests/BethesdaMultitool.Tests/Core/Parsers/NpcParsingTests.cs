@@ -148,100 +148,89 @@ public class NpcParsingTests(ITestOutputHelper output)
     [InlineData(true)]
     public void RecordParser_EsmWithNpc_ParsesNpcData(bool bigEndian)
     {
-        // Arrange - Create an ESM file and write to temp file
+        // Arrange - Create an ESM file
         var editorId = "TestNPC";
         var fullName = "Test Character";
         var esmData = CreateMinimalEsmWithNpc(editorId, fullName, bigEndian);
 
-        var tempFile = Path.Combine(Path.GetTempPath(), $"test_esm_{Guid.NewGuid()}.esm");
-        try
+        // Parse the ESM to get records
+        var parsedRecords = EsmParser.EnumerateRecords(esmData);
+        _output.WriteLine($"Parsed {parsedRecords.Count} records");
+
+        // Verify endianness detection
+        var detectedBigEndian = EsmParser.IsBigEndian(esmData);
+        _output.WriteLine($"Detected as BigEndian: {detectedBigEndian}");
+        Assert.Equal(bigEndian, detectedBigEndian);
+
+        // Convert to EsmRecordScanResult (like EsmFileAnalyzer does)
+        var mainRecords = new List<DetectedMainRecord>();
+        var editorIds = new List<EdidRecord>();
+        var fullNames = new List<TextSubrecord>();
+
+        foreach (var record in parsedRecords)
         {
-            File.WriteAllBytes(tempFile, esmData);
+            mainRecords.Add(new DetectedMainRecord(
+                record.Header.Signature,
+                record.Header.DataSize,
+                record.Header.Flags,
+                record.Header.FormId,
+                record.Offset,
+                bigEndian));
 
-            // Parse the ESM to get records
-            var parsedRecords = EsmParser.EnumerateRecords(esmData);
-            _output.WriteLine($"Parsed {parsedRecords.Count} records");
-
-            // Verify endianness detection
-            var detectedBigEndian = EsmParser.IsBigEndian(esmData);
-            _output.WriteLine($"Detected as BigEndian: {detectedBigEndian}");
-            Assert.Equal(bigEndian, detectedBigEndian);
-
-            // Convert to EsmRecordScanResult (like EsmFileAnalyzer does)
-            var mainRecords = new List<DetectedMainRecord>();
-            var editorIds = new List<EdidRecord>();
-            var fullNames = new List<TextSubrecord>();
-
-            foreach (var record in parsedRecords)
+            foreach (var sub in record.Subrecords)
             {
-                mainRecords.Add(new DetectedMainRecord(
-                    record.Header.Signature,
-                    record.Header.DataSize,
-                    record.Header.Flags,
-                    record.Header.FormId,
-                    record.Offset,
-                    bigEndian));
-
-                foreach (var sub in record.Subrecords)
-                {
-                    if (sub.Signature == "EDID")
-                        editorIds.Add(new EdidRecord(sub.DataAsString ?? "", record.Offset));
-                    if (sub.Signature == "FULL")
-                        fullNames.Add(new TextSubrecord("FULL", sub.DataAsString ?? "", record.Offset));
-                }
+                if (sub.Signature == "EDID")
+                    editorIds.Add(new EdidRecord(sub.DataAsString ?? "", record.Offset));
+                if (sub.Signature == "FULL")
+                    fullNames.Add(new TextSubrecord("FULL", sub.DataAsString ?? "", record.Offset));
             }
+        }
 
-            var scanResult = new EsmRecordScanResult
-            {
-                MainRecords = mainRecords,
-                EditorIds = editorIds,
-                FullNames = fullNames
-            };
+        var scanResult = new EsmRecordScanResult
+        {
+            MainRecords = mainRecords,
+            EditorIds = editorIds,
+            FullNames = fullNames
+        };
 
+        _output.WriteLine(
+            $"MainRecords: {mainRecords.Count}, EditorIds: {editorIds.Count}, FullNames: {fullNames.Count}");
+
+        // Build FormID map (like EsmFileAnalyzer does -- EDID only)
+        var formIdMap = new Dictionary<uint, string>();
+        foreach (var record in parsedRecords)
+        {
+            var edid = record.Subrecords.FirstOrDefault(s => s.Signature == "EDID")?.DataAsString;
+            if (!string.IsNullOrEmpty(edid) && record.Header.FormId != 0)
+                formIdMap[record.Header.FormId] = edid;
+        }
+
+        _output.WriteLine($"FormIdMap: {formIdMap.Count} entries");
+
+        // Create RecordParser with memory-mapped accessor (like SingleFileTab does)
+        using var mmf = MemoryMappedFile.CreateNew(null, esmData.Length);
+        using var accessor = mmf.CreateViewAccessor(0, esmData.Length);
+        accessor.WriteArray(0, esmData, 0, esmData.Length);
+
+        var parser = new RecordParser(
+            scanResult,
+            formIdMap,
+            accessor,
+            esmData.Length);
+
+        // Act - Parse NPCs
+        var npcs = parser.ParseNpcs();
+
+        // Assert
+        _output.WriteLine($"Parsed {npcs.Count} NPCs:");
+        foreach (var npc in npcs)
+        {
             _output.WriteLine(
-                $"MainRecords: {mainRecords.Count}, EditorIds: {editorIds.Count}, FullNames: {fullNames.Count}");
-
-            // Build FormID map (like EsmFileAnalyzer does -- EDID only)
-            var formIdMap = new Dictionary<uint, string>();
-            foreach (var record in parsedRecords)
-            {
-                var edid = record.Subrecords.FirstOrDefault(s => s.Signature == "EDID")?.DataAsString;
-                if (!string.IsNullOrEmpty(edid) && record.Header.FormId != 0)
-                    formIdMap[record.Header.FormId] = edid;
-            }
-
-            _output.WriteLine($"FormIdMap: {formIdMap.Count} entries");
-
-            // Create RecordParser with memory-mapped accessor (like SingleFileTab does)
-            using var mmf =
-                MemoryMappedFile.CreateFromFile(tempFile, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-            using var accessor = mmf.CreateViewAccessor(0, esmData.Length, MemoryMappedFileAccess.Read);
-
-            var parser = new RecordParser(
-                scanResult,
-                formIdMap,
-                accessor,
-                esmData.Length);
-
-            // Act - Parse NPCs
-            var npcs = parser.ParseNpcs();
-
-            // Assert
-            _output.WriteLine($"Parsed {npcs.Count} NPCs:");
-            foreach (var npc in npcs)
-            {
-                _output.WriteLine(
-                    $"  FormId=0x{npc.FormId:X8}, EditorId={npc.EditorId ?? "(null)"}, FullName={npc.FullName ?? "(null)"}, Stats={npc.Stats != null}");
-            }
-
-            Assert.Single(npcs);
-            Assert.Equal(editorId, npcs[0].EditorId);
-            Assert.Equal(fullName, npcs[0].FullName);
+                $"  FormId=0x{npc.FormId:X8}, EditorId={npc.EditorId ?? "(null)"}, FullName={npc.FullName ?? "(null)"}, Stats={npc.Stats != null}");
         }
-        finally
-        {
-            if (File.Exists(tempFile))
-                File.Delete(tempFile);
-        }
+
+        Assert.Single(npcs);
+        Assert.Equal(editorId, npcs[0].EditorId);
+        Assert.Equal(fullName, npcs[0].FullName);
     }
 }

@@ -14,6 +14,7 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
 {
     [Fact]

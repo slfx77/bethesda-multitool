@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -41,7 +42,7 @@ public sealed class RecoveredWaterShaderReferenceTests
             2f * n + nw + ne - 2f * s - sw - se,
             1f);
         var packed = Vector3.Normalize(gradient) * 0.5f + new Vector3(0.5f);
-        AssertVector(new Vector3(0.98507125f, 0.5f, 0.6212678f), packed);
+        VectorAssert.Equal(new Vector3(0.98507125f, 0.5f, 0.6212678f), packed, 1e-6f);
     }
 
     [Fact]
@@ -69,7 +70,7 @@ public sealed class RecoveredWaterShaderReferenceTests
         var rgb = Vector3.Lerp(body, reflection, schlick);
         var alphaFloor = MathF.Max(anamOpacity, schlick);
 
-        AssertVector(new Vector3(0.215f, 0.31f, 0.405f), rgb);
+        VectorAssert.Equal(new Vector3(0.215f, 0.31f, 0.405f), rgb, 1e-6f);
         Assert.Equal(0.85f, alphaFloor, 6);
         Assert.NotEqual(Vector3.Lerp(body, reflection, alphaFloor), rgb);
     }
@@ -82,7 +83,7 @@ public sealed class RecoveredWaterShaderReferenceTests
 
         var result = Vector3.Lerp(authored, reflectionTarget, 0.25f);
 
-        AssertVector(new Vector3(0.3f, 0.3f, 0.35f), result);
+        VectorAssert.Equal(new Vector3(0.3f, 0.3f, 0.35f), result, 1e-6f);
     }
 
     [Fact]
@@ -95,7 +96,7 @@ public sealed class RecoveredWaterShaderReferenceTests
 
         var specular = MathF.Pow(reflectedDotSun, authoredSunPower) * sunIntensityGate * sunColor;
 
-        AssertVector(new Vector3(0.2f, 0.15f, 0.1f), specular);
+        VectorAssert.Equal(new Vector3(0.2f, 0.15f, 0.1f), specular, 1e-6f);
         Assert.Equal(Vector3.Zero,
             MathF.Pow(reflectedDotSun, authoredSunPower) * 0f * sunColor);
     }
@@ -116,8 +117,8 @@ public sealed class RecoveredWaterShaderReferenceTests
 
         Assert.Equal(0.250144f, detailWeight, 6);
         Assert.Equal(0.12514403f, wrongSquaredWeight, 6);
-        AssertVector(new Vector3(0.3500864f, 0.4000576f, 0.4500288f),
-            Vector3.Lerp(baseColor, detailColor, detailWeight));
+        VectorAssert.Equal(new Vector3(0.3500864f, 0.4000576f, 0.4500288f),
+            Vector3.Lerp(baseColor, detailColor, detailWeight), 1e-6f);
     }
 
     [Fact]
@@ -139,7 +140,7 @@ public sealed class RecoveredWaterShaderReferenceTests
         const float fresnel = 0.75f;
         var nightColor = Vector3.Lerp(Vector3.Zero, authoredReflection, fresnel);
 
-        AssertVector(new Vector3(0.05588235f, 0.10882353f, 0.04705882f), nightColor);
+        VectorAssert.Equal(new Vector3(0.05588235f, 0.10882353f, 0.04705882f), nightColor, 1e-6f);
         Assert.True(nightColor.LengthSquared() > 0f);
     }
 
@@ -153,7 +154,7 @@ public sealed class RecoveredWaterShaderReferenceTests
             4f * sunDirection.Y,
             sunDirection.Z));
 
-        AssertVector(new Vector3(0.13216373f, -0.79298234f, 0.59473675f), recovered);
+        VectorAssert.Equal(new Vector3(0.13216373f, -0.79298234f, 0.59473675f), recovered, 1e-6f);
         Assert.NotEqual(sunDirection, recovered);
     }
 
@@ -263,14 +264,7 @@ public sealed class RecoveredWaterShaderReferenceTests
         Assert.Equal(500f, worldDepth, 3);
         Assert.Equal(0.5f, colorT, 5);
         Assert.Equal(0.5f, alphaT, 5);
-        AssertVector(new Vector3(0.3f, 0.4f, 0.5f), color);
-    }
-
-    private static void AssertVector(Vector3 expected, Vector3 actual)
-    {
-        Assert.Equal(expected.X, actual.X, 6);
-        Assert.Equal(expected.Y, actual.Y, 6);
-        Assert.Equal(expected.Z, actual.Z, 6);
+        VectorAssert.Equal(new Vector3(0.3f, 0.4f, 0.5f), color, 1e-6f);
     }
 
     private static float ResolveReversedZMsaa(IEnumerable<float> samples) => samples.Max();

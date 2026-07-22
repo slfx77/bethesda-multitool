@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -160,10 +161,10 @@ public sealed class FnvTallGrassWindTests
     [Fact]
     public void RendererSource_GatesWindToFnvGrassAndPreservesMatrixOnlyInstances()
     {
-        var renderer = ReadSource(
+        var renderer = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferenceRenderer12.cs");
-        var batches = ReadSource(
+        var batches = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "OpaqueBatchRegistry12.cs");
 
@@ -191,7 +192,7 @@ public sealed class FnvTallGrassWindTests
     [Fact]
     public void MeshCacheSource_DisablesSoftParticlesForTallGrassMaterialRoute()
     {
-        var meshCache = ReadSource(
+        var meshCache = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferenceMeshCache12.cs");
         var compact = string.Concat(meshCache.Where(c => !char.IsWhiteSpace(c)));
@@ -206,7 +207,7 @@ public sealed class FnvTallGrassWindTests
     [Fact]
     public void RendererSource_UsesRecoveredFixedWorldPositiveYDirection()
     {
-        var renderer = ReadSource(
+        var renderer = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferenceRenderer12.cs");
         var compact = string.Concat(renderer.Where(c => !char.IsWhiteSpace(c)));
@@ -227,21 +228,5 @@ public sealed class FnvTallGrassWindTests
         using var stream = assembly.GetManifestResourceStream(resourceName)!;
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
-    }
-
-    private static string ReadSource(params string[] relativePath) =>
-        File.ReadAllText(Path.Combine(FindRepoRoot(), Path.Combine(relativePath)));
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null &&
-               !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory.FullName;
     }
 }

@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -105,7 +106,7 @@ public sealed class FnvRetailLightAssociationOracleTests
     public void Contract_RemainsIsolatedFromProductionRouting()
     {
         Assert.False(FnvRetailLightAssociationOracle.RuntimeSupported);
-        var root = FindRepoRoot();
+        var root = SourceContract.RepoRoot;
         var sourceRoot = Path.Combine(root, "src");
         var oraclePath = Path.GetFullPath(Path.Combine(
             sourceRoot,
@@ -160,17 +161,4 @@ public sealed class FnvRetailLightAssociationOracleTests
 
     private static FnvRetailAttachedLightCandidate Candidate(uint formId, float distance) =>
         new(formId, new Vector3(distance, 0f, 0f), EffectiveRadius: 10f);
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null &&
-               !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory.FullName;
-    }
 }

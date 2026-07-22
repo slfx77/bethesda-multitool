@@ -1,3 +1,4 @@
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -25,16 +26,18 @@ public sealed class FnvWater001SourceContractTests
             "private unsafe int RenderFnvWaterMaterialBatches(",
             "private unsafe void UploadInstances(");
 
-        AssertOrder(route,
+        SourceContract.AssertOrder(route,
             "foreach (var batch in _fnvWaterCellDrawBatches)",
             "batch.Material",
             "batch.StartInstance",
             "batch.InstanceCount");
         Assert.Contains(
-            "? _psoFnvWater001DepthSample",
+            "pso = _psoFnvWater001DepthSample;",
             route,
             StringComparison.Ordinal);
-        AssertOrder(route, ": depthSample", "? _psoDepthSample", ": _pso);");
+        SourceContract.AssertOrder(route,
+            "var pso = _pso;", "if (water001)", "pso = _psoFnvWater001DepthSample;",
+            "else if (depthSample)", "pso = _psoDepthSample;", "cmd.SetPipelineState(pso);");
         Assert.Contains("water001: false", route, StringComparison.Ordinal);
         Assert.Contains("(uint)startInstance", route, StringComparison.Ordinal);
     }
@@ -56,7 +59,7 @@ public sealed class FnvWater001SourceContractTests
             StringComparison.Ordinal);
         Assert.True(renderStart >= 0 && emptyReturn > renderStart);
         var prefix = source[renderStart..emptyReturn];
-        AssertOrder(prefix,
+        SourceContract.AssertOrder(prefix,
             "var fnvWater001Snapshot = _fnvWater001Snapshot;",
             "_fnvWater001Snapshot = default;");
     }
@@ -92,7 +95,7 @@ public sealed class FnvWater001SourceContractTests
         Assert.Contains("HasMixedWaterTypes: false", route, StringComparison.Ordinal);
         Assert.Contains("if (water.Height != planeHeight)", route, StringComparison.Ordinal);
 
-        var host = ReadSource(
+        var host = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Cells.cs");
         Assert.Contains("_water?.SetFnvWaterMaterialCatalog(ResolveFnvWaterMaterialCatalog());",
             host, StringComparison.Ordinal);
@@ -187,7 +190,7 @@ public sealed class FnvWater001SourceContractTests
         Assert.Contains("displacedPixelBase + int2(1, 0)", water001, StringComparison.Ordinal);
         Assert.Contains("displacedPixelBase + int2(0, 1)", water001, StringComparison.Ordinal);
         Assert.Contains("displacedPixelBase + int2(1, 1)", water001, StringComparison.Ordinal);
-        Assert.Equal(5, CountOccurrences(water001, "FnvWater001DepthTapIsUnderwater("));
+        Assert.Equal(5, SourceContract.CountOccurrences(water001, "FnvWater001DepthTapIsUnderwater("));
         Assert.Contains("scenePoint.z < planeHeight", water001, StringComparison.Ordinal);
         Assert.Contains("if (!displacedFootprintIsUnderwater)", water001,
             StringComparison.Ordinal);
@@ -202,9 +205,9 @@ public sealed class FnvWater001SourceContractTests
     [Fact]
     public void LiveAndCaptureRoutesPutWhollyUnderwaterBlendsIntoRefractionSnapshot()
     {
-        var live = ReadSource(
+        var live = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Frame.cs");
-        AssertOrder(
+        SourceContract.AssertOrder(
             live,
             "_references.RenderBlendedDeferredBelowWater(partitionedWaterPlaneHeight);",
             "surface.TryPrepareWaterOpaqueSnapshot(cmd)",
@@ -213,16 +216,16 @@ public sealed class FnvWater001SourceContractTests
             "_references?.RenderBlendedDeferredAtOrAboveWater(partitionedWaterPlaneHeight);");
         Assert.DoesNotContain("waterTransparencyPartitioned = true", live,
             StringComparison.Ordinal);
-        AssertOrder(
+        SourceContract.AssertOrder(
             live,
             "if (waterTransparencyPartitioned)",
             "_references?.RenderBlendedDeferredAtOrAboveWater(partitionedWaterPlaneHeight);",
             "else",
             "_references?.RenderBlendedDeferred();");
 
-        var capture = ReadSource(
+        var capture = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.SceneCapture.cs");
-        AssertOrder(
+        SourceContract.AssertOrder(
             capture,
             "_references.RenderBlendedDeferredBelowWater(captureWaterPlaneHeight);",
             "target.TryPrepareWaterOpaqueSnapshot(cmd)",
@@ -231,14 +234,14 @@ public sealed class FnvWater001SourceContractTests
             "_references?.RenderBlendedDeferredAtOrAboveWater(captureWaterPlaneHeight);");
         Assert.DoesNotContain("captureWaterTransparencyPartitioned = true", capture,
             StringComparison.Ordinal);
-        AssertOrder(
+        SourceContract.AssertOrder(
             capture,
             "if (captureWaterTransparencyPartitioned)",
             "_references?.RenderBlendedDeferredAtOrAboveWater(captureWaterPlaneHeight);",
             "else",
             "_references?.RenderBlendedDeferred();");
 
-        var references = ReadSource(
+        var references = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferenceRenderer12.cs");
         Assert.Contains("WaterTransparencyPartition.IsWhollyBelow(", references,
@@ -247,36 +250,13 @@ public sealed class FnvWater001SourceContractTests
             StringComparison.Ordinal);
     }
 
-    private static string ReadRenderer() => ReadSource(
+    private static string ReadRenderer() => SourceContract.ReadSource(
         "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
         "WaterRenderer12.cs");
 
-    private static string ReadShader() => ReadSource(
+    private static string ReadShader() => SourceContract.ReadSource(
         "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders",
         "water.frag.hlsl");
-
-    private static void AssertOrder(string source, params string[] values)
-    {
-        var previous = -1;
-        foreach (var value in values)
-        {
-            var current = source.IndexOf(value, previous + 1, StringComparison.Ordinal);
-            Assert.True(current > previous, $"Expected `{value}` after source offset {previous}.");
-            previous = current;
-        }
-    }
-
-    private static int CountOccurrences(string source, string value)
-    {
-        var count = 0;
-        var offset = 0;
-        while ((offset = source.IndexOf(value, offset, StringComparison.Ordinal)) >= 0)
-        {
-            count++;
-            offset += value.Length;
-        }
-        return count;
-    }
 
     private static string Extract(string source, string startMarker, string endMarker)
     {
@@ -285,20 +265,5 @@ public sealed class FnvWater001SourceContractTests
         Assert.True(start >= 0, $"Missing start marker `{startMarker}`.");
         Assert.True(end > start, $"Missing end marker `{endMarker}` after `{startMarker}`.");
         return source[start..end];
-    }
-
-    private static string ReadSource(params string[] relativePath) =>
-        File.ReadAllText(Path.Combine(FindRepoRoot(), Path.Combine(relativePath)));
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory.FullName;
     }
 }

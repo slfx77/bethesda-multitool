@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -12,8 +13,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     the additive gas billboard until the skip (previously BSLightingShaderProperty-only) covered
 ///     the FNV property types too.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class NifRefractionSkipTests
 {
+    public NifRefractionSkipTests()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+    }
+
     [Fact]
     public void TrapGasFire01_FnvRefractionDome_SkippedButGasBillboardKept()
     {

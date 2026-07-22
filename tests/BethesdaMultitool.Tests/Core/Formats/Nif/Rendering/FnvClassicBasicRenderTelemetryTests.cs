@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -96,10 +97,10 @@ public sealed class FnvClassicBasicRenderTelemetryTests
     [Fact]
     public void RendererSource_CountsBothInstancedAndDirectColorDrawsAfterSubmission()
     {
-        var renderer = ReadSource(
+        var renderer = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferenceRenderer12.cs");
-        var frame = ReadSource(
+        var frame = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Frame.cs");
         var compact = string.Concat(renderer.Where(static character => !char.IsWhiteSpace(character)));
         var compactFrame = string.Concat(frame.Where(static character => !char.IsWhiteSpace(character)));
@@ -161,7 +162,7 @@ public sealed class FnvClassicBasicRenderTelemetryTests
     [Fact]
     public void RendererSource_ReResolvesBlendedRouteAtSubmissionAcrossRuntimeGateTransitions()
     {
-        var renderer = ReadSource(
+        var renderer = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferenceRenderer12.cs");
         var compact = string.Concat(renderer.Where(static character => !char.IsWhiteSpace(character)));
@@ -178,21 +179,5 @@ public sealed class FnvClassicBasicRenderTelemetryTests
             compact,
             StringComparison.Ordinal);
         Assert.DoesNotContain("draw.TextureState", renderer, StringComparison.Ordinal);
-    }
-
-    private static string ReadSource(params string[] relativePath) =>
-        File.ReadAllText(Path.Combine(FindRepoRoot(), Path.Combine(relativePath)));
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null &&
-               !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory.FullName;
     }
 }

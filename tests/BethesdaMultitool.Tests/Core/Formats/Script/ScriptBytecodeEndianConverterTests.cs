@@ -18,7 +18,7 @@ public class ScriptBytecodeEndianConverterTests
     public void SwapBigEndianToLittleEndian_FirstOpcodeIsScriptName_ProducesLittleEndianHeader()
     {
         // The minimum case: ScriptName(0x001D) paramLen=0. BE encoding is `00 1D 00 00`,
-        // LE expected is `1D 00 00 00`. This is the failure mode from xex43.
+        // LE expected is `1D 00 00 00`. This is the observed in-game failure mode.
         byte[] beBytecode = [0x00, 0x1D, 0x00, 0x00];
         byte[] expectedLe = [0x1D, 0x00, 0x00, 0x00];
 

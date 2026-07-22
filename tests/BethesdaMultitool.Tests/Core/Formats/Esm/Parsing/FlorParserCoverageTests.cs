@@ -16,16 +16,12 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 /// </summary>
 public class FlorParserCoverageTests
 {
-    [Fact]
-    public void ParseGenericRecords_Flor_LittleEndian_CapturesIdentityAndFormIds()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ParseGenericRecords_Flor_CapturesIdentityAndFormIds(bool bigEndian)
     {
-        AssertFlorParses(false);
-    }
-
-    [Fact]
-    public void ParseGenericRecords_Flor_BigEndian_CapturesIdentityAndFormIds()
-    {
-        AssertFlorParses(true);
+        AssertFlorParses(bigEndian);
     }
 
     private static void AssertFlorParses(bool bigEndian)

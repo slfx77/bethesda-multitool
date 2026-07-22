@@ -7,6 +7,7 @@ using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -391,6 +392,8 @@ public sealed class NifTextureResolverTests
     [Fact]
     public void ResolveLooseTexture_FromUnpackedDataRoot_LoadsDecodedTexture()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var nifPath = SampleFileFixture.FindSamplePath(
             @"Sample\Unpacked_Builds\360_July_Unpacked\FalloutNV\Data\meshes\architecture\barracks\barracks01.nif");
         Assert.SkipWhen(nifPath is null, "Unpacked July NIF sample not available");

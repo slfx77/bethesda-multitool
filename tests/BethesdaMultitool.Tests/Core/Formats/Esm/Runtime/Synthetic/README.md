@@ -1,12 +1,12 @@
 # Synthetic runtime reader tests
 
-This directory holds synthetic-fixture tests for the runtime DMP readers,
-landed in the Tier 7 test discipline migration (2026-05-27).
+This directory holds synthetic-fixture tests for the runtime DMP readers.
 
 ## Standard
 
-Per [`memory/feedback_test_discipline.md`](../../../../../../../../.claude/projects/c--Users-mmc99-source-repos-Xbox360MemoryCarver/memory/feedback_test_discipline.md):
-**tests use minimal synthetic data and focus on code coverage + correctness.**
+**Tests use minimal synthetic data and focus on code coverage + correctness.**
+Synthetic byte fixtures are the default; tests that need real game assets are
+opt-in via `RUN_BUCKET_B=1` (see "What's NOT in here" below).
 
 In practice this means:
 - **No captured DMP binaries.** All inputs are byte buffers built in-memory.

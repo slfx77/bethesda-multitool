@@ -14,6 +14,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     must loop only the plain Idle group — a full-range loop cycled placed guars through their
 ///     whole repertoire, deaths included. Reads the real Morrowind.bsa; skips when absent (CI).
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class Tes3CreatureIdleClipProbe
 {
     private const string Bsa = @"E:\SteamLibrary\SteamApps\common\Morrowind\Data Files\Morrowind.bsa";

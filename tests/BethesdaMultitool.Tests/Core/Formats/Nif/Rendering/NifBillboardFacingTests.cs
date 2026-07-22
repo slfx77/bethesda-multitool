@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -23,8 +24,8 @@ public sealed class NifBillboardFacingTests
             vertices,
             [0, 2, 1, 0, 1, 3]);
 
-        AssertVector(negativeY, -Vector2.UnitY);
-        AssertVector(positiveY, Vector2.UnitY);
+        VectorAssert.Equal(-Vector2.UnitY, negativeY, 1e-6f);
+        VectorAssert.Equal(Vector2.UnitY, positiveY, 1e-6f);
     }
 
     [Fact]
@@ -113,6 +114,8 @@ public sealed class NifBillboardFacingTests
     [Fact]
     public void ResolveFrontAxis_RetailFireBall09_IsNegativeYAndFacesCamera()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var path = SampleFileFixture.FindSamplePath(FxFireMeshSmall);
         Assert.SkipWhen(path is null, "FNV PC FXFireMeshSmall NIF not available");
 
@@ -172,9 +175,4 @@ public sealed class NifBillboardFacingTests
         Assert.InRange(Vector2.Dot(Vector2.Normalize(-rotatedFront), toCamera), -1.00001f, -0.99999f);
     }
 
-    private static void AssertVector(Vector2 actual, Vector2 expected)
-    {
-        Assert.Equal(expected.X, actual.X, 6);
-        Assert.Equal(expected.Y, actual.Y, 6);
-    }
 }

@@ -2,15 +2,19 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class FaceGenSparseTriMorpherTests
 {
     [Fact]
     public void Parse_MouthHumanSample_CanDecodeNamedDifferentialRecord()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var triPath = SampleFileFixture.FindSamplePath(
             @"Sample\Meshes\meshes_pc\meshes\characters\head\mouthhuman.tri");
         Assert.SkipWhen(triPath == null, "Sample mouthhuman.tri not available.");
@@ -26,6 +30,8 @@ public sealed class FaceGenSparseTriMorpherTests
     [Fact]
     public void ApplyDifferentialWeights_SampleDifferentialRecord_ChangesGeometry()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var triPath = SampleFileFixture.FindSamplePath(
             @"Sample\Meshes\meshes_pc\meshes\characters\head\mouthhuman.tri");
         Assert.SkipWhen(triPath == null, "Sample mouthhuman.tri not available.");

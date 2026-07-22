@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.SpeedTree;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.SpeedTree;
@@ -138,6 +139,8 @@ public sealed class SpeedTreeRuntimeLodTests
     [Fact]
     public void Builder_InstalledFnvFixtures_EmitEveryAuthoredBranchLevel()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var first = SampleFileFixture.FindSamplePath(
             @"TestOutput\fnv_spt\trees\wastelandshrub01.spt");
         Assert.SkipWhen(first is null, "Missing local TestOutput/fnv_spt fixture set.");

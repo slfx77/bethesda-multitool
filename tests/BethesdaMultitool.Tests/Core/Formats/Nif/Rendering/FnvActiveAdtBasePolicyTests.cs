@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -105,12 +106,12 @@ public sealed class FnvActiveAdtBasePolicyTests
             vertexRgb: new Vector3(0.1f));
 
         var inverseRootTen = 1f / MathF.Sqrt(10f);
-        AssertVector(Vector3.UnitX, result.NormalizedDecodedNormal);
-        AssertVector(new Vector3(inverseRootTen, 3f * inverseRootTen, 0f),
-            result.NormalizedTangentSpaceLight);
+        VectorAssert.Equal(Vector3.UnitX, result.NormalizedDecodedNormal, 1e-6f);
+        VectorAssert.Equal(new Vector3(inverseRootTen, 3f * inverseRootTen, 0f),
+            result.NormalizedTangentSpaceLight, 1e-6f);
         Assert.Equal(inverseRootTen, result.RawSignedDot, 6);
-        AssertVector(new Vector3(inverseRootTen), result.Shade);
-        AssertVector(result.Shade, result.Rgb);
+        VectorAssert.Equal(new Vector3(inverseRootTen), result.Shade, 1e-6f);
+        VectorAssert.Equal(result.Shade, result.Rgb, 1e-6f);
 
         // A decoded normal with twice the signed magnitude has the same result: SLS2000 normalizes it
         // directly and has no separate bump-scale term.
@@ -125,7 +126,7 @@ public sealed class FnvActiveAdtBasePolicyTests
             sunRgb: Vector3.One,
             baseRgb: Vector3.One,
             vertexRgb: Vector3.One);
-        AssertVector(result.NormalizedDecodedNormal, halfMagnitude.NormalizedDecodedNormal);
+        VectorAssert.Equal(result.NormalizedDecodedNormal, halfMagnitude.NormalizedDecodedNormal, 1e-6f);
         Assert.Equal(result.RawSignedDot, halfMagnitude.RawSignedDot, 6);
     }
 
@@ -145,8 +146,8 @@ public sealed class FnvActiveAdtBasePolicyTests
             vertexRgb: new Vector3(0.01f));
 
         Assert.Equal(-1f, result.RawSignedDot, 6);
-        AssertVector(new Vector3(0f, 0.75f, 0.25f), result.Shade);
-        AssertVector(new Vector3(0f, 0.3f, 0.05f), result.Rgb);
+        VectorAssert.Equal(new Vector3(0f, 0.75f, 0.25f), result.Shade, 1e-6f);
+        VectorAssert.Equal(new Vector3(0f, 0.3f, 0.05f), result.Rgb, 1e-6f);
     }
 
     [Fact]
@@ -155,10 +156,10 @@ public sealed class FnvActiveAdtBasePolicyTests
         var ordinary = EvaluateAligned(FnvClassicBasicShaderMode.Sls1009);
         var vertexColor = EvaluateAligned(FnvClassicBasicShaderMode.Sls1013VertexColor);
 
-        AssertVector(new Vector3(0.15f, 0.075f, 0.225f), ordinary.Rgb);
-        AssertVector(new Vector3(0.12f, 0.03f, 0.045f), vertexColor.Rgb);
+        VectorAssert.Equal(new Vector3(0.15f, 0.075f, 0.225f), ordinary.Rgb, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.12f, 0.03f, 0.045f), vertexColor.Rgb, 1e-6f);
         Assert.Equal(ordinary.RawSignedDot, vertexColor.RawSignedDot, 6);
-        AssertVector(ordinary.Shade, vertexColor.Shade);
+        VectorAssert.Equal(ordinary.Shade, vertexColor.Shade, 1e-6f);
     }
 
     [Fact]
@@ -203,11 +204,4 @@ public sealed class FnvActiveAdtBasePolicyTests
         MaterialAlpha: 1f,
         HasMaterialAlphaController: false,
         ClassifierMode: mode);
-
-    private static void AssertVector(Vector3 expected, Vector3 actual)
-    {
-        Assert.Equal(expected.X, actual.X, 6);
-        Assert.Equal(expected.Y, actual.Y, 6);
-        Assert.Equal(expected.Z, actual.Z, 6);
-    }
 }

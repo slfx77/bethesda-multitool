@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -38,6 +39,8 @@ public sealed class SkyrimSkyCloudBindingTests
     [Fact]
     public void InstalledCloudsNifRootChildrenProveSourceShapeOrder()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         var archivePath = Environment.GetEnvironmentVariable("SKYRIM_MESHES_BSA") ?? DefaultArchivePath;
         Assert.SkipWhen(!File.Exists(archivePath),
             "Skyrim LE Meshes BSA not installed (set SKYRIM_MESHES_BSA to run this probe)");

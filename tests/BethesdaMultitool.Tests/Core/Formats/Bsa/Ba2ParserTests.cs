@@ -264,7 +264,7 @@ public class Ba2ParserTests
         private readonly Barrier _barrier = new(participants);
         private readonly List<(int current, int total, string fileName)> _seen = [];
 
-        public IReadOnlyList<(int current, int total, string fileName)> Seen => _seen;
+        public List<(int current, int total, string fileName)> Seen => _seen;
 
         public void Report((int current, int total, string fileName) value)
         {

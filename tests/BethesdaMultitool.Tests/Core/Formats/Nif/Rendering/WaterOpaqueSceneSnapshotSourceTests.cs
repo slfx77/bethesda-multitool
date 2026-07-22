@@ -1,3 +1,4 @@
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -81,14 +82,14 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             prepare,
             StringComparison.Ordinal);
         Assert.Contains("return false;", prepare, StringComparison.Ordinal);
-        AssertOrder(
+        SourceContract.AssertOrder(
             prepare,
             "cmd.UnsetRenderTargets();",
             "ResourceStates.RenderTarget, ResourceStates.ResolveSource",
             "cmd.ResolveSubresource(snapshot, 0, sceneColor, 0, SceneColorFormat);",
             "ResourceStates.ResolveDest, ResourceStates.PixelShaderResource",
             "ResourceStates.ResolveSource, ResourceStates.RenderTarget");
-        AssertOrder(
+        SourceContract.AssertOrder(
             prepare,
             "ResourceStates.RenderTarget, ResourceStates.CopySource",
             "cmd.CopyResource(snapshot, sceneColor);",
@@ -109,8 +110,8 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             StringComparison.Ordinal);
         Assert.Contains("_waterOpaqueSnapshotPrepared = false;", restore, StringComparison.Ordinal);
 
-        var finalResolve = Extract(source, "public void ResolveTo(", "public void FinishBackBuffer(");
-        AssertOrder(
+        var finalResolve = Extract(source, "public void ResolveTo(", "public static void FinishBackBuffer(");
+        SourceContract.AssertOrder(
             finalResolve,
             "RestoreWaterOpaqueSnapshot(cmd);",
             "cmd.ResourceBarrierTransition(_msaaColor, ResourceStates.RenderTarget, ResourceStates.ResolveSource);",
@@ -148,14 +149,14 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             "public bool RestoreWaterOpaqueSnapshot(");
         Assert.Contains("_disposed || snapshot is null || _waterOpaqueSnapshotPrepared", prepare,
             StringComparison.Ordinal);
-        AssertOrder(
+        SourceContract.AssertOrder(
             prepare,
             "cmd.UnsetRenderTargets();",
             "ResourceStates.RenderTarget, ResourceStates.ResolveSource",
             "cmd.ResolveSubresource(snapshot, 0, _colorTex, 0, ColorFormat);",
             "ResourceStates.ResolveDest, ResourceStates.PixelShaderResource",
             "ResourceStates.ResolveSource, ResourceStates.RenderTarget");
-        AssertOrder(
+        SourceContract.AssertOrder(
             prepare,
             "ResourceStates.RenderTarget, ResourceStates.CopySource",
             "cmd.CopyResource(snapshot, _colorTex);",
@@ -163,7 +164,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             "ResourceStates.CopySource, ResourceStates.RenderTarget");
 
         var readback = Extract(source, "public void RecordReadback(", "private void EnsureReadback(");
-        AssertOrder(
+        SourceContract.AssertOrder(
             readback,
             "RestoreWaterOpaqueSnapshot(cmd);",
             "cmd.ResolveSubresource(_hdrResolveTex, 0, _colorTex, 0, ColorFormat);");
@@ -183,7 +184,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             "_water?.SetSceneDepth(",
             "_gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterEnd);");
 
-        AssertOrder(
+        SourceContract.AssertOrder(
             waterPass,
             "_water.GetFnvWater001Preflight(",
             "TryEnsureWaterOpaqueSnapshotSrv()",
@@ -209,7 +210,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
         Assert.True(loopStart > 0);
 
         var beforeLoop = capture[..loopStart];
-        AssertOrder(
+        SourceContract.AssertOrder(
             beforeLoop,
             "TryEnsureCaptureDepthSrv(target)",
             "_water?.SetSceneDepth(",
@@ -220,7 +221,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             "Profiler_LastCaptureScenarioSnapshot =",
             loopStart,
             StringComparison.Ordinal)];
-        AssertOrder(
+        SourceContract.AssertOrder(
             pass,
             "_water.GetFnvWater001Preflight(",
             "target.TryPrepareWaterOpaqueSnapshot(cmd)",
@@ -263,7 +264,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             StringComparison.Ordinal);
 
         var device = ReadAppSource("WorldView3DControl.Device.cs");
-        AssertOrder(
+        SourceContract.AssertOrder(
             device,
             "_cbvSrvUavHeap12?.Dispose(); _cbvSrvUavHeap12 = null;",
             "_waterOpaqueSnapshotSrv = null;",
@@ -279,7 +280,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             lifecycle,
             "private bool TryEnsureWaterOpaqueSnapshotSrv()",
             "private void DisposeRenderResources()");
-        AssertOrder(
+        SourceContract.AssertOrder(
             liveFactory,
             "try",
             "_cbvSrvUavHeap12.AllocatePersistent()",
@@ -293,7 +294,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             capture,
             "private bool TryEnsureCaptureWaterOpaqueSnapshotSrv(",
             "internal bool Profiler_TrySelectWorldspaceByName(");
-        AssertOrder(
+        SourceContract.AssertOrder(
             captureFactory,
             "try",
             "_cbvSrvUavHeap12.AllocatePersistent()",
@@ -309,7 +310,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             "public CpuDescriptorHandle MsaaColorRtv");
         Assert.Contains("if (_waterOpaqueSnapshotPrepared || _waterOpaqueCopy is null) return false;",
             liveRelease, StringComparison.Ordinal);
-        AssertOrder(liveRelease, "_waterOpaqueCopy.Dispose();", "_waterOpaqueCopy = null;", "return true;");
+        SourceContract.AssertOrder(liveRelease, "_waterOpaqueCopy.Dispose();", "_waterOpaqueCopy = null;", "return true;");
 
         var offscreen = ReadSurface("GpuOffscreenSceneTarget12.cs");
         var captureRelease = Extract(
@@ -318,7 +319,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             "public bool TonemapHistoryReset");
         Assert.Contains("_disposed || _waterOpaqueSnapshotPrepared || _waterOpaqueCopy is null",
             captureRelease, StringComparison.Ordinal);
-        AssertOrder(captureRelease, "_waterOpaqueCopy.Dispose();", "_waterOpaqueCopy = null;", "return true;");
+        SourceContract.AssertOrder(captureRelease, "_waterOpaqueCopy.Dispose();", "_waterOpaqueCopy = null;", "return true;");
     }
 
     [Fact]
@@ -329,7 +330,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             frame,
             "var fnvWater001SnapshotPrepared = false;",
             "_gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterEnd);");
-        AssertOrder(
+        SourceContract.AssertOrder(
             waterPass,
             "surface.TryPrepareWaterOpaqueSnapshot(cmd)",
             "waterDepthSampled = true;",
@@ -345,7 +346,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             frame,
             "// A recording failure before EndFrame has not changed GPU resource states.",
             "// Tolerate TRANSIENT failures");
-        AssertOrder(
+        SourceContract.AssertOrder(
             renderFailure,
             "_water?.SetFnvWater001Snapshot(null, 0, 0);",
             "_surface12?.DiscardWaterOpaqueSnapshotPreparation();",
@@ -353,7 +354,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
 
         var recorder = ReadSurface("GpuCommandRecorder12.cs");
         var abort = Extract(recorder, "public bool AbortFrame()", "public void EndFrame()");
-        AssertOrder(
+        SourceContract.AssertOrder(
             abort,
             "if (!_frameOpen) return false;",
             "_commandList.Close();",
@@ -373,7 +374,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             capture,
             "for (var pass = captureShadows ? 0 : 1; pass < 2; pass++)",
             "Profiler_LastCaptureScenarioSnapshot =");
-        AssertOrder(
+        SourceContract.AssertOrder(
             loop,
             "var captureFnvWater001SnapshotPrepared = false;",
             "var captureDepthSampled = false;",
@@ -392,21 +393,10 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             StringComparison.Ordinal);
         Assert.True(cleanupStart >= 0);
         var cleanupFailure = loop[cleanupStart..];
-        AssertOrder(
+        SourceContract.AssertOrder(
             cleanupFailure,
             "target.DiscardWaterOpaqueSnapshotPreparation();",
             "recorder.AbortFrame();");
-    }
-
-    private static void AssertOrder(string source, params string[] values)
-    {
-        var previous = -1;
-        foreach (var value in values)
-        {
-            var current = source.IndexOf(value, previous + 1, StringComparison.Ordinal);
-            Assert.True(current > previous, $"Expected `{value}` after source offset {previous}.");
-            previous = current;
-        }
     }
 
     private static string Extract(string source, string startMarker, string endMarker)
@@ -419,26 +409,12 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
     }
 
     private static string ReadSurface(string fileName) =>
-        File.ReadAllText(Path.Combine(
-            FindRepoRoot(),
+        SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
-            fileName));
+            fileName);
 
     private static string ReadAppSource(string fileName) =>
-        File.ReadAllText(Path.Combine(
-            FindRepoRoot(),
+        SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls",
-            fileName));
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory.FullName;
-    }
+            fileName);
 }

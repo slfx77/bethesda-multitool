@@ -20,8 +20,8 @@ public sealed class UnifiedPipelineIntegrationTests(SampleFileFixture samples)
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 ESM sample not available");
 
-        using var result = await SemanticFileLoader.LoadAsync(samples.Xbox360FinalEsm!,
-            cancellationToken: TestContext.Current.CancellationToken);
+        var result = await RealAssetEsmCache.LoadAsync(samples.Xbox360FinalEsm!,
+            TestContext.Current.CancellationToken);
 
         Assert.NotNull(result.Records);
         Assert.True(result.Records.Cells.Count > 0,
@@ -36,8 +36,8 @@ public sealed class UnifiedPipelineIntegrationTests(SampleFileFixture samples)
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC ESM sample not available");
 
-        using var result = await SemanticFileLoader.LoadAsync(samples.PcFinalEsm!,
-            cancellationToken: TestContext.Current.CancellationToken);
+        var result = await RealAssetEsmCache.LoadAsync(samples.PcFinalEsm!,
+            TestContext.Current.CancellationToken);
 
         Assert.NotNull(result.Records);
         Assert.True(result.Records.Cells.Count > 0,
@@ -53,8 +53,8 @@ public sealed class UnifiedPipelineIntegrationTests(SampleFileFixture samples)
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(samples.DebugDump is null, "Debug DMP sample not available");
 
-        using var result = await SemanticFileLoader.LoadAsync(samples.DebugDump!,
-            cancellationToken: TestContext.Current.CancellationToken);
+        var result = await RealAssetEsmCache.LoadAsync(samples.DebugDump!,
+            TestContext.Current.CancellationToken);
 
         Assert.NotNull(result.Records);
         Assert.True(result.Records.Cells.Count > 0,

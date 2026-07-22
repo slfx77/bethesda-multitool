@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -34,6 +35,8 @@ public sealed class NifSpecularPolicyTests
     [Fact]
     public void RetailCliffVertiC2_AuthoredSpecularShapesSurviveBlackMaterialColor()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         // FalloutNV.esm STAT 0x0015626B CliffVertiC2.
         var model = LoadRetailModel(@"meshes\landscape\rocks\cliffs\cliffverti_c2.nif");
         Assert.SkipWhen(model is null, "Retail Fallout - Meshes.bsa is not available.");
@@ -57,6 +60,8 @@ public sealed class NifSpecularPolicyTests
     [Fact]
     public void RetailProspectorSaloon_RespectsPerShapeSpecularFlag()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
+
         // FalloutNV.esm STAT 0x0010243E NVProspectorSaloon.
         var model = LoadRetailModel(@"meshes\architecture\goodsprings\nv_prospectorsaloon.nif");
         Assert.SkipWhen(model is null, "Retail Fallout - Meshes.bsa is not available.");

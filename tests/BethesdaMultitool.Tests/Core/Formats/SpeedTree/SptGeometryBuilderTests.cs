@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.SpeedTree;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.SpeedTree;
@@ -152,6 +153,7 @@ public class SptGeometryBuilderTests
     [Fact]
     public void Build_RealShrub_ProducesTexturedTree()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var path = SampleFileFixture.FindSamplePath(@"Sample\Meshes\meshes_360_final\trees\wastelandshrub01.spt")
                    ?? SampleFileFixture.FindSamplePath(@"Sample\Meshes\meshes_360_proto\trees\wastelandshrub01.spt");
         Assert.SkipWhen(path is null, "Missing sample: wastelandshrub01.spt");

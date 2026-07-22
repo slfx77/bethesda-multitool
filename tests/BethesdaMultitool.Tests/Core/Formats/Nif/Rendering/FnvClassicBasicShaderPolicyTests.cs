@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -142,19 +143,19 @@ public sealed class FnvClassicBasicShaderPolicyTests
         var ambient = new Vector3(0.2f, 0.3f, 0.4f);
         var light = new Vector3(0.8f, 0.6f, 0.4f);
         var shade = FnvClassicBasicShaderPolicy.EvaluateShade(ambient, -0.25f, light);
-        AssertVector(new Vector3(0f, 0.15f, 0.3f), shade);
+        VectorAssert.Equal(new Vector3(0f, 0.15f, 0.3f), shade, 1e-6f);
 
         var baseMap = new Vector3(0.5f, 0.25f, 0.75f);
         var baseLit = FnvClassicBasicShaderPolicy.Composite(
             FnvClassicBasicShaderMode.Sls1009,
             baseMap, shade, new Vector3(0.9f));
-        AssertVector(new Vector3(0f, 0.0375f, 0.225f), baseLit);
+        VectorAssert.Equal(new Vector3(0f, 0.0375f, 0.225f), baseLit, 1e-6f);
 
         var vertex = new Vector3(0.8f, 0.4f, 0.2f);
         var vertexComposite = FnvClassicBasicShaderPolicy.Composite(
             FnvClassicBasicShaderMode.Sls1013VertexColor,
             baseMap, shade, vertex);
-        AssertVector(Vector3.Multiply(baseLit, vertex), vertexComposite);
+        VectorAssert.Equal(Vector3.Multiply(baseLit, vertex), vertexComposite, 1e-6f);
     }
 
     private static NifInfo ClassicNif() => new() { BsVersion = 34 };
@@ -189,17 +190,26 @@ public sealed class FnvClassicBasicShaderPolicyTests
         var normals = withSecondVertex
             ? new[] { 0f, 0f, 1f, normal2.X, normal2.Y, normal2.Z }
             : new[] { 0f, 0f, 1f };
-        var tangents = includeTangents
-            ? withSecondVertex
+        float[]? tangents = null;
+        if (includeTangents)
+        {
+            tangents = withSecondVertex
                 ? new[] { 1f, 0f, 0f, tangent2.X, tangent2.Y, tangent2.Z }
-                : new[] { 1f, 0f, 0f }
-            : null;
+                : new[] { 1f, 0f, 0f };
+        }
         var bitangents = withSecondVertex
             ? new[] { 0f, 1f, 0f, bitangent2.X, bitangent2.Y, bitangent2.Z }
             : new[] { 0f, 1f, 0f };
         var uvs = withSecondVertex
             ? new[] { 0.25f, 0.75f, uv2.X, uv2.Y }
             : new[] { 0.25f, 0.75f };
+        byte[]? vertexColors = null;
+        if (withVertexColors)
+        {
+            vertexColors = withSecondVertex
+                ? [64, 128, 192, 32, 255, 255, 255, 255]
+                : [64, 128, 192, 32];
+        }
 
         return new RenderableSubmesh
         {
@@ -209,11 +219,7 @@ public sealed class FnvClassicBasicShaderPolicyTests
             UVs = uvs,
             Tangents = tangents,
             Bitangents = bitangents,
-            VertexColors = withVertexColors
-                ? withSecondVertex
-                    ? [64, 128, 192, 32, 255, 255, 255, 255]
-                    : [64, 128, 192, 32]
-                : null,
+            VertexColors = vertexColors,
             BindPosePositions = isSkinned ? (float[])positions.Clone() : null,
             UseVertexColors = true,
             DiffuseTexturePath = diffusePath,
@@ -240,12 +246,5 @@ public sealed class FnvClassicBasicShaderPolicyTests
             Lighting30EmissionColor = emission,
             IsParticleCloud = isParticle
         };
-    }
-
-    private static void AssertVector(Vector3 expected, Vector3 actual)
-    {
-        Assert.Equal(expected.X, actual.X, 6);
-        Assert.Equal(expected.Y, actual.Y, 6);
-        Assert.Equal(expected.Z, actual.Z, 6);
     }
 }

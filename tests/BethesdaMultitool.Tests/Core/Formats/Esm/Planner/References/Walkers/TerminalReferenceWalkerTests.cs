@@ -112,7 +112,7 @@ public sealed class TerminalReferenceWalkerTests
                 reference,
                 "MenuItems[0].CTDA[1].Parameter1",
                 0x000A0021));
-        Assert.DoesNotContain(refs, reference => reference.FieldPath.EndsWith(".Parameter2"));
+        Assert.DoesNotContain(refs, reference => reference.FieldPath.EndsWith(".Parameter2", StringComparison.Ordinal));
     }
 
     [Fact]

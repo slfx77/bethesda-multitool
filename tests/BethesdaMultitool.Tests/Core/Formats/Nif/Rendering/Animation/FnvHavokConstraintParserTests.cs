@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
@@ -41,10 +42,10 @@ public sealed class FnvHavokConstraintParserTests
         Assert.Equal(Matrix4x4.Identity, constraint.EntityB.BodyToRootTransform);
 
         var frameA = Assert.IsType<FnvHavokHingeFrame>(constraint.HingeFrameA);
-        AssertVector(new Vector3(7f, 14f, 21f), frameA.Pivot);
-        AssertVector(Vector3.UnitY, frameA.Axis);
-        AssertVector(Vector3.UnitZ, frameA.PerpendicularAxis1);
-        AssertVector(Vector3.UnitX, frameA.PerpendicularAxis2);
+        VectorAssert.Equal(new Vector3(7f, 14f, 21f), frameA.Pivot, 1e-5f);
+        VectorAssert.Equal(Vector3.UnitY, frameA.Axis, 1e-5f);
+        VectorAssert.Equal(Vector3.UnitZ, frameA.PerpendicularAxis1, 1e-5f);
+        VectorAssert.Equal(Vector3.UnitX, frameA.PerpendicularAxis2, 1e-5f);
         Assert.Equal(-0.6f, constraint.MinimumAngle!.Value, 5);
         Assert.Equal(0.4f, constraint.MaximumAngle!.Value, 5);
         Assert.Equal(100f, constraint.MaxFriction);
@@ -74,13 +75,13 @@ public sealed class FnvHavokConstraintParserTests
         var constraint = Assert.Single(set.Constraints);
 
         var bodyAToRoot = Assert.IsType<Matrix4x4>(constraint.EntityA.BodyToRootTransform);
-        AssertVector(new Vector3(14f, 21f, 28f), bodyAToRoot.Translation);
+        VectorAssert.Equal(new Vector3(14f, 21f, 28f), bodyAToRoot.Translation, 1e-5f);
         Assert.Equal(Matrix4x4.Identity, constraint.EntityB.BodyToRootTransform);
 
         var plan = PhysicsLiteSway.CreatePlan(set, constraint, stableSeed: 1);
         var descriptor = Assert.IsType<PhysicsLiteSwayDescriptor>(plan.Descriptor);
-        AssertVector(new Vector3(21f, 35f, 49f), descriptor.Pivot);
-        AssertVector(Vector3.UnitY, descriptor.Axis);
+        VectorAssert.Equal(new Vector3(21f, 35f, 49f), descriptor.Pivot, 1e-5f);
+        VectorAssert.Equal(Vector3.UnitY, descriptor.Axis, 1e-5f);
     }
 
     [Fact]
@@ -95,11 +96,11 @@ public sealed class FnvHavokConstraintParserTests
         Assert.Equal(FnvHavokAngularConstraintKind.Ragdoll, constraint.Kind);
         var frameA = Assert.IsType<FnvHavokRagdollFrame>(constraint.RagdollFrameA);
         var frameB = Assert.IsType<FnvHavokRagdollFrame>(constraint.RagdollFrameB);
-        AssertVector(new Vector3(28f, 35f, 42f), frameA.Pivot);
-        AssertVector(Vector3.UnitX, frameA.TwistAxis);
-        AssertVector(Vector3.UnitY, frameA.PlaneAxis);
-        AssertVector(Vector3.UnitZ, frameA.MotorAxis);
-        AssertVector(new Vector3(-7f, -14f, -21f), frameB.Pivot);
+        VectorAssert.Equal(new Vector3(28f, 35f, 42f), frameA.Pivot, 1e-5f);
+        VectorAssert.Equal(Vector3.UnitX, frameA.TwistAxis, 1e-5f);
+        VectorAssert.Equal(Vector3.UnitY, frameA.PlaneAxis, 1e-5f);
+        VectorAssert.Equal(Vector3.UnitZ, frameA.MotorAxis, 1e-5f);
+        VectorAssert.Equal(new Vector3(-7f, -14f, -21f), frameB.Pivot, 1e-5f);
 
         var limits = Assert.IsType<FnvHavokRagdollLimits>(constraint.RagdollLimits);
         Assert.Equal(0.75f, limits.ConeMaxAngle, 5);
@@ -121,8 +122,8 @@ public sealed class FnvHavokConstraintParserTests
 
         Assert.Equal(FnvHavokAngularConstraintKind.Hinge, constraint.Kind);
         var frame = Assert.IsType<FnvHavokHingeFrame>(constraint.HingeFrameA);
-        AssertVector(Vector3.UnitY, frame.Axis);
-        AssertVector(new Vector3(7f, 14f, 21f), frame.Pivot);
+        VectorAssert.Equal(Vector3.UnitY, frame.Axis, 1e-5f);
+        VectorAssert.Equal(new Vector3(7f, 14f, 21f), frame.Pivot, 1e-5f);
         Assert.Null(constraint.MinimumAngle);
         Assert.Null(constraint.MaximumAngle);
         Assert.Null(constraint.RagdollLimits);
@@ -354,11 +355,4 @@ public sealed class FnvHavokConstraintParserTests
 
     private static void WriteUInt32(byte[] data, int offset, uint value) =>
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(offset, 4), value);
-
-    private static void AssertVector(Vector3 expected, Vector3 actual)
-    {
-        Assert.Equal(expected.X, actual.X, 5);
-        Assert.Equal(expected.Y, actual.Y, 5);
-        Assert.Equal(expected.Z, actual.Z, 5);
-    }
 }

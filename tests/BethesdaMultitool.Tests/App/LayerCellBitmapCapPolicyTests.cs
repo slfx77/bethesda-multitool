@@ -6,12 +6,12 @@ namespace BethesdaMultitool.Tests.App;
 ///     Pins the hysteresis contract of <see cref="LayerCellBitmapCapPolicy" />, which sizes the
 ///     per-cell bitmap LRU cap in <c>WorldMapControl</c>. Two regressions are pinned here:
 ///     <para>
-///         (1) The cap must GROW instantly with the viewport (the 2026-06-05 disappearing-cells
+///         (1) The cap must GROW instantly with the viewport (the disappearing-cells
 ///         bug: a zoomed-out stream evicted cells it had just rendered because the cap lagged).
 ///     </para>
 ///     <para>
 ///         (2) The cap must NOT shrink instantly when the request transiently collapses (the
-///         2026-06-12 pan-stress bug: a sweep exiting the populated region dropped the request
+///         pan-stress bug: a sweep exiting the populated region dropped the request
 ///         to ~0 for ~1 s, the cap followed to the 256 floor, and ~1000 just-rendered pan-back
 ///         cells were mass-evicted every sweep — "bottom half never paints").
 ///     </para>

@@ -17,7 +17,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 ///         must go through a dedicated channel with its own diff-quality gating — not through
 ///         the standard <see cref="IRecordEncoder.Encode" /> override loop. If you're tempted
 ///         to delete these tests because your shiny new override path is "obviously safe":
-///         please read <c>memory/feedback_root_cause_over_suppression.md</c> first.
+///         fix the root cause in the reader/encoder rather than suppressing it in tests.
 ///     </para>
 /// </summary>
 public class ScriptOverridePolicyTests
@@ -30,7 +30,7 @@ public class ScriptOverridePolicyTests
         // content (FullName/Stages/Conditions/Objectives) the override falls through to
         // empty subrecords → merge engine retains master verbatim. Replacing master's SCRI
         // would point the quest at a different SCPT, swapping script behavior under the
-        // master quest's identity — the 2026-05-27 Doc Mitchell tutorial regression.
+        // master quest's identity — the Doc Mitchell tutorial regression.
         var quest = new QuestRecord
         {
             FormId = 0x000F1234,

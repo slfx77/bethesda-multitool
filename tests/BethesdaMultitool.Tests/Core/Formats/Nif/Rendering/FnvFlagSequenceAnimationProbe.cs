@@ -18,10 +18,10 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     CYCLE_LOOP), and the skin export must bind bones block-exactly. Reads the real FNV meshes
 ///     BSA; skips when absent (CI).
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class FnvFlagSequenceAnimationProbe
 {
-    private const string FnvMeshesBsa =
-        @"C:\Users\mmc99\source\repos\Xbox360MemoryCarver\Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+    private static readonly string FnvMeshesBsa = SampleBsaLocator.ResolveFnvMeshesBsa();
 
     [Fact]
     public void NcrFlag_CollectsSequenceRig_Clip_And_Skin()

@@ -161,7 +161,12 @@ public class WeatherColorParsingTests
             WriteFloat(cinematicBase + 44, 0.6f);
         }
 
-        var maskOffset = length >= 152 ? 148 : length >= 148 ? 144 : 128;
+        var maskOffset = length switch
+        {
+            >= 152 => 148,
+            >= 148 => 144,
+            _ => 128
+        };
         if (bigEndian)
             BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(maskOffset, 4), 0x0F);
         else

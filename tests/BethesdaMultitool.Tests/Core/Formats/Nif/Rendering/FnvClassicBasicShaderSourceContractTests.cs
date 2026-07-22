@@ -1,3 +1,4 @@
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -7,10 +8,10 @@ public sealed class FnvClassicBasicShaderSourceContractTests
     [Fact]
     public void DormantPs1RouteFailsClosedAndBothReferenceDrawPathsShareTheGate()
     {
-        var policy = ReadSource(
+        var policy = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
             "FnvClassicBasicShaderPolicy.cs");
-        var renderer = ReadSource(
+        var renderer = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferenceRenderer12.cs");
 
@@ -95,7 +96,7 @@ public sealed class FnvClassicBasicShaderSourceContractTests
     [Fact]
     public void RecoveredArtifactSeparatesFogAndVertexColorPermutations()
     {
-        var artifact = ReadSource(
+        var artifact = SourceContract.ReadSource(
             "docs", "fnv_basic_sls_shader_disassembly.txt");
 
         Assert.Contains("PS 1010 = SLS_PS1_PPAMBDIFFUSETEXTUREDIR_F   (fog)", artifact,
@@ -121,10 +122,10 @@ public sealed class FnvClassicBasicShaderSourceContractTests
     [Fact]
     public void EligibilityExcludesNeighboringMaterialFamiliesBeforePersistence()
     {
-        var policy = ReadSource(
+        var policy = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
             "FnvClassicBasicShaderPolicy.cs");
-        var decoder = ReadSource(
+        var decoder = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferenceMeshDecoder12.cs");
 
@@ -144,7 +145,7 @@ public sealed class FnvClassicBasicShaderSourceContractTests
         Assert.Contains("submesh.BindPosePositions is not null", policy, StringComparison.Ordinal);
     }
 
-    private static string ReadShader(string fileName) => ReadSource(
+    private static string ReadShader(string fileName) => SourceContract.ReadSource(
         "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders",
         fileName);
 
@@ -156,18 +157,4 @@ public sealed class FnvClassicBasicShaderSourceContractTests
         return source[start..end];
     }
 
-    private static string ReadSource(params string[] relativePath) =>
-        File.ReadAllText(Path.Combine(FindRepoRoot(), Path.Combine(relativePath)));
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory.FullName;
-    }
 }

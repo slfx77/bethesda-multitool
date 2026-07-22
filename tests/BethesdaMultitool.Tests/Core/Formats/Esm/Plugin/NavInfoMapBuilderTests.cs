@@ -16,9 +16,9 @@ public class NavInfoMapBuilderTests
     {
         // Flipped OFF: our reconstructed NAVMs carry empty NVCI door-links (BuildNvci) and
         // shadow master's complete navmeshes in an overridden master interior, which
-        // null-derefs the cross-cell TeleportDoorSearch graph on a cold coc (Gomorrah01 —
-        // memory/gomorrah_coc_navmesh_and_npc_drops.md). Master's own NAVMs load via the
-        // cell file-list merge and are strictly better. Guards against reverting the flip.
+        // null-derefs the cross-cell TeleportDoorSearch graph on a cold coc (Gomorrah01).
+        // Master's own NAVMs load via the cell file-list merge and are strictly better.
+        // Guards against reverting the flip.
         Assert.False(new PluginBuildOptions().EmitMasterCellNavmAugmentation);
     }
 

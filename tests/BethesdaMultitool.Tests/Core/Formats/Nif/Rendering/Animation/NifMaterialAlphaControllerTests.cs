@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
@@ -14,6 +15,7 @@ public class NifMaterialAlphaControllerTests
     [Fact]
     public void RetailSandDust02_ZeroAlphaStormSheetsResolveToControllerTargets()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var path = SampleFileFixture.FindSamplePath(RetailSandDust02);
         Assert.SkipUnless(path is not null,
             "Extracted FNV SandDust02 NIF not present (dev-machine-only asset).");

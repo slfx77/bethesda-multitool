@@ -122,8 +122,12 @@ public sealed class TerrainRaycasterTests
         const int grid = 24;
         var heights = new float[33, 33];
         for (var y = 0; y < 33; y++)
-        for (var x = 0; x < 33; x++)
-            heights[y, x] = terrainHeight;
+        {
+            for (var x = 0; x < 33; x++)
+            {
+                heights[y, x] = terrainHeight;
+            }
+        }
         var cell = Cell(heights, 4096f, grid, grid);
         var cache = new WorldRenderCache();
         var worldXy = grid * 4096f + 2048f;
@@ -159,8 +163,12 @@ public sealed class TerrainRaycasterTests
     {
         var heights = new float[gridSize, gridSize];
         for (var y = 0; y < gridSize; y++)
-        for (var x = 0; x < gridSize; x++)
-            heights[y, x] = height;
+        {
+            for (var x = 0; x < gridSize; x++)
+            {
+                heights[y, x] = height;
+            }
+        }
         return Cell(heights, cellSize);
     }
 

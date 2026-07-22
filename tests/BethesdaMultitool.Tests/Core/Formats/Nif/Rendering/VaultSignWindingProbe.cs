@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -15,8 +16,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     This probe pins the production extraction path to emit plate triangles whose geometric winding
 ///     agrees with the authored +Y normals.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class VaultSignWindingProbe
 {
+    public VaultSignWindingProbe()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+    }
+
     [Fact]
     public void VSignStairsR01_BackPlateTriangles_WindTowardAuthoredPlusYNormal()
     {

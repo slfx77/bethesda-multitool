@@ -134,7 +134,7 @@ public sealed class FnvGrassPlacementRetailTests(
 
     private static void AssertSteepRetailTransform(
         SteepPlacementSample sample,
-        IReadOnlyDictionary<uint, BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc.GrassRecord> grasses)
+        Dictionary<uint, BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc.GrassRecord> grasses)
     {
         Assert.Equal(SteepFixtureCellFormId, sample.CellFormId);
         Assert.Equal(-19, sample.GridX);

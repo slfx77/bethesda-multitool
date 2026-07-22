@@ -350,7 +350,9 @@ internal sealed class EsmTestFileBuilder
             subs.Add(("XESP", xesp));
         }
 
+#pragma warning disable S1244 // exact comparison against the 1f default sentinel — XSCL is omitted only at exactly 1.0
         if (r.Scale != 1f)
+#pragma warning restore S1244
         {
             var scale = new byte[4];
             BinaryPrimitives.WriteSingleLittleEndian(scale, r.Scale);
