@@ -363,9 +363,52 @@ public sealed partial class PlaylistView : UserControl
 
         ExportButton.IsEnabled = true;
 
-        // Refresh list and advance to next untranscribed entry
+        RefreshListAndSelect(selected, advance: true);
+    }
+
+    /// <summary>
+    ///     Re-apply filters, then restore selection relative to the given entry.
+    ///     With <paramref name="advance" />, select the next pending entry after the
+    ///     entry's old position (wrapping); otherwise stay on the entry itself.
+    ///     Rebuilding the list resets ListView selection and scroll, so without this
+    ///     the view jumps to the top after every Approve.
+    /// </summary>
+    private void RefreshListAndSelect(VoiceFileEntry current, bool advance)
+    {
+        // Candidate order comes from the display order before the refresh:
+        // everything after the current position first, then wrap around.
+        var currentIndex = _displayedEntries.IndexOf(current);
+        var candidates = new List<VoiceFileEntry>();
+        for (var i = currentIndex + 1; i < _displayedEntries.Count; i++)
+        {
+            candidates.Add(_displayedEntries[i]);
+        }
+
+        for (var i = 0; i < currentIndex; i++)
+        {
+            candidates.Add(_displayedEntries[i]);
+        }
+
         ApplyFilters();
-        SelectNextUntranscribed();
+
+        var displayed = new HashSet<VoiceFileEntry>(_displayedEntries);
+        VoiceFileEntry? next = null;
+        if (advance)
+        {
+            next = candidates.FirstOrDefault(e =>
+                displayed.Contains(e) && PlaylistFilterHelper.IsWorkItem(e, _transcribeEsmLines));
+        }
+
+        // Fall back to the current entry (if still displayed), then to the nearest
+        // former neighbor — e.g. when the last flagged entry was just resolved
+        // under the "Flagged only" filter.
+        next ??= displayed.Contains(current) ? current : candidates.FirstOrDefault(displayed.Contains);
+
+        if (next != null)
+        {
+            FileListView.SelectedItem = next;
+            FileListView.ScrollIntoView(next);
+        }
     }
 
     /// <summary>
@@ -392,35 +435,7 @@ public sealed partial class PlaylistView : UserControl
         }
 
         ResolveReviewFlag(selected);
-        DetailPanel.ShowEntry(selected);
-        ApplyFilters();
-    }
-
-    private void SelectNextUntranscribed()
-    {
-        var currentIndex = FileListView.SelectedIndex;
-
-        // Search forward from current position
-        for (var i = currentIndex + 1; i < _displayedEntries.Count; i++)
-        {
-            if (PlaylistFilterHelper.IsWorkItem(_displayedEntries[i], _transcribeEsmLines))
-            {
-                FileListView.SelectedIndex = i;
-                FileListView.ScrollIntoView(_displayedEntries[i]);
-                return;
-            }
-        }
-
-        // Wrap around
-        for (var i = 0; i < currentIndex; i++)
-        {
-            if (PlaylistFilterHelper.IsWorkItem(_displayedEntries[i], _transcribeEsmLines))
-            {
-                FileListView.SelectedIndex = i;
-                FileListView.ScrollIntoView(_displayedEntries[i]);
-                return;
-            }
-        }
+        RefreshListAndSelect(selected, advance: true);
     }
 
     private void DetailPanel_RejectRequested(object? sender, EventArgs e)
@@ -440,9 +455,8 @@ public sealed partial class PlaylistView : UserControl
         _hasUnsavedChanges = true;
         _autoSaveTimer?.Start();
 
-        // Refresh detail panel and list
-        DetailPanel.ShowEntry(selected);
-        ApplyFilters();
+        // Re-selecting fires SelectionChanged, which refreshes the detail panel
+        RefreshListAndSelect(selected, advance: false);
     }
 
     private void UpdateBatchButtonState()

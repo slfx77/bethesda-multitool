@@ -15,6 +15,10 @@ public sealed partial class AudioPlayerControl : UserControl
     private bool _isSeeking;
     private AudioPlaybackService? _playbackService;
 
+    // Seek requested while stopped: there is no stream yet to seek, so remember
+    // the position and apply it once playback starts.
+    private TimeSpan? _pendingSeek;
+
     public AudioPlayerControl()
     {
         InitializeComponent();
@@ -43,6 +47,11 @@ public sealed partial class AudioPlayerControl : UserControl
     /// </summary>
     public void LoadEntry(VoiceFileEntry entry)
     {
+        if (!ReferenceEquals(entry, _currentEntry))
+        {
+            _pendingSeek = null;
+        }
+
         _currentEntry = entry;
     }
 
@@ -56,11 +65,27 @@ public sealed partial class AudioPlayerControl : UserControl
             return;
         }
 
+        if (!ReferenceEquals(entry, _currentEntry))
+        {
+            _pendingSeek = null;
+        }
+
         _currentEntry = entry;
 
         try
         {
             await _playbackService.PlayAsync(entry);
+
+            // Apply a seek made while stopped, now that the stream exists
+            if (_pendingSeek is { } pending)
+            {
+                _pendingSeek = null;
+                if (pending < _playbackService.Duration)
+                {
+                    _playbackService.Seek(pending);
+                }
+            }
+
             SeekSlider.IsEnabled = true;
             _positionTimer?.Start();
         }
@@ -157,13 +182,22 @@ public sealed partial class AudioPlayerControl : UserControl
             return;
         }
 
-        _playbackService.Seek(TimeSpan.FromSeconds(e.NewValue));
+        var target = TimeSpan.FromSeconds(e.NewValue);
+        PositionText.Text = FormatTime(target);
+
+        if (_playbackService.State == PlaybackState.Stopped)
+        {
+            // No stream to seek yet — remember for the next play
+            _pendingSeek = target;
+        }
+        else
+        {
+            _playbackService.Seek(target);
+        }
     }
 
     private static string FormatTime(TimeSpan ts)
     {
-        return ts.Hours > 0
-            ? $"{ts.Hours}:{ts.Minutes:D2}:{ts.Seconds:D2}"
-            : $"{ts.Minutes}:{ts.Seconds:D2}";
+        return SecondsToTimestampConverter.Format(ts);
     }
 }
