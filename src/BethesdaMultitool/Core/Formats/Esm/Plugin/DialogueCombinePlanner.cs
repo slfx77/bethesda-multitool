@@ -96,7 +96,7 @@ internal static class DialogueCombinePlanner
                 // slot may be rehomed only when it independently satisfies the strict cut-
                 // topic gate below, including an explicit player-facing PromptText. This
                 // retains intentional cut choices without ever exposing NAM1 NPC response
-                // text as a global dialogue option (the Sunny v122 regression).
+                // text as a global dialogue option.
                 var masterResponseNumbers = DialogueInfoOverlayWriter.GetMasterResponseNumbers(masterInfo.Record);
                 var extraResponses = DialogueInfoOverlayWriter.IndexPrototypeResponses(info.Responses)
                     .Where(pair => !masterResponseNumbers.Contains(pair.Key))
@@ -168,8 +168,8 @@ internal static class DialogueCombinePlanner
 
     /// <summary>
     ///     Runtime GREETING captures can contain a reconstructed menu snapshot rather than
-    ///     authored flow: xex21 carried the union of many speakers' TCLT choices on each
-    ///     prototype greeting, which exposed FortWaterBarrelWarning globally. Rebuild only
+    ///     authored flow: one captured dump carried the union of many speakers' TCLT choices on
+    ///     each prototype greeting, which exposed FortWaterBarrelWarning globally. Rebuild only
     ///     TCLT from exact-speaker/exact-quest player-topic roots. Every other INFO field is
     ///     retained, including responses, conditions, flags, and result-script blocks.
     /// </summary>
@@ -522,7 +522,7 @@ internal static class DialogueCombinePlanner
     private static void PromoteCoveredSpeakerRoots(
         List<DialogTopicRecord> topics,
         IReadOnlyList<DialogueRecord> infos,
-        IReadOnlySet<uint> retailCoveredSpeakers)
+        HashSet<uint> retailCoveredSpeakers)
     {
         if (retailCoveredSpeakers.Count == 0 || topics.Count == 0)
         {

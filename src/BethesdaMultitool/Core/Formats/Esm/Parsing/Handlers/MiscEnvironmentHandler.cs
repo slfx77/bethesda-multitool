@@ -1038,16 +1038,16 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         return bands;
     }
 
-    private static IReadOnlyList<WeatherCloudLayer> BuildCloudLayers(
+    private static List<WeatherCloudLayer> BuildCloudLayers(
         SortedDictionary<int, string> textures,
-        IReadOnlyList<float>? speedsX,
-        IReadOnlyList<float>? speedsY,
+        float[]? speedsX,
+        float[]? speedsY,
         IReadOnlyList<WeatherColor>? colors,
         IReadOnlyList<WeatherCloudAlpha>? alphas)
     {
         var max = textures.Count > 0 ? textures.Keys.Max() : -1;
-        max = Math.Max(max, (speedsX?.Count ?? 0) - 1);
-        max = Math.Max(max, (speedsY?.Count ?? 0) - 1);
+        max = Math.Max(max, (speedsX?.Length ?? 0) - 1);
+        max = Math.Max(max, (speedsY?.Length ?? 0) - 1);
         max = Math.Max(max, (colors?.Count ?? 0) - 1);
         max = Math.Max(max, (alphas?.Count ?? 0) - 1);
         if (max < 0) return [];
@@ -1059,8 +1059,8 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             {
                 SourceIndex = i,
                 Texture = textures.GetValueOrDefault(i),
-                SpeedU = i < (speedsX?.Count ?? 0) ? speedsX![i] : 0f,
-                SpeedV = i < (speedsY?.Count ?? 0) ? speedsY![i] : 0f,
+                SpeedU = i < (speedsX?.Length ?? 0) ? speedsX![i] : 0f,
+                SpeedV = i < (speedsY?.Length ?? 0) ? speedsY![i] : 0f,
                 Color = i < (colors?.Count ?? 0) ? colors![i] : null,
                 Opacity = i < (alphas?.Count ?? 0) ? alphas![i] : null,
             });
@@ -1678,14 +1678,16 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             }
         }
 
-        IReadOnlyList<float>? depthOfField = depthOfFieldData is null
-            ? null
-            : depthOfFieldData.VignetteRadius is { } vignetteRadius
+        IReadOnlyList<float>? depthOfField = null;
+        if (depthOfFieldData is not null)
+        {
+            depthOfField = depthOfFieldData.VignetteRadius is { } vignetteRadius
                 ? [depthOfFieldData.Strength, depthOfFieldData.Distance, depthOfFieldData.Range,
                     depthOfFieldData.SkyBlurRadius, vignetteRadius,
                     depthOfFieldData.VignetteStrength.GetValueOrDefault()]
                 : [depthOfFieldData.Strength, depthOfFieldData.Distance, depthOfFieldData.Range,
                     depthOfFieldData.SkyBlurRadius];
+        }
 
         return new ImageSpaceRecord
         {

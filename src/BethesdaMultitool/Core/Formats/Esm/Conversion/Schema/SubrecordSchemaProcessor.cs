@@ -239,10 +239,9 @@ public static class SubrecordSchemaProcessor
             result[5] = 0x88;
         }
 
-        // NOTE: AIDT was previously zeroing bytes 5-7 thinking they were Xbox-specific,
-        // but Xbox and PC have the same values there (e.g., 64 D8 23). The schema handles
-        // AIDT correctly with Padding(3) preserving those bytes and proper byte-swapping
-        // for ServiceFlags, TrainSkill, and TrainLevel.
+        // NOTE: AIDT bytes 5-7 are NOT Xbox-specific — Xbox and PC carry the same values
+        // there (e.g., 64 D8 23). The schema handles AIDT with Padding(3) preserving those
+        // bytes and proper byte-swapping for ServiceFlags, TrainSkill, and TrainLevel.
 
         // Handle repeating arrays (ExpectedSize < 0 means repeat fields)
         if (schema.ExpectedSize < 0 && schema.Fields.Length > 0)

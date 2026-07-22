@@ -213,8 +213,9 @@ internal static class ImageSpaceModifierCaptureValidator
             return false;
         }
 
+        // Capture validation demands the authored curve endpoints exactly; no epsilon.
         var previousTime = ReadTime(tableBytes, 0, isBigEndian);
-        if (previousTime != 0f)
+        if (!previousTime.Equals(0f))
         {
             reason = "does not begin at time 0 for an animatable curve";
             return false;
@@ -232,7 +233,7 @@ internal static class ImageSpaceModifierCaptureValidator
             previousTime = time;
         }
 
-        if (previousTime != 1f)
+        if (!previousTime.Equals(1f))
         {
             reason = "does not end at time 1 for an animatable curve";
             return false;
@@ -271,11 +272,14 @@ internal static class ImageSpaceModifierCaptureValidator
             return false;
         }
 
-        var rawFormId = sounds.Length == 0
-            ? 0u
-            : record.IsBigEndian
+        var rawFormId = 0u;
+        if (sounds.Length > 0)
+        {
+            rawFormId = record.IsBigEndian
                 ? BinaryPrimitives.ReadUInt32BigEndian(sounds[0].Data)
                 : BinaryPrimitives.ReadUInt32LittleEndian(sounds[0].Data);
+        }
+
         if (rawFormId != (semanticFormId ?? 0u))
         {
             reason = $"{signature} raw FormID and semantic projection disagree";

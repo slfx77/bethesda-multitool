@@ -50,8 +50,7 @@ internal static class ObjectIndexBuilder
         AddToIndexes(lights, l => l.FormId, l => l.Bounds, l => l.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(furniture, f => f.FormId, f => f.Bounds, f => f.ModelPath, boundsIndex, modelIndex);
         // SCOL (static collection, e.g. SSHQExterior03) — a placed ref to a SCOL resolves to its
-        // merged meshes\scol\*.nif. Previously omitted, so SCOL refs got no ModelPath and never
-        // rendered (masked by the now-hidden imposter stand-ins).
+        // merged meshes\scol\*.nif. Without this entry SCOL refs get no ModelPath and never render.
         AddToIndexes(staticCollections, s => s.FormId, s => s.Bounds, s => s.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(weapons, w => w.FormId, w => w.Bounds, w => w.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(armor, a => a.FormId, a => a.Bounds, a => a.ModelPath, boundsIndex, modelIndex);

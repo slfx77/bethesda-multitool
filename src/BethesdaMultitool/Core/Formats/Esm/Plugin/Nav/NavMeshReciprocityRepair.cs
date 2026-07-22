@@ -16,7 +16,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 ///     dynamically before DMP capture — <c>NavMesh::FlipTriangle</c>, <c>RemoveObstacle</c>,
 ///     door-portal disabling, etc. Emitting those bytes verbatim trips the engine's load-time
 ///     reciprocity check (94+ <c>PATHFINDING ... should have a link to Triangle Z, but doesn't</c>
-///     warnings observed on xex22.v61 Gomorrah01) which feeds dangling triangle pointers into
+///     warnings observed in a captured Gomorrah01 dump) which feeds dangling triangle pointers into
 ///     pathfinding; AI hits a null deref inside <c>NavMeshSearchClosePoint</c>.
 ///
 ///     Repair policy: clear the bad neighbor index to <c>-1</c> (canonical "no neighbor"

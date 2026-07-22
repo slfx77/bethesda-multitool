@@ -61,7 +61,6 @@ internal static class NavInfoMapBuilder
     public const uint MasterNaviFormId = 0x00014B92u;
 
     private const int NvmiSize = 32;
-    private const int NvciSize = 16;
 
     /// <summary>Builds a 32-byte NVMI subrecord payload for one new NAVM.</summary>
     public static byte[] BuildNvmi(in NewNavmEntry entry)

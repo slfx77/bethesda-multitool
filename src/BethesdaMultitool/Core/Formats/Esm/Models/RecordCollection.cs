@@ -1143,7 +1143,8 @@ public record RecordCollection
             GridX = overrideCell.GridX ?? baseCell.GridX,
             GridY = overrideCell.GridY ?? baseCell.GridY,
             WorldspaceFormId = overrideCell.WorldspaceFormId ?? baseCell.WorldspaceFormId,
-            CellWorldSize = overrideCell.CellWorldSize != 0f ? overrideCell.CellWorldSize : baseCell.CellWorldSize,
+            // 0 is the "not set" sentinel, so this must stay an exact comparison.
+            CellWorldSize = !overrideCell.CellWorldSize.Equals(0f) ? overrideCell.CellWorldSize : baseCell.CellWorldSize,
             WaterHeight = overrideCell.WaterHeight ?? baseCell.WaterHeight,
             WaterFormId = overrideCell.WaterFormId ?? baseCell.WaterFormId,
             EncounterZoneFormId = overrideCell.EncounterZoneFormId ?? baseCell.EncounterZoneFormId,

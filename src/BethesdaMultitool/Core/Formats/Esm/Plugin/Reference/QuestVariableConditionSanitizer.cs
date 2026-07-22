@@ -385,7 +385,7 @@ internal static class QuestVariableConditionSanitizer
         uint recordFormId,
         string? editorId,
         IReadOnlyDictionary<string, string?> recordMetadata,
-        IReadOnlyList<DialogueCondition> conditions,
+        List<DialogueCondition> conditions,
         VariableTableResolver resolver,
         ScriptVariableConditionResolver? scriptVariableResolver,
         List<QuestVariableConditionDiagnostic> diagnostics)
@@ -445,7 +445,8 @@ internal static class QuestVariableConditionSanitizer
                         break;
 
                     default:
-                        throw new ArgumentOutOfRangeException();
+                        throw new InvalidOperationException(
+                            $"Unhandled script-variable resolution kind '{scriptDecision.Kind}'.");
                 }
 
                 continue;
@@ -541,7 +542,8 @@ internal static class QuestVariableConditionSanitizer
                     break;
 
                 default:
-                    throw new ArgumentOutOfRangeException();
+                    throw new InvalidOperationException(
+                        $"Unhandled quest-variable decision kind '{decision.Kind}'.");
             }
         }
 
@@ -646,21 +648,20 @@ internal static class QuestVariableConditionSanitizer
             metadata);
     }
 
-    private static IReadOnlyDictionary<string, string?> BuildInfoMetadata(
+    private static Dictionary<string, string?> BuildInfoMetadata(
         DialogueRecord dialogue,
-        IReadOnlyDictionary<uint, DialogTopicRecord> topicsByFormId,
-        IReadOnlyDictionary<uint, QuestRecord> questsByFormId,
-        IReadOnlyDictionary<uint, NpcRecord> npcsByFormId)
+        Dictionary<uint, DialogTopicRecord> topicsByFormId,
+        Dictionary<uint, QuestRecord> questsByFormId,
+        Dictionary<uint, NpcRecord> npcsByFormId)
     {
-        var (speakerScopeKind, speakerScopeFormId) = dialogue.SpeakerFormId is { } exactSpeaker
-            ? ("exact-npc", (uint?)exactSpeaker)
-            : dialogue.SpeakerFactionFormId is { } faction
-                ? ("faction", (uint?)faction)
-                : dialogue.SpeakerRaceFormId is { } race
-                    ? ("race", (uint?)race)
-                    : dialogue.SpeakerVoiceTypeFormId is { } voiceType
-                        ? ("voice-type", (uint?)voiceType)
-                        : (null, null);
+        (string? speakerScopeKind, uint? speakerScopeFormId) = dialogue switch
+        {
+            { SpeakerFormId: { } exactSpeaker } => ("exact-npc", (uint?)exactSpeaker),
+            { SpeakerFactionFormId: { } faction } => ("faction", (uint?)faction),
+            { SpeakerRaceFormId: { } race } => ("race", (uint?)race),
+            { SpeakerVoiceTypeFormId: { } voiceType } => ("voice-type", (uint?)voiceType),
+            _ => (null, null),
+        };
         var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["record-editor-id"] = dialogue.EditorId,
@@ -707,13 +708,13 @@ internal static class QuestVariableConditionSanitizer
         return metadata;
     }
 
-    private static IReadOnlyDictionary<string, string?> BuildBaseMetadata(string? editorId) =>
+    private static Dictionary<string, string?> BuildBaseMetadata(string? editorId) =>
         new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["record-editor-id"] = editorId,
         };
 
-    private static IReadOnlyDictionary<string, string?> BuildTerminalItemMetadata(
+    private static Dictionary<string, string?> BuildTerminalItemMetadata(
         string? editorId,
         TerminalMenuItem item,
         int itemIndex) =>
@@ -726,11 +727,18 @@ internal static class QuestVariableConditionSanitizer
             ["terminal-result-text"] = item.ResultText,
         };
 
-    private static IReadOnlyDictionary<string, string?> BuildConditionMetadata(
+    private static Dictionary<string, string?> BuildConditionMetadata(
         IReadOnlyDictionary<string, string?> recordMetadata,
         DialogueCondition condition,
         VariableConditionDecision? decision)
     {
+        string? sourceIdentityProof = null;
+        if (decision?.SourceDeclarationKind is { } kind)
+        {
+            sourceIdentityProof = ScriptVariableDeclarationIdentity.IsConcrete(kind)
+                ? "same-dump-sctx-exact"
+                : "same-dump-slsd-scvr-storage-only";
+        }
         var metadata = new Dictionary<string, string?>(recordMetadata, StringComparer.Ordinal)
         {
             ["condition-target-form-id"] = FormatFormId(condition.Parameter1),
@@ -742,11 +750,7 @@ internal static class QuestVariableConditionSanitizer
                 .ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["condition-augmented-variable-name"] = decision?.Augmentation?.Variable.Name,
             ["condition-variable-declaration-kind"] = decision?.SourceDeclarationKind?.ToString(),
-            ["condition-source-identity-proof"] = decision?.SourceDeclarationKind is { } kind
-                ? ScriptVariableDeclarationIdentity.IsConcrete(kind)
-                    ? "same-dump-sctx-exact"
-                    : "same-dump-slsd-scvr-storage-only"
-                : null,
+            ["condition-source-identity-proof"] = sourceIdentityProof,
         };
         return metadata;
     }
@@ -968,7 +972,8 @@ internal static class QuestVariableConditionSanitizer
                 return recoveryStem;
             }
 
-            for (var suffix = 2; ; suffix++)
+            var suffix = 2;
+            while (true)
             {
                 var candidate = recoveryStem + suffix.ToString(
                     System.Globalization.CultureInfo.InvariantCulture);
@@ -976,6 +981,8 @@ internal static class QuestVariableConditionSanitizer
                 {
                     return candidate;
                 }
+
+                suffix++;
             }
         }
 
@@ -1001,11 +1008,15 @@ internal static class QuestVariableConditionSanitizer
                 sourceScriptIsRaw: sourceQuest?.Script is { } sourceScriptFormId
                                    && _dmpScriptsByFormId.ContainsKey(sourceScriptFormId),
                 metadataInvalid: out var runtimeMetadataInvalid);
-            var sourceVariables = runtimeSourceScript is not null
-                ? runtimeSourceScript.Variables
-                : sourceScript is { Variables.Count: > 0 }
-                    ? sourceScript.Variables
-                    : sourceQuest?.Variables;
+            var sourceVariables = sourceQuest?.Variables;
+            if (runtimeSourceScript is not null)
+            {
+                sourceVariables = runtimeSourceScript.Variables;
+            }
+            else if (sourceScript is { Variables.Count: > 0 })
+            {
+                sourceVariables = sourceScript.Variables;
+            }
             var sourceVariablesAtIndex = sourceVariables?
                 .Where(variable => variable.Index == sourceVariableIndex)
                 .ToList() ?? [];
@@ -1072,12 +1083,13 @@ internal static class QuestVariableConditionSanitizer
                     SourceDeclarationKind: sourceKind);
             }
 
-            if (targetAtSameIndex.Count == 1
-                && (!ScriptVariableDeclarationIdentity.IsConcrete(sourceKind)
+            // A non-concrete source identity or a non-retained target only supports the serialized
+            // identity check; a concrete identity against a retained master script gets the full match.
+            var sameIndexIdentityMatches = targetAtSameIndex.Count == 1
+                && (!ScriptVariableDeclarationIdentity.IsConcrete(sourceKind) || !targetIsRetainedMasterScript
                     ? SameSerializedIdentity(sourceVariable, targetAtSameIndex[0])
-                    : !targetIsRetainedMasterScript
-                        ? SameSerializedIdentity(sourceVariable, targetAtSameIndex[0])
-                        : VariablesMatch(sourceVariable, sourceKind, targetAtSameIndex[0], targetSourceText)))
+                    : VariablesMatch(sourceVariable, sourceKind, targetAtSameIndex[0], targetSourceText));
+            if (sameIndexIdentityMatches)
             {
                 return new VariableConditionDecision(
                     VariableConditionDecisionKind.Valid,

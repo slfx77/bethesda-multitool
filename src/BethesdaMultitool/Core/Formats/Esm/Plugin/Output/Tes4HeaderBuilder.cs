@@ -78,11 +78,11 @@ public static class Tes4HeaderBuilder
             // ESM/master flag (0x00000001) is set whenever the plugin overrides master
             // cell-child records (REFR/ACHR/ACRE/LAND/NAVM/…). The FO3/FNV runtime only
             // honours cell-child overrides — and their ONAM list — from ESM-flagged masters;
-            // a plain ESP's interior overrides route through a fragile deferred path. This
-            // was previously tied to navmesh augmentation, but the two are independent: the
-            // program needs the flag for NPC skin-tone + map-marker edits regardless of
-            // navmesh, and (proven in-game) the earlier eager-init AV was the now-fixed
-            // dangling-base class, not the flag itself. No overrides → plain ESP, no flag.
+            // a plain ESP's interior overrides route through a fragile deferred path. The
+            // flag is independent of navmesh augmentation: the program needs it for NPC
+            // skin-tone + map-marker edits regardless of navmesh, and (proven in-game) the
+            // eager-init AV class traces to dangling bases, not the flag itself.
+            // No overrides → plain ESP, no flag.
             Flags = overriddenCellChildFormIds is { Count: > 0 } ? 0x00000001u : 0u,
             FormId = 0,
             Timestamp = 0,

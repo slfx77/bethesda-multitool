@@ -113,7 +113,7 @@ internal sealed class RuntimeActorReader
         // producing "Variable ID 0x34 not found" errors plus the Doc Mitchell / Sunny Smiles
         // quest-state regressions. The orphan-attachment heuristic (exact name match against
         // parsed scripts) is the load-bearing recovery path; the prefix-based memory scan
-        // adds nothing and false-positives. See memory/quest_script_brute_force_scan.md.
+        // adds nothing and false-positives.
         var scriptFormId = view.FormIdPointer("pFormScript", "TESScriptableForm", 0x11);
 
         // Read ACBS stats block (PDB TESActorBaseData::actorData)

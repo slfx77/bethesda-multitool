@@ -182,7 +182,7 @@ internal static class DialogueAudioCsvAssetCollector
             retailOverlayFallbacks);
     }
 
-    private static IReadOnlyDictionary<(uint FormId, byte ResponseNumber), string> BuildPreferredSourceTexts(
+    private static Dictionary<(uint FormId, byte ResponseNumber), string> BuildPreferredSourceTexts(
         IReadOnlyList<EmittedDialogueAudioBinding>? bindings)
     {
         var result = new Dictionary<(uint FormId, byte ResponseNumber), string>();
@@ -895,7 +895,7 @@ internal static class DialogueAudioCsvAssetCollector
 
     private static int CountRetailOverlayFallbacks(
         IReadOnlyList<EmittedDialogueAudioBinding>? bindings,
-        IReadOnlySet<(uint FormId, byte ResponseNumber)> selectedSourceRows)
+        HashSet<(uint FormId, byte ResponseNumber)> selectedSourceRows)
     {
         if (bindings is null)
         {

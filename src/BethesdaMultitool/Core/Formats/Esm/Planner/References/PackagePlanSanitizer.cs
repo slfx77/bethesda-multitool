@@ -31,7 +31,6 @@ internal static class PackagePlanSanitizer
         IReadOnlyList<ParsedMainRecord> masterRecords,
         CellSectionPlanner.CellSectionResult? cellSection)
     {
-        ArgumentNullException.ThrowIfNull(records);
         ArgumentNullException.ThrowIfNull(emittedFormIds);
         ArgumentNullException.ThrowIfNull(sourceToEmitted);
         ArgumentNullException.ThrowIfNull(masterRecords);

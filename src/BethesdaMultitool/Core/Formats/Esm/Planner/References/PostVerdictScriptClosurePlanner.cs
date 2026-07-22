@@ -60,7 +60,7 @@ internal static class PostVerdictScriptClosurePlanner
         RecordPlan Script,
         List<ScriptSuppressionDiagnosticFormatter.Issue> Issues)> FindUnsafeScripts(
         ImmutableArray<RecordPlan> records,
-        IReadOnlySet<uint> liveFormIds)
+        ImmutableHashSet<uint> liveFormIds)
     {
         var unsafeScripts = new Dictionary<uint, (
             RecordPlan,

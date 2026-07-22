@@ -56,8 +56,7 @@ public sealed record PluginBuildOptions
     ///     DISABLED BY DEFAULT because our reconstructed NAVMs carry EMPTY NVCI door-link
     ///     arrays (<c>NavInfoMapBuilder.BuildNvci</c>), and degenerate captures (6-7 vertex
     ///     stubs) besides. When emitted into an overridden MASTER interior they shadow the
-    ///     master's own complete NAVMs (which load via the cell file-list merge — see
-    ///     memory/navm_engine_load_mechanism.md and gomorrah_coc_navmesh_and_npc_drops) and
+    ///     master's own complete NAVMs (which load via the cell file-list merge) and
     ///     the engine null-derefs building the cross-cell TeleportDoorSearch / NavMeshInfoMap
     ///     parent-space graph on a cold <c>coc</c> into that cell (Gomorrah01, confirmed
     ///     fixed by suppressing them). Master's navmeshes are strictly better than our

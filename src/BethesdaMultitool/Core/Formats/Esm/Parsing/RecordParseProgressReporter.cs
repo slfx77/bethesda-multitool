@@ -64,11 +64,8 @@ internal sealed class RecordParseProgressReporter
     {
         var clamped = Math.Clamp(legacyPercent, 0, 100);
         var typedRange = LastWorkPercent - SchemaStageEndPercent;
-        var mapped = _schemaPrimary
-            ? SchemaStageEndPercent + (clamped == 0
-                ? 0
-                : (int)Math.Ceiling(clamped * typedRange / 100d))
-            : clamped;
+        var typedOffset = clamped == 0 ? 0 : (int)Math.Ceiling(clamped * typedRange / 100d);
+        var mapped = _schemaPrimary ? SchemaStageEndPercent + typedOffset : clamped;
 
         Report(mapped, phase, forcePhase: true);
     }

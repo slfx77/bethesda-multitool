@@ -291,7 +291,7 @@ internal static class HeightmapColorRenderer
 
     /// <summary>
     ///     Saves a grayscale image (8-bit) to PNG. Delegates to <see cref="PngWriter" /> — one encoder,
-    ///     one set of encode settings (this used to be a copy-pasted twin).
+    ///     one set of encode settings.
     /// </summary>
     internal static void SaveGrayscale(byte[] pixels, int width, int height, string path) =>
         PngWriter.SaveGrayscale(pixels, width, height, path);

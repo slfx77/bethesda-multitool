@@ -22,6 +22,7 @@ internal sealed class OblivionDialogueExtractor : IDialogueExtractor
     {
     }
 
+    /// <summary>Builds a DIAL topic record from its raw subrecords.</summary>
     /// <remarks>Oblivion dialogue text is inline (no localized-string tables), so the context is unused.</remarks>
     public DialogTopicRecord BuildTopic(
         uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs, RecordParserContext context)

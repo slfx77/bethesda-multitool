@@ -10,10 +10,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 /// <summary>
 ///     Builds ACBS (24 bytes: ACTOR_BASE_DATA) subrecord bytes for NPC and CREA encoders.
 ///     Both record types share the same ACBS schema and the same flag-policy fixups —
-///     consolidated here so both encoders get the same behavior, fixing a latent
-///     CREA bug where templated creatures were emitted without the UseTemplate (0x40)
-///     bit and showed up in-game with per-spawn numeric suffixes (mirror of the
-///     Ulysses-suffix bug previously fixed on NPC placements).
+///     consolidated here so both encoders get the same behavior. Templated creatures
+///     emitted without the UseTemplate (0x40) bit show up in-game with per-spawn
+///     numeric suffixes.
 /// </summary>
 /// <remarks>
 ///     ACBS layout (24 bytes): uint32 Flags(0) + uint16 FatigueBase(4) + uint16 BarterGold(6) +
@@ -91,7 +90,7 @@ internal static class ActorBaseAcbsBuilder
     }
 
     /// <summary>
-    ///     Override identity policy (user-directed): an OVERRIDE of a master NPC/creature
+    ///     Override identity policy: an OVERRIDE of a master NPC/creature
     ///     keeps MASTER's ACBS Flags dword and TemplateFlags word — runtime captures leak
     ///     state bits into both (the Omerta entrance guard gained TemplateFlags
     ///     0x015F→0x835F: UseScript 0x0200 re-points the engine at his TEMPLATE's script,

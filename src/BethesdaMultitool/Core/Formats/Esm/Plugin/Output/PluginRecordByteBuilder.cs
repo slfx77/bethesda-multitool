@@ -35,9 +35,9 @@ internal static class PluginRecordByteBuilder
         var subBytes = subStream.ToArray();
 
         // Honor the compressed-record flag: when set, the on-disk record body is
-        // [4-byte uncompressed size][zlib stream]. Previously this method ignored the
-        // flag and wrote raw subrecord bytes, leaving readers (FNVEdit, the engine)
-        // to attempt zlib decompression of plain bytes and fail (EZDecompressionError).
+        // [4-byte uncompressed size][zlib stream]. Writing raw subrecord bytes with the
+        // flag set leaves readers (FNVEdit, the engine) attempting zlib decompression
+        // of plain bytes and failing (EZDecompressionError).
         var bodyBytes = (flags & CompressedFlag) != 0
             ? EsmRecordCompression.CompressConvertedRecordData(subBytes)
             : subBytes;

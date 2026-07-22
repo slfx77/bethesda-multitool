@@ -510,7 +510,7 @@ internal static class QuestVariableBytecodeRemapper
         string recordType,
         uint recordFormId,
         string path,
-        IReadOnlyList<DialogueResultScript> scripts,
+        List<DialogueResultScript> scripts,
         MappingIndex index,
         IReadOnlyDictionary<uint, uint>? aliases,
         List<QuestVariableBytecodeRemapDiagnostic> diagnostics)
@@ -667,6 +667,20 @@ internal static class QuestVariableBytecodeRemapper
         }
 
         var omitStaleSource = renamedSourceIdentity && !string.IsNullOrEmpty(sourceText);
+        string rewriteReason;
+        if (!omitStaleSource)
+        {
+            rewriteReason = "Patched SCDA quest-local operands to the same exact target IDs used by emitted conditions.";
+        }
+        else if (output is null)
+        {
+            rewriteReason = "Retained the numerically identical SCDA local operand and omitted stale SCTX because the emitted local required a collision-safe name.";
+        }
+        else
+        {
+            rewriteReason = "Patched SCDA to the exact appended local and omitted stale SCTX because the emitted local required a collision-safe name.";
+        }
+
         return new BundleRewrite(
             output ?? compiledData,
             omitStaleSource,
@@ -677,14 +691,10 @@ internal static class QuestVariableBytecodeRemapper
                 readCount,
                 writeCount,
                 omitStaleSource,
-                omitStaleSource && output is null
-                    ? "Retained the numerically identical SCDA local operand and omitted stale SCTX because the emitted local required a collision-safe name."
-                    : omitStaleSource
-                        ? "Patched SCDA to the exact appended local and omitted stale SCTX because the emitted local required a collision-safe name."
-                    : "Patched SCDA quest-local operands to the same exact target IDs used by emitted conditions."));
+                rewriteReason));
     }
 
-    private static IReadOnlySet<QuestVariableRecoveryMapping> FindBundleProducerWrites(
+    private static HashSet<QuestVariableRecoveryMapping> FindBundleProducerWrites(
         string recordType,
         uint recordFormId,
         string scriptPath,

@@ -259,11 +259,12 @@ internal static class DialogueResultScriptParser
             // SCDA, its ordered mixed SCRO/SCRV table, locals, endian flag, and associated
             // source are one provenance bundle. Concatenating/deduplicating tables from two
             // fragments silently changes every later 1-based bytecode reference slot.
-            var bundle = left.CompiledData is { Length: > 0 }
-                ? left
-                : right.CompiledData is { Length: > 0 }
-                    ? right
-                    : left;
+            var bundle = left;
+            if (left.CompiledData is not { Length: > 0 } && right.CompiledData is { Length: > 0 })
+            {
+                bundle = right;
+            }
+
             merged.Add(new DialogueResultScript
             {
                 SourceText = bundle.SourceText,

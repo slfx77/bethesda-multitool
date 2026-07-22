@@ -84,7 +84,7 @@ internal static class GreetingEntrySynthesizer
             var (speakerId, questId) = pair;
             // An exact retail GREETING for this speaker is the authoritative entry point.
             // Adding a silent synthetic INFO ahead of it shadows retail first-meet result
-            // scripts (Sunny's tutorial walk regression). Covered prototype topic trees
+            // scripts (Sunny's tutorial walk never starts). Covered prototype topic trees
             // are promoted to normal top-level choices by DialogueCombinePlanner instead.
             if (speakersWithRetailGreeting?.Contains(speakerId) == true)
             {
@@ -188,11 +188,19 @@ internal static class GreetingEntrySynthesizer
                 .Where(sourceId => topicBySource[sourceId].IsTopLevel)
                 .ToList();
             var inferredRoots = candidates.Where(sourceId => !incoming.Contains(sourceId)).ToList();
-            var roots = explicitRoots.Count > 0
-                ? includeAllGraphRoots
-                    ? explicitRoots.Concat(inferredRoots).Distinct().ToList()
-                    : explicitRoots
-                : inferredRoots;
+            List<uint> roots;
+            if (explicitRoots.Count == 0)
+            {
+                roots = inferredRoots;
+            }
+            else if (includeAllGraphRoots)
+            {
+                roots = explicitRoots.Concat(inferredRoots).Distinct().ToList();
+            }
+            else
+            {
+                roots = explicitRoots;
+            }
 
             // A completely cyclic capture has no zero-incoming vertex. Every member of a
             // root cycle is still scoped to this exact actor and quest; retain that legacy

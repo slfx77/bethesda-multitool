@@ -6,8 +6,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 ///     Game-keyed CTDA condition-function lookup: <c>(functionIndex) → {name, param kinds}</c>,
 ///     built over the game's script command table (<c>opcode = 0x1000 | functionIndex</c>) plus a
 ///     per-game numeric-vs-FormID classifier. This is the shared seam both the dialogue condition
-///     display and the schema decoder's typed CTDA decoding consume — previously the numeric split
-///     lived inline in <c>DialogueConditionDisplayFormatter</c> and was FNV-only.
+///     display and the schema decoder's typed CTDA decoding consume.
 /// </summary>
 public sealed class ConditionFunctionTable
 {

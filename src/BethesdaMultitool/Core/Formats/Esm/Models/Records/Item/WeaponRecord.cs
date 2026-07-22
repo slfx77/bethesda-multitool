@@ -152,7 +152,7 @@ public record WeaponRecord
     /// <summary>True if this weapon supports long bursts (FlagsEx bit 0x200).</summary>
     public bool HasLongBursts => (FlagBitsEx & WeaponFlagsEx.LongBursts) != 0;
 
-    // ── Previously-unparsed DNAM fields ──
+    // ── Extended DNAM fields ──
 
     /// <summary>Override damage multiplier applied to the weapon's own condition. DNAM +84.</summary>
     public float DamageToWeaponMult { get; init; } = 1.0f;

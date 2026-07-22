@@ -160,7 +160,7 @@ internal static class EsmScriptSourceCoverageAnalyzer
     }
 
     private static List<ParsedSubrecord> SubrecordsInRange(
-        IReadOnlyList<ParsedSubrecord> subrecords,
+        List<ParsedSubrecord> subrecords,
         string signature,
         int start,
         int end)
@@ -178,7 +178,7 @@ internal static class EsmScriptSourceCoverageAnalyzer
     }
 
     private static LocalTable ReadLocalTable(
-        IReadOnlyList<ParsedSubrecord> subrecords,
+        List<ParsedSubrecord> subrecords,
         int start,
         int end)
     {
@@ -219,7 +219,7 @@ internal static class EsmScriptSourceCoverageAnalyzer
     }
 
     private static List<uint> ReadReferences(
-        IReadOnlyList<ParsedSubrecord> subrecords,
+        List<ParsedSubrecord> subrecords,
         int start,
         int end)
     {
@@ -245,7 +245,7 @@ internal static class EsmScriptSourceCoverageAnalyzer
         return references;
     }
 
-    private static IReadOnlyDictionary<uint, string> BuildEditorIdIndex(IReadOnlyList<ParsedMainRecord> records)
+    private static Dictionary<uint, string> BuildEditorIdIndex(IReadOnlyList<ParsedMainRecord> records)
     {
         return records
             .Select(record => new
@@ -266,7 +266,7 @@ internal static class EsmScriptSourceCoverageAnalyzer
                 static group => group.SelectMany(item => item.EditorIds).First());
     }
 
-    private static IReadOnlyDictionary<(uint FormId, ushort VariableIndex), string> BuildExternalVariableIndex(
+    private static Dictionary<(uint FormId, ushort VariableIndex), string> BuildExternalVariableIndex(
         IReadOnlyList<ParsedMainRecord> records)
     {
         return records
@@ -481,7 +481,7 @@ internal static class EsmScriptSourceCoverageAnalyzer
             : $"mismatch:{string.Join(';', issues.Distinct(StringComparer.Ordinal))}";
     }
 
-    private static string DescribeNulTermination(IReadOnlyList<ParsedSubrecord> sctx)
+    private static string DescribeNulTermination(List<ParsedSubrecord> sctx)
     {
         if (sctx.Count == 0)
         {

@@ -9,7 +9,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin;
 ///     covering the common "renamed during FNV production" case (e.g.
 ///     <c>SCOLParkingLotChunk03</c> → master <c>SCOLParkingLotChunk03b</c>).
 ///     <para>
-///         Conservative first cut (per user direction): strip only a single trailing
+///         Conservative first cut: strip only a single trailing
 ///         disambiguation letter that follows a digit (<c>(?&lt;=[0-9])[a-z]$</c>) AND the
 ///         Fallout-3-to-New-Vegas rename suffix <c>nv</c>/<c>_nv</c>. Wider patterns
 ///         (<c>new</c>, <c>old</c>, <c>alt</c>, <c>temp</c>, <c>test</c>, <c>v\d+</c>)

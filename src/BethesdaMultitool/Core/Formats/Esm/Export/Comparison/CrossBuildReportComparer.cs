@@ -5,8 +5,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
 ///     Cross-build comparison built on top of <see cref="RecordReportComparer" />.
 ///     Walks per-FormID snapshots from N builds, runs pairwise diffs, and demotes
 ///     known platform/era differences to "expected drift" so real regressions stand out.
-///     Drift entries are seeded from CLAUDE.md "Known Content Differences" and the
-///     memory/ docs (formtype_drift.md, nov2009_struct_sizes.md). The allow-list is
+///     Drift entries are seeded from CLAUDE.md "Known Content Differences".
+///     The allow-list is
 ///     keyed on (RecordType, SectionName, FieldKey) optionally pair-restricted by
 ///     build-label substring (e.g., only Xbox↔PC, only July2010 against anything).
 /// </summary>

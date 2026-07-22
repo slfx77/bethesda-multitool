@@ -445,9 +445,9 @@ internal static class EsmWorldExtractor
         // Associate LAND records with their parent CELL (for cell coordinates and worldspace).
         // PREFERRED: the structural LAND->CELL map built from the GRUP hierarchy (LandToCellMap) —
         // exact and immune to record density. FALLBACK (memory dumps, which have no GRUP headers, so
-        // the map is empty): a bounded offset-proximity search. The old code used proximity for ALL
-        // inputs; in dense ESM cells the LAND can sit >10 KB after its CELL (lots of placed-object
-        // REFRs in between), so the proximity window missed and the cell rendered as a hole.
+        // the map is empty): a bounded offset-proximity search. Proximity is not enough for ESM
+        // inputs: in dense ESM cells the LAND can sit >10 KB after its CELL (lots of placed-object
+        // REFRs in between), past the proximity window, and the cell renders as a hole.
         if (lands.Count > 0 &&
             (scanResult.LandToCellMap.Count > 0 || scanResult.CellGrids.Count > 0 ||
              scanResult.MainRecords.Any(r => r.RecordType == "CELL") ||

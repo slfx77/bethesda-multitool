@@ -123,7 +123,7 @@ internal static class InlineScriptReferenceSafetyPlanner
 
     private static uint? ResolveEmittedFormId(
         CatalogEntry entry,
-        IReadOnlyDictionary<uint, uint> sourceToEmitted)
+        ImmutableDictionary<uint, uint> sourceToEmitted)
     {
         if (entry.MasterFormId.HasValue)
         {
@@ -136,7 +136,7 @@ internal static class InlineScriptReferenceSafetyPlanner
             : entry.DmpFormId;
     }
 
-    private static IReadOnlyDictionary<string, string?> BuildMetadata(
+    private static Dictionary<string, string?> BuildMetadata(
         CatalogEntry entry,
         uint? emitted,
         RecordDisposition disposition,

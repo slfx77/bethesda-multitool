@@ -90,13 +90,13 @@ internal sealed class ScriptVariableConditionResolver
     public ScriptVariableConditionResolution Resolve(uint ownerReferenceFormId, uint variableIndex)
     {
         var owner = ResolveOwner(ownerReferenceFormId);
-        if (!owner.Success)
+        if (!owner.IsResolved)
         {
             return Failure(owner.Code, owner.Message, ownerReferenceFormId, variableIndex, owner.Metadata);
         }
 
         var source = ResolveSourceBinding(owner.SourceBaseFormId!.Value);
-        if (!source.Success)
+        if (!source.IsResolved)
         {
             return Failure(
                 source.Code,
@@ -107,7 +107,7 @@ internal sealed class ScriptVariableConditionResolver
         }
 
         var target = ResolveTargetBinding(owner);
-        if (!target.Success)
+        if (!target.IsResolved)
         {
             return Failure(
                 target.Code,
@@ -237,17 +237,18 @@ internal sealed class ScriptVariableConditionResolver
             ? parsedOwner
             : null;
 
+        var ownerSource = (dmpOwner, masterOwner) switch
+        {
+            (not null, not null) => "dmp+master",
+            (not null, null) => "dmp",
+            (null, not null) => "master",
+            _ => null,
+        };
         var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["script-variable-source-owner-form-id"] = FormatFormId(sourceOwnerFormId),
             ["script-variable-target-owner-form-id"] = FormatFormId(resolvedOwnerFormId),
-            ["script-variable-owner-source"] = dmpOwner is not null && masterOwner is not null
-                ? "dmp+master"
-                : dmpOwner is not null
-                    ? "dmp"
-                    : masterOwner is not null
-                        ? "master"
-                        : null,
+            ["script-variable-owner-source"] = ownerSource,
         };
 
         if (ownerAmbiguous)
@@ -766,7 +767,7 @@ internal sealed class ScriptVariableConditionResolver
         };
     }
 
-    private static IReadOnlyDictionary<string, string?> MergeMetadata(
+    private static Dictionary<string, string?> MergeMetadata(
         params IReadOnlyDictionary<string, string?>[] sources)
     {
         var merged = new Dictionary<string, string?>(StringComparer.Ordinal);
@@ -848,7 +849,7 @@ internal sealed class ScriptVariableConditionResolver
     private readonly record struct MasterPlacedReference(string RecordType, uint BaseFormId);
 
     private sealed record OwnerResolution(
-        bool Success,
+        bool IsResolved,
         string Code,
         string Message,
         uint? SourceBaseFormId,
@@ -869,7 +870,7 @@ internal sealed class ScriptVariableConditionResolver
     }
 
     private sealed record ScriptBindingResolution(
-        bool Success,
+        bool IsResolved,
         string Code,
         string Message,
         uint? VariableTableFormId,

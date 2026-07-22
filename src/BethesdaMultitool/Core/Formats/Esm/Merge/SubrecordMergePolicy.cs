@@ -152,7 +152,7 @@ public sealed record SubrecordMergePolicy
             // (RSFoxtrotLenk 0x00116B40: master's AtRadio+Sandbox packages replaced by the broken
             // proto FoxtrotCommPatrol 0x0100160D → eip 0x0040FE9F). Retain master's package list so
             // overridden actors keep working AI; orphaned proto PACKs are then harmless. Reconstructing
-            // proto patrol routes end-to-end is the deferred deep fix. (memory/proto_ai_package_crash.md)
+            // proto patrol routes end-to-end is the deferred deep fix.
             "PKID"
         };
 

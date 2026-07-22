@@ -9,10 +9,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 /// <summary>
 ///     Typed runtime reader for magic/effect structs: EffectSetting (MGEF, 192B),
 ///     SpellItem (SPEL, 84B), EnchantmentItem (ENCH, 84B), BGSPerk (PERK, 96B).
-///     All 4 types share the same inheritance chain. The per-build shift previously
-///     supplied by <c>RuntimeMagicProbe</c> was always zero across every observed dump
-///     (32/32 samples in the Phase 1B.5 probe sweep), so it has been removed.
-///     Phase 1B's closeout migrates the field reads to <see cref="PdbStructView" />:
+///     All 4 types share the same inheritance chain. No per-build shift is applied —
+///     it was zero across every observed dump (32/32 samples).
+///     Field reads go through <see cref="PdbStructView" />:
 ///     offsets come straight from <c>pdb_layouts.json</c> instead of being hand-pinned
 ///     in this file.
 /// </summary>

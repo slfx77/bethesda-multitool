@@ -128,15 +128,12 @@ internal sealed class ScriptVariableReader
             }
 
             // Try to resolve from the referenced object's script variable list
-            if (_resolveExternalVariable != null)
+            if (_resolveExternalVariable != null && refFormId.HasValue)
             {
-                if (refFormId.HasValue)
+                var resolvedName = _resolveExternalVariable(refFormId.Value, varIndex);
+                if (!string.IsNullOrEmpty(resolvedName))
                 {
-                    var resolvedName = _resolveExternalVariable(refFormId.Value, varIndex);
-                    if (!string.IsNullOrEmpty(resolvedName))
-                    {
-                        return $"{refName}.{resolvedName}";
-                    }
+                    return $"{refName}.{resolvedName}";
                 }
             }
 

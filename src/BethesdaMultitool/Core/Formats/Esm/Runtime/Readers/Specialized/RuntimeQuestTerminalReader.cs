@@ -108,7 +108,6 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         // mid-tutorial in VMS01's runtime cache). Naming-prefix matching is the wrong
         // shape: it both false-positives (VMS01PartsSCRIPT is an object script attached
         // to a misc item, not the quest) and false-negatives (any non-standard naming).
-        // See memory/quest_script_brute_force_scan.md.
         var scriptFormId = _context.FollowPointerToFormId(buffer, QustScriptOffset, 0x11);
         if (scriptFormId is null or 0)
         {

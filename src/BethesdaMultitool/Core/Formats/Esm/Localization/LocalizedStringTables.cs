@@ -144,7 +144,7 @@ public sealed class LocalizedStringTables
         };
 
     private static Dictionary<uint, string> LoadTable(
-        IGameFileSystem dataFolder, string baseName, string language, string extension, bool lengthPrefixed)
+        LayeredGameFileSystem dataFolder, string baseName, string language, string extension, bool lengthPrefixed)
     {
         // Try the full language name first (Skyrim convention), then the 2-letter code (FO4/FO76).
         // File/archive lookups are case-insensitive, so casing of baseName/extension doesn't matter.

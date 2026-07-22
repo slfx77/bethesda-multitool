@@ -156,13 +156,13 @@ internal static class SubrecordDialogueSchemas
         // is DIFFERENT: offset 0 is Unused, offset 12 is VariableCount, and offsets 16/18
         // are uint16 Type/Flags rather than three bool bytes + padding.
         //
-        // Treating the runtime struct as if it were the ESM layout (which the codebase
-        // did prior to 2026-05-28) made every emitted SCHR carry the runtime's uiLastID at
-        // offset 12 — the PC engine reads that field as VariableCount, then refuses to
-        // resolve any SCDA bytecode variable reference whose index ≥ uiLastID. Result:
-        // thousands of `SCRIPTS: Variable ID NNNNNNNN not found. Try to recompile script 'UNKNOWN'`
-        // errors in v53-xex44, and equivalent 'Variable ID 0x0E not found in '' scripts'
-        // for every INFO result script. See memory/schr_runtime_vs_esm_layout.md.
+        // Treating the runtime struct as if it were the ESM layout makes every emitted
+        // SCHR carry the runtime's uiLastID at offset 12 — the PC engine reads that field
+        // as VariableCount, then refuses to resolve any SCDA bytecode variable reference
+        // whose index ≥ uiLastID. Result: thousands of
+        // `SCRIPTS: Variable ID NNNNNNNN not found. Try to recompile script 'UNKNOWN'`
+        // errors, and equivalent 'Variable ID 0x0E not found in '' scripts'
+        // for every INFO result script.
         //
         // Type uint16 values: 0=Object, 1=Quest, 0x100=Effect.
         // Flags uint16 values: 0x0001 = Enabled.

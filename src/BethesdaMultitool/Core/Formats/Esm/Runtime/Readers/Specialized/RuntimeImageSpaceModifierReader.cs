@@ -56,8 +56,8 @@ internal sealed class RuntimeImageSpaceModifierReader(
         OutroSoundOffset: 0x28,
         IntroSoundOffset: 0x2C);
 
-    private static readonly IReadOnlyDictionary<string, string> NamedPointerFields =
-        new Dictionary<string, string>(StringComparer.Ordinal)
+    private static readonly Dictionary<string, string> NamedPointerFields =
+        new(StringComparer.Ordinal)
         {
             ["BNAM"] = "pBlurFloatKey",
             ["VNAM"] = "pDoubleFloatKey",
@@ -475,7 +475,7 @@ internal sealed class RuntimeImageSpaceModifierReader(
         return false;
     }
 
-    private int? ResolveTablePointerOffset(
+    private static int? ResolveTablePointerOffset(
         PdbStructView view,
         ImageSpaceModifierCaptureValidator.FrameTableLayout tableLayout,
         out string failure)
@@ -601,7 +601,7 @@ internal sealed class RuntimeImageSpaceModifierReader(
         return bytes;
     }
 
-    private static IReadOnlyList<ImageSpaceModifierFloatKey> ReadFloatKeys(byte[] bytes)
+    private static ImageSpaceModifierFloatKey[] ReadFloatKeys(byte[] bytes)
     {
         var result = new ImageSpaceModifierFloatKey[bytes.Length / 8];
         for (var i = 0; i < result.Length; i++)
@@ -615,7 +615,7 @@ internal sealed class RuntimeImageSpaceModifierReader(
         return result;
     }
 
-    private static IReadOnlyList<ImageSpaceModifierColorKey> ReadColorKeys(byte[] bytes)
+    private static ImageSpaceModifierColorKey[] ReadColorKeys(byte[] bytes)
     {
         var result = new ImageSpaceModifierColorKey[bytes.Length / 20];
         for (var i = 0; i < result.Length; i++)

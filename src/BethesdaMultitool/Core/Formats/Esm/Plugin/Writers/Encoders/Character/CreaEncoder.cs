@@ -111,8 +111,7 @@ public sealed class CreaEncoder : IRecordEncoder
         // (0x40) when TemplateFlags is nonzero, and clamp SpeedMultiplier to 100 when zero.
         // Without those fixups, templated creatures (Speedy / Sleepy / etc. captured from a
         // prototype build) would emit ACBS with cleared AutoCalc and missing UseTemplate —
-        // the engine then appends a per-spawn numeric suffix to the display name (mirror of
-        // the Ulysses-suffix bug previously fixed on NPC placements).
+        // the engine then appends a per-spawn numeric suffix to the display name.
         if (crea.Stats is { } stats)
         {
             subs.Add(new EncodedSubrecord("ACBS",

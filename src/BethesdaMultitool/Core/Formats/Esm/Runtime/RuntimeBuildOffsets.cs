@@ -359,10 +359,8 @@ internal static class RuntimeBuildOffsets
     ///     </para>
     ///
     ///     <para>
-    ///     This consolidates what every consumer previously had to do manually (via
-    ///     <c>RecordParserContext</c>). Phase 1B.22 moved the call to
-    ///     <c>MinidumpAnalyzer.AnalyzeAsync</c> so all downstream code paths — including
-    ///     snippet extraction for tests — see consistent canonical FormType bytes.
+    ///     Called from <c>MinidumpAnalyzer.AnalyzeAsync</c> so all downstream code paths —
+    ///     including snippet extraction for tests — see consistent canonical FormType bytes.
     ///     </para>
     /// </summary>
     /// <returns>The remap dictionary that was applied, or null if no drift was detected.</returns>

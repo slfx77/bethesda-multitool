@@ -359,7 +359,7 @@ internal static class ScriptRuntimeMerger
         var isCompiled = existing.IsCompiled || adoptedRuntimeBundle && runtime.IsCompiled;
         needsUpdate |= !string.Equals(editorId, existing.EditorId, StringComparison.Ordinal)
                        || ownerQuestFormId != existing.OwnerQuestFormId
-                       || questScriptDelay != existing.QuestScriptDelay
+                       || !questScriptDelay.Equals(existing.QuestScriptDelay)
                        || isQuestScript != existing.IsQuestScript
                        || isMagicEffectScript != existing.IsMagicEffectScript
                        || isCompiled != existing.IsCompiled;
@@ -384,15 +384,9 @@ internal static class ScriptRuntimeMerger
             SourceTextOrigin = sourceTextOrigin,
             CompiledData = compiledData,
             ExecutableBundleFromRuntime = existing.ExecutableBundleFromRuntime || adoptedRuntimeBundle,
-            HasMalformedSerializedHeader = adoptedRuntimeBundle
-                ? false
-                : existing.HasMalformedSerializedHeader,
-            HasMalformedSerializedTable = adoptedRuntimeBundle
-                ? false
-                : existing.HasMalformedSerializedTable,
-            IsIncompleteExecutableBundle = adoptedRuntimeBundle
-                ? false
-                : existing.IsIncompleteExecutableBundle,
+            HasMalformedSerializedHeader = !adoptedRuntimeBundle && existing.HasMalformedSerializedHeader,
+            HasMalformedSerializedTable = !adoptedRuntimeBundle && existing.HasMalformedSerializedTable,
+            IsIncompleteExecutableBundle = !adoptedRuntimeBundle && existing.IsIncompleteExecutableBundle,
             Variables = variables,
             ReferencedObjects = referencedObjects,
             OwnerQuestFormId = ownerQuestFormId,

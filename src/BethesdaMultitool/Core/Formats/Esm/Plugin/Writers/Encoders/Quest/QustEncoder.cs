@@ -77,7 +77,6 @@ public sealed class QustEncoder : IRecordEncoder
         //     Enabled bit (Doc Mitchell's VMS01 intro never auto-starts; player stuck
         //     in bed) or (b) carries the runtime Started bit (Sunny Smiles' "Back in
         //     the Saddle" appears already in progress before the player meets her).
-        //     Both observed in the 2026-05-27 xex44 capture.
         //   - byte 1: Priority — authoring field; master's value is canonical.
         //   - bytes 4..7: QuestDelay — runtime can reset this between save loads.
         // Letting the merge engine retain master's DATA verbatim is strictly safer

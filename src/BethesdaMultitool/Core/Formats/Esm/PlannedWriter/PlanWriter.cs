@@ -247,8 +247,8 @@ public sealed class PlanWriter
         var merge = RecordMergeEngine.Merge(record.Master, encoded, policy);
         var subrecordBytes = merge.SubrecordBytes;
 
-        // Master actor overrides keep MASTER's ACBS Flags + TemplateFlags (user-directed
-        // identity policy): runtime captures leak state bits that re-point scripts/leveling
+        // Master actor overrides keep MASTER's ACBS Flags + TemplateFlags (identity
+        // policy): runtime captures leak state bits that re-point scripts/leveling
         // — the Omerta entrance guard's forcegreet died to a leaked UseScript template flag.
         if (record.Type is "NPC_" or "CREA")
         {

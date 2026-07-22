@@ -70,7 +70,8 @@ public static class ScriptComparer
     private static int FindCommentStart(string line)
     {
         var quoted = false;
-        for (var index = 0; index < line.Length; index++)
+        var index = 0;
+        while (index < line.Length)
         {
             var current = line[index];
             if (current == '"')
@@ -79,11 +80,12 @@ public static class ScriptComparer
                 // doubled quote. Keep both bytes inside the quoted region.
                 if (quoted && index + 1 < line.Length && line[index + 1] == '"')
                 {
-                    index++;
+                    index += 2;
                     continue;
                 }
 
                 quoted = !quoted;
+                index++;
                 continue;
             }
 
@@ -91,6 +93,8 @@ public static class ScriptComparer
             {
                 return index;
             }
+
+            index++;
         }
 
         return -1;
@@ -508,26 +512,29 @@ public static class ScriptComparer
 
         var marked = new System.Text.StringBuilder(line.Length + 4);
         var quoted = false;
-        for (var index = 0; index < line.Length; index++)
+        var charIndex = 0;
+        while (charIndex < line.Length)
         {
-            var current = line[index];
+            var current = line[charIndex];
             if (current != '"')
             {
                 marked.Append(current);
+                charIndex++;
                 continue;
             }
 
             // A doubled quote inside a GECK string is literal content, not a
             // quote-state transition. It cannot affect numeric-token identity.
-            if (quoted && index + 1 < line.Length && line[index + 1] == '"')
+            if (quoted && charIndex + 1 < line.Length && line[charIndex + 1] == '"')
             {
                 marked.Append("  ");
-                index++;
+                charIndex += 2;
                 continue;
             }
 
             marked.Append(quoted ? quotedEnd : quotedStart);
             quoted = !quoted;
+            charIndex++;
         }
 
         if (quoted)

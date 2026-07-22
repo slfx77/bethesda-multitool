@@ -118,7 +118,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
         var firstPersonModObjects = new uint?[7];
         var modWorldMeshes = new string?[7];
 
-        // Additional DNAM fields previously dropped by the parser
+        // Extended DNAM fields beyond the core stats block
         var damageToWeaponMult = 1.0f;
         uint resistance = 0;
         var ironSightUseMult = 1.0f;

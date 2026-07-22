@@ -517,7 +517,7 @@ internal static class DialogueTopicIdentityClassifier
         List<string> conflicts,
         uint infoFormId,
         string scopeName,
-        IReadOnlySet<uint> formIds,
+        HashSet<uint> formIds,
         bool observedMissing)
     {
         if (formIds.Count <= 1 && !(formIds.Count == 1 && observedMissing))
@@ -572,7 +572,7 @@ internal static class DialogueTopicIdentityClassifier
         return conflicts;
     }
 
-    private static IReadOnlyList<uint> EvidenceInfoIds(IEnumerable<DialogueRecord> infos) =>
+    private static List<uint> EvidenceInfoIds(IEnumerable<DialogueRecord> infos) =>
         infos.Select(static info => info.FormId)
             .Where(static formId => formId != 0)
             .Distinct()

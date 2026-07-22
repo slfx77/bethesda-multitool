@@ -467,7 +467,7 @@ internal static class QuestVariableProducerGate
     private static HashSet<ScriptVariableAugmentation> FindUnsupportedChannels(
         IReadOnlyList<DialogueCondition> conditions,
         IReadOnlyDictionary<TargetConditionKey, ScriptVariableAugmentation> targetIndex,
-        IReadOnlySet<ScriptVariableAugmentation> supportedChannels,
+        HashSet<ScriptVariableAugmentation> supportedChannels,
         IReadOnlyDictionary<uint, uint>? aliases)
     {
         var result = new HashSet<ScriptVariableAugmentation>();
@@ -494,7 +494,7 @@ internal static class QuestVariableProducerGate
     private static HashSet<QuestVariableProducerOwner> BuildLiveOwnerSet(
         RecordCollection records,
         IReadOnlyList<QuestVariableProducerEvidence> producerEvidence,
-        IReadOnlyDictionary<QuestVariableProducerOwner, TerminalMenuItem> terminalOwnerItems)
+        Dictionary<QuestVariableProducerOwner, TerminalMenuItem> terminalOwnerItems)
     {
         var result = new HashSet<QuestVariableProducerOwner>();
         var liveScripts = records.Scripts.Select(static script => script.FormId).ToHashSet();
@@ -613,7 +613,7 @@ internal static class QuestVariableProducerGate
     private static QuestVariableProducerOwner NormalizeFinalOwner(
         QuestVariableProducerOwner owner,
         RecordCollection records,
-        IReadOnlyDictionary<QuestVariableProducerOwner, TerminalMenuItem> terminalOwnerItems)
+        Dictionary<QuestVariableProducerOwner, TerminalMenuItem> terminalOwnerItems)
     {
         if (owner.RecordType != "TERM" || !terminalOwnerItems.TryGetValue(owner, out var item))
         {

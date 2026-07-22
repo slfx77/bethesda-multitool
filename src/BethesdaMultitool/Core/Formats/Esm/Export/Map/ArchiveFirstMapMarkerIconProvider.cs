@@ -65,8 +65,8 @@ internal static class MapMarkerArchiveAssetCatalog
                 HasDirectPerIconAssets: false)
         };
 
-    private static readonly IReadOnlyDictionary<int, string> OblivionIconPaths =
-        new Dictionary<int, string>
+    private static readonly Dictionary<int, string> OblivionIconPaths =
+        new()
         {
             [1] = @"textures\menus\map\world\world_map_icon_camp.dds",
             [2] = @"textures\menus\map\world\world_map_icon_cave.dds",

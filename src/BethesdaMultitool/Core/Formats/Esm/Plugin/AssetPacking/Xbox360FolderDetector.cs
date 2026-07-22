@@ -106,8 +106,8 @@ public static class Xbox360FolderDetector
 
         foreach (var file in files)
         {
-            // Header-only probe: the Xbox 360 bit lives in the archive flags, so the full
-            // folder/file-table parse the old code paid per BSA is unnecessary. (TryReadHeader
+            // Header-only probe: the Xbox 360 bit lives in the archive flags, so a full
+            // folder/file-table parse per BSA is unnecessary. (TryReadHeader
             // still full-parses Morrowind-format BSAs — their counts live in the body — but
             // those are never Xbox 360.) Invalid/locked files return null and are skipped.
             if (BsaParser.TryReadHeader(file) is { IsXbox360: true })

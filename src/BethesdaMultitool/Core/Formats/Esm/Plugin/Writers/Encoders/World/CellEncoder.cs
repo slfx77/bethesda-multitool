@@ -45,9 +45,9 @@ public sealed class CellEncoder : IRecordEncoder
         // (block -1, sub-block -1 of each worldspace) legitimately have no EDID in master.
         // Appending an empty EDID subrecord to a master cell that has none confuses the
         // engine's special-case handling of the persistent cell and crashes havok during
-        // cell-attach across every modified worldspace (the v52-xex44 multi-worldspace
-        // crash). When EditorId is null/empty, the merge engine retains master's "no EDID"
-        // shape. When EditorId is set, our value overrides master's first EDID slot.
+        // cell-attach across every modified worldspace. When EditorId is null/empty, the
+        // merge engine retains master's "no EDID" shape. When EditorId is set, our value
+        // overrides master's first EDID slot.
         if (!string.IsNullOrEmpty(cell.EditorId))
         {
             subs.Add(EncodeStringSubrecord("EDID", cell.EditorId));

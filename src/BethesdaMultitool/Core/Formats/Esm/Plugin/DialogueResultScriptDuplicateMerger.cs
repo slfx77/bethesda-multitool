@@ -37,7 +37,7 @@ internal static class DialogueResultScriptDuplicateMerger
     }
 
     private static DialogueResultScript MergeSlot(
-        IReadOnlyList<DialogueResultScript> observations)
+        List<DialogueResultScript> observations)
     {
         if (observations.Count == 0)
         {

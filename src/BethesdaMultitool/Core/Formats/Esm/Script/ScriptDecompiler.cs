@@ -505,7 +505,7 @@ public sealed class ScriptDecompiler(
         }
     }
 
-    private List<string> DecodeShowWarningParameters(
+    private static List<string> DecodeShowWarningParameters(
         BytecodeReader reader,
         int paramCount,
         int payloadEnd)

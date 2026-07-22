@@ -112,7 +112,7 @@ internal sealed class RuntimeCellEnumerator
     // editor-id entries (which already carry FormType from upstream) and Path 2/3 validation.
     // The pAllForms walk in Path 1 uses TesFormHeaderProbe instead to handle multi-inheritance
     // classes — TESWorldSpace is TESFullName-first (FormType +24, FormID +32) so the standard
-    // offsets miss every WRLD entry, which previously broke worldspace-grid discovery.
+    // offsets miss every WRLD entry, breaking worldspace-grid discovery.
     private const int TesFormTypeByteOffset = 4;
     private const int TesFormIdOffset = 12;
     private const int TesFormReadWindow = 16;
@@ -354,8 +354,8 @@ internal sealed class RuntimeCellEnumerator
                 // TesFormHeaderProbe walks three candidate layouts: standard (+4,+12),
                 // TESFullName-first (+24,+32, used by MSTT and TESWorldSpace), and
                 // TESProduceForm-first (+16,+24, used by FLOR). It picks the layout
-                // whose iFormID matches keyFormId — the strict (+4,+12) read previously
-                // used here misses every WRLD entry since TESWorldSpace puts iFormID at +32.
+                // whose iFormID matches keyFormId — a strict (+4,+12) read
+                // misses every WRLD entry since TESWorldSpace puts iFormID at +32.
                 if (!TesFormHeaderProbe.TryProbe(formBuffer, out var rawFormType, out var formId,
                         expectedFormId: keyFormId))
                 {

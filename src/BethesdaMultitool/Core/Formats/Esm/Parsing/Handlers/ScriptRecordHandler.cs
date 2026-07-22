@@ -388,14 +388,21 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
         var hasAcceptedSource = !string.IsNullOrEmpty(evaluated.SourceText)
                                 && evaluated.SourceTextOrigin != ScriptSourceTextOrigin.None
                                 && !evaluated.IsIncompleteExecutableBundle;
-        var status = hasAcceptedSource && evaluated.CompiledData is { Length: > 0 }
-            ? ScriptSourceCorrespondenceStatus.Accepted
-            : hasAcceptedSource
-                ? ScriptSourceCorrespondenceStatus.AcceptedSourceOnly
-                : !string.IsNullOrEmpty(captured.SourceText)
-                  && string.IsNullOrEmpty(evaluated.SourceText)
-                    ? ScriptSourceCorrespondenceStatus.Rejected
-                    : ScriptSourceCorrespondenceStatus.Unverified;
+        ScriptSourceCorrespondenceStatus status;
+        if (hasAcceptedSource)
+        {
+            status = evaluated.CompiledData is { Length: > 0 }
+                ? ScriptSourceCorrespondenceStatus.Accepted
+                : ScriptSourceCorrespondenceStatus.AcceptedSourceOnly;
+        }
+        else
+        {
+            status = !string.IsNullOrEmpty(captured.SourceText)
+                     && string.IsNullOrEmpty(evaluated.SourceText)
+                ? ScriptSourceCorrespondenceStatus.Rejected
+                : ScriptSourceCorrespondenceStatus.Unverified;
+        }
+
         return evaluated with { SourceTextCorrespondenceStatus = status };
     }
 

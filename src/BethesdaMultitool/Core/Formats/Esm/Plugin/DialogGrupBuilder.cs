@@ -180,7 +180,7 @@ internal static class DialogGrupBuilder
         // The survival predicate closes an existence-check hole: a (speaker, quest) pair
         // whose only greeting is a content-less runtime stub must NOT count as covered —
         // the stub dies at the master-topic gates below, and skipping the synth then leaves
-        // the NPC with only Goodbye (Ulysses, xex21.v116).
+        // the NPC with only Goodbye (Ulysses).
         var synthesizedGreetings = GreetingEntrySynthesizer.Synthesize(
             newTopics, newInfos, dialFormIdMap,
             greetingSurvivesGates: info =>
@@ -735,11 +735,11 @@ internal static class DialogGrupBuilder
                 // NAM1, zeroed TRDT, only TCLT choice links); chained into a shared master
                 // topic they SHADOW the actor's retail greeting — the engine selects the
                 // stub, renders nothing, and the conversation instantly closes (Victor /
-                // Doc Mitchell / the Gomorrah greeter, xex22.v113 in-game). Stubs stay
+                // Doc Mitchell / the Gomorrah greeter). Stubs stay
                 // legitimate under NEW proto topics, which re-emit their own menu structure.
                 // EXEMPT: GreetingEntrySynthesizer entries — their single empty response is
                 // the designed "[silence], then the topic list" entry mechanism; dropping
-                // them leaves proto NPCs with only Goodbye (Ulysses, xex21.v115 in-game)
+                // them leaves proto NPCs with only Goodbye (Ulysses)
                 // and severs synthesized topic entry points on retail NPCs.
                 if (!HasRenderableResponse(patched))
                 {
@@ -1130,7 +1130,7 @@ internal static class DialogGrupBuilder
         Dictionary<uint, List<DialogueRecord>> infosByEmittedDial,
         Dictionary<uint, List<DialogueRecord>> infosByMasterDial,
         Dictionary<uint, string> dialEditorIdByFormId,
-        IReadOnlySet<uint> topLevelDialFormIds,
+        HashSet<uint> topLevelDialFormIds,
         ExitTopicResolver? exitTopicResolver = null)
     {
         var rootLinksBySpeaker = new Dictionary<(uint Quest, uint? Speaker), List<uint>>();
@@ -1882,13 +1882,13 @@ internal static class DialogGrupBuilder
         }
     }
 
-    private static string FormatEvidencePreview(IReadOnlyList<uint> evidence) => evidence.Count == 0
+    private static string FormatEvidencePreview(List<uint> evidence) => evidence.Count == 0
         ? "none"
         : string.Join(",", evidence
             .Take(IdentityEvidencePreviewLimit)
             .Select(static formId => $"0x{formId:X8}"));
 
-    private static string FormatConflictPreview(IReadOnlyList<string> conflicts) => conflicts.Count == 0
+    private static string FormatConflictPreview(List<string> conflicts) => conflicts.Count == 0
         ? "none"
         : string.Join(" | ", conflicts
             .Take(IdentityConflictPreviewLimit)

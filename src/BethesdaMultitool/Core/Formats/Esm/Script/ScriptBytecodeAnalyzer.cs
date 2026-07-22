@@ -186,11 +186,6 @@ public static class ScriptBytecodeAnalyzer
             diagnostics);
     }
 
-    private static bool HasStructuralUncertainty(string decompiledText)
-    {
-        return ExtractStructuralUncertainties(decompiledText).Count > 0;
-    }
-
     private static List<string> ExtractStructuralUncertainties(string decompiledText)
     {
         if (string.IsNullOrEmpty(decompiledText))
