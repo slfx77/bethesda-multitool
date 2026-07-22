@@ -47,6 +47,24 @@ public static class BsaParser
         // the record 24 bytes. The folder offset itself is only informational here (file records
         // carry absolute data offsets), so the widened value is truncated to uint for storage.
         var isV105 = header.Version >= 105;
+
+        // The declared counts must physically fit in the stream BEFORE they size any allocation:
+        // a lying header would otherwise commit gigabytes up front. Each file record is 16 bytes
+        // (hash + size + offset) at every version.
+        var folderRecordSize = isV105 ? 24 : 16;
+        var remaining = stream.Length - stream.Position;
+        if ((long)folderCount * folderRecordSize > remaining)
+        {
+            throw new InvalidDataException(
+                $"BSA folder count {folderCount} cannot fit in {stream.Length}-byte archive");
+        }
+
+        if ((long)folderCount * folderRecordSize + (long)header.FileCount * 16 > remaining)
+        {
+            throw new InvalidDataException(
+                $"BSA file count {header.FileCount} cannot fit in {stream.Length}-byte archive");
+        }
+
         var folders = new List<BsaFolderRecord>((int)folderCount);
         for (var i = 0; i < folderCount; i++)
         {
@@ -137,6 +155,15 @@ public static class BsaParser
         {
             throw new InvalidDataException(
                 $"Invalid BSA magic: expected 'BSA\\0', got '{Encoding.ASCII.GetString(magic)}'");
+        }
+
+        // The remaining 32 header bytes must be present before any field reads — a truncated
+        // header should fail as InvalidDataException, not EndOfStreamException.
+        var stream = reader.BaseStream;
+        if (stream.Length - stream.Position < 32)
+        {
+            throw new InvalidDataException(
+                $"BSA header truncated: {stream.Length} bytes is smaller than the 36-byte header");
         }
 
         // BSA is always little-endian; valid versions are 103-105.

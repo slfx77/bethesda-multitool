@@ -179,21 +179,34 @@ public static class SaveFileParser
         position = Magic.Length;
 
         // Header Size (uint32)
+        if (position + 4 > data.Length)
+        {
+            throw new InvalidDataException(
+                $"Save truncated: headerSize field at offset 0x{position:X} needs 4 bytes " +
+                $"but payload is only {data.Length} bytes.");
+        }
+
         var headerSize = BinaryUtils.ReadUInt32LE(data, position);
         position += 4;
 
         var headerStart = position;
+        if (headerSize > (uint)(data.Length - headerStart))
+        {
+            throw new InvalidDataException(
+                $"Save headerSize {headerSize} (declared at offset 0x{headerStart - 4:X}) exceeds payload: " +
+                $"header region starts at 0x{headerStart:X} but payload is only {data.Length} bytes.");
+        }
 
         // Parse pipe-terminated fields within the header
-        var version = ReadUInt32T(data, ref position);
-        var screenshotWidth = ReadUInt32T(data, ref position);
-        var screenshotHeight = ReadUInt32T(data, ref position);
-        var saveNumber = ReadUInt32T(data, ref position);
-        var playerName = ReadLenStringT(data, ref position);
-        var playerStatus = ReadLenStringT(data, ref position);
-        var playerLevel = ReadUInt32T(data, ref position);
-        var playerCell = ReadLenStringT(data, ref position);
-        var saveDuration = ReadLenStringT(data, ref position);
+        var version = ReadUInt32T(data, ref position, "version");
+        var screenshotWidth = ReadUInt32T(data, ref position, "screenshotWidth");
+        var screenshotHeight = ReadUInt32T(data, ref position, "screenshotHeight");
+        var saveNumber = ReadUInt32T(data, ref position, "saveNumber");
+        var playerName = ReadLenStringT(data, ref position, "playerName");
+        var playerStatus = ReadLenStringT(data, ref position, "playerStatus");
+        var playerLevel = ReadUInt32T(data, ref position, "playerLevel");
+        var playerCell = ReadLenStringT(data, ref position, "playerCell");
+        var saveDuration = ReadLenStringT(data, ref position, "saveDuration");
 
         // Skip to end of header
         var headerEnd = headerStart + (int)headerSize;
@@ -328,7 +341,7 @@ public static class SaveFileParser
 
             for (var i = 0; i < pluginCount && position < pluginsEnd; i++)
             {
-                plugins.Add(ReadLenStringT(data, ref position));
+                plugins.Add(ReadLenStringT(data, ref position, "plugin"));
             }
         }
 
@@ -490,8 +503,15 @@ public static class SaveFileParser
     #region Pipe-terminated field readers
 
     /// <summary>Read a uint32 followed by a pipe terminator (0x7C).</summary>
-    private static uint ReadUInt32T(ReadOnlySpan<byte> data, ref int position)
+    private static uint ReadUInt32T(ReadOnlySpan<byte> data, ref int position, string field)
     {
+        if (position + 4 > data.Length)
+        {
+            throw new InvalidDataException(
+                $"Save truncated reading '{field}' at offset 0x{position:X}: " +
+                $"need 4 bytes, {data.Length - position} remain.");
+        }
+
         var value = BinaryUtils.ReadUInt32LE(data, position);
         position += 4;
         if (position < data.Length && data[position] == PipeTerminator)
@@ -503,8 +523,15 @@ public static class SaveFileParser
     }
 
     /// <summary>Read a uint16-length-prefixed string followed by a pipe terminator.</summary>
-    private static string ReadLenStringT(ReadOnlySpan<byte> data, ref int position)
+    private static string ReadLenStringT(ReadOnlySpan<byte> data, ref int position, string field)
     {
+        if (position + 2 > data.Length)
+        {
+            throw new InvalidDataException(
+                $"Save truncated reading '{field}' length prefix at offset 0x{position:X}: " +
+                $"need 2 bytes, {data.Length - position} remain.");
+        }
+
         var length = BinaryUtils.ReadUInt16LE(data, position);
         position += 2;
         if (position < data.Length && data[position] == PipeTerminator)
@@ -515,6 +542,13 @@ public static class SaveFileParser
         if (length == 0)
         {
             return "";
+        }
+
+        if (position + length > data.Length)
+        {
+            throw new InvalidDataException(
+                $"Save truncated reading '{field}' at offset 0x{position:X}: " +
+                $"declared length {length} exceeds the {data.Length - position} remaining bytes.");
         }
 
         var value = Encoding.ASCII.GetString(data.Slice(position, length));

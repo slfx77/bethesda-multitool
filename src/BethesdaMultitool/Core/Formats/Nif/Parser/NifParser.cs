@@ -41,6 +41,11 @@ internal static class NifParser
         }
 
         pos = ParseVersionInfo(data, pos, info);
+        if (pos < 0)
+        {
+            return null;
+        }
+
         if (!IsBethesdaVersion(info.BinaryVersion,
                 info.UserVersion))
         {
@@ -53,6 +58,10 @@ internal static class NifParser
         if (NifVersions.HasBsStreamHeader(info.BinaryVersion, info.UserVersion))
         {
             pos = ParseBethesdaHeader(data, pos, info);
+            if (pos < 0)
+            {
+                return null;
+            }
         }
 
         // This (modern) path locates blocks via the header's per-block "Block Size" array (added in
@@ -64,6 +73,11 @@ internal static class NifParser
             return ParseLegacyBlocks(data, pos, info);
         }
 
+        if (pos + 2 > data.Length)
+        {
+            return null;
+        }
+
         var numBlockTypes = BinaryUtils.ReadUInt16(data, pos, info.IsBigEndian);
         pos += 2;
 
@@ -73,11 +87,25 @@ internal static class NifParser
             return null;
         }
 
+        if (pos + info.BlockCount * 6 > data.Length)
+        {
+            return null;
+        }
+
         var (blockTypeIndices, blockSizes) = ParseBlockMetadata(data, pos, info.BlockCount, info.IsBigEndian);
         pos += info.BlockCount * 6; // 2 bytes for type index + 4 bytes for size
 
         pos = ParseStringTable(data, pos, info.IsBigEndian, info.Strings);
+        if (pos < 0)
+        {
+            return null;
+        }
+
         pos = SkipGroups(data, pos, info.IsBigEndian);
+        if (pos < 0)
+        {
+            return null;
+        }
 
         BuildBlockList(info, blockTypeIndices, blockSizes, pos);
         return info;
@@ -212,6 +240,10 @@ internal static class NifParser
 
         // No String table (< 20.1.0.1). Groups follow (since 5.0.0.6; present in Oblivion), then data.
         pos = SkipGroups(data, pos, info.IsBigEndian);
+        if (pos < 0)
+        {
+            return info; // truncated header — header-only, matching this path's other truncation exits
+        }
 
         MeasureLegacyBlocks(data, pos, info, blockTypeIndices);
         return info;
@@ -413,8 +445,15 @@ internal static class NifParser
         return newlinePos + 1;
     }
 
+    /// <summary>Returns the position past the version fields, or -1 when the header is truncated
+    /// or the block count is implausible (the caller maps -1 to a null parse result).</summary>
     private static int ParseVersionInfo(byte[] data, int pos, NifInfo info)
     {
+        if (pos + 4 > data.Length)
+        {
+            return -1;
+        }
+
         info.BinaryVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
         pos += 4;
 
@@ -424,6 +463,11 @@ internal static class NifParser
         // (garbage block count → "no renderable geometry").
         if (info.BinaryVersion >= 0x14000003)
         {
+            if (pos >= data.Length)
+            {
+                return -1;
+            }
+
             info.IsBigEndian = data[pos] == 0;
             pos += 1;
         }
@@ -437,6 +481,11 @@ internal static class NifParser
         // directly, so reading a User Version there would shift Num Blocks (and everything after) by 4.
         if (NifVersions.HasUserVersion(info.BinaryVersion))
         {
+            if (pos + 4 > data.Length)
+            {
+                return -1;
+            }
+
             info.UserVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
             pos += 4;
         }
@@ -445,13 +494,28 @@ internal static class NifParser
             info.UserVersion = 0;
         }
 
+        if (pos + 4 > data.Length)
+        {
+            return -1;
+        }
+
         info.BlockCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
         pos += 4;
+        if (info.BlockCount is < 0 or > 100000) // same cap as the Morrowind path
+        {
+            return -1;
+        }
+
         return pos;
     }
 
     private static int ParseBethesdaHeader(byte[] data, int pos, NifInfo info)
     {
+        if (pos < 0 || pos + 4 > data.Length)
+        {
+            return -1;
+        }
+
         var bsVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
         info.BsVersion = bsVersion;
         pos += 4;
@@ -528,10 +592,18 @@ internal static class NifParser
         return (blockTypeIndices, blockSizes);
     }
 
+    /// <summary>Returns the position past the group list, or -1 when the count dword is missing or
+    /// the declared groups run past EOF (callers treat -1 as a truncated header).</summary>
     private static int SkipGroups(byte[] data, int pos, bool isBigEndian)
     {
+        if (pos < 0 || pos + 4 > data.Length)
+        {
+            return -1;
+        }
+
         var numGroups = BinaryUtils.ReadUInt32(data, pos, isBigEndian);
-        return pos + 4 + (int)numGroups * 4;
+        pos += 4;
+        return numGroups <= (uint)((data.Length - pos) / 4) ? pos + (int)numGroups * 4 : -1;
     }
 
     private static void BuildBlockList(NifInfo info, ushort[] blockTypeIndices, uint[] blockSizes, int dataStart)
@@ -553,8 +625,15 @@ internal static class NifParser
         }
     }
 
+    /// <summary>Returns the position past the string table, or -1 when the declared counts/lengths
+    /// don't fit the remaining bytes (the caller maps -1 to a null parse result).</summary>
     private static int ParseStringTable(byte[] data, int pos, bool isBigEndian, List<string> strings)
     {
+        if (pos < 0 || pos + 8 > data.Length)
+        {
+            return -1;
+        }
+
         // Num strings
         var numStrings = isBigEndian
             ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
@@ -564,13 +643,32 @@ internal static class NifParser
         // Max string length (skip)
         pos += 4;
 
+        // Each string needs at least its 4-byte length prefix, so a count beyond remaining/4 is a lie.
+        if (numStrings > (uint)((data.Length - pos) / 4))
+        {
+            return -1;
+        }
+
         // Strings
         for (var i = 0; i < numStrings; i++)
         {
+            if (pos + 4 > data.Length)
+            {
+                return -1;
+            }
+
             var strLen = isBigEndian
                 ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
                 : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
             pos += 4;
+
+            // Header strings can legitimately be long: retail UPB (User Property Buffer) entries
+            // carry multi-line Havok property dumps (e.g. nv_gs-saloon-sign.nif declares 265 bytes).
+            // The EOF bounds check is the crash protection; the cap only rejects absurd lies.
+            if (strLen > 65536 || pos + strLen > data.Length)
+            {
+                return -1;
+            }
 
             var str = Encoding.ASCII.GetString(data, pos, (int)strLen);
             strings.Add(str);

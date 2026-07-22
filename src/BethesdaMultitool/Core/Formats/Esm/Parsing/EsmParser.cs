@@ -39,6 +39,14 @@ public static class EsmParser
     public const uint CompressedFlag = 0x00040000;
 
     /// <summary>
+    ///     Maximum GRUP nesting depth honored when walking group trees. Real plugins nest
+    ///     ~7 levels (worldspace → block → sub-block → cell children); a crafted file with
+    ///     deeper nesting would otherwise recurse until the stack overflows, which is
+    ///     uncatchable. Groups past the cap are skipped by their declared size.
+    /// </summary>
+    public const int MaxGrupNestingDepth = 64;
+
+    /// <summary>
     ///     Detect if ESM file is big-endian (Xbox 360).
     ///     Xbox 360: "TES4" appears as "4SET" (reversed bytes)
     /// </summary>

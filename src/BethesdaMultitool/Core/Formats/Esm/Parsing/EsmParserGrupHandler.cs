@@ -35,11 +35,12 @@ internal static class EsmParserGrupHandler
 
         while (offset + format.RecordHeaderSize <= data.Length)
         {
+            var loopStart = offset;
             var sig = ReadSignature(data[(int)offset..], bigEndian);
 
             if (sig == "GRUP")
             {
-                var actualEnd = ParseGroupRecursive(data, offset, bigEndian, format, records, grupHeaders);
+                var actualEnd = ParseGroupRecursive(data, offset, bigEndian, format, records, grupHeaders, depth: 0);
 
                 var groupHeader = EsmParser.ParseGroupHeader(data[(int)offset..], bigEndian, format);
                 if (groupHeader == null || groupHeader.GroupSize < format.GroupHeaderSize)
@@ -89,6 +90,11 @@ internal static class EsmParserGrupHandler
 
                 offset += format.RecordHeaderSize + recordHeader.DataSize;
             }
+
+            if (offset <= loopStart)
+            {
+                break;
+            }
         }
 
         return (records, grupHeaders);
@@ -105,12 +111,20 @@ internal static class EsmParserGrupHandler
         bool bigEndian,
         PluginFormat format,
         List<ParsedMainRecord> records,
-        List<GrupHeaderInfo> grupHeaders)
+        List<GrupHeaderInfo> grupHeaders,
+        int depth)
     {
         var groupHeader = EsmParser.ParseGroupHeader(data[(int)groupOffset..], bigEndian, format);
         if (groupHeader == null || groupHeader.GroupSize < format.GroupHeaderSize)
         {
             return groupOffset;
+        }
+
+        if (depth >= EsmParser.MaxGrupNestingDepth)
+        {
+            // Crafted files can nest GRUPs arbitrarily deep; recursing further risks an
+            // uncatchable StackOverflowException. Skip the group by its declared size.
+            return groupOffset + groupHeader.GroupSize;
         }
 
         grupHeaders.Add(new GrupHeaderInfo
@@ -127,11 +141,12 @@ internal static class EsmParserGrupHandler
 
         while (offset + format.RecordHeaderSize <= data.Length && offset < groupEnd)
         {
+            var loopStart = offset;
             var sig = ReadSignature(data[(int)offset..], bigEndian);
 
             if (sig == "GRUP")
             {
-                var nestedEnd = ParseGroupRecursive(data, offset, bigEndian, format, records, grupHeaders);
+                var nestedEnd = ParseGroupRecursive(data, offset, bigEndian, format, records, grupHeaders, depth + 1);
 
                 var nestedHeader = EsmParser.ParseGroupHeader(data[(int)offset..], bigEndian, format);
                 if (nestedHeader == null || nestedHeader.GroupSize < format.GroupHeaderSize)
@@ -180,6 +195,11 @@ internal static class EsmParserGrupHandler
                 });
 
                 offset += format.RecordHeaderSize + recordHeader.DataSize;
+            }
+
+            if (offset <= loopStart)
+            {
+                break;
             }
         }
 
@@ -360,7 +380,16 @@ internal static class EsmParserGrupHandler
     private static List<ParsedSubrecord> ParseRecordSubrecords(ReadOnlySpan<byte> data, long offset,
         MainRecordHeader recordHeader, bool bigEndian, PluginFormat format)
     {
-        var recordDataSlice = data.Slice((int)offset + format.RecordHeaderSize, (int)recordHeader.DataSize);
+        // A truncated file can declare a DataSize past EOF; clamp like EsmParser.ParseFileHeader
+        // so the caller gets the subrecords that do fit instead of an out-of-range slice.
+        var available = data.Length - (int)offset - format.RecordHeaderSize;
+        var dataSize = (int)Math.Min(recordHeader.DataSize, (uint)Math.Max(available, 0));
+        if (dataSize <= 0)
+        {
+            return [];
+        }
+
+        var recordDataSlice = data.Slice((int)offset + format.RecordHeaderSize, dataSize);
 
         if ((recordHeader.Flags & EsmParser.CompressedFlag) != 0 && recordDataSlice.Length > 4)
         {

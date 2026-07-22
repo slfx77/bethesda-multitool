@@ -18,7 +18,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Conversion;
 ///     multiple of 4. These tests pin the result by converting a real Xbox LOD mesh and
 ///     comparing every byte against its PC vanilla counterpart.
 /// </summary>
-[Trait("Category", BucketBTestGuard.Category)]
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class NiAgdDataBlockSwapRegressionTests
 {
     private const string XboxStripLod =
@@ -28,6 +28,7 @@ public sealed class NiAgdDataBlockSwapRegressionTests
         @"Sample\Meshes\meshes_pc\meshes\landscape\lod\thestripworldnew\thestripworldnew.level4.x12.y-8.nif";
 
     [Fact]
+    [Trait("Category", BucketBTestGuard.Category)]
     public void Convert_StripLodNif_ProducesByteIdenticalPcOutput()
     {
         BucketBTestGuard.SkipUnlessEnabled();
@@ -53,11 +54,13 @@ public sealed class NiAgdDataBlockSwapRegressionTests
     }
 
     [Fact]
+    [Trait("Category", BucketBTestGuard.Category)]
     public void Convert_StripLodNif_DataBufferIsNotByteEqualToXboxSource()
     {
         // Negative test: if the swap somehow regressed to a no-op, the converted bytes
         // for the NiAdditionalGeometryData block would be byte-identical to the Xbox
         // source. They must NOT be — the whole point is the buffer gets swapped.
+        BucketBTestGuard.SkipUnlessEnabled();
         var xboxPath = SampleFileFixture.FindSamplePath(XboxStripLod);
         Assert.SkipWhen(xboxPath is null, "Sample LOD NIF not available");
 
@@ -83,6 +86,37 @@ public sealed class NiAgdDataBlockSwapRegressionTests
 
         Assert.True(anyByteSwapped,
             "NiAdditionalGeometryData block in converted output matches the Xbox source byte-for-byte; the data-buffer swap regressed to a no-op.");
+    }
+
+    // Synthetic sibling of the retail LOD facts, runnable without retail assets (not
+    // Bucket-B-gated) and strictly stronger than the "bytes differ" negative check: the
+    // fixture's ascending payload has a hand-computed post-swap image, so the exact 4-byte-
+    // unit reversal is asserted rather than mere inequality.
+    [Fact]
+    public void Convert_SyntheticBigEndianNif_SwapsAgdPayloadInFourByteUnits()
+    {
+        byte[] payload =
+        [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+        ];
+        var xboxBytes = BigEndianNifBuilder.Build(agdPayload: payload);
+
+        var result = NifConverter.Convert(xboxBytes);
+        Assert.True(result.Success, $"NifConverter failed: {result.ErrorMessage}");
+        var converted = Assert.IsType<byte[]>(result.OutputData);
+
+        var info = Assert.IsType<NifInfo>(NifParser.Parse(converted));
+        var agdBlock = info.Blocks[BigEndianNifBuilder.AdditionalGeometryDataBlockIndex];
+        Assert.Equal("NiAdditionalGeometryData", agdBlock.TypeName);
+
+        byte[] expectedSwapped =
+        [
+            0x03, 0x02, 0x01, 0x00, 0x07, 0x06, 0x05, 0x04,
+            0x0B, 0x0A, 0x09, 0x08, 0x0F, 0x0E, 0x0D, 0x0C,
+        ];
+        var payloadPos = agdBlock.DataOffset + BigEndianNifBuilder.AgdPayloadOffsetInBlock;
+        Assert.Equal(expectedSwapped, converted.AsSpan(payloadPos, payload.Length).ToArray());
     }
 
     private static int FirstDiffOffset(byte[] a, byte[] b)

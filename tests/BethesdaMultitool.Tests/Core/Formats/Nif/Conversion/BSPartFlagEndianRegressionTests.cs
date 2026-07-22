@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Conversion;
@@ -17,6 +18,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Conversion;
 ///     post-conversion partition bytes from a real prototype NIF and asserting they match
 ///     PC vanilla semantics (limbs visible, gore caps not).
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class BSPartFlagEndianRegressionTests
 {
     private const string UlyssesProtoNifPath =
@@ -25,6 +27,7 @@ public sealed class BSPartFlagEndianRegressionTests
     [Fact]
     public void Convert_PrototypeOutfitBody_KeepsPfEditorVisibleOnLimbPartitions()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var nifBytes = LoadSamplePrototypeNif();
         if (nifBytes is null)
         {
@@ -48,6 +51,7 @@ public sealed class BSPartFlagEndianRegressionTests
     [Fact]
     public void Convert_PrototypeOutfitGoreCap_LeavesPfEditorVisibleClearedOnGoreCapPartitions()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         var nifBytes = LoadSamplePrototypeNif();
         if (nifBytes is null)
         {
@@ -74,6 +78,29 @@ public sealed class BSPartFlagEndianRegressionTests
         Assert.True(goreCapDismember.Partitions.Count >= 2,
             "Gore-cap dismember block should have multiple partitions sharing the boneset");
         Assert.Equal(0x0000, goreCapDismember.Partitions[1].PartFlag);
+    }
+
+    // Synthetic sibling of the two prototype facts above, runnable without retail assets
+    // (not Bucket-B-gated). The fixture's PartFlags 0x0001 / 0x0100 are asymmetric byte
+    // pairs — a regression back to the default ushort swap turns each into the other —
+    // while the neighboring BodyPart ushorts (300 / 230) must still BE-swap normally.
+    [Fact]
+    public void Convert_SyntheticBigEndianNif_LeavesBSPartFlagBytesUnswapped()
+    {
+        var xboxBytes = BigEndianNifBuilder.Build();
+
+        var (info, converted) = ConvertAndReparseAsPc(xboxBytes);
+
+        var dismember = info.Blocks[BigEndianNifBuilder.DismemberBlockIndex];
+        Assert.Equal("BSDismemberSkinInstance", dismember.TypeName);
+        var partitions = ReadPartitions(converted, dismember.DataOffset);
+
+        Assert.Equal(BigEndianNifBuilder.DefaultPartitions.Length, partitions.Count);
+        Assert.Equal(0x0101, partitions[0].PartFlag); // visible + boneset (swap-invariant torso value)
+        Assert.Equal(0x0001, partitions[1].PartFlag); // PF_EDITOR_VISIBLE only — 0x0100 if swapped
+        Assert.Equal(0x0100, partitions[2].PartFlag); // PF_START_NET_BONESET only — 0x0001 if swapped
+        Assert.Equal(300, partitions[1].BodyPart);
+        Assert.Equal(230, partitions[2].BodyPart);
     }
 
     private static byte[]? LoadSamplePrototypeNif()

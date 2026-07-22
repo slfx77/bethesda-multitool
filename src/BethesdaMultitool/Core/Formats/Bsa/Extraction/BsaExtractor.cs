@@ -42,6 +42,11 @@ public sealed class BsaExtractor : IDisposable
     // XMA needs special handling since it uses XmaWavConverter
     private bool _xmaConversionEnabled;
 
+    // Upper bound for a compressed entry's declared uncompressed size: the size dword is
+    // attacker-controlled and would otherwise commit an arbitrary allocation. Real BSA payloads
+    // top out well under this (the engine streams nothing close to 256 MiB from a BSA).
+    private const long MaxDecompressedFileSize = 256 * 1024 * 1024;
+
     /// <summary>
     ///     Create an extractor for a BSA archive.
     /// </summary>
@@ -415,18 +420,46 @@ public sealed class BsaExtractor : IDisposable
         var dataOffset = (long)file.Offset;
         var dataSize = (int)file.Size;
 
+        // The record's byte range must lie inside the archive, past the header (36 bytes for
+        // v103-105, 12 for Morrowind). The MMF view is rounded up to page granularity, so an
+        // out-of-range read would silently return zeros instead of failing.
+        var headerEnd = Archive.Header.IsMorrowind ? 12 : 36;
+        if (dataOffset < headerEnd || dataOffset + dataSize > _archiveFileLength)
+        {
+            throw new InvalidDataException(
+                $"BSA file record '{file.FullPath}' data range [0x{dataOffset:X}..+{dataSize}] " +
+                $"lies outside the {_archiveFileLength}-byte archive");
+        }
+
         // Skip embedded file name if present
         if (_embedFileNames)
         {
-            var nameLen = _view.ReadByte(dataOffset);
+            var nameLen = dataSize >= 1 ? _view.ReadByte(dataOffset) : (byte)0;
             dataOffset += 1 + nameLen;
             dataSize -= 1 + nameLen;
+            if (dataSize < 0)
+            {
+                throw new InvalidDataException(
+                    $"BSA file record '{file.FullPath}' is smaller than its embedded file name");
+            }
         }
 
         if (isCompressed)
         {
+            if (dataSize < 4)
+            {
+                throw new InvalidDataException(
+                    $"BSA compressed entry '{file.FullPath}' is smaller than its 4-byte size prefix");
+            }
+
             // First 4 bytes are uncompressed size (little-endian)
             var uncompressedSize = _view.ReadUInt32(dataOffset);
+            if (uncompressedSize > MaxDecompressedFileSize)
+            {
+                throw new InvalidDataException(
+                    $"BSA compressed entry '{file.FullPath}' declares uncompressed size " +
+                    $"{uncompressedSize} bytes, exceeding the {MaxDecompressedFileSize}-byte cap");
+            }
 
             var compressedSize = dataSize - 4;
 

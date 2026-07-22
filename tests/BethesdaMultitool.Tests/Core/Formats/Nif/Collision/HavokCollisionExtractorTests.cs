@@ -3,6 +3,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Collision;
@@ -40,9 +41,9 @@ public sealed class HavokCollisionExtractorTests
 
         Assert.True(soup.HasValue);
         Assert.Equal(SingleTriangleIndices, soup!.Value.Triangles);
-        AssertVec(new Vector3(7, 0, 0), soup.Value.Positions[0]);
-        AssertVec(new Vector3(0, 7, 0), soup.Value.Positions[1]);
-        AssertVec(new Vector3(0, 0, 7), soup.Value.Positions[2]);
+        VectorAssert.Equal(new Vector3(7, 0, 0), soup.Value.Positions[0], Tol);
+        VectorAssert.Equal(new Vector3(0, 7, 0), soup.Value.Positions[1], Tol);
+        VectorAssert.Equal(new Vector3(0, 0, 7), soup.Value.Positions[2], Tol);
     }
 
     [Fact]
@@ -58,7 +59,7 @@ public sealed class HavokCollisionExtractorTests
         var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
 
         Assert.True(soup.HasValue);
-        AssertVec(new Vector3(14, 0, 0), soup!.Value.Positions[0]);
+        VectorAssert.Equal(new Vector3(14, 0, 0), soup!.Value.Positions[0], Tol);
     }
 
     [Fact]
@@ -74,7 +75,7 @@ public sealed class HavokCollisionExtractorTests
         var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
 
         Assert.True(soup.HasValue);
-        AssertVec(new Vector3(7, 0, 0), soup!.Value.Positions[0]);
+        VectorAssert.Equal(new Vector3(7, 0, 0), soup!.Value.Positions[0], Tol);
     }
 
     [Fact]
@@ -120,7 +121,7 @@ public sealed class HavokCollisionExtractorTests
         Assert.Equal(6, soup!.Value.Positions.Length);
         // Second sub-shape's indices must be re-based by the first's vertex count (3).
         Assert.Equal(RebasedTriangleIndices, soup.Value.Triangles);
-        AssertVec(new Vector3(14, 0, 0), soup.Value.Positions[3]);
+        VectorAssert.Equal(new Vector3(14, 0, 0), soup.Value.Positions[3], Tol);
     }
 
     [Fact]
@@ -137,7 +138,7 @@ public sealed class HavokCollisionExtractorTests
 
         Assert.True(soup.HasValue);
         // Vertex ×7 = (7,0,0); translation ×7 = (70,0,0); rotate-then-translate → (77,0,0).
-        AssertVec(new Vector3(77, 0, 0), soup!.Value.Positions[0]);
+        VectorAssert.Equal(new Vector3(77, 0, 0), soup!.Value.Positions[0], Tol);
     }
 
     [Fact]
@@ -175,7 +176,7 @@ public sealed class HavokCollisionExtractorTests
 
         Assert.True(soup.HasValue);
         Assert.Single(soup.Value.Positions);
-        AssertVec(new Vector3(14, 0, 0), soup.Value.Positions[0]);
+        VectorAssert.Equal(new Vector3(14, 0, 0), soup.Value.Positions[0], Tol);
     }
 
     [Fact]
@@ -315,6 +316,80 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
+    public void TryExtract_Tes4PackedShape_ReadsSubShapePrefixedOffsets()
+    {
+        // TES4-era (≤20.0.0.5) bhkPackedNiTriStripsShape carries a Num Sub Shapes ushort +
+        // hkSubPartData[] prefix that shifts every field by 2 + N*12. With two sub-shapes the
+        // FNV-offset read would land the data ref inside ScaleCopy and lose the geometry.
+        var (data, nif) = BuildNif(
+            false,
+            NifVersions.Gamebryo20005,
+            CollisionObject(99, 1, false),
+            RigidBody(2, false),
+            Tes4PackedShape(3, new Vector3(2, 2, 2), false, subShapeCount: 2),
+            Tes4PackedData(
+                [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)],
+                [(0, 1, 2)],
+                false));
+
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+
+        Assert.True(soup.HasValue);
+        Assert.Equal(SingleTriangleIndices, soup!.Value.Triangles);
+        // Same world result as the FNV-layout twin: ×7 Havok scale ×2 shape scale.
+        VectorAssert.Equal(new Vector3(14, 0, 0), soup.Value.Positions[0], Tol);
+        VectorAssert.Equal(new Vector3(0, 14, 0), soup.Value.Positions[1], Tol);
+        VectorAssert.Equal(new Vector3(0, 0, 14), soup.Value.Positions[2], Tol);
+    }
+
+    [Fact]
+    public void TryExtract_Tes4PackedData_TwentyByteStrideSkipsNormalsAndCompressedFlag()
+    {
+        // TES4 TriangleData entries end with a Vector3 normal (stride 20, no Compressed flag). The
+        // builder poisons those normals with NaN, so a regression to the modern 8-byte stride (or
+        // reading the absent Compressed byte) consumes them as vertex data and nulls the soup.
+        var (data, nif) = BuildNif(
+            false,
+            NifVersions.Gamebryo20005,
+            CollisionObject(99, 1, false),
+            RigidBody(2, false),
+            Tes4PackedShape(3, Vector3.One, false, subShapeCount: 0),
+            Tes4PackedData(
+                [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)],
+                [(0, 1, 2)],
+                false));
+
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+
+        Assert.True(soup.HasValue);
+        Assert.Equal(SingleTriangleIndices, soup!.Value.Triangles);
+        VectorAssert.Equal(new Vector3(7, 0, 0), soup.Value.Positions[0], Tol);
+        VectorAssert.Equal(new Vector3(0, 7, 0), soup.Value.Positions[1], Tol);
+        VectorAssert.Equal(new Vector3(0, 0, 7), soup.Value.Positions[2], Tol);
+    }
+
+    [Fact]
+    public void TryExtract_Tes4RigidBodyT_Pre10100_ReadsTranslationAt36()
+    {
+        // The rigid-body CInfo's five leading header fields are since="10.1.0.0"; Oblivion's oldest
+        // 10.0.1.x meshes store Translation @36 / Rotation @52. The 68-byte fixture is too short for
+        // the modern @52/@68 read, so an offset regression nulls the soup instead of passing.
+        var (data, nif) = BuildNif(
+            false,
+            NifVersions.Gamebryo10012,
+            CollisionObject(99, 1, false),
+            Tes4RigidBodyT(2, new Vector3(10, 0, 0), Quaternion.Identity, false),
+            Tes4PackedShape(3, Vector3.One, false, subShapeCount: 0),
+            Tes4PackedData([new Vector3(1, 0, 0)], [(0, 0, 0)], false));
+
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+
+        Assert.True(soup.HasValue);
+        // Vertex ×7 = (7,0,0); translation ×7 = (70,0,0); rotate-then-translate → (77,0,0).
+        VectorAssert.Equal(new Vector3(77, 0, 0), soup!.Value.Positions[0], Tol);
+    }
+
+    [Fact]
     public void TryExtract_NoCollisionObject_ReturnsNull()
     {
         var (data, nif) = BuildNif(false, ("NiAlphaProperty", new byte[16]));
@@ -337,13 +412,6 @@ public sealed class HavokCollisionExtractorTests
 
     // ---- buffer builders --------------------------------------------------------------------
 
-    private static void AssertVec(Vector3 expected, Vector3 actual)
-    {
-        Assert.Equal(expected.X, actual.X, Tol);
-        Assert.Equal(expected.Y, actual.Y, Tol);
-        Assert.Equal(expected.Z, actual.Z, Tol);
-    }
-
     private static void AssertBounds(Vector3[] positions, Vector3 expectedMin, Vector3 expectedMax)
     {
         var min = new Vector3(float.PositiveInfinity);
@@ -354,13 +422,19 @@ public sealed class HavokCollisionExtractorTests
             max = Vector3.Max(max, position);
         }
 
-        AssertVec(expectedMin, min);
-        AssertVec(expectedMax, max);
+        VectorAssert.Equal(expectedMin, min, Tol);
+        VectorAssert.Equal(expectedMax, max, Tol);
     }
 
+    // Existing fixtures model FO3/FNV-layout blocks, so the no-version overload pins the modern
+    // 20.2.0.7 stream version; TES4-era fixtures pass their own.
     private static (byte[] data, NifInfo nif) BuildNif(bool bigEndian, params (string type, byte[] payload)[] blocks)
+        => BuildNif(bigEndian, NifVersions.Gamebryo202007, blocks);
+
+    private static (byte[] data, NifInfo nif) BuildNif(bool bigEndian, uint version,
+        params (string type, byte[] payload)[] blocks)
     {
-        var nif = new NifInfo { IsBigEndian = bigEndian, BlockCount = blocks.Length };
+        var nif = new NifInfo { IsBigEndian = bigEndian, BlockCount = blocks.Length, BinaryVersion = version };
         using var ms = new MemoryStream();
         var offsets = new int[blocks.Length];
         for (var i = 0; i < blocks.Length; i++)
@@ -442,6 +516,74 @@ public sealed class HavokCollisionExtractorTests
         WriteF(b, 44, scale.Z, be);
         WriteI32(b, 52, dataRef, be);
         return ("bhkPackedNiTriStripsShape", b);
+    }
+
+    // TES4-era (≤20.0.0.5) shape: Num Sub Shapes (ushort) + hkSubPartData[] (12 B each, zeroed —
+    // the extractor ignores filter/material) prefix the shared FNV field layout.
+    private static (string, byte[]) Tes4PackedShape(int dataRef, Vector3 scale, bool be, int subShapeCount)
+    {
+        var prefix = 2 + subShapeCount * 12;
+        var b = new byte[prefix + 56];
+        WriteU16(b, 0, (ushort)subShapeCount, be);
+        WriteF(b, prefix + 16, scale.X, be);
+        WriteF(b, prefix + 20, scale.Y, be);
+        WriteF(b, prefix + 24, scale.Z, be);
+        WriteF(b, prefix + 36, scale.X, be);
+        WriteF(b, prefix + 40, scale.Y, be);
+        WriteF(b, prefix + 44, scale.Z, be);
+        WriteI32(b, prefix + 52, dataRef, be);
+        return ("bhkPackedNiTriStripsShape", b);
+    }
+
+    // TES4-era data: 20-byte TriangleData entries (indices + weld + Vector3 normal) and NO
+    // Compressed flag. Normals are poisoned with NaN so a stride/flag regression fails loudly.
+    private static (string, byte[]) Tes4PackedData(
+        Vector3[] vertices, (ushort a, ushort b, ushort c)[] triangles, bool be)
+    {
+        var buffer = new byte[4 + triangles.Length * 20 + 4 + vertices.Length * 12];
+        var p = 0;
+        WriteU32(buffer, p, (uint)triangles.Length, be);
+        p += 4;
+        foreach (var (a, bb, c) in triangles)
+        {
+            WriteU16(buffer, p, a, be);
+            WriteU16(buffer, p + 2, bb, be);
+            WriteU16(buffer, p + 4, c, be);
+            WriteU16(buffer, p + 6, 0, be); // weld info (dropped on read)
+            WriteF(buffer, p + 8, float.NaN, be);
+            WriteF(buffer, p + 12, float.NaN, be);
+            WriteF(buffer, p + 16, float.NaN, be);
+            p += 20;
+        }
+
+        WriteU32(buffer, p, (uint)vertices.Length, be);
+        p += 4;
+        foreach (var v in vertices)
+        {
+            WriteF(buffer, p, v.X, be);
+            WriteF(buffer, p + 4, v.Y, be);
+            WriteF(buffer, p + 8, v.Z, be);
+            p += 12;
+        }
+
+        return ("hkPackedNiTriStripsData", buffer);
+    }
+
+    // Pre-10.1.0.0 bhkRigidBodyT: the CInfo's five since-10.1.0.0 header fields are absent, so
+    // Translation sits @36 and Rotation @52. Deliberately 68 bytes — too short for the modern
+    // @52/@68 read, so an offset regression returns null instead of decoding garbage.
+    private static (string, byte[]) Tes4RigidBodyT(int shape, Vector3 translation, Quaternion rotation, bool be)
+    {
+        var b = new byte[68];
+        WriteI32(b, 0, shape, be);
+        WriteF(b, 36, translation.X, be);
+        WriteF(b, 40, translation.Y, be);
+        WriteF(b, 44, translation.Z, be);
+        WriteF(b, 52, rotation.X, be);
+        WriteF(b, 56, rotation.Y, be);
+        WriteF(b, 60, rotation.Z, be);
+        WriteF(b, 64, rotation.W, be);
+        return ("bhkRigidBodyT", b);
     }
 
     private static (string, byte[]) ListShape(int[] subRefs, bool be)

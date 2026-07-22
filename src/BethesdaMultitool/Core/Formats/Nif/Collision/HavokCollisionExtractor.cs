@@ -104,7 +104,7 @@ internal static class HavokCollisionExtractor
                 // A bhkRigidBodyT whose transform can't be read (truncated/garbage) must NOT emit
                 // geometry at identity — that places collision at the wrong spot. Skip this body;
                 // if no other collision body is usable, the caller's visual-mesh fallback engages.
-                var t = TryReadRigidBodyTTransform(data, bodyBlock, bigEndian);
+                var t = TryReadRigidBodyTTransform(data, bodyBlock, bigEndian, nif.BinaryVersion);
                 if (t is null) continue;
                 rbTransform = t.Value;
             }
@@ -145,21 +145,27 @@ internal static class HavokCollisionExtractor
         return true;
     }
 
-    // bhkRigidBodyT CInfo (FNV 550_660, nif.xml bhkRigidBodyCInfo550_660): Translation Vector4 @52,
-    // Rotation hkQuaternion (XYZW) @68. Offsets 28/44 (used before 2026-07-13) land on
-    // CollisionResponse/ProcessContactCallbackDelay=0xFFFF — a guaranteed-NaN float on retail FNV
-    // files. A plain bhkRigidBody ignores these (engine-side), so only bhkRigidBodyT reaches here.
-    private static Matrix4x4? TryReadRigidBodyTTransform(byte[] data, BlockInfo block, bool be)
+    // bhkRigidBodyT CInfo (nif.xml bhkRigidBodyCInfo550_660): Translation Vector4 @52, Rotation
+    // hkQuaternion (XYZW) @68 — for ≥10.1.0.0. The CInfo's first five header fields (16 bytes:
+    // Unused01/HavokFilter/Unused02/CollisionResponse+Unused03/CallbackDelay) are since="10.1.0.0",
+    // so Oblivion's oldest 10.0.1.x meshes put Translation @36 / Rotation @52. On FNV files, wrong
+    // offsets 28/44 would land on CollisionResponse/ProcessContactCallbackDelay=0xFFFF — a
+    // guaranteed-NaN float canary. A plain bhkRigidBody ignores the transform (engine-side), so
+    // only bhkRigidBodyT reaches here.
+    private static Matrix4x4? TryReadRigidBodyTTransform(byte[] data, BlockInfo block, bool be,
+        uint binaryVersion)
     {
-        // Need the rotation quaternion's last float at offset 68+12 = 80 (read 4 bytes → 84).
-        if (block.Size < 84) return null;
-        var tx = BinaryUtils.ReadFloat(data, block.DataOffset + 52, be);
-        var ty = BinaryUtils.ReadFloat(data, block.DataOffset + 56, be);
-        var tz = BinaryUtils.ReadFloat(data, block.DataOffset + 60, be);
-        var qx = BinaryUtils.ReadFloat(data, block.DataOffset + 68, be);
-        var qy = BinaryUtils.ReadFloat(data, block.DataOffset + 72, be);
-        var qz = BinaryUtils.ReadFloat(data, block.DataOffset + 76, be);
-        var qw = BinaryUtils.ReadFloat(data, block.DataOffset + 80, be);
+        var translationOffset = binaryVersion >= NifVersions.Gamebryo10100 ? 52 : 36;
+        var rotationOffset = translationOffset + 16;
+        // Need the rotation quaternion's last float at rotationOffset+12 (read 4 bytes).
+        if (block.Size < rotationOffset + 16) return null;
+        var tx = BinaryUtils.ReadFloat(data, block.DataOffset + translationOffset, be);
+        var ty = BinaryUtils.ReadFloat(data, block.DataOffset + translationOffset + 4, be);
+        var tz = BinaryUtils.ReadFloat(data, block.DataOffset + translationOffset + 8, be);
+        var qx = BinaryUtils.ReadFloat(data, block.DataOffset + rotationOffset, be);
+        var qy = BinaryUtils.ReadFloat(data, block.DataOffset + rotationOffset + 4, be);
+        var qz = BinaryUtils.ReadFloat(data, block.DataOffset + rotationOffset + 8, be);
+        var qw = BinaryUtils.ReadFloat(data, block.DataOffset + rotationOffset + 12, be);
 
         // A non-finite transform would poison every collision vertex AND still count as a "present"
         // soup, blocking the visual-mesh fallback — reject it here so the fallback engages.
@@ -200,17 +206,28 @@ internal static class HavokCollisionExtractor
                 }
                 case "bhkPackedNiTriStripsShape":
                 {
-                    // FNV layout (no pre-20.0.0.5 sub-shape header): UserData@0, Unused@4, Radius@8,
-                    // Unused@12, Scale Vector4 @16, RadiusCopy@32, ScaleCopy@36, Data ref @52.
+                    // Shared layout: UserData@0, Unused@4, Radius@8, Unused@12, Scale Vector4 @16,
+                    // RadiusCopy@32, ScaleCopy@36, Data ref @52 — but TES4-era files (≤20.0.0.5)
+                    // PREFIX the block with Num Sub Shapes (ushort) + hkSubPartData[] (12 bytes each:
+                    // HavokFilter + Num Vertices + HavokMaterial), shifting every field by 2 + N*12;
+                    // 20.2.0.7 moved that sub-shape array into hkPackedNiTriStripsData instead.
                     // Prefer ScaleCopy: retail Xbox files store the primary vector in PC byte order,
                     // while the converter swaps the copy into the post-conversion file's byte order.
                     // Native PC files author both identically. Falling back preserves older synthetic/
                     // truncated inputs that contain only the primary vector.
-                    var sx = ReadPackedScaleComponent(data, block, be, 36, 16);
-                    var sy = ReadPackedScaleComponent(data, block, be, 40, 20);
-                    var sz = ReadPackedScaleComponent(data, block, be, 44, 24);
+                    var basePos = 0;
+                    if (NifVersions.IsTes4Era(nif.BinaryVersion))
+                    {
+                        if (block.Size < 2) return;
+                        var numSubShapes = BinaryUtils.ReadUInt16(data, block.DataOffset, be);
+                        basePos = 2 + numSubShapes * 12;
+                    }
+
+                    var sx = ReadPackedScaleComponent(data, block, be, basePos + 36, basePos + 16);
+                    var sy = ReadPackedScaleComponent(data, block, be, basePos + 40, basePos + 20);
+                    var sz = ReadPackedScaleComponent(data, block, be, basePos + 44, basePos + 24);
                     var shapeScale = accumScale * new Vector3(NonZero(sx), NonZero(sy), NonZero(sz));
-                    if (!TryReadInt32(data, block, 52, be, out var dataRef)) return;
+                    if (!TryReadInt32(data, block, basePos + 52, be, out var dataRef)) return;
                     AppendPackedData(data, nif, dataRef, be, toWorld, shapeScale, positions, triangles);
                     break;
                 }
@@ -619,16 +636,25 @@ internal static class HavokCollisionExtractor
         if (start + 4 > end) return;
         var numTriangles = BinaryUtils.ReadUInt32(data, start, be);
         var triStart = start + 4;
-        var triBytes = (long)numTriangles * 8; // each TriangleData = 3 ushort indices + 1 ushort weld
+        // TriangleData = 3 ushort indices + 1 ushort weld, plus a trailing Vector3 normal on TES4-era
+        // files only (nif.xml TriangleData Normal "until 20.0.0.5") — stride 20 vs 8. The Compressed
+        // bool is "since 20.2.0.7": reading it on a TES4 file eats the first vertex byte.
+        var tes4Era = NifVersions.IsTes4Era(nif.BinaryVersion);
+        var triStride = tes4Era ? 20 : 8;
+        var triBytes = (long)numTriangles * triStride;
 
-        // triangles + NumVertices(4) + Compressed(1)
-        if (triStart + triBytes + 5 > end) return;
+        // triangles + NumVertices(4) + Compressed(1, modern only)
+        if (triStart + triBytes + (tes4Era ? 4 : 5) > end) return;
         var pos = triStart + (int)triBytes;
 
         var numVertices = BinaryUtils.ReadUInt32(data, pos, be);
         pos += 4;
-        var compressed = data[pos];
-        pos += 1;
+        byte compressed = 0;
+        if (!tes4Era)
+        {
+            compressed = data[pos];
+            pos += 1;
+        }
 
         var vertBytes = compressed != 0 ? (long)numVertices * 6 : (long)numVertices * 12;
         if (pos + vertBytes > end) return;
@@ -657,9 +683,10 @@ internal static class HavokCollisionExtractor
             }
         }
 
-        // Triangle indices (skip the trailing weld ushort of each entry); drop any out-of-range index.
+        // Triangle indices (skip each entry's trailing weld ushort + TES4 normal); drop any
+        // out-of-range index.
         var tp = triStart;
-        for (var t = 0; t < numTriangles; t++, tp += 8)
+        for (var t = 0; t < numTriangles; t++, tp += triStride)
         {
             var a = BinaryUtils.ReadUInt16(data, tp, be);
             var b = BinaryUtils.ReadUInt16(data, tp + 2, be);
