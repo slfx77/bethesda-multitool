@@ -13,6 +13,7 @@ public sealed class LayeredGameFileSystem : IGameFileSystem
     private readonly IReadOnlyList<IGameFileSystem> _layers;
     private readonly bool _ownsLayers;
 
+    /// <summary>Creates a layered VFS over the given layers.</summary>
     /// <param name="layers">Resolution order: earlier layers shadow later ones.</param>
     /// <param name="ownsLayers">When true (default), disposing this disposes every layer.</param>
     public LayeredGameFileSystem(IReadOnlyList<IGameFileSystem> layers, bool ownsLayers = true)

@@ -133,7 +133,6 @@ public sealed partial class WorldView3DControl
                 // specular reads parallel. enableFog is forced OFF to match the live projection view: the
                 // shader measures fog as distance from the camera, and the ortho eye sits 1,000,000 units
                 // away, so the fog factor saturates and the whole frame collapses to a flat fog wash.
-                // (Previously this passed enableFog:true, which is why export disagreed with the live view.)
                 // enableShadows off: this path never records a shadow pass, so sampling the live
                 // view's cached map here would apply stale shadows to a differently-lit ortho export.
                 BindAtmosphereConstants(

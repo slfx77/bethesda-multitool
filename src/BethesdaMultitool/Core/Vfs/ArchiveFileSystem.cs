@@ -72,8 +72,10 @@ public sealed class ArchiveFileSystem : IGameFileSystem
     ///     lazy mode and throws if it failed. When the reader came from a registry lease it is
     ///     shared state — never dispose it or enable conversion toggles on it.
     /// </summary>
+#pragma warning disable S4275 // deliberate lazy-init: TryGetReader() performs the deferred open and returns _reader
     public ArchiveReader Reader =>
         TryGetReader() ?? throw new InvalidOperationException($"Archive failed to open: {Label}");
+#pragma warning restore S4275
 
     public bool Exists(string path) => TryGetReader()?.FindEntry(path) is not null;
 

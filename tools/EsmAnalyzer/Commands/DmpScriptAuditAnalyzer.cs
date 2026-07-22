@@ -54,7 +54,7 @@ internal static class DmpScriptAuditAnalyzer
     private static DmpScriptAuditRow BuildRuntimeRow(
         RuntimeScriptData script,
         int ordinal,
-        IReadOnlyList<RuntimeScriptData> copies,
+        List<RuntimeScriptData> copies,
         string copyStatus)
     {
         var source = script.SourceText;
@@ -119,7 +119,7 @@ internal static class DmpScriptAuditAnalyzer
     private static DmpScriptAuditRow BuildMergedRow(
         ScriptRecord script,
         int ordinal,
-        IReadOnlyList<RuntimeScriptData> runtimeCopies,
+        List<RuntimeScriptData> runtimeCopies,
         string copyStatus)
     {
         var source = script.SourceText;
@@ -273,7 +273,7 @@ internal static class DmpScriptAuditAnalyzer
     private static void AddRuntimeHardContradictions(
         RuntimeScriptData script,
         string copyStatus,
-        ICollection<string> hard)
+        List<string> hard)
     {
         if (copyStatus == "conflicting")
         {
@@ -320,7 +320,7 @@ internal static class DmpScriptAuditAnalyzer
     }
 
     private static void AddCountDiagnostics(
-        ICollection<string> diagnostics,
+        List<string> diagnostics,
         uint dataSize,
         int scdaLength,
         uint headerVariableCount,
@@ -427,7 +427,7 @@ internal static class DmpScriptAuditAnalyzer
             ? scda[0] == 0x00 && scda[1] == 0x1D && scda[2] == 0x00 && scda[3] == 0x00
             : scda[0] == 0x1D && scda[1] == 0x00 && scda[2] == 0x00 && scda[3] == 0x00);
 
-    private static string GetRuntimeCopyStatus(IReadOnlyList<RuntimeScriptData> copies)
+    private static string GetRuntimeCopyStatus(List<RuntimeScriptData> copies)
     {
         if (copies.Count == 0)
         {
@@ -466,7 +466,7 @@ internal static class DmpScriptAuditAnalyzer
         '|',
         values.Distinct(StringComparer.Ordinal).OrderBy(static value => value, StringComparer.Ordinal));
 
-    private static IEnumerable<string> SplitList(string value) =>
+    private static string[] SplitList(string value) =>
         value.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     private sealed record ScriptAuditComparison(

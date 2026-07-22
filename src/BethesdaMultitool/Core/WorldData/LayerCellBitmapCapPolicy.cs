@@ -5,8 +5,8 @@ namespace BethesdaMultitool;
 ///     <para>
 ///         The cap must scale to the viewport (×3: 1× current viewport + 1× zoom-transition
 ///         stand-ins + 1× pan-back history) and must grow IMMEDIATELY when the viewport expands —
-///         otherwise a zoomed-out stream evicts cells it just rendered before the user sees them
-///         (the 2026-06-05 disappearing-cells bug). But it must NOT shrink immediately: when a pan
+///         otherwise a zoomed-out stream evicts cells it just rendered before the user sees them.
+///         But it must NOT shrink immediately: when a pan
 ///         exits the populated cell region the viewport request transiently collapses toward zero,
 ///         and a cap that follows it down mass-evicts the just-rendered pan-back history the ×3
 ///         budget exists to keep ("bottom half never paints" during pan-stress sweeps).

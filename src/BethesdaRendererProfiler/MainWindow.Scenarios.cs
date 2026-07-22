@@ -243,7 +243,8 @@ internal sealed partial class MainWindow
             var quiesced = await StreamingQuiescence.PollAsync(
                 () => _owner._worldView.Profiler_IsReferenceStreamingQuiesced,
                 settleTimeout,
-                TimeSpan.FromMilliseconds(250));
+                TimeSpan.FromMilliseconds(250),
+                cancellationToken);
             if (!CaptureReadinessGuard.TryValidateStreamingQuiesced(
                     quiesced, settleTimeout, out var streamingError))
             {

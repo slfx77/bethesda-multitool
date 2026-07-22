@@ -768,11 +768,19 @@ public sealed partial class WorldView3DControl
         var weatherTransition = ResolveSelectedWeatherTransition();
         var currentWind = (weatherTransition.CurrentWeather?.Data?.WindSpeed ?? 0) / 255f;
         var outgoingWind = (weatherTransition.OutgoingWeather?.Data?.WindSpeed ?? 0) / 255f;
-        var weatherWind = _selectedInterior is not null
-            ? 0f
-            : weatherTransition.OutgoingWeather is null
-                ? currentWind
-                : outgoingWind + ((currentWind - outgoingWind) * weatherTransition.CurrentWeatherWeight);
+        float weatherWind;
+        if (_selectedInterior is not null)
+        {
+            weatherWind = 0f;
+        }
+        else if (weatherTransition.OutgoingWeather is null)
+        {
+            weatherWind = currentWind;
+        }
+        else
+        {
+            weatherWind = outgoingWind + ((currentWind - outgoingWind) * weatherTransition.CurrentWeatherWeight);
+        }
         var effectiveWind = _windStrength ?? weatherWind;
         // In auto mode, keep the (disabled) wind slider showing the weather-driven value. We're on the
         // UI thread (CompositionTarget.Rendering); the panel never raises events for display updates.
@@ -880,15 +888,17 @@ public sealed partial class WorldView3DControl
                 ? null
                 : new Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12.CullCameraPose(
                     _camera.Forward, _camera.FovYRadians, aspect);
-        var visibleReferences = _showReferences
-            ? _references?.Render(
-                  viewProjScene, cylinder, deferBlended: true, cullViewProj: viewProjAbsolute,
-                  renderOrigin: referenceRenderOrigin, cullCameraPose: cullPose,
-                  cameraPosition: projectionActive ? orthoEye : _camera.Position,
-                  cameraForward: projectionActive
-                      ? Vector3.Normalize(_projectionFocus - orthoEye)
-                      : _camera.Forward) ?? 0
-            : 0;
+        var visibleReferences = 0;
+        if (_showReferences)
+        {
+            visibleReferences = _references?.Render(
+                viewProjScene, cylinder, deferBlended: true, cullViewProj: viewProjAbsolute,
+                renderOrigin: referenceRenderOrigin, cullCameraPose: cullPose,
+                cameraPosition: projectionActive ? orthoEye : _camera.Position,
+                cameraForward: projectionActive
+                    ? Vector3.Normalize(_projectionFocus - orthoEye)
+                    : _camera.Forward) ?? 0;
+        }
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ReferencesEnd);
         var referencesMs = ElapsedMilliseconds(segmentStarted);
         // Hand the water renderer the placed-NIF water planes the reference pass accumulated (cave/
@@ -1018,7 +1028,6 @@ public sealed partial class WorldView3DControl
                 if (fnvWater001SnapshotPrepared)
                 {
                     surface.RestoreWaterOpaqueSnapshot(cmd);
-                    fnvWater001SnapshotPrepared = false;
                 }
                 if (waterDepthSampled)
                 {
@@ -1026,7 +1035,6 @@ public sealed partial class WorldView3DControl
                     cmd.ResourceBarrierTransition(depthRes!, sampledDepthState,
                         Vortice.Direct3D12.ResourceStates.DepthWrite);
                     cmd.OMSetRenderTargets(sceneRtv, sceneDsv);
-                    waterDepthSampled = false;
                 }
 
                 // Submit only the valid partial scene recorded before the failure. Scene color,
@@ -1078,7 +1086,6 @@ public sealed partial class WorldView3DControl
                 sampledDepthState,
                 Vortice.Direct3D12.ResourceStates.DepthWrite);
             cmd.OMSetRenderTargets(sceneRtv, sceneDsv);
-            waterDepthSampled = false;
         }
         // Navmesh overlay — translucent and depth-disabled so authored NAVM remains visible even
         // where it sits slightly below rendered ground. Editor selection/grid guides draw later.
@@ -1104,7 +1111,6 @@ public sealed partial class WorldView3DControl
             if (shadowRingReserved)
             {
                 _ringBuffer12!.ReleaseTailReservation();
-                shadowRingReserved = false;
             }
             RecordSunShadowPass(cmd, referenceRenderOrigin, _camera.Position);
         }
@@ -1141,7 +1147,7 @@ public sealed partial class WorldView3DControl
                 viewProjScene, cylinder, sceneRenderOrigin, ldrTarget: true);
         }
 
-        surface.FinishBackBuffer(cmd, backBuffer);
+        GpuSwapChainSurface12.FinishBackBuffer(cmd, backBuffer);
 
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.FrameEnd);
         _gpuTimestampProfiler12?.ResolveActiveFrame(cmd);

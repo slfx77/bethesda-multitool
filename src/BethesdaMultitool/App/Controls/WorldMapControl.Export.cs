@@ -316,10 +316,10 @@ public sealed partial class WorldMapControl
         var worldMaxY = (tgy1 + 1) * _cellSize;
 
         // Re-request until streaming FULLY settles (strict gate: no submesh withheld on pending
-        // textures — the loose IsComplete let tiles ship with placeholder-white leaf cards). The
+        // textures — a looser completeness check ships tiles with placeholder-white leaf cards). The
         // re-renders drive streaming, so this must stay a render→check→delay loop. Wall-clock
-        // time box (the old 40-iteration ≈2s cap silently accepted half-streamed tiles; heavy
-        // scenes need up to ~20s) because permanently-missing textures pin the strict counter.
+        // time box, not an iteration cap (which silently accepts half-streamed tiles; heavy
+        // scenes need up to ~20s), because permanently-missing textures pin the strict counter.
         TopDownRender? render = null;
         var settleTimer = System.Diagnostics.Stopwatch.StartNew();
         while (true)

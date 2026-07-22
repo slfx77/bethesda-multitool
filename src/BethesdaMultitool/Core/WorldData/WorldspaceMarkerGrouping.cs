@@ -94,7 +94,9 @@ internal static class WorldspaceMarkerGrouping
         var x = marker.X;
         var y = marker.Y;
         var z = marker.Z;
+#pragma warning disable S1244 // Exact sentinel comparison mirrors the engine's own float equality (0 skips scaling, 1 is identity)
         if (scale != 1.0f && scale != 0.0f)
+#pragma warning restore S1244
         {
             var centerX = ((child.BoundsMinX ?? 0.0f) + (child.BoundsMaxX ?? 0.0f)) * 0.5f;
             var centerY = ((child.BoundsMinY ?? 0.0f) + (child.BoundsMaxY ?? 0.0f)) * 0.5f;

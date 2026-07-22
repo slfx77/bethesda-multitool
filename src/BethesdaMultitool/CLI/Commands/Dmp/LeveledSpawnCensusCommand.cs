@@ -163,7 +163,19 @@ internal static class LeveledSpawnCensusCommand
                 masterNpcIds, masterCreaIds, masterLeveledIds, dmpNpcIds, dmpCreaIds, dmpLeveledIds);
 
             // Encoder preference: OriginalBase first (only if type-compatible), then Template.
-            var winner = IsCompatible(original) ? original : IsCompatible(template) ? template : (CandidateClass?)null;
+            CandidateClass? winner;
+            if (IsCompatible(original))
+            {
+                winner = original;
+            }
+            else if (IsCompatible(template))
+            {
+                winner = template;
+            }
+            else
+            {
+                winner = null;
+            }
             if (winner is { } w)
             {
                 _yield++;
@@ -192,7 +204,12 @@ internal static class LeveledSpawnCensusCommand
             AnsiConsole.WriteLine();
 
             var pct = total > 0 ? 100.0 * _yield / total : 0;
-            var yieldColor = pct >= 60 ? "green" : pct >= 30 ? "yellow" : "red";
+            var yieldColor = pct switch
+            {
+                >= 60 => "green",
+                >= 30 => "yellow",
+                _ => "red"
+            };
             AnsiConsole.MarkupLine(
                 $"[bold {yieldColor}]Recoverable (yield): {_yield:N0} / {total:N0}  ({pct:F1}%)[/]");
             AnsiConsole.MarkupLine(

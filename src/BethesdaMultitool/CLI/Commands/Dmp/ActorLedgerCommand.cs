@@ -11,8 +11,7 @@ namespace BethesdaMultitool.CLI.Commands.Dmp;
 ///     captured and every one the converted plugin emits, keyed by BASE identity (editor ID,
 ///     which survives FormID reallocation), and reports the per-base delta. The decisive
 ///     answer to "which named NPCs did the DMP place that the output lost?" — measured from
-///     the two files directly, immune to the legacy-path log pollution documented in
-///     memory/planner_dropstats_legacy_pollution.md. Writes nothing.
+///     the two files directly, immune to legacy-path log pollution. Writes nothing.
 /// </summary>
 internal static class ActorLedgerCommand
 {
@@ -252,9 +251,15 @@ internal static class ActorLedgerCommand
 
         public string CellLabel(Core.Formats.Esm.Models.Records.World.CellRecord cell)
         {
-            var worldspace = cell.WorldspaceFormId is { } ws
-                ? _worldspaceNames.TryGetValue(ws, out var wsName) ? wsName : $"WRLD 0x{ws:X8}"
-                : "interior";
+            string worldspace;
+            if (cell.WorldspaceFormId is { } ws)
+            {
+                worldspace = _worldspaceNames.TryGetValue(ws, out var wsName) ? wsName : $"WRLD 0x{ws:X8}";
+            }
+            else
+            {
+                worldspace = "interior";
+            }
 
             // Parse-side orphan buckets carry a synthesized EditorId ("[Virtual x,y]") that
             // no game file contains — report the honest fact (unparented capture at a grid

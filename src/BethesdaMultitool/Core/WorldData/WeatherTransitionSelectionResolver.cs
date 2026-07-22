@@ -167,9 +167,12 @@ internal static class WeatherTransitionSelectionResolver
         static string Id(uint? value) => value is { } id ? $"{id:X8}" : "none";
         static string Weight(float? value) => value?.ToString("0.###", CultureInfo.InvariantCulture) ?? "n/a";
 
-        var elapsed = snapshot?.ModifierElapsedSeconds is { } seconds
-            ? seconds.ToString("0.###", CultureInfo.InvariantCulture)
-            : snapshot is null ? "n/a" : "unknown";
+        var elapsed = snapshot switch
+        {
+            null => "n/a",
+            { ModifierElapsedSeconds: { } seconds } => seconds.ToString("0.###", CultureInfo.InvariantCulture),
+            _ => "unknown"
+        };
         var suffix = reason is null ? string.Empty : $" reason={reason}";
         return $"weatherSource={source} formIdDomain=TESForm.formID appliedCurrent={Id(appliedCurrentId)} " +
                $"appliedOutgoing={Id(appliedOutgoingId)} appliedCurrentWeight={Weight(appliedWeight)} " +

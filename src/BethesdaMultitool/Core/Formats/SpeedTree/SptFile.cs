@@ -214,9 +214,10 @@ public static class SptFile
                 var level = new SptFrond().Level;
                 var token = c.ReadToken();
                 // 2048 tokens bounds the walk far above any real section (blade lists included).
-                for (var guard = 0; token != EndFrondInfo; guard++)
+                var guard = 0;
+                while (token != EndFrondInfo)
                 {
-                    if (guard > 2048)
+                    if (guard++ > 2048)
                     {
                         throw new InvalidDataException("SPT: runaway frond section.");
                     }
@@ -245,8 +246,8 @@ public static class SptFile
 
                             for (var b = 0; b < blades; b++)
                             {
-                                var sub = c.ReadToken(); // per-blade begin marker
-                                sub = c.ReadToken();
+                                c.ReadToken(); // skip the per-blade begin marker
+                                var sub = c.ReadToken();
                                 while (sub != FrondBladeEnd)
                                 {
                                     if (sub == FrondBladeTexture)

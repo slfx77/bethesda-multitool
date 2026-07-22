@@ -166,9 +166,12 @@ public sealed partial class WorldView3DControl
         {
             if (_data is null || _selectedInterior is not null) return null;
             var index = WorldspaceComboBox.SelectedIndex;
-            return index >= 0 && index < _data.Worldspaces.Count
-                ? _data.Worldspaces[index].EditorId
-                : index == _data.Worldspaces.Count ? "(unlinked exterior)" : null;
+            if (index >= 0 && index < _data.Worldspaces.Count)
+            {
+                return _data.Worldspaces[index].EditorId;
+            }
+
+            return index == _data.Worldspaces.Count ? "(unlinked exterior)" : null;
         }
     }
 
@@ -277,11 +280,19 @@ public sealed partial class WorldView3DControl
         var weatherTransition = ResolveSelectedWeatherTransition();
         var currentWind = (weatherTransition.CurrentWeather?.Data?.WindSpeed ?? 0) / 255f;
         var outgoingWind = (weatherTransition.OutgoingWeather?.Data?.WindSpeed ?? 0) / 255f;
-        var weatherWind = _selectedInterior is not null
-            ? 0f
-            : weatherTransition.OutgoingWeather is null
-                ? currentWind
-                : outgoingWind + ((currentWind - outgoingWind) * weatherTransition.CurrentWeatherWeight);
+        float weatherWind;
+        if (_selectedInterior is not null)
+        {
+            weatherWind = 0f;
+        }
+        else if (weatherTransition.OutgoingWeather is null)
+        {
+            weatherWind = currentWind;
+        }
+        else
+        {
+            weatherWind = outgoingWind + ((currentWind - outgoingWind) * weatherTransition.CurrentWeatherWeight);
+        }
         var effectiveWind = _windStrength ?? weatherWind;
         _references?.SetWindProfile(Core.Formats.SpeedTree.SpeedTreeWindProfile.For(
             _data?.Game ?? Core.Games.BethesdaGame.Unknown));
@@ -308,11 +319,21 @@ public sealed partial class WorldView3DControl
             ? moonProfile.Direction(true, _gameHour, _gameDay, _currentClimateTiming,
                 secundaSpeed, GmstFloat("fSecundaZOffset"))
             : Vector3.Zero;
-        var secundaFade = moonProfile.HasSecondMoon && moonProfile.PathFamily is
-            MoonPathFamily.FalloutRotatedArm or MoonPathFamily.SkyrimRotatedArm
-            ? moonProfile.RotatedArmDiscFade(true, _gameHour, _gameDay, secundaSpeed,
-                GmstFloat("fSecundaAngleFadeStart"), GmstFloat("fSecundaAngleFadeEnd"))
-            : moonProfile.HasSecondMoon ? Math.Clamp(1f - (atmo.SunIntensity * 1.4f), 0f, 1f) : 0f;
+        float secundaFade;
+        if (!moonProfile.HasSecondMoon)
+        {
+            secundaFade = 0f;
+        }
+        else if (moonProfile.PathFamily is
+                 MoonPathFamily.FalloutRotatedArm or MoonPathFamily.SkyrimRotatedArm)
+        {
+            secundaFade = moonProfile.RotatedArmDiscFade(true, _gameHour, _gameDay, secundaSpeed,
+                GmstFloat("fSecundaAngleFadeStart"), GmstFloat("fSecundaAngleFadeEnd"));
+        }
+        else
+        {
+            secundaFade = Math.Clamp(1f - (atmo.SunIntensity * 1.4f), 0f, 1f);
+        }
         // NAM3 is RGBX; moon path/controller state supplies visibility, not the retained padding byte.
         var masserDrawAlpha = atmo.MoonDiscDrawAlpha(masserFade);
         var secundaDrawAlpha = atmo.MoonDiscDrawAlpha(secundaFade);
@@ -552,15 +573,36 @@ public sealed partial class WorldView3DControl
                 {
                     target.RecordReadback(cmd);
                 }
+
+                // Return the pass to the target's documented ResolveDest/CopyDest + DepthWrite
+                // baseline before closing the list — same steps as the failure path below.
+                if (captureShadowRingReserved)
+                {
+                    _ringBuffer12!.ReleaseTailReservation();
+                }
+                _water?.SetFnvWater001Snapshot(null, 0, 0);
+                if (captureFnvWater001SnapshotPrepared)
+                {
+                    target.RestoreWaterOpaqueSnapshot(cmd);
+                }
+                if (captureDepthSampled)
+                {
+                    target.BindColorOnly(cmd);
+                    cmd.ResourceBarrierTransition(target.DepthResource,
+                        sampledDepthState,
+                        Vortice.Direct3D12.ResourceStates.DepthWrite);
+                    target.Rebind(cmd);
+                }
+
+                recorder.EndFrame();
             }
-            finally
+            catch
             {
                 try
                 {
                     if (captureShadowRingReserved)
                     {
                         _ringBuffer12!.ReleaseTailReservation();
-                        captureShadowRingReserved = false;
                     }
                     // Any exception after snapshot preparation or the depth transition still submits
                     // a self-consistent partial pass. The next PRIME/real pass can therefore begin
@@ -569,7 +611,6 @@ public sealed partial class WorldView3DControl
                     if (captureFnvWater001SnapshotPrepared)
                     {
                         target.RestoreWaterOpaqueSnapshot(cmd);
-                        captureFnvWater001SnapshotPrepared = false;
                     }
                     if (captureDepthSampled)
                     {
@@ -577,7 +618,6 @@ public sealed partial class WorldView3DControl
                         cmd.ResourceBarrierTransition(target.DepthResource,
                             sampledDepthState,
                             Vortice.Direct3D12.ResourceStates.DepthWrite);
-                        captureDepthSampled = false;
                         target.Rebind(cmd);
                     }
 
@@ -589,9 +629,11 @@ public sealed partial class WorldView3DControl
                     // Discarding the list means the GPU retains the previous pass's baseline states.
                     target.DiscardWaterOpaqueSnapshotPreparation();
                     try { recorder.AbortFrame(); }
-                    catch { /* Preserve the original capture/cleanup exception. */ }
-                    throw;
+                    catch { /* Preserve the original capture exception. */ }
                 }
+
+                // Rethrow the ORIGINAL capture exception — a cleanup failure above must not mask it.
+                throw;
             }
         }
 
@@ -788,14 +830,19 @@ public sealed partial class WorldView3DControl
                 referenceStats?.ReferenceFnvActiveAdtBaseFallbackReason);
     }
 
-    private string? ResolveWeatherImageSpaceModifierEditorId(uint modifierFormId, bool modern) =>
-        modern
-            ? _data?.ImageSpacesByFormId.TryGetValue(modifierFormId, out var imageSpace) == true
+    private string? ResolveWeatherImageSpaceModifierEditorId(uint modifierFormId, bool modern)
+    {
+        if (modern)
+        {
+            return _data?.ImageSpacesByFormId.TryGetValue(modifierFormId, out var imageSpace) == true
                 ? imageSpace.EditorId
-                : null
-            : _data?.ImageSpaceModifiersByFormId.TryGetValue(modifierFormId, out var modifier) == true
-                ? modifier.EditorId
                 : null;
+        }
+
+        return _data?.ImageSpaceModifiersByFormId.TryGetValue(modifierFormId, out var modifier) == true
+            ? modifier.EditorId
+            : null;
+    }
 
     private AtmosphereState.WeatherBandBlend CaptureWeatherBand(WeatherRecord? weather)
     {
@@ -842,16 +889,16 @@ public sealed partial class WorldView3DControl
 
     private static (float[] U, float[] V) CaptureCloudSpeeds(
         WeatherRecord? weather,
-        IReadOnlyList<int> sourceIndices)
+        int[] sourceIndices)
     {
-        var u = new float[sourceIndices.Count];
-        var v = new float[sourceIndices.Count];
+        var u = new float[sourceIndices.Length];
+        var v = new float[sourceIndices.Length];
         if (weather is null)
         {
             return (u, v);
         }
 
-        for (var i = 0; i < sourceIndices.Count; i++)
+        for (var i = 0; i < sourceIndices.Length; i++)
         {
             var sourceIndex = sourceIndices[i];
             var layer = weather.FindCloudLayerBySourceIndex(sourceIndex);
@@ -900,16 +947,16 @@ public sealed partial class WorldView3DControl
 
     private static Dictionary<string, object?>[] CaptureCloudLayers(
         WeatherRecord? weather,
-        IReadOnlyList<int> sourceIndices,
+        int[] sourceIndices,
         AtmosphereState.WeatherBandBlend band)
     {
-        if (weather is null || sourceIndices.Count == 0)
+        if (weather is null || sourceIndices.Length == 0)
         {
             return [];
         }
 
-        var result = new Dictionary<string, object?>[sourceIndices.Count];
-        for (var i = 0; i < sourceIndices.Count; i++)
+        var result = new Dictionary<string, object?>[sourceIndices.Length];
+        for (var i = 0; i < sourceIndices.Length; i++)
         {
             var sourceIndex = sourceIndices[i];
             var layer = weather.FindCloudLayerBySourceIndex(sourceIndex);
@@ -1134,11 +1181,16 @@ public sealed partial class WorldView3DControl
                 transition.ScrollVelocity, animationTimeSeconds);
             transitionCloudOffsetU[i] = pinnedOffset.X;
             transitionCloudOffsetV[i] = pinnedOffset.Y;
-            transitionCloudTextureModes[i] = weatherTransition.OutgoingWeather is null
-                ? "atomic"
-                : transition.UsesSameTexture
+            if (weatherTransition.OutgoingWeather is null)
+            {
+                transitionCloudTextureModes[i] = "atomic";
+            }
+            else
+            {
+                transitionCloudTextureModes[i] = transition.UsesSameTexture
                     ? "same-texture-coalesced"
                     : "different-texture-weighted-draw-fallback";
+            }
         }
         var cookedCloudSourceIndices = _skyGeometry?.GetCookedCloudSourceIndices() ?? [];
         var cookedCloudDrawCandidateCounts = cookedCloudSourceIndices
@@ -1190,19 +1242,39 @@ public sealed partial class WorldView3DControl
         fields["masterList"] = null;
         fields["masterListUnavailableReason"] =
             "parsed TES4 master names are not retained in WorldViewData; source and active load-order paths are reported instead";
-        fields["sceneKind"] = interior is null
-            ? worldspace is null ? "unlinked-exterior" : "exterior"
-            : behavesLikeExterior ? "interior-behaves-like-exterior" : "interior";
+        string sceneKind;
+        if (interior is null)
+        {
+            sceneKind = worldspace is null ? "unlinked-exterior" : "exterior";
+        }
+        else
+        {
+            sceneKind = behavesLikeExterior ? "interior-behaves-like-exterior" : "interior";
+        }
+        fields["sceneKind"] = sceneKind;
         fields["worldspaceFormId"] = worldspace?.FormId;
         fields["worldspaceFormIdHex"] = worldspace is null ? null : $"0x{worldspace.FormId:X8}";
         fields["worldspaceEditorId"] = worldspace?.EditorId;
-        fields["worldspaceIdentityUnavailableReason"] = worldspace is null
-            ? interior is null
-                ? "the selected exterior cell set is not linked to a retained WRLD record"
-                : behavesLikeExterior
-                    ? "the selected exterior-behaving interior has no retained parent WRLD record"
-                    : "ordinary interiors do not resolve a sky-bearing parent WRLD"
-            : null;
+        string? worldspaceIdentityUnavailableReason = null;
+        if (worldspace is null)
+        {
+            if (interior is null)
+            {
+                worldspaceIdentityUnavailableReason =
+                    "the selected exterior cell set is not linked to a retained WRLD record";
+            }
+            else if (behavesLikeExterior)
+            {
+                worldspaceIdentityUnavailableReason =
+                    "the selected exterior-behaving interior has no retained parent WRLD record";
+            }
+            else
+            {
+                worldspaceIdentityUnavailableReason =
+                    "ordinary interiors do not resolve a sky-bearing parent WRLD";
+            }
+        }
+        fields["worldspaceIdentityUnavailableReason"] = worldspaceIdentityUnavailableReason;
         fields["interiorFormId"] = interior?.FormId;
         fields["interiorFormIdHex"] = interior is null ? null : $"0x{interior.FormId:X8}";
         fields["interiorEditorId"] = interior?.EditorId;
@@ -1214,16 +1286,26 @@ public sealed partial class WorldView3DControl
         fields["cellClimateOverrideFormIdHex"] = skyContext.CellClimateFormId is { } cellClimateId
             ? $"0x{cellClimateId:X8}"
             : null;
-        fields["skyClimateSelectionSource"] = climate is not null
-                                                   && skyContext.CellClimateFormId == climate.FormId
-            ? "cell-xccm"
-            : climate is not null && skyContext.WorldspaceClimateFormId == climate.FormId
-                ? "worldspace-cnam"
-                : climate is not null
-                    ? "game-default"
-                    : skyContext.RendersExteriorSky
-                        ? "unresolved"
-                        : "ordinary-interior-none";
+        string skyClimateSelectionSource;
+        if (climate is not null && skyContext.CellClimateFormId == climate.FormId)
+        {
+            skyClimateSelectionSource = "cell-xccm";
+        }
+        else if (climate is not null && skyContext.WorldspaceClimateFormId == climate.FormId)
+        {
+            skyClimateSelectionSource = "worldspace-cnam";
+        }
+        else if (climate is not null)
+        {
+            skyClimateSelectionSource = "game-default";
+        }
+        else
+        {
+            skyClimateSelectionSource = skyContext.RendersExteriorSky
+                ? "unresolved"
+                : "ordinary-interior-none";
+        }
+        fields["skyClimateSelectionSource"] = skyClimateSelectionSource;
         fields["climateFormId"] = climate?.FormId;
         fields["climateFormIdHex"] = climate is null ? null : $"0x{climate.FormId:X8}";
         fields["climateEditorId"] = climate?.EditorId;
@@ -1267,17 +1349,25 @@ public sealed partial class WorldView3DControl
         fields["bandFrom"] = band.From.ToString();
         fields["bandTo"] = band.To.ToString();
         fields["bandToWeight"] = band.ToWeight;
+        string colorBandSchedule;
+        var firstWeatherColor = weather is { Colors.Count: > 0 } ? weather.Colors[0] : null;
+        if (firstWeatherColor?.Bands.HasModernTransitions == true)
+        {
+            colorBandSchedule = "modern-eight-band";
+        }
+        else
+        {
+            colorBandSchedule = game == Core.Games.BethesdaGame.FalloutNewVegas
+                ? "fnv-high-noon"
+                : "classic-four-band";
+        }
         fields["colorBand"] = new Dictionary<string, object?>
         {
             ["from"] = band.From.ToString(),
             ["to"] = band.To.ToString(),
             ["fromWeight"] = 1f - band.ToWeight,
             ["toWeight"] = band.ToWeight,
-            ["schedule"] = weather?.Colors.FirstOrDefault()?.Bands.HasModernTransitions == true
-                ? "modern-eight-band"
-                : game == Core.Games.BethesdaGame.FalloutNewVegas
-                    ? "fnv-high-noon"
-                    : "classic-four-band",
+            ["schedule"] = colorBandSchedule,
         };
         fields["weatherColorBands"] = CaptureWeatherColorBands(weather, band);
         fields["weatherColorBandsUnavailableReason"] = weather?.Colors.Count > 0
@@ -1299,22 +1389,28 @@ public sealed partial class WorldView3DControl
         fields["cloudSpeedU"] = cloudU;
         fields["cloudSpeedV"] = cloudV;
         fields["cloudLayers"] = CaptureCloudLayers(weather, cloudSourceIndices, band);
-        fields["cloudLayersUnavailableReason"] = cloudSourceIndices.Length == 0
-            ? weather is null
+        string? cloudLayersUnavailableReason = null;
+        if (cloudSourceIndices.Length == 0)
+        {
+            cloudLayersUnavailableReason = weather is null
                 ? "no active WTHR record resolved"
-                : "the active WTHR has no textured cloud layers"
-            : null;
+                : "the active WTHR has no textured cloud layers";
+        }
+        fields["cloudLayersUnavailableReason"] = cloudLayersUnavailableReason;
         fields["outgoingCloudSpeedU"] = outgoingCloudU;
         fields["outgoingCloudSpeedV"] = outgoingCloudV;
         fields["outgoingCloudLayers"] = CaptureCloudLayers(
             weatherTransition.OutgoingWeather,
             outgoingCloudSourceIndices,
             outgoingCloudBand);
-        fields["outgoingCloudLayersUnavailableReason"] = outgoingCloudSourceIndices.Length == 0
-            ? weatherTransition.OutgoingWeather is null
+        string? outgoingCloudLayersUnavailableReason = null;
+        if (outgoingCloudSourceIndices.Length == 0)
+        {
+            outgoingCloudLayersUnavailableReason = weatherTransition.OutgoingWeather is null
                 ? "the applied weather transition has no outgoing WTHR"
-                : "the outgoing WTHR has no textured cloud layers"
-            : null;
+                : "the outgoing WTHR has no textured cloud layers";
+        }
+        fields["outgoingCloudLayersUnavailableReason"] = outgoingCloudLayersUnavailableReason;
         fields["cloudTransitionSourceIndices"] = transitionCloudSourceIndices;
         fields["cloudSharedScrollVelocityU"] = transitionCloudU;
         fields["cloudSharedScrollVelocityV"] = transitionCloudV;
@@ -1327,18 +1423,38 @@ public sealed partial class WorldView3DControl
         fields["cloudCookedDrawCandidateCounts"] = cookedCloudDrawCandidateCounts;
         fields["cloudActiveDrawCandidateCounts"] = activeCloudDrawCandidateCounts;
         fields["cloudCookedTopologyModes"] = cookedCloudTopologyModes;
-        fields["cloudCookedTopologyUnavailableReason"] = _skyGeometry is null
-            ? "the sky-geometry renderer is unavailable"
-            : cookedCloudSourceIndices.Length == 0
-                ? "no cloud layer resolved both NIF geometry and texture"
-                : null;
-        fields["cloudScrollTopology"] = cookedCloudSourceIndices.Length == 0
-            ? "no cooked cloud draw candidates; authored transition diagnostics only"
-            : weatherTransition.OutgoingWeather is null
-                ? "atomic one-offset cooked topology"
-                : cookedCloudDrawCandidateCounts.Any(static count => count > 1)
-                    ? "one shared offset; unlike textures retain the SKY-15 weighted-draw fallback"
-                    : "one shared offset; cooked topology uses one texture candidate per source";
+        string? cloudCookedTopologyUnavailableReason;
+        if (_skyGeometry is null)
+        {
+            cloudCookedTopologyUnavailableReason = "the sky-geometry renderer is unavailable";
+        }
+        else if (cookedCloudSourceIndices.Length == 0)
+        {
+            cloudCookedTopologyUnavailableReason = "no cloud layer resolved both NIF geometry and texture";
+        }
+        else
+        {
+            cloudCookedTopologyUnavailableReason = null;
+        }
+        fields["cloudCookedTopologyUnavailableReason"] = cloudCookedTopologyUnavailableReason;
+        string cloudScrollTopology;
+        if (cookedCloudSourceIndices.Length == 0)
+        {
+            cloudScrollTopology = "no cooked cloud draw candidates; authored transition diagnostics only";
+        }
+        else if (weatherTransition.OutgoingWeather is null)
+        {
+            cloudScrollTopology = "atomic one-offset cooked topology";
+        }
+        else if (cookedCloudDrawCandidateCounts.Any(static count => count > 1))
+        {
+            cloudScrollTopology = "one shared offset; unlike textures retain the SKY-15 weighted-draw fallback";
+        }
+        else
+        {
+            cloudScrollTopology = "one shared offset; cooked topology uses one texture candidate per source";
+        }
+        fields["cloudScrollTopology"] = cloudScrollTopology;
 
         var sunProfile = SkySunProfile.ForGame(game);
         var sunXExtreme = GmstFloat("fSunXExtreme");
@@ -1456,11 +1572,20 @@ public sealed partial class WorldView3DControl
             ["secunda"] = _resolvedSkyTexturePaths?.Secunda,
             ["secundaResolved"] = _moonSecundaTexIndex != noSkyTexture,
         };
-        fields["celestialUnavailableReason"] = interior is not null && !behavesLikeExterior
-            ? "billboard celestial bodies are not rendered in an ordinary interior"
-            : _resolvedSkyTexturePaths is null
-                ? "sky texture resolution did not produce a retained path set"
-                : null;
+        string? celestialUnavailableReason;
+        if (interior is not null && !behavesLikeExterior)
+        {
+            celestialUnavailableReason = "billboard celestial bodies are not rendered in an ordinary interior";
+        }
+        else if (_resolvedSkyTexturePaths is null)
+        {
+            celestialUnavailableReason = "sky texture resolution did not produce a retained path set";
+        }
+        else
+        {
+            celestialUnavailableReason = null;
+        }
+        fields["celestialUnavailableReason"] = celestialUnavailableReason;
 
         fields["tonemapMode"] = tonemap.Mode.ToString();
         fields["tonemapExposure"] = tonemap.Exposure;
@@ -1493,13 +1618,24 @@ public sealed partial class WorldView3DControl
         fields["tonemapBrightScale"] = tonemap.BrightScale;
         fields["tonemapBrightClamp"] = tonemap.BrightClamp;
         fields["tonemapModernFamily"] = tonemap.ModernFamily?.ToString();
-        fields["weatherImageSpaceApplication"] = _weatherImageSpaceEvaluation is null
-            ? "inactive"
-            : tonemap.ModernFamily is null
-                ? "classic"
-                : tonemap.Mode == GpuTonemapMode.CreationModern
-                    ? "creation-modern-full"
-                    : "scene-physical-only";
+        string weatherImageSpaceApplication;
+        if (_weatherImageSpaceEvaluation is null)
+        {
+            weatherImageSpaceApplication = "inactive";
+        }
+        else if (tonemap.ModernFamily is null)
+        {
+            weatherImageSpaceApplication = "classic";
+        }
+        else if (tonemap.Mode == GpuTonemapMode.CreationModern)
+        {
+            weatherImageSpaceApplication = "creation-modern-full";
+        }
+        else
+        {
+            weatherImageSpaceApplication = "scene-physical-only";
+        }
+        fields["weatherImageSpaceApplication"] = weatherImageSpaceApplication;
         fields["directionalAmbientUploaded"] =
             AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
                 game, AuthoredSkyArchitecture.Enabled, atmo.DirectionalAmbient) is not null;
@@ -1583,18 +1719,33 @@ public sealed partial class WorldView3DControl
                     ["add"] = pair.Value.Add,
                 },
                 StringComparer.Ordinal) ?? new Dictionary<string, object?>();
-        fields["weatherImageSpaceUnavailableReason"] = _weatherImageSpaceEvaluation is not null
-            ? null
-            : !_hdrEnabled || Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") == "0"
-                ? "HDR is disabled; weather image-space bands were not applied"
-            : !_imagespaceModifiersEnabled
-                ? "image-space modifiers are disabled"
-                : interior is not null && !behavesLikeExterior
-                    ? "weather image-space bands are not applied to an ordinary interior"
-                    : weather?.ImageSpaceModifiers is null
-                      && weatherTransition.OutgoingWeather?.ImageSpaceModifiers is null
-                        ? "the active WTHR has no retained time-band IMAD/IMGS references"
-                        : "the active game family does not route WTHR bands through the implemented evaluator";
+        string? weatherImageSpaceUnavailableReason;
+        if (_weatherImageSpaceEvaluation is not null)
+        {
+            weatherImageSpaceUnavailableReason = null;
+        }
+        else if (!_hdrEnabled || Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") == "0")
+        {
+            weatherImageSpaceUnavailableReason = "HDR is disabled; weather image-space bands were not applied";
+        }
+        else if (!_imagespaceModifiersEnabled)
+        {
+            weatherImageSpaceUnavailableReason = "image-space modifiers are disabled";
+        }
+        else if (interior is not null && !behavesLikeExterior)
+        {
+            weatherImageSpaceUnavailableReason = "weather image-space bands are not applied to an ordinary interior";
+        }
+        else if (weather?.ImageSpaceModifiers is null
+                 && weatherTransition.OutgoingWeather?.ImageSpaceModifiers is null)
+        {
+            weatherImageSpaceUnavailableReason = "the active WTHR has no retained time-band IMAD/IMGS references";
+        }
+        else
+        {
+            weatherImageSpaceUnavailableReason = "the active game family does not route WTHR bands through the implemented evaluator";
+        }
+        fields["weatherImageSpaceUnavailableReason"] = weatherImageSpaceUnavailableReason;
 
         fields["fnvSls1009Draws"] = referenceStats?.ReferenceFnvSls1009Draws ?? 0;
         fields["fnvSls1009Instances"] = referenceStats?.ReferenceFnvSls1009Instances ?? 0;
@@ -1660,11 +1811,20 @@ public sealed partial class WorldView3DControl
                 ["liveFrame"] = system.LiveFrame,
                 ["fallbackReason"] = system.FallbackReason,
             }).ToArray() ?? [];
-        fields["particleTelemetryUnavailableReason"] = referenceStats is null
-            ? "reference rendering was disabled or unavailable for this capture"
-            : referenceStats.ReferenceLiveParticleOwners == 0
-                ? "no visible particle-system owner reached the reference draw lists"
-                : null;
+        string? particleTelemetryUnavailableReason;
+        if (referenceStats is null)
+        {
+            particleTelemetryUnavailableReason = "reference rendering was disabled or unavailable for this capture";
+        }
+        else if (referenceStats.ReferenceLiveParticleOwners == 0)
+        {
+            particleTelemetryUnavailableReason = "no visible particle-system owner reached the reference draw lists";
+        }
+        else
+        {
+            particleTelemetryUnavailableReason = null;
+        }
+        fields["particleTelemetryUnavailableReason"] = particleTelemetryUnavailableReason;
 
         fields["waterProfile"] = WaterProfile.ForGame(game).ShaderVariant.ToString();
         fields["waterPipeline"] = waterStats?.WaterPipeline ?? "not-rendered";
@@ -1680,19 +1840,31 @@ public sealed partial class WorldView3DControl
             ? $"0x{waterCellFormId:X8}"
             : null;
         fields["waterRecordWorldspaceFormId"] = waterSelection.WorldspaceFormId;
-        fields["waterRecordUnavailableReason"] = waterRecord is not null
-            ? null
-            : interior is not null
+        string? waterRecordUnavailableReason = null;
+        if (waterRecord is null)
+        {
+            waterRecordUnavailableReason = interior is not null
                 ? "the active CELL has no retained, resolvable XCWT WATR"
                 : "neither the camera CELL XCWT nor active WRLD NAM2 resolves in the retained water index";
+        }
+        fields["waterRecordUnavailableReason"] = waterRecordUnavailableReason;
         fields["waterTechnique"] = waterStats?.WaterTechnique;
-        fields["waterTechniqueUnavailableReason"] = waterStats is null
-            ? "water rendering was disabled or unavailable for this capture"
-            : waterStats.WaterTechnique is null
-                ? waterStats.WaterDraws == 0
-                    ? "no water surface reached the draw path"
-                    : "the renderer did not retain a selected water technique"
-                : null;
+        string? waterTechniqueUnavailableReason;
+        if (waterStats is null)
+        {
+            waterTechniqueUnavailableReason = "water rendering was disabled or unavailable for this capture";
+        }
+        else if (waterStats.WaterTechnique is null)
+        {
+            waterTechniqueUnavailableReason = waterStats.WaterDraws == 0
+                ? "no water surface reached the draw path"
+                : "the renderer did not retain a selected water technique";
+        }
+        else
+        {
+            waterTechniqueUnavailableReason = null;
+        }
+        fields["waterTechniqueUnavailableReason"] = waterTechniqueUnavailableReason;
         fields["waterMaps"] = waterStats is null
             ? Array.Empty<Dictionary<string, object?>>()
             : Enumerable.Range(0, waterStats.WaterMapPaths.Count)
@@ -1712,15 +1884,28 @@ public sealed partial class WorldView3DControl
         fields["waterTelemetryUnavailableReason"] = waterStats is null
             ? "water rendering was disabled or unavailable for this capture"
             : waterStats.WaterTelemetryUnavailableReason;
-        fields["waterAnimationUnavailableReason"] = waterStats is null
-            ? "water rendering was disabled or unavailable for this capture"
-            : waterStats.WaterAnimationFrame >= 0
-                ? null
-                : waterStats.WaterDraws == 0
-                    ? "no water surface was drawn; no animation frame was sampled"
-                : WaterProfile.ForGame(game).SurfaceFrameFps <= 0f
-                    ? "the active water profile has no legacy frame animation"
-                    : "no resolved legacy water frame set was supplied to the renderer";
+        string? waterAnimationUnavailableReason;
+        if (waterStats is null)
+        {
+            waterAnimationUnavailableReason = "water rendering was disabled or unavailable for this capture";
+        }
+        else if (waterStats.WaterAnimationFrame >= 0)
+        {
+            waterAnimationUnavailableReason = null;
+        }
+        else if (waterStats.WaterDraws == 0)
+        {
+            waterAnimationUnavailableReason = "no water surface was drawn; no animation frame was sampled";
+        }
+        else if (WaterProfile.ForGame(game).SurfaceFrameFps <= 0f)
+        {
+            waterAnimationUnavailableReason = "the active water profile has no legacy frame animation";
+        }
+        else
+        {
+            waterAnimationUnavailableReason = "no resolved legacy water frame set was supplied to the renderer";
+        }
+        fields["waterAnimationUnavailableReason"] = waterAnimationUnavailableReason;
 
         fields["speedTreeWind"] = referenceStats is null
             ? null
@@ -1735,9 +1920,13 @@ public sealed partial class WorldView3DControl
             };
         fields["tallGrassWindSupported"] =
             referenceStats?.ReferenceTallGrassWindSupported;
-        fields["tallGrassWind"] = referenceStats is not { ReferenceTallGrassWindSupported: true }
-            ? null
-            : new Dictionary<string, object?>
+        if (referenceStats is not { ReferenceTallGrassWindSupported: true })
+        {
+            fields["tallGrassWind"] = null;
+        }
+        else
+        {
+            fields["tallGrassWind"] = new Dictionary<string, object?>
             {
                 ["animationsEnabled"] = referenceStats.ReferenceTallGrassAnimationsEnabled,
                 ["normalizedStrength"] = referenceStats.ReferenceTallGrassNormalizedStrength,
@@ -1769,11 +1958,16 @@ public sealed partial class WorldView3DControl
                     ? referenceStats.ReferenceTallGrassTemporalPhaseRadiansMaximum
                     : null,
             };
+        }
         fields["speedTreeRuntimeLodEnabled"] =
             referenceStats?.ReferenceSpeedTreeRuntimeLodEnabled;
-        fields["speedTreeLod"] = referenceStats is null
-            ? null
-            : new Dictionary<string, object?>
+        if (referenceStats is null)
+        {
+            fields["speedTreeLod"] = null;
+        }
+        else
+        {
+            fields["speedTreeLod"] = new Dictionary<string, object?>
             {
                 ["branchInstances"] = referenceStats.ReferenceSpeedTreeBranchInstances,
                 ["leafInstances"] = referenceStats.ReferenceSpeedTreeLeafInstances,
@@ -1785,13 +1979,23 @@ public sealed partial class WorldView3DControl
                     ? (int?)referenceStats.ReferenceSpeedTreeMaximumLod
                     : null,
             };
-        fields["speedTreeTelemetryUnavailableReason"] = referenceStats is null
-            ? "reference rendering was disabled or unavailable for this capture"
-            : referenceStats.ReferenceSpeedTreeBranchInstances == 0 &&
-              referenceStats.ReferenceSpeedTreeLeafInstances == 0 &&
-              referenceStats.ReferenceSpeedTreeBillboardInstances == 0
-                ? "no visible SpeedTree component reached the instanced draw path"
-                : null;
+        }
+        string? speedTreeTelemetryUnavailableReason;
+        if (referenceStats is null)
+        {
+            speedTreeTelemetryUnavailableReason = "reference rendering was disabled or unavailable for this capture";
+        }
+        else if (referenceStats.ReferenceSpeedTreeBranchInstances == 0 &&
+                 referenceStats.ReferenceSpeedTreeLeafInstances == 0 &&
+                 referenceStats.ReferenceSpeedTreeBillboardInstances == 0)
+        {
+            speedTreeTelemetryUnavailableReason = "no visible SpeedTree component reached the instanced draw path";
+        }
+        else
+        {
+            speedTreeTelemetryUnavailableReason = null;
+        }
+        fields["speedTreeTelemetryUnavailableReason"] = speedTreeTelemetryUnavailableReason;
 
         RendererProfilerTrace.Event("capture-state", fields);
         Log.Info(

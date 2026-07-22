@@ -560,7 +560,7 @@ internal static class WorldMapOverlayBuilder
         return dict;
     }
 
-    private static Dictionary<uint, RegionRecord> BuildRegionIndex(IReadOnlyList<RegionRecord> records)
+    private static Dictionary<uint, RegionRecord> BuildRegionIndex(List<RegionRecord> records)
     {
         var dict = new Dictionary<uint, RegionRecord>(records.Count);
         foreach (var r in records)
@@ -591,7 +591,7 @@ internal static class WorldMapOverlayBuilder
         return dict;
     }
 
-    private static Dictionary<uint, LightRecord> BuildLightIndex(IReadOnlyList<LightRecord> records)
+    private static Dictionary<uint, LightRecord> BuildLightIndex(List<LightRecord> records)
     {
         var dict = new Dictionary<uint, LightRecord>(records.Count);
         foreach (var r in records)
@@ -612,7 +612,7 @@ internal static class WorldMapOverlayBuilder
     }
 
     private static Dictionary<uint, ImageSpaceModifierRecord> BuildImageSpaceModifierIndex(
-        IReadOnlyList<ImageSpaceModifierRecord> records)
+        List<ImageSpaceModifierRecord> records)
     {
         var dict = new Dictionary<uint, ImageSpaceModifierRecord>(records.Count);
         foreach (var r in records)

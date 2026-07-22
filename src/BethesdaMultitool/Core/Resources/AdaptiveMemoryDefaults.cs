@@ -24,15 +24,23 @@ internal static class AdaptiveMemoryDefaults
     ///     soft-dropping draws on TryAllocate failure. 128 is the long-shipped default (kept for
     ///     the mid tier); big-RAM machines double it, small ones halve it.
     /// </summary>
-    public static int RingBufferMegabytes(long systemMemoryMb) =>
-        systemMemoryMb >= 24_000 ? 256 : systemMemoryMb >= 12_000 ? 128 : 64;
+    public static int RingBufferMegabytes(long systemMemoryMb) => systemMemoryMb switch
+    {
+        >= 24_000 => 256,
+        >= 12_000 => 128,
+        _ => 64
+    };
 
     /// <summary>
     ///     Decoded CPU mesh payload cache, in MB (NIF decode results awaiting/backing GPU
     ///     residency — a bigger cache means fewer re-decodes when the camera revisits areas).
     ///     256 is the long-shipped default (kept for the mid tier).
     /// </summary>
-    public static int DecodedMeshCacheMegabytes(long systemMemoryMb) =>
-        systemMemoryMb >= 48_000 ? 1024 : systemMemoryMb >= 24_000 ? 512 :
-        systemMemoryMb >= 12_000 ? 256 : 128;
+    public static int DecodedMeshCacheMegabytes(long systemMemoryMb) => systemMemoryMb switch
+    {
+        >= 48_000 => 1024,
+        >= 24_000 => 512,
+        >= 12_000 => 256,
+        _ => 128
+    };
 }

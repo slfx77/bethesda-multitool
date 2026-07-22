@@ -259,8 +259,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     ///         internal free-list reuses removed slots in LIFO order, so after a mass-eviction
     ///         (e.g. zoom-in shrinks cap from 18k → 256) every new add lands in a low-index
     ///         slot and is then re-evicted by the next <c>Keys.First()</c> call — the cells
-    ///         appear in the cache for one frame, then vanish. The 2026-06-05 profiler trace
-    ///         captured this as add → evict for the same key, repeatedly. Switching to
+    ///         appear in the cache for one frame, then vanish. Switching to
     ///         <c>OrderedDictionary</c> gives strict insertion order: <see cref="OrderedDictionary{TKey,TValue}.GetAt(int)" />
     ///         at index 0 is genuinely the oldest entry.
     ///     </para>
@@ -568,7 +567,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private void OnLegendCategoryToggled(PlacedObjectCategory category)
     {
         // The rendered-models overlay shares this category filter — drop it so it re-renders with the
-        // new set (covers the user report that category toggles didn't affect the 3D meshes).
+        // new set (so category toggles also apply to the 3D meshes).
         InvalidateTopDownOverlay();
 
         // Keep the toolbar Map markers checkbox in sync with legend clicks.

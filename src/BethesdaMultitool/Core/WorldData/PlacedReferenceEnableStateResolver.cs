@@ -40,7 +40,7 @@ internal static class PlacedReferenceEnableStateResolver
 
     private static bool ResolveDisabled(
         PlacedReference placement,
-        IReadOnlyDictionary<uint, PlacedReference> byId)
+        Dictionary<uint, PlacedReference> byId)
     {
         var visited = new HashSet<uint>();
         var invert = false;

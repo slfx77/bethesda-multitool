@@ -1,3 +1,4 @@
+using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using Microsoft.Graphics.Canvas;
 using Microsoft.UI.Xaml;
@@ -176,7 +177,9 @@ public sealed partial class WorldMapControl
         var collectProfilerMetrics = Map2DProfilerTrace.IsEnabled;
         long requestId = 0;
         long requestStartTimestamp = 0;
+#pragma warning disable S1854 // definite-assignment seed for the finally-block read; every reachable path overwrites it
         var outcome = "not-started";
+#pragma warning restore S1854
         TopDownPixelMetrics? pixelMetrics = null;
         TopDownRender? completedRender = null;
         try
@@ -212,17 +215,16 @@ public sealed partial class WorldMapControl
                 requestId = ++_topDownRequestSequence;
                 _topDownRequestsStarted++;
                 requestStartTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
-                outcome = "in-flight";
                 var requestDetail = string.Concat(
-                    FormattableString.Invariant(
+                    string.Create(CultureInfo.InvariantCulture,
                         $"id={requestId} gen={gen} mode={_state.Mode} cell=0x{selectedCell?.FormId ?? 0u:X8} "),
-                    FormattableString.Invariant(
+                    string.Create(CultureInfo.InvariantCulture,
                         $"interior=0x{interiorCellFormId ?? 0u:X8} ws=0x{_state.SelectedWorldspace?.FormId ?? 0u:X8} "),
-                    FormattableString.Invariant(
+                    string.Create(CultureInfo.InvariantCulture,
                         $"bounds=({worldMinX:F3},{worldMinY:F3})-({worldMaxX:F3},{worldMaxY:F3}) "),
-                    FormattableString.Invariant(
+                    string.Create(CultureInfo.InvariantCulture,
                         $"pixels={pxW}x{pxH} showDisabled={!_hideDisabledActors} water={_showWater} "),
-                    FormattableString.Invariant(
+                    string.Create(CultureInfo.InvariantCulture,
                         $"lighting={_hillshadeLightingEnabled} hour={_gameHour:F2}"));
                 Map2DProfilerTrace.Event("topdown-request-start", requestDetail);
             }
@@ -325,11 +327,11 @@ public sealed partial class WorldMapControl
                 var metrics = pixelMetrics;
                 var metricText = metrics is { } m
                     ? string.Concat(
-                        FormattableString.Invariant(
+                        string.Create(CultureInfo.InvariantCulture,
                             $"pixelCount={m.PixelCount} nontransparent={m.NonTransparentPixels} "),
-                        FormattableString.Invariant(
+                        string.Create(CultureInfo.InvariantCulture,
                             $"nonzero={m.NonZeroPixels} meanRgb=({m.MeanRed:F3},{m.MeanGreen:F3},{m.MeanBlue:F3}) "),
-                        FormattableString.Invariant(
+                        string.Create(CultureInfo.InvariantCulture,
                             $"meanLuma={m.MeanLuma:F3} hash=0x{m.Hash:X16}"))
                     : "pixelCount=0 nontransparent=0 nonzero=0 meanRgb=(0,0,0) meanLuma=0 hash=n/a";
                 var referenceText = completedRender is { } rendered
@@ -340,11 +342,11 @@ public sealed partial class WorldMapControl
                     ? $"complete={convergedRender.IsComplete} fullySettled={convergedRender.IsFullySettled}"
                     : "complete=n/a fullySettled=n/a";
                 var completionDetail = string.Concat(
-                    FormattableString.Invariant(
+                    string.Create(CultureInfo.InvariantCulture,
                         $"id={requestId} gen={gen} outcome={outcome} durationMs={_topDownLastRequestDurationMs:F1} "),
-                    FormattableString.Invariant(
+                    string.Create(CultureInfo.InvariantCulture,
                         $"{convergenceText} settled={IsTopDownOverlaySettled()} pending={_topDownRequestPending} "),
-                    FormattableString.Invariant(
+                    string.Create(CultureInfo.InvariantCulture,
                         $"incomplete={_topDownIncomplete} {referenceText} {metricText}"));
                 Map2DProfilerTrace.Event("topdown-request-complete", completionDetail);
             }

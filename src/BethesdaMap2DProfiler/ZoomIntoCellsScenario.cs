@@ -27,8 +27,8 @@ internal sealed class ZoomIntoCellsScenario(bool useTerrainTextures) : Map2DScen
         }
         else
         {
-            // Stay on the default Heightmap layer — the single-bitmap background + cell grid +
-            // per-cell labels + placed-object boxes path the user reported crashing on.
+            // Stay on the default Heightmap layer — the crash-prone single-bitmap background +
+            // cell grid + per-cell labels + placed-object boxes path.
             log.Info("Scenario(zoom-into-cells): staying on default layer {0}.",
                 await UiAsync(queue, () => control.Profiler_Layer));
         }

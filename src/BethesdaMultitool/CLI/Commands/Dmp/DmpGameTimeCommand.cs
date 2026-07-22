@@ -179,11 +179,19 @@ internal static class DmpGameTimeCommand
                 }
             }
 
-            var note = values.Count == 0
-                ? "clock globals not captured"
-                : values.Count < ClockGlobals.Length
-                    ? "partial capture"
-                    : null;
+            string? note;
+            if (values.Count == 0)
+            {
+                note = "clock globals not captured";
+            }
+            else if (values.Count < ClockGlobals.Length)
+            {
+                note = "partial capture";
+            }
+            else
+            {
+                note = null;
+            }
 
             return new DumpGameTime(dumpName, buildDate, dateSource, buildType, values, note);
         }
@@ -288,14 +296,14 @@ internal static class DmpGameTimeCommand
     }
 
     private static string FormatValue(
-        IReadOnlyDictionary<string, GlobalRecord> values, string name, string numberFormat)
+        Dictionary<string, GlobalRecord> values, string name, string numberFormat)
     {
         return values.TryGetValue(name, out var glob)
             ? glob.Value.ToString(numberFormat)
             : "[dim]—[/]";
     }
 
-    private static string CsvValue(IReadOnlyDictionary<string, GlobalRecord> values, string name)
+    private static string CsvValue(Dictionary<string, GlobalRecord> values, string name)
     {
         return values.TryGetValue(name, out var glob)
             ? glob.Value.ToString("R")

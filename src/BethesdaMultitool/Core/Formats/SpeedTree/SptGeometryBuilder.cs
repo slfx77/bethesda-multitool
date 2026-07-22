@@ -507,9 +507,15 @@ internal static class SptGeometryBuilder
         // The callee then emits u = aroundFrac × Utile, v = (pathT + barkHelp) × Vtile — the same
         // cumulative-spawn-fraction "help" the vertex-color dimming composes rides in as the V base.
         var barkUTile = branch.Bool6015 ? branch.Float6013 : branch.Float6013 * radius * MathF.Tau;
-        var barkVTile = branch.Bool6016
-            ? branch.Float6014
-            : branch.Float6014 * (treeSize > 0f ? length / treeSize : 1f);
+        float barkVTile;
+        if (branch.Bool6016)
+        {
+            barkVTile = branch.Float6014;
+        }
+        else
+        {
+            barkVTile = branch.Float6014 * (treeSize > 0f ? length / treeSize : 1f);
+        }
 
         // Frond gate (CIdvBranch::Compute head, all three binaries: 360 L1996, Oblivion FUN_007925b0
         // L613, FNV PC FUN_00b11050): when the .spt's 13000 section enables fronds, branches at
@@ -1296,26 +1302,6 @@ internal static class SptGeometryBuilder
     private static float SpawnTemplateParam(float frac, float start, float end) =>
         MathF.Abs(end - start) > 1e-6f ? Math.Clamp((frac - start) / (end - start), 0f, 1f) : 1f;
 
-    /// <summary>
-    ///     Soft spherical canopy lighting normal for a leaf card at <paramref name="center" />: outward from
-    ///     the trunk axis (local x=y=0) blended with a strong up bias. This shades the canopy like a rounded
-    ///     volume — bright on top/sun-side, gently darker beneath — instead of letting each billboard take its
-    ///     random bud-growth direction as the lighting normal (which, through the shader's <c>saturate(N·L)</c>,
-    ///     sent every leaf whose bud faced away from the sun to near-black). SpeedTree likewise lights leaf
-    ///     cards from a smoothed normal rather than the twig direction.
-    /// </summary>
-    private static Vector3 CanopyNormal(Vector3 center)
-    {
-        // Outward-from-trunk-axis as a UNIT vector FIRST. center is in world units — hundreds at the ×10 loft
-        // scale — so blending the raw vector with the unit up dwarfs the up term and the normal collapses to
-        // horizontal, leaving every shadow-side card facing away from the sun (saturate(N·L)=0 → dim ambient →
-        // the BLACK leaf cards). Normalizing makes the blend an actual up-dominant direction (up 1.0, outward
-        // 0.4): the canopy is lit primarily from above with a gentle outward lean for volume, so no card faces
-        // fully away from the light.
-        var outward = SafeNormalize(new Vector3(center.X, center.Y, 0f), Vector3.Zero);
-        return SafeNormalize(outward * 0.4f + Vector3.UnitZ, Vector3.UnitZ);
-    }
-
     /// <summary>Flip the V (texture-Y) of all four leaf-card UV corners: the .spt stores leaf UVs with a
     /// bottom-left origin, our rasterizer samples top-left. See the call site in <see cref="EmitPlacedLeaves" />.</summary>
     private static SptLeafTextureCoords FlipTexCoordV(SptLeafTextureCoords uv) => new(
@@ -1668,9 +1654,6 @@ internal static class SptGeometryBuilder
         public int VertexCount => _positions.Count / 3;
 
         public bool CanAdd(int verts) => VertexCount + verts <= MaxVertices;
-
-        public int Add(Vector3 position, Vector3 normal, Vector2 uv) =>
-            Add(position, normal, uv, Vector3.Zero, Vector3.Zero, 255);
 
         /// <summary>Adds a vertex carrying the leaf-billboard payload in the tangent/bitangent slots:
         /// <paramref name="tangent" /> = the card center (pivot), <paramref name="bitangent" /> = the

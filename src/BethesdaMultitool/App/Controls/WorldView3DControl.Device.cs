@@ -32,7 +32,7 @@ public sealed partial class WorldView3DControl
     /// <summary>
     ///     Initializes the D3D12 backend stack: device + direct queue + per-frame command
     ///     recorder + upload-heap ring + shader-visible descriptor heaps + shared root
-    ///     signature. Called from <see cref="OnLoaded" /> when <c>FALLOUT_VIEWER_D3D12=1</c>.
+    ///     signature. Called from <see cref="OnLoaded" />.
     /// </summary>
     private bool TryInitD3D12Backend()
     {

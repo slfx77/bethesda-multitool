@@ -252,35 +252,35 @@ internal sealed record RendererProfilerOptions
                 case "-i":
                 case "--input":
                     input = RequireValue(args, ref i, arg, out error);
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     break;
 
                 case "--data-dir":
                     dataDir = RequireValue(args, ref i, arg, out error);
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     break;
 
                 case "--load-order":
                     var value = RequireValue(args, ref i, arg, out error);
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     AddPathList(loadOrder, value);
                     break;
 
                 case "--profile-output":
                 case "--log":
                     profileOutput = RequireValue(args, ref i, arg, out error);
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     break;
 
                 case "--profile-jsonl":
                     profileJsonl = RequireValue(args, ref i, arg, out error);
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     break;
 
                 case "--profile-interval-ms":
                     if (!TryReadPositiveInt(args, ref i, arg, out profileIntervalMs, out error))
                     {
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     break;
@@ -288,7 +288,7 @@ internal sealed record RendererProfilerOptions
                 case "--duration-seconds":
                     if (!TryReadPositiveInt(args, ref i, arg, out var seconds, out error))
                     {
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     durationSeconds = seconds;
@@ -296,26 +296,26 @@ internal sealed record RendererProfilerOptions
 
                 case "--scenario":
                     scenarioName = RequireValue(args, ref i, arg, out error);
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     break;
 
                 case "--scenario-output":
                     scenarioOutput = RequireValue(args, ref i, arg, out error);
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     break;
 
                 case "--stress-scene":
                     stressScene = NormalizeStressScene(RequireValue(args, ref i, arg, out error));
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     break;
 
                 case "--camera-motion":
                     var motionRaw = RequireValue(args, ref i, arg, out error);
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     if (!RendererCameraMotion.TryParseKind(motionRaw, out cameraMotion))
                     {
                         error = $"Unknown camera motion: {motionRaw}";
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     break;
@@ -323,7 +323,7 @@ internal sealed record RendererProfilerOptions
                 case "--camera-speed":
                     if (!TryReadPositiveFloat(args, ref i, arg, out cameraSpeed, out error))
                     {
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     break;
@@ -331,7 +331,7 @@ internal sealed record RendererProfilerOptions
                 case "--render-distance":
                     if (!TryReadPositiveFloat(args, ref i, arg, out var renderDistanceValue, out error))
                     {
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     renderDistanceCells = renderDistanceValue;
@@ -340,7 +340,7 @@ internal sealed record RendererProfilerOptions
                 case "--stall-threshold-ms":
                     if (!TryReadNonNegativeDouble(args, ref i, arg, out stallThresholdMs, out error))
                     {
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     break;
@@ -363,25 +363,25 @@ internal sealed record RendererProfilerOptions
 
                 case "--capture-topdown":
                     captureTopDown = RequireValue(args, ref i, arg, out error);
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     break;
 
                 case "--capture-cells":
                     if (!TryReadPositiveInt(args, ref i, arg, out captureSpanCells, out error))
                     {
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     break;
 
                 case "--capture-worldspace":
                     var wsRaw = RequireValue(args, ref i, arg, out error);
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     if (!int.TryParse(wsRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var wsIdx) ||
                         wsIdx < 0)
                     {
                         error = $"{arg} requires a non-negative integer.";
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     captureWorldspaceIndex = wsIdx;
@@ -390,51 +390,27 @@ internal sealed record RendererProfilerOptions
                 // Read the value directly (not via RequireValue) so negative coordinates,
                 // which start with '-', are accepted rather than treated as a missing value.
                 case "--capture-center-x":
-                    if (i + 1 >= args.Length)
+                    if (!TryReadFiniteFloat(args, ref i, arg, "a finite number", out var ccx, out error))
                     {
-                        error = $"{arg} requires a value.";
-                        return Fail(out options, error);
-                    }
-
-                    if (!float.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var ccx) ||
-                        !float.IsFinite(ccx))
-                    {
-                        error = $"{arg} must be a finite number.";
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     captureCenterX = ccx;
                     break;
 
                 case "--capture-center-y":
-                    if (i + 1 >= args.Length)
+                    if (!TryReadFiniteFloat(args, ref i, arg, "a finite number", out var ccy, out error))
                     {
-                        error = $"{arg} requires a value.";
-                        return Fail(out options, error);
-                    }
-
-                    if (!float.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var ccy) ||
-                        !float.IsFinite(ccy))
-                    {
-                        error = $"{arg} must be a finite number.";
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     captureCenterY = ccy;
                     break;
 
                 case "--capture-z":
-                    if (i + 1 >= args.Length)
+                    if (!TryReadFiniteFloat(args, ref i, arg, "a finite number", out var ccz, out error))
                     {
-                        error = $"{arg} requires a value.";
-                        return Fail(out options, error);
-                    }
-
-                    if (!float.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var ccz) ||
-                        !float.IsFinite(ccz))
-                    {
-                        error = $"{arg} must be a finite number.";
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     captureZ = ccz;
@@ -442,13 +418,13 @@ internal sealed record RendererProfilerOptions
 
                 case "--capture-frame":
                     captureFrame = RequireValue(args, ref i, arg, out error);
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     break;
 
                 case "--capture-width":
                     if (!TryReadCaptureDimension(args, ref i, arg, out captureWidth, out error))
                     {
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     break;
@@ -456,7 +432,7 @@ internal sealed record RendererProfilerOptions
                 case "--capture-height":
                     if (!TryReadCaptureDimension(args, ref i, arg, out captureHeight, out error))
                     {
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     break;
@@ -464,42 +440,42 @@ internal sealed record RendererProfilerOptions
                 case "--capture-settle-timeout-seconds":
                     if (!TryReadPositiveInt(args, ref i, arg, out captureSettleTimeoutSeconds, out error))
                     {
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     break;
 
                 case "--capture-worldspace-name":
                     captureWorldspaceName = RequireValue(args, ref i, arg, out error);
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     break;
 
                 case "--capture-interior":
                     captureInterior = RequireValue(args, ref i, arg, out error);
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     break;
 
                 case "--worldspace":
                     worldspaceName = RequireValue(args, ref i, arg, out error);
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     break;
 
                 case "--capture-weather":
                     captureWeatherName = RequireValue(args, ref i, arg, out error);
-                    if (error != null) return Fail(out options, error);
+                    if (error != null) return Fail(out options);
                     break;
 
                 case "--capture-hour":
                     if (!TryReadNonNegativeDouble(args, ref i, arg, out var hour, out error))
                     {
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     captureHour = (float)hour;
                     if (captureHour > 24f)
                     {
                         error = $"{arg} must be between 0 and 24 (inclusive).";
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     break;
@@ -507,7 +483,7 @@ internal sealed record RendererProfilerOptions
                 case "--capture-day":
                     if (!TryReadNonNegativeDouble(args, ref i, arg, out var day, out error))
                     {
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     captureDay = (float)day;
@@ -516,41 +492,27 @@ internal sealed record RendererProfilerOptions
                 case "--capture-animation-time":
                     if (!TryReadNonNegativeFloat(args, ref i, arg, out captureAnimationTimeSeconds, out error))
                     {
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     break;
 
                 // Pitch can be negative (look down), so read the value directly rather than via RequireValue.
                 case "--capture-pitch":
-                    if (i + 1 >= args.Length)
+                    if (!TryReadFiniteFloat(
+                            args, ref i, arg, "a finite number (degrees; positive looks up)",
+                            out capturePitchDegrees, out error))
                     {
-                        error = $"{arg} requires a value.";
-                        return Fail(out options, error);
-                    }
-
-                    if (!float.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out capturePitchDegrees) ||
-                        !float.IsFinite(capturePitchDegrees))
-                    {
-                        error = $"{arg} must be a finite number (degrees; positive looks up).";
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     break;
 
                 // Yaw can be negative, so read the value directly rather than via RequireValue.
                 case "--capture-yaw":
-                    if (i + 1 >= args.Length)
+                    if (!TryReadFiniteFloat(args, ref i, arg, "a finite number (degrees)", out var yawDegrees, out error))
                     {
-                        error = $"{arg} requires a value.";
-                        return Fail(out options, error);
-                    }
-
-                    if (!float.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var yawDegrees) ||
-                        !float.IsFinite(yawDegrees))
-                    {
-                        error = $"{arg} must be a finite number (degrees).";
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     captureYawDegrees = yawDegrees;
@@ -559,7 +521,7 @@ internal sealed record RendererProfilerOptions
                 case "--width":
                     if (!TryReadPositiveInt(args, ref i, arg, out width, out error))
                     {
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     break;
@@ -567,33 +529,33 @@ internal sealed record RendererProfilerOptions
                 case "--height":
                     if (!TryReadPositiveInt(args, ref i, arg, out height, out error))
                     {
-                        return Fail(out options, error);
+                        return Fail(out options);
                     }
 
                     break;
 
                 default:
                     error = $"Unknown argument: {arg}";
-                    return Fail(out options, error);
+                    return Fail(out options);
             }
         }
 
         if (string.IsNullOrWhiteSpace(input) && string.IsNullOrWhiteSpace(dataDir))
         {
             error = "Either --input or --data-dir is required.";
-            return Fail(out options, error);
+            return Fail(out options);
         }
 
         if (!string.IsNullOrWhiteSpace(input) && !File.Exists(input))
         {
             error = $"Input file not found: {input}";
-            return Fail(out options, error);
+            return Fail(out options);
         }
 
         if (!string.IsNullOrWhiteSpace(dataDir) && !Directory.Exists(dataDir))
         {
             error = $"Data directory not found: {dataDir}";
-            return Fail(out options, error);
+            return Fail(out options);
         }
 
         foreach (var path in loadOrder)
@@ -601,7 +563,7 @@ internal sealed record RendererProfilerOptions
             if (!File.Exists(path))
             {
                 error = $"Load-order file not found: {path}";
-                return Fail(out options, error);
+                return Fail(out options);
             }
         }
 
@@ -611,76 +573,102 @@ internal sealed record RendererProfilerOptions
         {
             error = $"Unknown scenario: {scenarioName}. Expected one of: " +
                     string.Join(", ", RendererProfilerScenarioCatalog.Names) + ".";
-            return Fail(out options, error);
+            return Fail(out options);
         }
 
         if (!string.IsNullOrWhiteSpace(scenarioOutput) && normalizedScenarioName is null)
         {
             error = "--scenario-output requires --scenario.";
-            return Fail(out options, error);
+            return Fail(out options);
         }
 
         if (normalizedScenarioName is not null &&
             (!string.IsNullOrWhiteSpace(captureFrame) || !string.IsNullOrWhiteSpace(captureTopDown)))
         {
             error = "--scenario cannot be combined with --capture-frame or --capture-topdown.";
-            return Fail(out options, error);
+            return Fail(out options);
         }
 
         if (normalizedScenarioName is not null && !string.IsNullOrWhiteSpace(captureInterior))
         {
             error = "--scenario cannot be combined with --capture-interior.";
-            return Fail(out options, error);
+            return Fail(out options);
         }
 
         if (normalizedScenarioName is not null && durationSeconds is not null)
         {
             error = "--scenario owns process completion and cannot be combined with --duration-seconds.";
-            return Fail(out options, error);
+            return Fail(out options);
         }
 
         if (normalizedScenarioName is not null && cameraMotion != RendererCameraMotionKind.Static)
         {
             error = "--scenario requires deterministic static camera motion.";
-            return Fail(out options, error);
+            return Fail(out options);
         }
 
         if (!string.IsNullOrWhiteSpace(captureInterior) && string.IsNullOrWhiteSpace(captureFrame))
         {
             error = "--capture-interior requires --capture-frame.";
-            return Fail(out options, error);
+            return Fail(out options);
         }
 
         if (!string.IsNullOrWhiteSpace(captureInterior) && !string.IsNullOrWhiteSpace(captureWorldspaceName))
         {
             error = "--capture-interior cannot be combined with --capture-worldspace-name.";
-            return Fail(out options, error);
+            return Fail(out options);
         }
 
         if (!string.IsNullOrWhiteSpace(captureInterior) && !string.IsNullOrWhiteSpace(captureTopDown))
         {
             error = "--capture-interior cannot be combined with --capture-topdown.";
-            return Fail(out options, error);
+            return Fail(out options);
         }
 
         var defaultProfileOutput = CreateDefaultProfileOutputPath();
-        var resolvedScenarioOutput = normalizedScenarioName is null
-            ? null
-            : string.IsNullOrWhiteSpace(scenarioOutput)
-                ? Path.Combine(
-                    Path.GetDirectoryName(defaultProfileOutput)!,
-                    Path.GetFileNameWithoutExtension(defaultProfileOutput) + "-" + normalizedScenarioName)
-                : Path.GetFullPath(scenarioOutput);
-        var resolvedProfileOutput = string.IsNullOrWhiteSpace(profileOutput)
-            ? resolvedScenarioOutput is null
-                ? defaultProfileOutput
-                : Path.Combine(resolvedScenarioOutput, "scenario.log")
-            : Path.GetFullPath(profileOutput);
-        var resolvedProfileJsonl = string.IsNullOrWhiteSpace(profileJsonl)
-            ? resolvedScenarioOutput is null
-                ? CreateDefaultProfileJsonlOutputPath(resolvedProfileOutput)
-                : Path.Combine(resolvedScenarioOutput, "scenario.jsonl")
-            : Path.GetFullPath(profileJsonl);
+        string? resolvedScenarioOutput;
+        if (normalizedScenarioName is null)
+        {
+            resolvedScenarioOutput = null;
+        }
+        else if (string.IsNullOrWhiteSpace(scenarioOutput))
+        {
+            resolvedScenarioOutput = Path.Combine(
+                Path.GetDirectoryName(defaultProfileOutput)!,
+                Path.GetFileNameWithoutExtension(defaultProfileOutput) + "-" + normalizedScenarioName);
+        }
+        else
+        {
+            resolvedScenarioOutput = Path.GetFullPath(scenarioOutput);
+        }
+
+        string resolvedProfileOutput;
+        if (!string.IsNullOrWhiteSpace(profileOutput))
+        {
+            resolvedProfileOutput = Path.GetFullPath(profileOutput);
+        }
+        else if (resolvedScenarioOutput is null)
+        {
+            resolvedProfileOutput = defaultProfileOutput;
+        }
+        else
+        {
+            resolvedProfileOutput = Path.Combine(resolvedScenarioOutput, "scenario.log");
+        }
+
+        string resolvedProfileJsonl;
+        if (!string.IsNullOrWhiteSpace(profileJsonl))
+        {
+            resolvedProfileJsonl = Path.GetFullPath(profileJsonl);
+        }
+        else if (resolvedScenarioOutput is null)
+        {
+            resolvedProfileJsonl = CreateDefaultProfileJsonlOutputPath(resolvedProfileOutput);
+        }
+        else
+        {
+            resolvedProfileJsonl = Path.Combine(resolvedScenarioOutput, "scenario.jsonl");
+        }
 
         options = new RendererProfilerOptions
         {
@@ -728,7 +716,7 @@ internal sealed record RendererProfilerOptions
         return true;
     }
 
-    private static bool Fail(out RendererProfilerOptions options, string? message)
+    private static bool Fail(out RendererProfilerOptions options)
     {
         options = Default;
         return false;
@@ -901,6 +889,34 @@ internal sealed record RendererProfilerOptions
             !float.IsFinite(value))
         {
             error = $"{option} must be a finite non-negative number.";
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    private static bool TryReadFiniteFloat(
+        string[] args,
+        ref int index,
+        string option,
+        string requirement,
+        out float value,
+        out string? error)
+    {
+        // Read directly so a negative value reaches validation instead of being mistaken for an option.
+        if (index + 1 >= args.Length)
+        {
+            value = 0f;
+            error = $"{option} requires a value.";
+            return false;
+        }
+
+        var raw = args[++index];
+        if (!float.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value) ||
+            !float.IsFinite(value))
+        {
+            error = $"{option} must be {requirement}.";
             return false;
         }
 

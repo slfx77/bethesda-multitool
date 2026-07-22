@@ -367,7 +367,7 @@ internal static partial class CorpusSuppressionReportCommand
     private static IEnumerable<InfoCapture> CaptureInfos(
         string dumpName,
         RecordCollection collection,
-        IReadOnlySet<uint> suppressedInfoIds,
+        HashSet<uint> suppressedInfoIds,
         MasterNames masterNames)
     {
         var topicNames = collection.DialogTopics
@@ -532,7 +532,7 @@ internal static partial class CorpusSuppressionReportCommand
         RegexOptions.CultureInvariant)]
     private static partial Regex LegacyQuestVariableMessage();
 
-    private static IReadOnlyList<SuppressionOccurrence> LoadOccurrences(
+    private static List<SuppressionOccurrence> LoadOccurrences(
         string artifactDirectory,
         IReadOnlyList<ManifestDump> dumps)
     {
@@ -659,7 +659,7 @@ internal static partial class CorpusSuppressionReportCommand
             result.FileSize).ParseAll();
     }
 
-    private static IReadOnlyDictionary<(string CsvPath, int RowOrder), CsvMetadata> LoadCsvMetadata(
+    private static Dictionary<(string CsvPath, int RowOrder), CsvMetadata> LoadCsvMetadata(
         IReadOnlyList<string> csvPaths)
     {
         var result = new Dictionary<(string, int), CsvMetadata>();
@@ -688,7 +688,7 @@ internal static partial class CorpusSuppressionReportCommand
         return result;
     }
 
-    private static string? GetField(IReadOnlyList<string> fields, int index) =>
+    private static string? GetField(List<string> fields, int index) =>
         index >= 0 && index < fields.Count && !string.IsNullOrWhiteSpace(fields[index])
             ? fields[index].Trim()
             : null;
@@ -735,7 +735,7 @@ internal static partial class CorpusSuppressionReportCommand
     private static void WriteDialogueMarkdown(
         string path,
         IReadOnlyList<DialogueReportRow> rows,
-        IReadOnlyList<SuppressionOccurrence> occurrences,
+        SuppressionOccurrence[] occurrences,
         int allQuestVariableDiagnosticCount,
         int allProducerDiagnosticCount,
         int allInlineScriptDiagnosticCount,
@@ -748,7 +748,7 @@ internal static partial class CorpusSuppressionReportCommand
         builder.AppendLine($"- Response variants: {rows.Count:N0}");
         builder.AppendLine($"- Unique dump + INFO suppressions: " +
                            $"{occurrences.Select(item => (item.DumpName, item.FormId)).Distinct().Count():N0}");
-        builder.AppendLine($"- INFO suppression diagnostics: {occurrences.Count:N0}");
+        builder.AppendLine($"- INFO suppression diagnostics: {occurrences.Length:N0}");
         builder.AppendLine($"- INFO + PACK invalid-condition diagnostics: {allQuestVariableDiagnosticCount:N0}");
         builder.AppendLine($"- INFO + PACK missing-producer diagnostics: {allProducerDiagnosticCount:N0}");
         builder.AppendLine($"- INFO + PACK + TERM inline-script diagnostics: {allInlineScriptDiagnosticCount:N0}");
@@ -828,13 +828,13 @@ internal static partial class CorpusSuppressionReportCommand
     private static void WriteScriptMarkdown(
         string path,
         IReadOnlyList<ScriptReportRow> rows,
-        IReadOnlyList<SuppressionOccurrence> occurrences)
+        SuppressionOccurrence[] occurrences)
     {
         var builder = new StringBuilder();
         builder.AppendLine("# Corpus suppressed scripts");
         builder.AppendLine();
         builder.AppendLine($"- Distinct source SCPTs: {rows.Count:N0}");
-        builder.AppendLine($"- Suppression diagnostics: {occurrences.Count:N0}");
+        builder.AppendLine($"- Suppression diagnostics: {occurrences.Length:N0}");
         builder.AppendLine($"- Suppression-bearing dumps: " +
                            $"{occurrences.Select(item => item.DumpName).Distinct(StringComparer.OrdinalIgnoreCase).Count():N0}");
         builder.AppendLine();
@@ -888,7 +888,7 @@ internal static partial class CorpusSuppressionReportCommand
         fullNames.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
         ?? editorIds.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
-    private static IReadOnlyDictionary<uint, string?> BuildSpeakerNames(RecordCollection collection)
+    private static Dictionary<uint, string?> BuildSpeakerNames(RecordCollection collection)
     {
         var result = new Dictionary<uint, string?>();
         foreach (var group in collection.Npcs.GroupBy(record => record.FormId))
@@ -1131,7 +1131,7 @@ internal static partial class CorpusSuppressionReportCommand
                     .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))));
     }
 
-    private static void AddIfPresent(this ISet<string> target, string? value)
+    private static void AddIfPresent(this SortedSet<string> target, string? value)
     {
         if (!string.IsNullOrWhiteSpace(value))
         {

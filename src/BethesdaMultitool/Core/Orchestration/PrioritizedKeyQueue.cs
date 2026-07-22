@@ -62,7 +62,10 @@ internal sealed class PrioritizedKeyQueue<TKey>
         {
             // Only the entry carrying the key's CURRENT best priority is live; entries left behind
             // by a promotion (or by a full dequeue + later re-enqueue cycle) are stale duplicates.
-            if (_bestPriority.TryGetValue(key, out var best) && best == entry.Priority)
+            // Bitwise identity, not tolerance: the live entry's priority was assigned from the very
+            // same float stored in _bestPriority, so exact-bits matching is the intended check.
+            if (_bestPriority.TryGetValue(key, out var best) &&
+                BitConverter.SingleToInt32Bits(best) == BitConverter.SingleToInt32Bits(entry.Priority))
             {
                 _bestPriority.Remove(key);
                 return true;

@@ -184,9 +184,9 @@ public sealed partial class WorldView3DControl
                 // Re-request until streaming FULLY settles (strict: no submesh withheld on pending
                 // textures) so the export captures the fully-loaded scene. The re-renders are what
                 // drive streaming — the live loop is detached, so a pure delay-poll would spin on
-                // frozen stats. Wall-clock time box (profiler evidence: heavy scenes need up to ~20s;
-                // the old 80-iteration ≈4s cap silently shipped half-streamed tiles) because
-                // permanently-missing textures can pin the strict counter.
+                // frozen stats. Wall-clock time box, not an iteration cap (which silently ships
+                // half-streamed tiles; heavy scenes need up to ~20s), because permanently-missing
+                // textures can pin the strict counter.
                 Export3DTile? tile = null;
                 var settleTimer = System.Diagnostics.Stopwatch.StartNew();
                 while (true)

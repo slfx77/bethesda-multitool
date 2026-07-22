@@ -660,7 +660,7 @@ internal static class RendererProfilerScenarioAssertions
             ? 1d
             : difference.ChangedPixelCount / pixelCount;
 
-        // Calibrated from the retail FalloutNV.esm 960x540 fixture on 2026-07-16: Bloom changed
+        // Calibrated from the retail FalloutNV.esm 960x540 fixture: Bloom changed
         // 3.774% of the frame, mean absolute luma contribution was 0.003087, bright pixels were
         // 0.298%, and full-frame byte-luma delta p99 was 28. These resolution-independent caps
         // leave meaningful driver/rendering tolerance while still rejecting a scene-wide blur.

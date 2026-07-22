@@ -589,7 +589,7 @@ public sealed partial class WorldMapControl
 
         // Memory cap. Once we exceed the soft limit, drop the LRU head — guaranteed to be the
         // genuinely oldest entry because OrderedDictionary preserves insertion order strictly
-        // (see _layerCellBitmaps doc-comment for the pre-2026-06-05 Dictionary bug this fixed).
+        // (see _layerCellBitmaps doc-comment for why OrderedDictionary is required).
         // viewport-leave already evicts most of the stale ones in EnsureHeightmapBitmap; this
         // cap is the safety net for resolutions retained across zoom thresholds plus the
         // viewport×3 budget for pan-back stand-ins.

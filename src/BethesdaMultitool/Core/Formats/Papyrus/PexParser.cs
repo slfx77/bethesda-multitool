@@ -17,7 +17,9 @@ using System.Text;
 namespace BethesdaMultitool.Core.Formats.Papyrus;
 
 /// <summary>Describes a structurally invalid or unsupported PEX binary.</summary>
+#pragma warning disable RCS1194 // standard ctor trio is present; the rule additionally expects the obsolete serialization ctor
 public sealed class PexParseException : IOException
+#pragma warning restore RCS1194
 {
     public PexParseException()
         : base()
