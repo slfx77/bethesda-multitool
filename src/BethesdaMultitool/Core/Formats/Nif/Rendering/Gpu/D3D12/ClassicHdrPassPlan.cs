@@ -45,10 +45,10 @@ internal readonly record struct ClassicHdrPassPlan
     public int SourceHeight { get; }
     public int DownsampleDrawCount { get; }
     public bool BloomEnabled { get; }
-    public int AdaptDrawCount => 1;
+    public static int AdaptDrawCount => 1;
     public int BrightPassBlurDrawCount => BloomEnabled ? 1 : 0;
     public int BlurDrawCount => BloomEnabled ? 1 : 0;
-    public int CompositeDrawCount => 1;
+    public static int CompositeDrawCount => 1;
     public int TotalDrawCount =>
         DownsampleDrawCount + AdaptDrawCount + BrightPassBlurDrawCount + BlurDrawCount + CompositeDrawCount;
 
@@ -130,7 +130,7 @@ internal readonly record struct ClassicHdrPassPlan
             return ClassicHdrPassKind.BrightPassBlurVertical;
         }
 
-        if (BloomEnabled && index-- == 0)
+        if (BloomEnabled && index == 0)
         {
             return ClassicHdrPassKind.BlurHorizontal;
         }

@@ -29,6 +29,12 @@ SamplerState sClampUV     : register(s6); // BGSM/BGEM TileU/TileV both off
 
 cbuffer PerFrame : register(b0) { float4x4 uViewProj; }
 
+// Per-sample luminance ceiling for authored emissive/glow output. High enough that every ordinary
+// glow product (goo ×2 tint × EmissiveMult 1.2 ≈ 2.4, neon 2-4) passes untouched with bloom-worthy
+// headroom, low enough to bound extreme Lighting30 emittance spikes on sub-pixel triangles — the
+// distant-mesh "isolated white dot" fireflies. Tuned per the 2026-07-14 hot-pixel audit (~4-8 band).
+static const float kEmissiveLumaCap = 6.0;
+
 // Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants,
 // uploaded once per frame and bound for the whole scene (terrain/reference/water all read it).
 cbuffer Atmosphere : register(b3)
@@ -678,6 +684,9 @@ float4 main(PSInput input) : SV_Target
     float sunShadow = !fullBright && !fnvActiveAdtBase && uSunColorLighting.w >= 0.5
         ? ShadowFactor(input.vWorldPos)
         : 1.0;
+    // Tracks whether this (non-full-bright) shape carries authored Lighting30 emittance — those
+    // keep HDR headroom for bloom and are exempt from the generalized per-sample ceiling below.
+    bool authoredGlow = false;
     float3 shade;
     if (fullBright)
     {
@@ -704,6 +713,7 @@ float4 main(PSInput input) : SV_Target
             // vEffectFalloff is a layout-preserving union for this mutually-exclusive material
             // family: raw selected RGB (NiMaterial or XEMI) + NiMaterial emission multiplier.
             emission = input.vEffectFalloff.rgb;
+            authoredGlow = dot(emission, 1.0) > 0.0;
             if (hdrActive)
             {
                 emission *= input.vEffectFalloff.w * uCameraOrigin.w;
@@ -845,6 +855,32 @@ float4 main(PSInput input) : SV_Target
         // Firefly bound (see the sun-specular block): EnvMapScale reaches 8, so the addend is
         // genuinely unbounded — cap it at the old per-sample LDR ceiling. Non-emissive-gated.
         lit += min(env * saturate(shade) * (input.vEnvMap.y * specMask * gEnv), 1.0);
+    }
+
+    // Generalized firefly bound: the sun-specular clamp above only reaches shapes that enter that
+    // block (lighting + normal map + specular flag + mask). Matte shapes still alias — sub-pixel
+    // triangles at distance modulate sun·(N·L) and the unbounded point-light sum per MSAA sample,
+    // which the pre-HDR 8-bit target used to clamp at 1 before the resolve averaged it. Restore
+    // that ceiling for every shape without authored glow, after ALL lighting terms. Full-bright
+    // NoLighting shapes and Lighting30 emittance keep their HDR headroom (that's bloom's input —
+    // flattening it is the regression the HDR program exists to avoid).
+    if (!fullBright && !authoredGlow)
+    {
+        lit = min(lit, 1.0);
+    }
+    else
+    {
+        // Emissive firefly cap: authored glow keeps HDR headroom for bloom, but a sub-pixel glow
+        // triangle (welkynd stones, gate fire, glow-map windows at distance) can ride an extreme
+        // Lighting30 emittance product (EmissiveMult × HDR scale × glow map) into single MSAA
+        // samples as isolated white dots. Bound its LUMINANCE at a high ceiling — hue-preserving
+        // scale, never a flat saturate (that would flatten neon/goo/fire and pre-empt bloom).
+        // Ordinary glow (goo ~2.4, neon 2-4) passes untouched.
+        float glowLuma = dot(lit, float3(0.299, 0.587, 0.114));
+        if (glowLuma > kEmissiveLumaCap)
+        {
+            lit *= kEmissiveLumaCap / glowLuma;
+        }
     }
 
     // SLS2000 always writes BaseMap.a * AmbientColor.a. The bounded route requires the latter

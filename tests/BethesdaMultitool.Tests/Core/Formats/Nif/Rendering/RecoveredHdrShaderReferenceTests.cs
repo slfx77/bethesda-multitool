@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -49,7 +50,7 @@ public sealed class RecoveredHdrShaderReferenceTests
             currentWeight: 0.25f,
             upperLumClamp: 1f);
 
-        AssertVector(adapted, new Vector3(0.4f, 0.425f, 0.5125f));
+        VectorAssert.Equal(new Vector3(0.4f, 0.425f, 0.5125f), adapted, 1e-5f);
     }
 
     [Fact]
@@ -61,7 +62,7 @@ public sealed class RecoveredHdrShaderReferenceTests
             currentWeight: 0.4f,
             upperLumClamp: 1f);
 
-        AssertVector(adapted, new Vector3(0.6f, 0.8f, 0f));
+        VectorAssert.Equal(new Vector3(0.6f, 0.8f, 0f), adapted, 1e-5f);
     }
 
     [Fact]
@@ -74,8 +75,8 @@ public sealed class RecoveredHdrShaderReferenceTests
             currentWeight: 0.5f,
             upperLumClamp: 1f);
 
-        AssertVector(black, Vector3.Zero);
-        AssertVector(nearBlack, new Vector3(0.001f, 0f, 0f));
+        VectorAssert.Equal(Vector3.Zero, black, 1e-5f);
+        VectorAssert.Equal(new Vector3(0.001f, 0f, 0f), nearBlack, 1e-5f);
     }
 
     [Fact]
@@ -87,7 +88,7 @@ public sealed class RecoveredHdrShaderReferenceTests
             adaptedAverage: new Vector3(0.4f, 0.3f, 0.2f),
             targetLum: 1.2f);
 
-        AssertVector(result, new Vector3(0.8416667f, 0.6833333f, 0.525f));
+        VectorAssert.Equal(new Vector3(0.8416667f, 0.6833333f, 0.525f), result, 1e-5f);
     }
 
     [Fact]
@@ -99,7 +100,7 @@ public sealed class RecoveredHdrShaderReferenceTests
             adaptedAverage: Vector3.One,
             targetLum: 1.2f);
 
-        AssertVector(result, new Vector3(0.3366667f, 0.2733333f, 0.21f));
+        VectorAssert.Equal(new Vector3(0.3366667f, 0.2733333f, 0.21f), result, 1e-5f);
     }
 
     [Fact]
@@ -124,8 +125,8 @@ public sealed class RecoveredHdrShaderReferenceTests
             bloomEnabled: false);
 
         Assert.Equal(2.1f, brightPassOutput.W, 6);
-        AssertVector(active, new Vector3(0.53809524f, 0.39047620f, 0.24285716f));
-        AssertVector(disabled, new Vector3(0.51428574f, 0.34285715f, 0.17142858f));
+        VectorAssert.Equal(new Vector3(0.53809524f, 0.39047620f, 0.24285716f), active, 1e-5f);
+        VectorAssert.Equal(new Vector3(0.51428574f, 0.34285715f, 0.17142858f), disabled, 1e-5f);
     }
 
     [Fact]
@@ -133,7 +134,7 @@ public sealed class RecoveredHdrShaderReferenceTests
     {
         var result = BrightPass(new Vector3(0.2f, 0.35f, 1.15f), clamp: 0.35f, scale: 1.5f);
 
-        AssertVector(result, new Vector3(0f, 0f, 1.2f));
+        VectorAssert.Equal(new Vector3(0f, 0f, 1.2f), result, 1e-5f);
     }
 
     [Theory]
@@ -182,8 +183,8 @@ public sealed class RecoveredHdrShaderReferenceTests
             clamp: 0.35f,
             scale: 1.5f);
 
-        AssertVector(result, new Vector3(0.12535849f, 0.03687014f, 0f));
-        AssertVector(formerDiagonal, Vector3.Zero);
+        VectorAssert.Equal(new Vector3(0.12535849f, 0.03687014f, 0f), result, 1e-5f);
+        VectorAssert.Equal(Vector3.Zero, formerDiagonal, 1e-5f);
     }
 
     [Fact]
@@ -211,12 +212,12 @@ public sealed class RecoveredHdrShaderReferenceTests
         var downLeft = At(-1, 1);
         var downRight = At(1, 1);
 
-        AssertVector(left, right);
-        AssertVector(left, up);
-        AssertVector(left, down);
-        AssertVector(upLeft, upRight);
-        AssertVector(upLeft, downLeft);
-        AssertVector(upLeft, downRight);
+        VectorAssert.Equal(right, left, 1e-5f);
+        VectorAssert.Equal(up, left, 1e-5f);
+        VectorAssert.Equal(down, left, 1e-5f);
+        VectorAssert.Equal(upRight, upLeft, 1e-5f);
+        VectorAssert.Equal(downLeft, upLeft, 1e-5f);
+        VectorAssert.Equal(downRight, upLeft, 1e-5f);
         Assert.True(center.X > left.X);
         Assert.True(left.X > upLeft.X);
         Assert.True(upLeft.X > 0f);
@@ -265,8 +266,8 @@ public sealed class RecoveredHdrShaderReferenceTests
         // shader reads that constant. A zero mask and an all-bits mask therefore produce the same
         // fully-authored grade.
         var expected = new Vector3(0.5806856f, 0.405272f, 0.3108584f);
-        AssertVector(maskZero, expected);
-        AssertVector(maskAll, expected);
+        VectorAssert.Equal(expected, maskZero, 1e-5f);
+        VectorAssert.Equal(expected, maskAll, 1e-5f);
     }
 
     [Fact]
@@ -284,7 +285,7 @@ public sealed class RecoveredHdrShaderReferenceTests
 
         // contrast * (brightness * color - pivot) + pivot. Reversing the two authored slots gives
         // (0.8765, 0.4445, 0.2285), so this vector catches the original port mismatch.
-        AssertVector(result, new Vector3(0.839f, 0.407f, 0.191f));
+        VectorAssert.Equal(new Vector3(0.839f, 0.407f, 0.191f), result, 1e-5f);
     }
 
     private static Vector3 Adapt(
@@ -456,12 +457,5 @@ public sealed class RecoveredHdrShaderReferenceTests
         color = Vector3.Lerp(color, luma * tint, tintAmount);
         return contrast * (brightness * color - new Vector3(contrastPivot))
                + new Vector3(contrastPivot);
-    }
-
-    private static void AssertVector(Vector3 actual, Vector3 expected)
-    {
-        Assert.InRange(actual.X, expected.X - 1e-5f, expected.X + 1e-5f);
-        Assert.InRange(actual.Y, expected.Y - 1e-5f, expected.Y + 1e-5f);
-        Assert.InRange(actual.Z, expected.Z - 1e-5f, expected.Z + 1e-5f);
     }
 }
