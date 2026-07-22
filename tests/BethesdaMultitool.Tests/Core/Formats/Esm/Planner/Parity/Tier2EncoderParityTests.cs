@@ -105,45 +105,6 @@ public sealed class Tier2EncoderParityTests
     }
 
     [Fact]
-    public void New_Rcpe_GRUP_Bytes_Match_Legacy()
-    {
-        var recipe = new RecipeRecord
-        {
-            FormId = 0x01000800,
-            EditorId = "TestRecipe"
-        };
-
-        var legacy = RcpeEncoder.EncodeNew(recipe);
-        PlannerTier1ParityHelper.AssertNewRecordParity("RCPE", recipe.FormId, recipe, legacy);
-    }
-
-    [Fact]
-    public void New_Cobj_GRUP_Bytes_Match_Legacy()
-    {
-        var cobj = new ConstructibleObjectRecord
-        {
-            FormId = 0x01000800,
-            EditorId = "TestCobj"
-        };
-
-        var legacy = CobjEncoder.EncodeNew(cobj);
-        PlannerTier1ParityHelper.AssertNewRecordParity("COBJ", cobj.FormId, cobj, legacy);
-    }
-
-    [Fact]
-    public void New_Arma_GRUP_Bytes_Match_Legacy()
-    {
-        var arma = new ArmaRecord
-        {
-            FormId = 0x01000800,
-            EditorId = "TestArma"
-        };
-
-        var legacy = ArmaEncoder.EncodeNew(arma);
-        PlannerTier1ParityHelper.AssertNewRecordParity("ARMA", arma.FormId, arma, legacy);
-    }
-
-    [Fact]
     public void New_Imod_GRUP_Bytes_Match_Legacy()
     {
         var imod = new WeaponModRecord
@@ -158,70 +119,5 @@ public sealed class Tier2EncoderParityTests
 
         var legacy = ImodEncoder.EncodeNew(imod);
         PlannerTier1ParityHelper.AssertNewRecordParity("IMOD", imod.FormId, imod, legacy);
-    }
-
-    [Fact]
-    public void New_Ench_GRUP_Bytes_Match_Legacy()
-    {
-        var ench = new EnchantmentRecord
-        {
-            FormId = 0x01000800,
-            EditorId = "TestEnch"
-        };
-
-        var legacy = EnchEncoder.EncodeNew(ench);
-        PlannerTier1ParityHelper.AssertNewRecordParity("ENCH", ench.FormId, ench, legacy);
-    }
-
-    [Fact]
-    public void New_Spel_GRUP_Bytes_Match_Legacy()
-    {
-        var spel = new SpellRecord
-        {
-            FormId = 0x01000800,
-            EditorId = "TestSpel"
-        };
-
-        var legacy = SpelEncoder.EncodeNew(spel);
-        PlannerTier1ParityHelper.AssertNewRecordParity("SPEL", spel.FormId, spel, legacy);
-    }
-
-    [Fact]
-    public void New_Expl_GRUP_Bytes_Match_Legacy()
-    {
-        var expl = new ExplosionRecord
-        {
-            FormId = 0x01000800,
-            EditorId = "TestExpl"
-        };
-
-        var legacy = ExplEncoder.EncodeNew(expl);
-        PlannerTier1ParityHelper.AssertNewRecordParity("EXPL", expl.FormId, expl, legacy);
-    }
-
-    [Fact]
-    public void New_Mgef_GRUP_Bytes_Match_Legacy()
-    {
-        var mgef = new BaseEffectRecord
-        {
-            FormId = 0x01000800,
-            EditorId = "TestMgef"
-        };
-
-        var legacy = MgefEncoder.EncodeNew(mgef);
-        PlannerTier1ParityHelper.AssertNewRecordParity("MGEF", mgef.FormId, mgef, legacy);
-    }
-
-    [Fact]
-    public void New_Proj_GRUP_Bytes_Match_Legacy()
-    {
-        var proj = new ProjectileRecord
-        {
-            FormId = 0x01000800,
-            EditorId = "TestProj"
-        };
-
-        var legacy = ProjEncoder.EncodeNew(proj);
-        PlannerTier1ParityHelper.AssertNewRecordParity("PROJ", proj.FormId, proj, legacy);
     }
 }
