@@ -368,6 +368,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     public bool DetailedProfilingEnabled { get; set; }
     public bool ModernPipelineEnabled { get; set; }
 
+    /// <summary>
+    ///     True when the worldspace default water height was inherited from a WNAM parent (TES4 child
+    ///     worldspaces): only cells flagging Has-Water then receive the default plane. Set alongside
+    ///     <c>LoadData</c>; only consulted on the no-spatial-index fallback path (the spatial index
+    ///     pre-resolves water with the same rule).
+    /// </summary>
+    public bool DefaultWaterRequiresCellHasWater { get; set; }
+
     public void LoadData(
         Dictionary<(int gx, int gy), CellRecord> cells,
         float? worldspaceDefaultWaterHeight)
@@ -964,11 +972,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         LastStats.WaterMapPaths = _telemetryMapPaths;
         LastStats.WaterMapRoles = _telemetryMapRoles;
         LastStats.WaterMapResolved = _telemetryMapResolved;
-        LastStats.WaterTelemetryUnavailableReason = _telemetryMapPaths.Length == 0
-            ? _appearance is null
+        string? telemetryUnavailableReason = null;
+        if (_telemetryMapPaths.Length == 0)
+        {
+            telemetryUnavailableReason = _appearance is null
                 ? "no WATR appearance resolved; the shader uses profile colors and a procedural normal fallback"
-                : "the active WATR appearance carries no authored texture path; a procedural normal fallback is used"
-            : null;
+                : "the active WATR appearance carries no authored texture path; a procedural normal fallback is used";
+        }
+        LastStats.WaterTelemetryUnavailableReason = telemetryUnavailableReason;
         LastStats.WaterPipeline = ModernWaterPipeline.TelemetryName(
             _game,
             explicitlyEnabled: false,
@@ -1501,11 +1512,16 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                     surface.RefractionDistortionAmount),
             };
 
-            cmd.SetPipelineState(water001
-                ? _psoFnvWater001DepthSample
-                : depthSample
-                    ? _psoDepthSample
-                    : _pso);
+            var pso = _pso;
+            if (water001)
+            {
+                pso = _psoFnvWater001DepthSample;
+            }
+            else if (depthSample)
+            {
+                pso = _psoDepthSample;
+            }
+            cmd.SetPipelineState(pso);
             cmd.SetGraphicsRootConstantBufferView(
                 GpuRootSignature12.Slots.PerFrameCbv,
                 perFrame.GpuAddress);
@@ -1652,7 +1668,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _deletionQueue.EnqueueDispose(_fnvNoiseNormalTexture);
         _deletionQueue.EnqueueDispose(new PersistentSlotReturn(_cbvSrvUavHeap, _fnvNoiseBlendBindlessIndex));
         _deletionQueue.EnqueueDispose(new PersistentSlotReturn(_cbvSrvUavHeap, _fnvNoiseNormalBindlessIndex));
-        _modernWater?.Dispose(_deletionQueue, _cbvSrvUavHeap);
+        _modernWater?.DisposeInto(_deletionQueue, _cbvSrvUavHeap);
         _modernWater = null;
     }
 
@@ -1737,7 +1753,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     }
 
     private FnvWater001VisibleCellContract InspectFnvWater001VisibleCells(
-        IReadOnlyList<global::BethesdaMultitool.WorldWaterCell> cells)
+        List<global::BethesdaMultitool.WorldWaterCell> cells)
     {
         if (cells.Count == 0)
         {
@@ -1756,7 +1772,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             // One global plane equation is appended to the frame CB. Exact equality is intentional:
             // accepting an epsilon-separated surface would make one packet reconstruct against a
             // different plane than the geometry the pixel came from.
+#pragma warning disable S1244 // exact plane-height identity by design (see comment above)
             if (water.Height != planeHeight)
+#pragma warning restore S1244
             {
                 mixedPlaneHeights = true;
             }
@@ -1788,7 +1806,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     }
 
     private FnvWater001Preflight EvaluateFnvWater001(
-        IReadOnlyList<global::BethesdaMultitool.WorldWaterCell> visibleCells,
+        List<global::BethesdaMultitool.WorldWaterCell> visibleCells,
         in FnvWater001VisibleCellContract cells,
         float cameraHeight,
         bool isPerspectiveProjection,
@@ -1925,6 +1943,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     {
         if (cell.WaterHeight is float cellHeight && !WorldHeightNormalizer.IsNoWaterSentinel(cellHeight))
             return cellHeight;
+        // A WNAM-inherited default (TES4 child worldspaces) only waters Has-Water-flagged cells.
+        if (DefaultWaterRequiresCellHasWater && !cell.HasWater)
+            return null;
         if (_worldspaceDefaultWaterHeight is float worldHeight && !WorldHeightNormalizer.IsNoWaterSentinel(worldHeight))
             return worldHeight;
         return null;
@@ -2294,7 +2315,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             }
         }
 
-        internal void Dispose(
+        internal void DisposeInto(
             GpuDeletionQueue12 deletionQueue,
             GpuDescriptorHeapAllocator12 heap)
         {

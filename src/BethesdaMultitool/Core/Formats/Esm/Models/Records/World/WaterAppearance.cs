@@ -201,11 +201,14 @@ public sealed record WaterAppearance(
         var causesDamage = water.WaterFlags is { Length: > 0 } f && (f[0] & 0x01) != 0;
         var isLava = LooksLikeLava(water);
 
-        var textures = water.NormalTextures.Count > 0
-            ? water.NormalTextures
-            : water.NoiseTexture is { Length: > 0 } noise
+        var textures = water.NormalTextures;
+        if (textures.Count == 0)
+        {
+            textures = water.NoiseTexture is { Length: > 0 } noise
                 ? new[] { noise }
                 : Array.Empty<string>();
+        }
+
         var firstTexture = textures.Count > 0 ? textures[0] : water.NoiseTexture;
         var appearance = FromVisualProperties(water.VisualProperties, firstTexture, textures);
         if (appearance is not null)

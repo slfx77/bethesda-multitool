@@ -63,8 +63,22 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         var capturedHeightmapByGrid = new Dictionary<(uint, int, int), LandHeightmap>();
         var visualDataByGrid = new Dictionary<(uint, int, int), LandVisualData>();
         var terrainMeshByGrid = new Dictionary<(uint, int, int), RuntimeTerrainMesh>();
+        // TES4-era: 29 of retail Oblivion.esm's 31,823 LANDs are pre-release relics — uncompressed,
+        // carrying the legacy VTEX texture grid and NO shipped BTXT/ATXT/VTXT layers (all of them in
+        // city child worldspaces, e.g. AnvilWorld (-45,-8)'s stale sculpt). The engine ignores them:
+        // in-game those cells show the PARENT worldspace's textured terrain (user-verified in-game
+        // A/B, 2026-07-21). Skip attaching them so the parent-terrain inheritance pass
+        // (CellLinkageHandler.InheritTerrainFromParentWorldspaces) fills the slot the way the
+        // engine does. Later games always author layer subrecords, so the gate is TES4-era only.
+        var skipRelicLands = !GameProfiles.For(Context.Game).HasWorldspaceDefaultWaterHeight;
         foreach (var land in Context.ScanResult.LandRecords)
         {
+            if (skipRelicLands &&
+                land.VtexCount > 0 && land.BtxtCount == 0 && land.AtxtCount == 0 && land.VtxtCount == 0)
+            {
+                continue;
+            }
+
             StampTerrainSourceParent(land);
             if (land.ParentCellFormId is uint parentCellFormId)
             {
@@ -709,8 +723,17 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         var visualDataByGrid = new Dictionary<(uint, int, int), LandVisualData>();
         var terrainMeshByGrid = new Dictionary<(uint, int, int), RuntimeTerrainMesh>();
 
+        // Same TES4-era pre-release-relic gate as the instance attach loop in ParseCells (VTEX-only
+        // LANDs the engine ignores; the parent-terrain inheritance pass fills the slot instead).
+        var skipRelicLands = !GameProfiles.For(scanResult.Game).HasWorldspaceDefaultWaterHeight;
         foreach (var land in scanResult.LandRecords)
         {
+            if (skipRelicLands &&
+                land.VtexCount > 0 && land.BtxtCount == 0 && land.AtxtCount == 0 && land.VtxtCount == 0)
+            {
+                continue;
+            }
+
             StampTerrainSourceParent(land);
             if (land.ParentCellFormId is uint parentCellFormId)
             {

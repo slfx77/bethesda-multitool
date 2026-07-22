@@ -107,6 +107,12 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     internal BethesdaGame Game { get; set; }
     internal float? DefaultWaterHeight { get; set; }
 
+    /// <summary>
+    ///     Mirrors <see cref="WorldspaceRecord.WaterFromParentWorldspace" /> for
+    ///     the active worldspace: a WNAM-inherited default only waters cells flagging Has-Water.
+    /// </summary>
+    internal bool DefaultWaterRequiresCellHasWater { get; set; }
+
     public string ResourceName => nameof(WorldRenderCache);
 
     public Core.Diagnostics.ResourceCategory Category => Core.Diagnostics.ResourceCategory.CpuCache;
@@ -363,7 +369,7 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
                     landTextures,
                     grasses,
                     Game,
-                    ResolveEffectiveWaterHeight(cell, DefaultWaterHeight));
+                    ResolveEffectiveWaterHeight(cell, DefaultWaterHeight, DefaultWaterRequiresCellHasWater));
                 if (grassPlacements.Count > 0) built.AddRange(grassPlacements);
             }
         }
@@ -380,19 +386,27 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
 
     private readonly record struct Cached<T>(T? Value) where T : class;
 
-    internal static float? ResolveEffectiveWaterHeight(CellRecord cell, float? defaultWaterHeight)
+    internal static float? ResolveEffectiveWaterHeight(
+        CellRecord cell, float? defaultWaterHeight, bool defaultRequiresCellHasWater = false)
     {
         // Sentinel XCLW (float.MaxValue) on a cell means "no explicit override — use the
         // worldspace default," NOT "this cell has no water." Vanilla WastelandNV's Colorado
         // river cells follow exactly this pattern: HasWater flag is set, XCLW is the
         // sentinel, and the engine renders water at the worldspace DNAM level (-2300 in
         // WastelandNV). The range guard below naturally rejects the sentinel (~3.4e38) and
-        // falls through to the worldspace fallback. The 2026-05-28 short-circuit that
-        // returned null here suppressed water for every such cell — the visible regression
-        // was "Colorado river displays empty."
+        // falls through to the worldspace fallback.
         if (cell.WaterHeight is { } cellWater && cellWater is > -1e6f and < 1e6f)
         {
             return cellWater;
+        }
+
+        // A default inherited from a WNAM parent worldspace (TES4 child worldspaces — BravilWorld
+        // takes Tamriel's sea level) applies only to cells that flag Has-Water: the child's dry city
+        // cells above the waterline must not gain a plane just because the parent has an ocean.
+        // Authored defaults keep the legacy every-cell fallback (FNV Colorado-river pattern above).
+        if (defaultRequiresCellHasWater && !cell.HasWater)
+        {
+            return null;
         }
 
         // Worldspace-level sentinel still means "no default water plane exists" — leave it

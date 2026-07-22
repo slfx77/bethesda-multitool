@@ -86,14 +86,19 @@ public sealed partial class WorldView3DControl
             return;
         }
 
-        var (cells, defaultWaterHeight) = GetSelectedWorldspaceCells(_data);
+        var (cells, defaultWaterHeight, waterFromParent) = GetSelectedWorldspaceCells(_data);
         var cellList = cells.ToList();
 
         var activeWorldspaceFormId = GetSelectedWorldspaceFormId(_data);
         Log.Info(
             "WorldView3DControl: building cell grid for worldspace[{0}] 0x{1:X8} — {2} gridded cells.",
             WorldspaceComboBox.SelectedIndex, activeWorldspaceFormId ?? 0, cellList.Count);
-        _spatialIndex = WorldSpatialIndex.BuildFor3D(_data, cellList, defaultWaterHeight);
+        _spatialIndex = WorldSpatialIndex.BuildFor3D(_data, cellList, defaultWaterHeight, waterFromParent);
+
+        // The grass water-cull bake reads the render cache's default; keep it tracking the ACTIVE
+        // worldspace (LoadData seeds it from Worldspaces[0] only).
+        _data.RenderCache.DefaultWaterHeight = defaultWaterHeight;
+        _data.RenderCache.DefaultWaterRequiresCellHasWater = waterFromParent;
 
         _cellGridLookup = _spatialIndex.CellsByGrid.ToDictionary(kv => kv.Key, kv => kv.Value);
         var activeWorldspace = CurrentSelectedExteriorWorldspace();
@@ -115,6 +120,7 @@ public sealed partial class WorldView3DControl
         _water?.SetFnvWaterMaterialCatalog(ResolveFnvWaterMaterialCatalog());
         _water?.SetLegacyAnimatedFrames(ResolveLegacyAnimatedWaterFrames());
         _water?.SetOblivionDetailTexture(oblivionDetailIndex);
+        if (_water is not null) _water.DefaultWaterRequiresCellHasWater = waterFromParent;
         _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex, appearance, normalIndices);
         _water?.SetFnvWater001WaterTypeContext(
             initialWaterSelection.WaterFormId,
@@ -167,16 +173,19 @@ public sealed partial class WorldView3DControl
         return frames.Count > 0 ? frames.ToArray() : null;
     }
 
-    private IReadOnlyList<uint?>? ResolveWaterNormalIndices(WaterAppearance? appearance)
+    private uint?[]? ResolveWaterNormalIndices(WaterAppearance? appearance)
     {
-        return appearance?.NormalTextures is { Count: > 0 } textures
-            ? textures.Select(path => _textureResolver12?.ResolveNormalMapBindlessIndex(path)).ToArray()
-            : appearance?.NoiseTexture is { } noise
-                ? new uint?[] { _textureResolver12?.ResolveNormalMapBindlessIndex(noise) }
-                : null;
+        if (appearance?.NormalTextures is { Count: > 0 } textures)
+        {
+            return textures.Select(path => _textureResolver12?.ResolveNormalMapBindlessIndex(path)).ToArray();
+        }
+
+        return appearance?.NoiseTexture is { } noise
+            ? new uint?[] { _textureResolver12?.ResolveNormalMapBindlessIndex(noise) }
+            : null;
     }
 
-    private IReadOnlyDictionary<uint, WaterRenderer12.FnvWaterMaterialBinding>?
+    private Dictionary<uint, WaterRenderer12.FnvWaterMaterialBinding>?
         ResolveFnvWaterMaterialCatalog()
     {
         if (_data?.Game != BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas)
@@ -294,6 +303,7 @@ public sealed partial class WorldView3DControl
             worldspace: null,
             watersByFormId: _data.WatersByFormId);
         var appearance = WaterAppearance.FromWaterRecord(waterSelection.Water);
+        if (_water is not null) _water.DefaultWaterRequiresCellHasWater = false;
         _water?.LoadData(
             _cellGridLookup,
             worldspaceDefaultWaterHeight: null,
@@ -362,19 +372,21 @@ public sealed partial class WorldView3DControl
     ///     <c>_data.Worldspaces</c>; an optional final entry maps to <c>_data.UnlinkedExteriorCells</c>.
     ///     Returns empty when nothing is selected (e.g. an empty file).
     /// </summary>
-    private (IEnumerable<CellRecord> Cells, float? DefaultWaterHeight) GetSelectedWorldspaceCells(WorldViewData data)
+    private (IEnumerable<CellRecord> Cells, float? DefaultWaterHeight, bool WaterFromParent)
+        GetSelectedWorldspaceCells(WorldViewData data)
     {
         var index = WorldspaceComboBox.SelectedIndex;
-        if (index < 0) return (Enumerable.Empty<CellRecord>(), null);
+        if (index < 0) return (Enumerable.Empty<CellRecord>(), null, false);
 
         if (index < data.Worldspaces.Count)
         {
             var ws = data.Worldspaces[index];
-            return (ws.Cells.Where(c => c.GridX is int && c.GridY is int), ws.DefaultWaterHeight);
+            return (ws.Cells.Where(c => c.GridX is int && c.GridY is int), ws.DefaultWaterHeight,
+                ws.WaterFromParentWorldspace);
         }
 
         // Tail entry: unlinked exterior cells. No worldspace → no DefaultWaterHeight fallback.
-        return (data.UnlinkedExteriorCells.Where(c => c.GridX is int && c.GridY is int), null);
+        return (data.UnlinkedExteriorCells.Where(c => c.GridX is int && c.GridY is int), null, false);
     }
 
     private uint? GetSelectedWorldspaceFormId(WorldViewData data)
@@ -462,16 +474,5 @@ public sealed partial class WorldView3DControl
         MarkSceneSelectionReady(selectionGeneration);
         HideStatus();
         return true;
-    }
-
-    private static List<PlacedReference> GetSelectedWorldspaceMarkers(WorldViewData data, uint? worldspaceFormId)
-    {
-        if (worldspaceFormId is uint ws &&
-            data.MarkersByWorldspace.TryGetValue(ws, out var markers))
-        {
-            return markers;
-        }
-
-        return worldspaceFormId is null ? data.UnlinkedMapMarkers : [];
     }
 }

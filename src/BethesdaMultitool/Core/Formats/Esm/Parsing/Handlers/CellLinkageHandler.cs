@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 
@@ -444,6 +445,97 @@ internal static class CellLinkageHandler
             {
                 worldspaces[idx] = worldspaces[idx] with { Cells = worldCells };
             }
+        }
+    }
+
+    /// <summary>
+    ///     TES4-era child worldspaces inherit PARENT terrain per cell: retail city worlds carry cells
+    ///     with no LAND at all (AnvilWorld's late 0x000CA4xx ring) and a few pre-release relic LANDs
+    ///     the engine ignores (VTEX-only — skipped at attach time by <c>CellRecordHandler</c>), yet
+    ///     in-game those cells render the parent worldspace's textured terrain (user-verified in-game
+    ///     A/B at AnvilWorld (-45,-8), 2026-07-21). Mirror that: any child-worldspace exterior cell
+    ///     without an attached heightmap borrows the WNAM ancestor's same-grid cell heightmap and
+    ///     visual data by reference. Runs after <see cref="LinkCellsToWorldspaces" />; the shared
+    ///     heightmap keeps its parent-cell provenance stamp, so the converter's captured-terrain
+    ///     policies (which check <c>SourceParentCellFormId</c>) are unaffected.
+    /// </summary>
+    internal static void InheritTerrainFromParentWorldspaces(
+        List<WorldspaceRecord> worldspaces, BethesdaGame game)
+    {
+        if (GameProfiles.For(game).HasWorldspaceDefaultWaterHeight)
+        {
+            return; // FO3+ worldspaces author their own terrain contract; TES4-era only.
+        }
+
+        var byFormId = new Dictionary<uint, WorldspaceRecord>(worldspaces.Count);
+        foreach (var ws in worldspaces)
+        {
+            byFormId.TryAdd(ws.FormId, ws);
+        }
+
+        var parentGridCache = new Dictionary<uint, Dictionary<(int, int), CellRecord>>();
+        var inheritedCells = 0;
+
+        foreach (var ws in worldspaces)
+        {
+            if (ws.ParentWorldspaceFormId is not { } parentId || ws.Cells.Count == 0)
+            {
+                continue;
+            }
+
+            // Walk the WNAM chain (cycle-guarded) to the nearest ancestor with cells.
+            var visited = new HashSet<uint> { ws.FormId };
+            WorldspaceRecord? ancestor = null;
+            uint? current = parentId;
+            while (current is { } id && visited.Add(id) && byFormId.TryGetValue(id, out var candidate))
+            {
+                if (candidate.Cells.Count > 0)
+                {
+                    ancestor = candidate;
+                    break;
+                }
+
+                current = candidate.ParentWorldspaceFormId;
+            }
+
+            if (ancestor is null)
+            {
+                continue;
+            }
+
+            if (!parentGridCache.TryGetValue(ancestor.FormId, out var parentByGrid))
+            {
+                parentByGrid = new Dictionary<(int, int), CellRecord>();
+                foreach (var pc in ancestor.Cells)
+                {
+                    if (pc.GridX is { } pgx && pc.GridY is { } pgy && pc.Heightmap is not null)
+                    {
+                        parentByGrid.TryAdd((pgx, pgy), pc);
+                    }
+                }
+
+                parentGridCache[ancestor.FormId] = parentByGrid;
+            }
+
+            foreach (var cell in ws.Cells)
+            {
+                if (cell.IsInterior || cell.Heightmap is not null ||
+                    cell.GridX is not { } gx || cell.GridY is not { } gy ||
+                    !parentByGrid.TryGetValue((gx, gy), out var parentCell))
+                {
+                    continue;
+                }
+
+                cell.Heightmap = parentCell.Heightmap;
+                cell.LandVisualData ??= parentCell.LandVisualData;
+                inheritedCells++;
+            }
+        }
+
+        if (inheritedCells > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Inherited parent-worldspace terrain for {inheritedCells} child-worldspace cells");
         }
     }
 

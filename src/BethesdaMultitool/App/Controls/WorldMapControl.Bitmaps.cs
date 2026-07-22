@@ -35,7 +35,8 @@ public sealed partial class WorldMapControl
             GetActiveCells(),
             _state.FilteredMarkers,
             _state.SelectedWorldspace?.FormId,
-            _currentDefaultWaterHeight);
+            _currentDefaultWaterHeight,
+            _state.SelectedWorldspace?.WaterFromParentWorldspace ?? false);
         _cellGridLookup = _spatialIndex.CellsByGrid.ToDictionary(kv => kv.Key, kv => kv.Value);
     }
 

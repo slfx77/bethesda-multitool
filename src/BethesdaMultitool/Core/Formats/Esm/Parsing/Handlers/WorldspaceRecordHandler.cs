@@ -63,7 +63,68 @@ internal sealed class WorldspaceRecordHandler(RecordParserContext context) : Rec
             }
         }
 
+        InheritWaterFromParentWorldspaces(worldspaces);
+
         return worldspaces;
+    }
+
+    /// <summary>
+    ///     TES4-era child worldspaces (BravilWorld, AnvilWorld, …) author neither NAM2 nor any water
+    ///     height — the engine inherits water from the WNAM parent implicitly (TES4 has no PNAM
+    ///     parent-use flags; the WNAM link is the whole contract). Without this pass 30 of Oblivion.esm's
+    ///     84 worldspaces resolve null water and their river/harbor cells render dry. Runs after all
+    ///     ESM/runtime merging so it fills only what remained unauthored. FO3+ worldspaces always emit
+    ///     DNAM and carry explicit PNAM use-flags, so the pass is gated off for those games.
+    /// </summary>
+    private void InheritWaterFromParentWorldspaces(List<WorldspaceRecord> worldspaces)
+    {
+        if (GameProfiles.For(Context.Game).HasWorldspaceDefaultWaterHeight)
+        {
+            return;
+        }
+
+        var byFormId = new Dictionary<uint, WorldspaceRecord>(worldspaces.Count);
+        foreach (var ws in worldspaces)
+        {
+            byFormId.TryAdd(ws.FormId, ws);
+        }
+
+        var inherited = 0;
+        for (var i = 0; i < worldspaces.Count; i++)
+        {
+            var ws = worldspaces[i];
+            if (ws.DefaultWaterHeight != null || ws.ParentWorldspaceFormId is not { } parentId)
+            {
+                continue;
+            }
+
+            // Walk the WNAM chain (cycle-guarded) to the first ancestor with authored/synthesized
+            // water. Tamriel bottoms the Oblivion chains at DefaultWaterHeight 0 / WATR 0x18.
+            var visited = new HashSet<uint> { ws.FormId };
+            uint? current = parentId;
+            while (current is { } id && visited.Add(id) && byFormId.TryGetValue(id, out var parent))
+            {
+                if (parent.DefaultWaterHeight is { } parentHeight)
+                {
+                    worldspaces[i] = ws with
+                    {
+                        DefaultWaterHeight = parentHeight,
+                        WaterFormId = ws.WaterFormId ?? parent.WaterFormId,
+                        WaterFromParentWorldspace = true
+                    };
+                    inherited++;
+                    break;
+                }
+
+                current = parent.ParentWorldspaceFormId;
+            }
+        }
+
+        if (inherited > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Inherited default water from parent worldspaces for {inherited} child worldspaces");
+        }
     }
 
     private WorldspaceRecord? ParseWorldspaceFromAccessor(DetectedMainRecord record, byte[] buffer)

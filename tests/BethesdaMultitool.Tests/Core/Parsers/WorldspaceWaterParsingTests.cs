@@ -44,6 +44,30 @@ public class WorldspaceWaterParsingTests
         return buf;
     }
 
+    private static List<BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WorldspaceRecord>
+        ParseWorldspaceSet(params (uint FormId, byte[] Bytes)[] records)
+    {
+        var totalLength = records.Sum(r => r.Bytes.Length);
+        var buffer = new byte[totalLength];
+        var mains = new List<DetectedMainRecord>(records.Length);
+        var offset = 0;
+        foreach (var (formId, bytes) in records)
+        {
+            Array.Copy(bytes, 0, buffer, offset, bytes.Length);
+            mains.Add(new DetectedMainRecord("WRLD", (uint)(bytes.Length - 24), 0, formId, offset, false));
+            offset += bytes.Length;
+        }
+
+        var scanResult = MakeScanResult(mains);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, buffer.Length);
+        using var accessor = mmf.CreateViewAccessor(0, buffer.Length);
+        accessor.WriteArray(0, buffer, 0, buffer.Length);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: buffer.Length);
+        return parser.ParseWorldspaces();
+    }
+
     [Fact]
     public void ParseWorldspaces_TES4Style_NoDnamWithNam2_DefaultsWaterToZero()
     {
@@ -70,6 +94,89 @@ public class WorldspaceWaterParsingTests
 
         Assert.Null(ws.WaterFormId);
         Assert.Null(ws.DefaultWaterHeight);
+    }
+
+    [Fact]
+    public void ParseWorldspaces_TES4ChildWorldspace_InheritsParentWater()
+    {
+        // BravilWorld (0x0001C319) authors neither NAM2 nor DNAM — only WNAM=Tamriel. The engine
+        // inherits water from the WNAM parent implicitly; the parser mirrors that after parsing.
+        var tamriel = BuildRecordBytes(0x0000003C, "WRLD", false,
+            ("EDID", NullTermString("Tamriel")),
+            ("NAM2", FormIdBytes(0x00000018)));
+        var bravil = BuildRecordBytes(0x0001C319, "WRLD", false,
+            ("EDID", NullTermString("BravilWorld")),
+            ("WNAM", FormIdBytes(0x0000003C)));
+
+        var worldspaces = ParseWorldspaceSet((0x0000003C, tamriel), (0x0001C319, bravil));
+
+        var parent = Assert.Single(worldspaces, w => w.FormId == 0x0000003C);
+        var child = Assert.Single(worldspaces, w => w.FormId == 0x0001C319);
+        Assert.False(parent.WaterFromParentWorldspace);
+        Assert.Equal(0f, child.DefaultWaterHeight);
+        Assert.Equal(0x00000018u, child.WaterFormId);
+        Assert.True(child.WaterFromParentWorldspace);
+    }
+
+    [Fact]
+    public void ParseWorldspaces_TES4GrandchildWorldspace_WalksWnamChain()
+    {
+        // A grandchild whose direct parent is itself waterless must keep walking WNAM up to the
+        // first ancestor with water (list order deliberately grandchild-first).
+        var grandchild = BuildRecordBytes(0x00000300, "WRLD", false,
+            ("EDID", NullTermString("GrandchildWorld")),
+            ("WNAM", FormIdBytes(0x00000200)));
+        var parent = BuildRecordBytes(0x00000200, "WRLD", false,
+            ("EDID", NullTermString("MiddleWorld")),
+            ("WNAM", FormIdBytes(0x00000100)));
+        var root = BuildRecordBytes(0x00000100, "WRLD", false,
+            ("EDID", NullTermString("RootWorld")),
+            ("NAM2", FormIdBytes(0x00000018)));
+
+        var worldspaces = ParseWorldspaceSet(
+            (0x00000300, grandchild), (0x00000200, parent), (0x00000100, root));
+
+        var resolvedGrandchild = Assert.Single(worldspaces, w => w.FormId == 0x00000300);
+        Assert.Equal(0f, resolvedGrandchild.DefaultWaterHeight);
+        Assert.Equal(0x00000018u, resolvedGrandchild.WaterFormId);
+        Assert.True(resolvedGrandchild.WaterFromParentWorldspace);
+    }
+
+    [Fact]
+    public void ParseWorldspaces_WnamCycle_TerminatesAndStaysDry()
+    {
+        // A malformed WNAM cycle (A→B→A) with no water anywhere must terminate and leave both dry.
+        var a = BuildRecordBytes(0x00000400, "WRLD", false,
+            ("EDID", NullTermString("CycleA")),
+            ("WNAM", FormIdBytes(0x00000500)));
+        var b = BuildRecordBytes(0x00000500, "WRLD", false,
+            ("EDID", NullTermString("CycleB")),
+            ("WNAM", FormIdBytes(0x00000400)));
+
+        var worldspaces = ParseWorldspaceSet((0x00000400, a), (0x00000500, b));
+
+        Assert.All(worldspaces, w =>
+        {
+            Assert.Null(w.DefaultWaterHeight);
+            Assert.False(w.WaterFromParentWorldspace);
+        });
+    }
+
+    [Fact]
+    public void ParseWorldspaces_ChildOfWaterlessParent_StaysDry()
+    {
+        // A child of a genuinely waterless parent inherits nothing — no synthesized sea level.
+        var parent = BuildRecordBytes(0x00000600, "WRLD", false,
+            ("EDID", NullTermString("DryParent")));
+        var child = BuildRecordBytes(0x00000700, "WRLD", false,
+            ("EDID", NullTermString("DryChild")),
+            ("WNAM", FormIdBytes(0x00000600)));
+
+        var worldspaces = ParseWorldspaceSet((0x00000600, parent), (0x00000700, child));
+
+        var resolvedChild = Assert.Single(worldspaces, w => w.FormId == 0x00000700);
+        Assert.Null(resolvedChild.DefaultWaterHeight);
+        Assert.False(resolvedChild.WaterFromParentWorldspace);
     }
 
     [Fact]

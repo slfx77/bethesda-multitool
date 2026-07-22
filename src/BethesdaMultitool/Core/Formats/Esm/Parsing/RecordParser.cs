@@ -319,8 +319,7 @@ public sealed class RecordParser
 
         // Obscript games keep their script parse (+ decompilation via the game's command table)
         // even on the schema-primary path — the schema decode has no script pipeline, so unlike the
-        // other typed collections these are NOT discarded by the merge (Oblivion previously
-        // surfaced no scripts at all).
+        // other typed collections these are NOT discarded by the merge.
         var parseScripts = !typedForViewerOnly ||
                            Games.GameProfiles.For(_context.Game).SupportsObscriptDecompilation;
         var scripts = parseScripts ? _scripts.ParseScripts() : new List<ScriptRecord>();
@@ -416,6 +415,9 @@ public sealed class RecordParser
 
         WorldRecordHandler.EnsureWorldspacesForCells(cells, worldspaces, _context);
         WorldRecordHandler.LinkCellsToWorldspaces(cells, worldspaces);
+        // TES4-era: child-worldspace cells without a usable LAND (missing or pre-release relic)
+        // render the PARENT worldspace's terrain in-engine — mirror it after linkage.
+        CellLinkageHandler.InheritTerrainFromParentWorldspaces(worldspaces, _context.Game);
         // Packages/leveled-lists are discarded by the bridge merge and only feed SpawnPositionResolver,
         // which resolves >0 solely from a runtime DMP (these are ESM loads → SpawnResolved 0). Skip both.
         var packages = typedForViewerOnly ? new List<PackageRecord>() : _ai.ParsePackages();
@@ -468,7 +470,7 @@ public sealed class RecordParser
             "IMGS", "GRAS", "AMEF",
             // FLOR (Flora): harvestable plants. ESM-side coverage so flora carries through
             // (EDID/FULL/MODL/OBND + PFIG ingredient, SNAM sound, SCRI script via schema/fallback)
-            // even when no DMP is supplied — previously only the runtime RuntimeFlorReader populated it.
+            // even when no DMP is supplied.
             "FLOR"
         };
         var genericRecords = new List<GenericEsmRecord>();

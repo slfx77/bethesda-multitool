@@ -58,13 +58,15 @@ internal sealed class WorldSpatialIndex
         IReadOnlyList<CellRecord> activeCells,
         IReadOnlyList<PlacedReference> filteredMarkers,
         uint? activeWorldspaceFormId,
-        float? defaultWaterHeight)
+        float? defaultWaterHeight,
+        bool defaultWaterRequiresCellHasWater = false)
         => BuildCore(
             data,
             activeCells,
             filteredMarkers,
             activeWorldspaceFormId,
             defaultWaterHeight,
+            defaultWaterRequiresCellHasWater,
             includeMapOverlays: true);
 
     /// <summary>
@@ -76,13 +78,15 @@ internal sealed class WorldSpatialIndex
     internal static WorldSpatialIndex BuildFor3D(
         WorldViewData data,
         IReadOnlyList<CellRecord> activeCells,
-        float? defaultWaterHeight)
+        float? defaultWaterHeight,
+        bool defaultWaterRequiresCellHasWater = false)
         => BuildCore(
             data,
             activeCells,
             filteredMarkers: Array.Empty<PlacedReference>(),
             activeWorldspaceFormId: null,
             defaultWaterHeight,
+            defaultWaterRequiresCellHasWater,
             includeMapOverlays: false);
 
     private static WorldSpatialIndex BuildCore(
@@ -91,6 +95,7 @@ internal sealed class WorldSpatialIndex
         IReadOnlyList<PlacedReference> filteredMarkers,
         uint? activeWorldspaceFormId,
         float? defaultWaterHeight,
+        bool defaultWaterRequiresCellHasWater,
         bool includeMapOverlays)
     {
         var index = new WorldSpatialIndex(data.CellWorldSize, includeMapOverlays);
@@ -182,7 +187,8 @@ internal sealed class WorldSpatialIndex
             var chunk = index.GetOrCreateChunk(key.gx, key.gy);
             chunk.Cells.Add(new WorldSpatialCell(key, cell, index.CellCenterCanvas(key.gx, key.gy)));
 
-            var waterHeight = WorldRenderCache.ResolveEffectiveWaterHeight(cell, defaultWaterHeight);
+            var waterHeight = WorldRenderCache.ResolveEffectiveWaterHeight(
+                cell, defaultWaterHeight, defaultWaterRequiresCellHasWater);
             if (waterHeight is (> -1e6f and < 1e6f))
             {
                 // Exterior water: one cell-sized quad at the grid origin. The OriginXY/FootprintSize

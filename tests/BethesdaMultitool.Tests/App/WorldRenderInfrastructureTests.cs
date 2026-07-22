@@ -160,7 +160,7 @@ public sealed class WorldRenderInfrastructureTests
         // Vanilla WastelandNV's Colorado river cells have HasWater=true but XCLW set to
         // float.MaxValue (the no-water sentinel) — the engine treats that as "no explicit
         // override, use worldspace default" (-2300 in WastelandNV), NOT "no water at all."
-        // The 2026-05-28 sentinel-preservation fix had short-circuited the cell sentinel to
+        // An earlier sentinel-preservation fix had short-circuited the cell sentinel to
         // null, suppressing water for every such cell; the visible regression was
         // "Colorado river displays empty."
         var cellWithSentinel = new CellRecord
@@ -195,6 +195,42 @@ public sealed class WorldRenderInfrastructureTests
         var result = WorldRenderCache.ResolveEffectiveWaterHeight(cell, -2300f);
 
         Assert.Equal(-2300f, result);
+    }
+
+    [Fact]
+    public void ResolveEffectiveWaterHeight_InheritedDefaultRequiresCellHasWaterFlag()
+    {
+        // TES4 child worldspaces (BravilWorld etc.) inherit the parent's default water via WNAM.
+        // That inherited default must only water cells flagging Has-Water — the child's dry city
+        // cells above the waterline stay dry even though the parent has an ocean at Z 0.
+        var dryCell = new CellRecord { FormId = 0x100, WaterHeight = null, Flags = 0x00 };
+        var wetCell = new CellRecord { FormId = 0x101, WaterHeight = null, Flags = 0x02 };
+
+        Assert.Null(WorldRenderCache.ResolveEffectiveWaterHeight(
+            dryCell, 0f, defaultRequiresCellHasWater: true));
+        Assert.Equal(0f, WorldRenderCache.ResolveEffectiveWaterHeight(
+            wetCell, 0f, defaultRequiresCellHasWater: true));
+    }
+
+    [Fact]
+    public void ResolveEffectiveWaterHeight_InheritedDefaultStillYieldsToExplicitCellHeight()
+    {
+        // An explicit XCLW wins regardless of the Has-Water gate — the gate only guards the
+        // worldspace-default fallback, never an authored per-cell override.
+        var cell = new CellRecord { FormId = 0x100, WaterHeight = 3500f, Flags = 0x00 };
+
+        Assert.Equal(3500f, WorldRenderCache.ResolveEffectiveWaterHeight(
+            cell, 0f, defaultRequiresCellHasWater: true));
+    }
+
+    [Fact]
+    public void ResolveEffectiveWaterHeight_AuthoredDefaultKeepsLegacyEveryCellFallback()
+    {
+        // The gate defaults OFF: an own-authored worldspace default (Tamriel, FNV Wasteland)
+        // keeps watering flag-less cells exactly as before the inheritance feature.
+        var flaglessCell = new CellRecord { FormId = 0x100, WaterHeight = null, Flags = 0x00 };
+
+        Assert.Equal(-2300f, WorldRenderCache.ResolveEffectiveWaterHeight(flaglessCell, -2300f));
     }
 
     [Fact]

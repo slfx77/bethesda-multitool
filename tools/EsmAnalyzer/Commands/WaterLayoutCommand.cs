@@ -27,15 +27,21 @@ internal static class WaterLayoutCommand
             Description = "How many water-bearing exterior cells to dump in detail per worldspace",
             DefaultValueFactory = _ => 6
         };
+        var worldspaceOpt = new Option<string?>("--worldspace", "-w")
+        {
+            Description = "Detail only the worldspace with this EditorID (default: the 6 largest)"
+        };
         command.Arguments.Add(fileArg);
         command.Options.Add(sampleOpt);
+        command.Options.Add(worldspaceOpt);
         command.SetAction(parseResult => Execute(
             parseResult.GetValue(fileArg)!,
-            parseResult.GetValue(sampleOpt)));
+            parseResult.GetValue(sampleOpt),
+            parseResult.GetValue(worldspaceOpt)));
         return command;
     }
 
-    private static int Execute(string filePath, int samples)
+    private static int Execute(string filePath, int samples, string? worldspaceFilter)
     {
         using var result = UnifiedAnalyzer.AnalyzeAsync(filePath).GetAwaiter().GetResult();
         var worldspaces = result.Records.Worldspaces;
@@ -72,12 +78,34 @@ internal static class WaterLayoutCommand
         AnsiConsole.MarkupLine(
             $"[green]Worldspaces with a usable DefaultWaterHeight (DNAM):[/] {withDnamWater}/{worldspaces.Count}   " +
             $"[green]with WaterFormId (NAM2):[/] {withWaterFid}/{worldspaces.Count}");
+
+        // TES4 child worldspaces inherit water from the WNAM parent chain (BravilWorld etc.) —
+        // list them so the inherited-vs-authored split stays visible in this diagnostic.
+        var inherited = worldspaces.Where(w => w.WaterFromParentWorldspace).ToList();
+        if (inherited.Count > 0)
+        {
+            AnsiConsole.MarkupLine(
+                $"[green]  of which inherited from a WNAM parent:[/] {inherited.Count} " +
+                "(default applies only to Has-Water-flagged cells)");
+            foreach (var ws in inherited)
+            {
+                AnsiConsole.MarkupLine(
+                    $"    [grey]0x{ws.FormId:X8} {Markup.Escape(ws.EditorId ?? "?")}: " +
+                    $"water={ws.DefaultWaterHeight:0.##} WATR={(ws.WaterFormId is { } w ? $"0x{w:X8}" : "-")}[/]");
+            }
+        }
+
         AnsiConsole.WriteLine();
 
-        // Detail the largest worldspaces (by cell count) — that's where the user is looking (Tamriel, etc.).
-        foreach (var ws in worldspaces
-                     .OrderByDescending(w => cellsByWorld.GetValueOrDefault(w.FormId)?.Count ?? 0)
-                     .Take(6))
+        // Detail the largest worldspaces (by cell count) — that's where the user is looking (Tamriel,
+        // etc.) — or exactly the requested one.
+        var detailed = worldspaceFilter is { Length: > 0 }
+            ? worldspaces.Where(w =>
+                string.Equals(w.EditorId, worldspaceFilter, StringComparison.OrdinalIgnoreCase))
+            : worldspaces
+                .OrderByDescending(w => cellsByWorld.GetValueOrDefault(w.FormId)?.Count ?? 0)
+                .Take(6);
+        foreach (var ws in detailed)
         {
             DumpWorldspace(ws, cellsByWorld.GetValueOrDefault(ws.FormId) ?? [], samples);
             AnsiConsole.WriteLine();
@@ -106,6 +134,7 @@ internal static class WaterLayoutCommand
         var inRange = 0;
         var sentinel = 0;
         var nullWater = 0;
+        var hasWaterFlag = exterior.Count(c => c.HasWater);
         foreach (var c in exterior)
         {
             if (c.WaterHeight is not { } h)
@@ -124,7 +153,7 @@ internal static class WaterLayoutCommand
 
         AnsiConsole.MarkupLine(
             $"  exterior cells={exterior.Count}  [cyan]XCLW in-range={inRange}[/]  " +
-            $"sentinel/no-water={sentinel}  null(no XCLW)={nullWater}");
+            $"sentinel/no-water={sentinel}  null(no XCLW)={nullWater}  Has-Water flag={hasWaterFlag}");
 
         var shown = 0;
         foreach (var c in exterior.Where(c => c.WaterHeight is { } h && Math.Abs(h) < 1e6f))

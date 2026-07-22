@@ -39,6 +39,15 @@ public record WorldspaceRecord
     /// <summary>Default water height from DNAM subrecord (fallback for cells with sentinel XCLW).</summary>
     public float? DefaultWaterHeight { get; init; }
 
+    /// <summary>
+    ///     True when <see cref="DefaultWaterHeight" />/<see cref="WaterFormId" /> were inherited from the
+    ///     WNAM parent chain rather than authored on this record. TES4 child worldspaces (BravilWorld
+    ///     etc.) carry no NAM2/DNAM of their own — the engine inherits water from the parent, but only
+    ///     cells flagging Has-Water actually get a plane, so resolvers must gate an inherited default on
+    ///     <see cref="CellRecord.HasWater" /> (an authored default keeps the legacy every-cell fallback).
+    /// </summary>
+    public bool WaterFromParentWorldspace { get; init; }
+
     /// <summary>Map usable width from MNAM subrecord (WORLD_MAP_DATA).</summary>
     public int? MapUsableWidth { get; init; }
 
