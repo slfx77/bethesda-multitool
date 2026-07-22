@@ -28,16 +28,21 @@ jobs:
     - name: Build (Release)
       run: dotnet build --configuration Release --no-restore
     
-    - name: Run Tests with Coverage
+    # The test project runs on the Microsoft.Testing.Platform runner (xunit.v3);
+    # report/filter options are MTP-style and must come after the `--` separator.
+    # Code coverage is intentionally absent: both instrumentation engines fail on
+    # this codebase today (see CLAUDE.md, "Code coverage").
+    - name: Run Tests
       run: |
         dotnet test --project tests/BethesdaMultitool.Tests/BethesdaMultitool.Tests.csproj `
           --configuration Release `
           --no-build `
-          --verbosity normal `
-          --collect:"XPlat Code Coverage" `
+          -- `
+          --report-xunit-trx `
+          --report-xunit-trx-filename test-results.trx `
           --results-directory ./TestResults `
-          --logger "trx;LogFileName=test-results.trx"
-    
+          --minimum-expected-tests 6000
+
     - name: Upload Test Results
       uses: actions/upload-artifact@v4
       if: always()
@@ -45,33 +50,39 @@ jobs:
         name: test-results
         path: ./TestResults
         retention-days: 30
-    
-    - name: Generate Coverage Report
-      uses: danielpalme/ReportGenerator-GitHub-Action@5
+
+  # Non-blocking coverage measurement (coverlet static IL — the only engine that works on
+  # this codebase; the Microsoft dynamic-instrumentation engine deadlocks, see CLAUDE.md).
+  coverage:
+    runs-on: windows-latest
+    needs: build-and-test
+    continue-on-error: true
+    timeout-minutes: 25
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
       with:
-        reports: '**/coverage.cobertura.xml'
-        targetdir: 'coveragereport'
-        reporttypes: 'HtmlInline;Cobertura;MarkdownSummaryGithub'
-    
+        submodules: recursive
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+        dotnet-quality: 'preview'
+
+    - name: Install coverlet
+      run: dotnet tool install --global coverlet.console
+
+    - name: Run coverage
+      run: pwsh tools/scripts/coverage.ps1
+
     - name: Upload Coverage Report
       uses: actions/upload-artifact@v4
       with:
         name: coverage-report
-        path: coveragereport
+        path: TestResults/coverage
         retention-days: 30
-    
-    - name: Add Coverage PR Comment
-      uses: marocchino/sticky-pull-request-comment@v2
-      if: github.event_name == 'pull_request'
-      with:
-        recreate: true
-        path: coveragereport/SummaryGithub.md
-    
-    - name: Write Coverage to Job Summary
-      run: |
-        if (Test-Path "coveragereport/SummaryGithub.md") {
-          Get-Content "coveragereport/SummaryGithub.md" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-        }
 
   build-cli-cross-platform:
     runs-on: ubuntu-latest

@@ -1,26 +1,3 @@
-C:\Users\mmc99\source\repos\Xbox360MemoryCarver\tools\RttiScanner\Program.cs(157,40): warning CA1305: The behavior of 'int.ToString()' could vary based on the current user's locale settings. Replace this call in '<top-level-statements-entry-point>' with a call to 'int.ToString(IFormatProvider)'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1305) [C:\Users\mmc99\source\repos\Xbox360MemoryCarver\tools\RttiScanner\RttiScanner.csproj]
-C:\Users\mmc99\source\repos\Xbox360MemoryCarver\tools\RttiScanner\Program.cs(167,40): warning CA1305: The behavior of 'int.ToString()' could vary based on the current user's locale settings. Replace this call in '<top-level-statements-entry-point>' with a call to 'int.ToString(IFormatProvider)'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1305) [C:\Users\mmc99\source\repos\Xbox360MemoryCarver\tools\RttiScanner\RttiScanner.csproj]
-C:\Users\mmc99\source\repos\Xbox360MemoryCarver\tools\RttiScanner\Program.cs(214,10): warning CA1310: The behavior of 'string.StartsWith(string)' could vary based on the current user's locale settings. Replace this call in '<top-level-statements-entry-point>' with a call to 'string.StartsWith(string, System.StringComparison)'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1310) [C:\Users\mmc99\source\repos\Xbox360MemoryCarver\tools\RttiScanner\RttiScanner.csproj]
-C:\Users\mmc99\source\repos\Xbox360MemoryCarver\tools\RttiScanner\Program.cs(214,45): warning CA1310: The behavior of 'string.StartsWith(string)' could vary based on the current user's locale settings. Replace this call in '<top-level-statements-entry-point>' with a call to 'string.StartsWith(string, System.StringComparison)'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1310) [C:\Users\mmc99\source\repos\Xbox360MemoryCarver\tools\RttiScanner\RttiScanner.csproj]
-C:\Users\mmc99\source\repos\Xbox360MemoryCarver\tools\RttiScanner\Program.cs(344,8): warning CA1852: Type 'ClassInfo' can be sealed because it has no subtypes in its containing assembly and is not externally visible (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1852) [C:\Users\mmc99\source\repos\Xbox360MemoryCarver\tools\RttiScanner\RttiScanner.csproj]
-Loaded 23,769,600 bytes, base=0x82000000, end=0x836AB200
-
---- Phase 1: Finding TypeDescriptor strings ---
-Found 1998 TypeDescriptors
-
---- Phase 2: Building pointer index ---
-Indexed 134460 unique module-range pointer values
-
---- Phase 3: Finding CompleteObjectLocators ---
-Found 2325 CompleteObjectLocators
-
---- Phase 4: Finding vftables ---
-Found 2325 vftables
-
---- Phase 5: Walking class hierarchies ---
-TESForm-derived classes: 427
-
---- Phase 6: Finding allocation sizes ---
 ClassName	AllocSize	IsTESForm	VtableVA	BaseClasses
 ?$AStarSearch@PAVCombatPlanNode		False	0x8207F724	?$AStarSearch@PAVCombatPlanNode
 ?$AStarSearch@PBVNavMeshInfo		False	0x8205E7A4	?$AStarSearch@PBVNavMeshInfo
