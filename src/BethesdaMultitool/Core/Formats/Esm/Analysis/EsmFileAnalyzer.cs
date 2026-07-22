@@ -178,7 +178,8 @@ public static class EsmFileAnalyzer
                 FilesFound = mainRecords.Count
             });
 
-            var (cellToWorldspace, landToWorldspace, cellToRefrMap, topicToInfoMap, landToCellMap) =
+            var (cellToWorldspace, landToWorldspace, cellToRefrMap, topicToInfoMap, landToCellMap,
+                    pathgridToCellMap) =
                 BuildAllMaps(mainRecords, grupHeaders);
             if (verbose)
             {
@@ -203,6 +204,7 @@ public static class EsmFileAnalyzer
                 CellToRefrMap = cellToRefrMap,
                 TopicToInfoMap = topicToInfoMap,
                 LandToCellMap = landToCellMap,
+                PathgridToCellMap = pathgridToCellMap,
                 PersistentCellContainerFormIds = BuildPersistentCellContainerSet(
                     mainRecords.Where(r => r.RecordType == "CELL").Select(r => (r.Offset, r.FormId)),
                     grupHeaders)
@@ -301,7 +303,7 @@ public static class EsmFileAnalyzer
     }
 
     /// <summary>
-    ///     Builds all four record-to-GRUP mapping dictionaries in a single pass over the records list.
+    ///     Builds the record-to-GRUP mapping dictionaries in a single pass over the records list.
     ///     Uses <see cref="SortedIntervalMap" /> for O(log n) GRUP lookups per record instead of O(n) linear scans.
     /// </summary>
     internal static (
@@ -309,7 +311,8 @@ public static class EsmFileAnalyzer
         Dictionary<uint, uint> LandToWorldspace,
         Dictionary<uint, List<uint>> CellToRefr,
         Dictionary<uint, List<uint>> TopicToInfo,
-        Dictionary<uint, uint> LandToCell)
+        Dictionary<uint, uint> LandToCell,
+        Dictionary<uint, uint> PathgridToCell)
         BuildAllMaps(List<DetectedMainRecord> records, List<GrupHeaderInfo> grupHeaders)
     {
         var cellToWorldspace = new Dictionary<uint, uint>();
@@ -317,6 +320,7 @@ public static class EsmFileAnalyzer
         var cellToRefr = new Dictionary<uint, List<uint>>();
         var topicToInfo = new Dictionary<uint, List<uint>>();
         var landToCell = new Dictionary<uint, uint>();
+        var pathgridToCell = new Dictionary<uint, uint>();
 
         var worldChildren = new SortedIntervalMap(
             grupHeaders.Where(g => g.GroupType == 1).ToList());
@@ -351,6 +355,18 @@ public static class EsmFileAnalyzer
                     if (cellIdx >= 0)
                     {
                         landToCell[record.FormId] = cellChildren.GetLabelAsFormId(cellIdx);
+                    }
+
+                    break;
+                }
+                case "PGRD":
+                {
+                    // TES4-era pathgrids live in the cell's Temporary Children GRUP like LAND and
+                    // carry no cell linkage of their own — structural parentage is the only source.
+                    var cellIdx = cellChildren.FindContainingInterval(record.Offset);
+                    if (cellIdx >= 0)
+                    {
+                        pathgridToCell[record.FormId] = cellChildren.GetLabelAsFormId(cellIdx);
                     }
 
                     break;
@@ -394,7 +410,7 @@ public static class EsmFileAnalyzer
             }
         }
 
-        return (cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo, landToCell);
+        return (cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo, landToCell, pathgridToCell);
     }
 
     internal static (

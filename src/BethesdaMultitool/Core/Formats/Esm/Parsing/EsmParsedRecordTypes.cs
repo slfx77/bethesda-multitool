@@ -74,6 +74,9 @@ public static class EsmParsedRecordTypes
         new("WRLD", nameof(RecordCollection.Worldspaces)),
         new("PGRE", nameof(RecordCollection.PlacedGrenades)),
         new("NAVM", nameof(RecordCollection.NavMeshes)),
+        // TES4-era pathgrids are normalized into the same NavMeshes list (node/link geometry
+        // synthesized by NavMeshGeometry) so both viewers' navigation overlays draw them.
+        new("PGRD", nameof(RecordCollection.NavMeshes)),
         new("NAVI", nameof(RecordCollection.NavMeshInfoMaps)),
         new("REGN", nameof(RecordCollection.Regions)),
         // Nested inside cells / terrain — no dedicated top-level list, but acknowledged as parsed.

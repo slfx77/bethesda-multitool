@@ -43,11 +43,15 @@ public sealed class NavMeshGeometry
         byte[]? nvvx = null;
         byte[]? nvtr = null;
         byte[]? nvnm = null;
+        byte[]? pgrp = null;
+        byte[]? pgrr = null;
         foreach (var sub in record.RawSubrecords)
         {
             if (sub.Signature == "NVVX") nvvx = sub.Bytes;
             else if (sub.Signature == "NVTR") nvtr = sub.Bytes;
             else if (sub.Signature == "NVNM") nvnm = sub.Bytes;
+            else if (sub.Signature == "PGRP") pgrp = sub.Bytes;
+            else if (sub.Signature == "PGRR") pgrr = sub.Bytes;
         }
 
         if (nvvx is not null && nvtr is not null)
@@ -55,7 +59,95 @@ public sealed class NavMeshGeometry
             return ParseFnv(nvvx, nvtr);
         }
 
-        return nvnm is not null ? ParseNvnm(nvnm) : null;
+        if (nvnm is not null)
+        {
+            return ParseNvnm(nvnm);
+        }
+
+        return pgrp is not null ? ParsePathgrid(pgrp, pgrr) : null;
+    }
+
+    // TES4-era PGRD pathgrid: PGRP = 16-byte points {float X, Y, Z; u8 connection count; 3 unused}
+    // in the same coordinate space as NAVM vertices (world for exteriors, cell-local for interiors —
+    // verified against retail Oblivion.esm), PGRR = each point's connection-count s16 indices laid
+    // out sequentially (every intra-cell link appears once per endpoint; index −1 marks an
+    // inter-cell/external link resolved via PGRI and is skipped here). A pathgrid is a point/edge
+    // graph, not a surface — synthesize triangle geometry the shared overlay pipeline can draw:
+    // a small horizontal diamond marker per node and a thin ribbon quad per undirected link.
+    private static NavMeshGeometry? ParsePathgrid(byte[] pgrp, byte[]? pgrr)
+    {
+        const float nodeHalfSize = 16f;
+        const float linkHalfWidth = 5f;
+        const float zLift = 6f;
+
+        if (pgrp.Length < 16 || pgrp.Length % 16 != 0) return null;
+        var pointCount = pgrp.Length / 16;
+
+        var points = new Vector3[pointCount];
+        var connectionCounts = new byte[pointCount];
+        for (var i = 0; i < pointCount; i++)
+        {
+            var off = i * 16;
+            points[i] = new Vector3(
+                BinaryPrimitives.ReadSingleLittleEndian(pgrp.AsSpan(off, 4)),
+                BinaryPrimitives.ReadSingleLittleEndian(pgrp.AsSpan(off + 4, 4)),
+                BinaryPrimitives.ReadSingleLittleEndian(pgrp.AsSpan(off + 8, 4)) + zLift);
+            connectionCounts[i] = pgrp[off + 12];
+        }
+
+        var verts = new List<Vector3>(pointCount * 8);
+        var tris = new List<(ushort, ushort, ushort)>(pointCount * 4);
+
+        void AddQuad(Vector3 a, Vector3 b, Vector3 c, Vector3 d)
+        {
+            // Vertex indices are ushort — an over-dense grid must degrade, not wrap.
+            if (verts.Count + 4 > ushort.MaxValue) return;
+            var baseIdx = (ushort)verts.Count;
+            verts.Add(a);
+            verts.Add(b);
+            verts.Add(c);
+            verts.Add(d);
+            tris.Add((baseIdx, (ushort)(baseIdx + 1), (ushort)(baseIdx + 2)));
+            tris.Add((baseIdx, (ushort)(baseIdx + 2), (ushort)(baseIdx + 3)));
+        }
+
+        foreach (var p in points)
+        {
+            AddQuad(
+                p with { X = p.X - nodeHalfSize },
+                p with { Y = p.Y + nodeHalfSize },
+                p with { X = p.X + nodeHalfSize },
+                p with { Y = p.Y - nodeHalfSize });
+        }
+
+        if (pgrr is not null)
+        {
+            var linkIndex = 0;
+            var totalLinks = pgrr.Length / 2;
+            for (var i = 0; i < pointCount && linkIndex < totalLinks; i++)
+            {
+                for (var c = 0; c < connectionCounts[i] && linkIndex < totalLinks; c++, linkIndex++)
+                {
+                    var target = BinaryPrimitives.ReadInt16LittleEndian(pgrr.AsSpan(linkIndex * 2, 2));
+                    // Draw each undirected link once (from the lower index); skip external (−1)
+                    // and malformed targets.
+                    if (target <= i || target >= pointCount) continue;
+
+                    var a = points[i];
+                    var b = points[target];
+                    var dir = b - a;
+                    var flat = new Vector3(dir.X, dir.Y, 0f);
+                    var normal = flat.LengthSquared() > 1e-6f
+                        ? Vector3.Normalize(new Vector3(-flat.Y, flat.X, 0f)) * linkHalfWidth
+                        : new Vector3(linkHalfWidth, 0f, 0f);
+                    AddQuad(a - normal, a + normal, b + normal, b - normal);
+                }
+            }
+        }
+
+        return verts.Count == 0
+            ? null
+            : new NavMeshGeometry([.. verts], [.. tris]);
     }
 
     private static NavMeshGeometry? ParseFnv(byte[] nvvx, byte[] nvtr)

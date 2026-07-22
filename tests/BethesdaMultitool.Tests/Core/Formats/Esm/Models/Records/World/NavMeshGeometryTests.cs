@@ -78,6 +78,61 @@ public sealed class NavMeshGeometryTests
     }
 
     [Fact]
+    public void TryParse_Pgrd_SynthesizesNodeMarkersAndLinkRibbons()
+    {
+        // Three points; pt0↔pt1 and pt1↔pt2 linked (each link appears once per endpoint in PGRR,
+        // TES4 convention). Expect 3 node diamonds (2 tris each) + 2 link ribbons (2 tris each).
+        var pgrp = Pgrp(
+            ((0f, 0f, 100f), 1),
+            ((512f, 0f, 110f), 2),
+            ((512f, 512f, 120f), 1));
+        var pgrr = Pgrr(1, 0, 2, 1);
+
+        var geom = NavMeshGeometry.TryParse(Pgrd(pgrp, pgrr));
+
+        Assert.NotNull(geom);
+        Assert.Equal(20, geom!.Vertices.Length); // 5 quads × 4 verts
+        Assert.Equal(10, geom.Triangles.Length); // 5 quads × 2 tris
+        // Node marker sits at the authored position (± halfSize, small z lift).
+        Assert.Equal(100f + 6f, geom.Vertices[0].Z);
+        Assert.Equal(-16f, geom.Vertices[0].X);
+    }
+
+    [Fact]
+    public void TryParse_Pgrd_SkipsExternalAndMalformedLinkTargets()
+    {
+        // pt0 links to −1 (inter-cell marker) and 99 (out of range) — only the node markers and the
+        // valid pt0↔pt1 link must survive.
+        var pgrp = Pgrp(
+            ((0f, 0f, 0f), 3),
+            ((256f, 0f, 0f), 1));
+        var pgrr = Pgrr(-1, 99, 1, 0);
+
+        var geom = NavMeshGeometry.TryParse(Pgrd(pgrp, pgrr));
+
+        Assert.NotNull(geom);
+        Assert.Equal(12, geom!.Vertices.Length); // 2 nodes + 1 ribbon
+        Assert.Equal(6, geom.Triangles.Length);
+    }
+
+    [Fact]
+    public void TryParse_Pgrd_WithoutPgrrStillEmitsNodeMarkers()
+    {
+        var geom = NavMeshGeometry.TryParse(Pgrd(Pgrp(((0f, 0f, 0f), 0)), null));
+
+        Assert.NotNull(geom);
+        Assert.Equal(4, geom!.Vertices.Length);
+        Assert.Equal(2, geom.Triangles.Length);
+    }
+
+    [Fact]
+    public void TryParse_Pgrd_MisSizedPgrpReturnsNull()
+    {
+        Assert.Null(NavMeshGeometry.TryParse(Pgrd(new byte[15], null)));
+        Assert.Null(NavMeshGeometry.TryParse(Pgrd([], null)));
+    }
+
+    [Fact]
     public void TryParse_NvnmTruncatedOrEmpty_ReturnsNull()
     {
         Assert.Null(NavMeshGeometry.TryParse(NavmNvnm(new byte[19]))); // shorter than the 20-byte header
@@ -131,6 +186,39 @@ public sealed class NavMeshGeometryTests
         }
 
         return b;
+    }
+
+    private static NavMeshRecord Pgrd(byte[] pgrp, byte[]? pgrr)
+    {
+        var subs = new List<NavMeshSubrecord> { new("PGRP", pgrp) };
+        if (pgrr is not null) subs.Add(new NavMeshSubrecord("PGRR", pgrr));
+        return new NavMeshRecord { FormId = 0x9ABC, RawSubrecords = subs };
+    }
+
+    private static byte[] Pgrp(params ((float X, float Y, float Z) Pos, byte Connections)[] points)
+    {
+        var bytes = new byte[points.Length * 16];
+        for (var i = 0; i < points.Length; i++)
+        {
+            var off = i * 16;
+            BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(off, 4), points[i].Pos.X);
+            BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(off + 4, 4), points[i].Pos.Y);
+            BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(off + 8, 4), points[i].Pos.Z);
+            bytes[off + 12] = points[i].Connections;
+        }
+
+        return bytes;
+    }
+
+    private static byte[] Pgrr(params short[] targets)
+    {
+        var bytes = new byte[targets.Length * 2];
+        for (var i = 0; i < targets.Length; i++)
+        {
+            BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(i * 2, 2), targets[i]);
+        }
+
+        return bytes;
     }
 
     private static byte[] Vvx(params (float X, float Y, float Z)[] verts)

@@ -63,10 +63,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private readonly string? _stressScene =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.StressScene);
     private readonly FrameProfileAccumulator _profileAccumulator = new();
-    // The rendering backend is D3D12-only — the former D3D11 stack has been deleted. There is no
-    // `_useD3D12` flag, `FALLOUT_VIEWER_D3D11` rollback, or dual-stack field set. With a single
-    // backend the renderer fields are the concrete D3D12 types directly; the I*Renderer interfaces
-    // remain (the renderers implement them) but add no indirection here.
+    // The rendering backend is single-backend D3D12 by design — renderer fields are the concrete
+    // D3D12 types directly; the I*Renderer interfaces remain (the renderers implement them) but
+    // add no indirection here, and no backend-selection abstraction should be reintroduced.
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.CellGridDebugRenderer12? _cellGrid;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SelectionHighlightRenderer12? _selectionHighlight;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainRenderer12? _terrain;
@@ -242,7 +241,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private bool _showTerrainTextures = true;
     private bool _showVertexColors = true;
     private bool _showReferences = true;
-    private bool _showNavMesh;
+    // Navigation overlay (NAVM navmeshes / TES4 PGRD pathgrids). Off by default; the env knob seeds
+    // the initial value (headless captures), the toolbar checkbox / key 6 flip it at runtime.
+    private bool _showNavMesh = BethesdaMultitool.Core.EnvironmentVariables.IsEnabled(
+        BethesdaMultitool.Core.EnvironmentVariables.Viewer.ShowNavMesh);
     private bool _showCollision; // Havok collision-cage debug overlay (Visibility menu; off by default)
     private bool _showDisabled;
     // Engine/editor markers (XMarker, map/travel/teleport markers). Hidden by default to match the
@@ -255,7 +257,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // FALLOUT_VIEWER_NIF_ANIMATION=0 kill-switch gates DECODE upstream; this only pauses playback.
     private bool _animationsEnabled = true;
     // Placed-object categories hidden in the 3D view. Sky/glow props (DiamondCityGlow) start HIDDEN
-    // (atmosphere-only meshes); Activators start VISIBLE (user feedback 2026-07-07: model-bearing
+    // (atmosphere-only meshes); Activators start VISIBLE (model-bearing
     // activators — the Anvil lighthouse fire bowl, flora — are real scenery and must render by
     // default; trigger-volume/marker ACTIs are already dropped by the editor-marker skips). Each
     // category must match its Visibility-submenu checkbox's initial IsChecked. Applied to the

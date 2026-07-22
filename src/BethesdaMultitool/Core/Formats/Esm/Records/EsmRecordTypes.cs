@@ -157,9 +157,11 @@ public static class EsmRecordTypes
             ["HUNG"] = new("Hunger Stage", RecordCategory.GameData, 0x77),
             ["SLPD"] = new("Sleep Deprivation Stage", RecordCategory.GameData, 0x78),
 
-            // Later-game types parsed by the multi-game semantic parser. No FormTypeId: the ids above
-            // come from the FNV PDB ENUM_FORM_ID, which these types postdate.
-            ["MSWP"] = new("Material Swap", RecordCategory.Graphics)
+            // Other-game types parsed by the multi-game semantic parser. No FormTypeId: the ids above
+            // come from the FNV PDB ENUM_FORM_ID, which these types postdate (MSWP) or predate (PGRD —
+            // TES4-era pathgrids, normalized into the NavMeshes collection).
+            ["MSWP"] = new("Material Swap", RecordCategory.Graphics),
+            ["PGRD"] = new("Pathgrid", RecordCategory.Navigation)
         };
 
     /// <summary>

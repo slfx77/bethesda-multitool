@@ -42,7 +42,121 @@ internal sealed class NavMeshHandler(RecordParserContext context) : RecordHandle
         // ESP encoder can consume them like any ESM-parsed record.
         DiscoverRuntimeNavMeshesFromInfoMap(navMeshes);
 
+        // TES4-era pathgrids (PGRD) are the navigation data NAVM replaced — normalize them into
+        // the same list so both viewers' navigation overlays render them through the shared
+        // NavMeshGeometry decode (which synthesizes node markers + link ribbons for PGRD).
+        navMeshes.AddRange(ParsePathgrids());
+
         return navMeshes;
+    }
+
+    /// <summary>
+    ///     Parse TES4-era Pathgrid (PGRD) records into <see cref="NavMeshRecord" />s. PGRD carries no
+    ///     cell linkage of its own — parentage comes from the structural
+    ///     <see cref="EsmRecordScanResult.PathgridToCellMap" /> (Cell Children GRUP walk, like LAND).
+    ///     VertexCount mirrors the authored point count; TriangleCount carries the intra-cell link
+    ///     count so record browsers show meaningful totals.
+    /// </summary>
+    private List<NavMeshRecord> ParsePathgrids()
+    {
+        return ParseRecordList("PGRD", 4096,
+            ParsePathgridFromAccessor,
+            record => new NavMeshRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                CellFormId = Context.ScanResult.PathgridToCellMap.GetValueOrDefault(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+    }
+
+    private NavMeshRecord? ParsePathgridFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        var cellFormId = Context.ScanResult.PathgridToCellMap.GetValueOrDefault(record.FormId);
+        if (recordData == null)
+        {
+            return new NavMeshRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                CellFormId = cellFormId,
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+        uint pointCount = 0;
+        var linkCount = 0u;
+        var rawSubrecords = new List<NavMeshSubrecord>();
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            switch (sub.Signature)
+            {
+                case "DATA" when sub.DataLength >= 2:
+                    pointCount = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt16BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt16LittleEndian(subData);
+                    break;
+                case "PGRR":
+                    // Sequential per-point s16 connection indices; each intra-cell link appears in
+                    // both directions, so the undirected link count is half the entries.
+                    linkCount = (uint)(sub.DataLength / 4);
+                    break;
+            }
+
+            CapturePathgridSubrecord(record, sub.Signature, subData, rawSubrecords);
+        }
+
+        return new NavMeshRecord
+        {
+            FormId = record.FormId,
+            EditorId = Context.GetEditorId(record.FormId),
+            CellFormId = cellFormId,
+            VertexCount = pointCount,
+            TriangleCount = linkCount,
+            RawSubrecords = rawSubrecords,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    /// <summary>
+    ///     Capture one PGRD subrecord verbatim (PC little-endian sources), or endian-converted when
+    ///     the source record was detected big-endian and a PGRD schema exists — falling back to
+    ///     passthrough for schema-less signatures.
+    /// </summary>
+    private static void CapturePathgridSubrecord(
+        DetectedMainRecord record,
+        string signature,
+        ReadOnlySpan<byte> subData,
+        List<NavMeshSubrecord> outList)
+    {
+        if (subData.Length == 0)
+        {
+            outList.Add(new NavMeshSubrecord(signature, []));
+            return;
+        }
+
+        if (record.IsBigEndian)
+        {
+            try
+            {
+                var converted = EsmSubrecordConverter.ConvertSubrecordData(signature, subData, "PGRD");
+                outList.Add(new NavMeshSubrecord(signature, converted));
+                return;
+            }
+            catch (NotSupportedException)
+            {
+                // No schema — pass the bytes through; PGRD is primarily a PC-source (TES4) format.
+            }
+        }
+
+        outList.Add(new NavMeshSubrecord(signature, subData.ToArray()));
     }
 
     private void DiscoverRuntimeNavMeshesFromInfoMap(List<NavMeshRecord> navMeshes)

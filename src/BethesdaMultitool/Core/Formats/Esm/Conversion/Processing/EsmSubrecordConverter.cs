@@ -35,6 +35,13 @@ internal static class EsmSubrecordConverter
         // Then island data (variable) if flag bit 5 set
         // Last 4 bytes: Preferred % (float)
 
+        if (data.Length < 32)
+        {
+            // Shorter than the 28-byte base + trailing float. Endian converters never throw
+            // (the write path has no catch), so pass malformed input through unmodified.
+            return;
+        }
+
         Swap4Bytes(data, 0); // Flags
         var flags = BitConverter.ToUInt32(data, 0);
         Swap4Bytes(data, 4); // Navmesh FormID
@@ -47,9 +54,14 @@ internal static class EsmSubrecordConverter
         var offset = 28;
         var isIsland = (flags & 0x20) != 0; // Bit 5 = Is Island
 
-        if (isIsland && data.Length > 32)
+        // Island reads must stop before the trailing Preferred % float (last 4 bytes).
+        // Counts and lengths are file-controlled: on truncation, stop converting and leave
+        // the remaining bytes as-is (partial-swap degrade) rather than reading out of range.
+        var limit = data.Length - 4;
+
+        if (isIsland && offset + 28 <= limit)
         {
-            // Island data:
+            // Island data (bounds Vec3 pair + two counts = 28 bytes minimum):
             // NavmeshBounds Min Vec3 (12)
             Swap4Bytes(data, offset);
             offset += 4;
@@ -73,7 +85,7 @@ internal static class EsmSubrecordConverter
             var triangleCount = BitConverter.ToUInt16(data, offset);
             offset += 2;
             // Vertices (Vec3 each = 12 bytes)
-            for (var i = 0; i < vertexCount; i++)
+            for (var i = 0; i < vertexCount && offset + 12 <= limit; i++)
             {
                 Swap4Bytes(data, offset);
                 offset += 4;
@@ -84,7 +96,7 @@ internal static class EsmSubrecordConverter
             }
 
             // Triangles (3 x uint16 each = 6 bytes)
-            for (var i = 0; i < triangleCount; i++)
+            for (var i = 0; i < triangleCount && offset + 6 <= limit; i++)
             {
                 Swap2Bytes(data, offset);
                 offset += 2;

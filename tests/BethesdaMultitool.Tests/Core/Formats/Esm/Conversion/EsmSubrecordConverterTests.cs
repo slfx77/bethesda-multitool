@@ -372,6 +372,189 @@ public class EsmSubrecordConverterTests
 
     #endregion
 
+    #region NVMI Navmesh Info (NAVI)
+
+    // NVMI layout: Flags(4) + NavmeshFormID(4) + LocationFormID(4) + GridKey(4) +
+    // ApproxLocation Vec3(12), then optional island data (flag bit 5), then trailing
+    // Preferred % float(4). Minimum well-formed size is 32 bytes (28-byte base + trailer).
+
+    [Fact]
+    public void ConvertNvmi_MinimalNonIsland32Bytes_SwapsHeaderAndTrailingFloat()
+    {
+        byte[] data =
+        [
+            0x00, 0x00, 0x00, 0x01, // Flags BE 0x00000001 (island bit 5 clear)
+            0x00, 0x12, 0x34, 0x56, // Navmesh FormID BE 0x00123456
+            0x00, 0xAB, 0xCD, 0xEF, // Location FormID BE 0x00ABCDEF
+            0x01, 0x02, 0x03, 0x04, // Grid key BE (Grid Y + Grid X packed)
+            0x3F, 0x80, 0x00, 0x00, // Approx X = 1.0f BE
+            0x40, 0x00, 0x00, 0x00, // Approx Y = 2.0f BE
+            0x40, 0x40, 0x00, 0x00, // Approx Z = 3.0f BE
+            0x3F, 0x00, 0x00, 0x00 // Preferred % = 0.5f BE
+        ];
+
+        var result = EsmSubrecordConverter.ConvertSubrecordData("NVMI", data, "NAVI");
+
+        byte[] expected =
+        [
+            0x01, 0x00, 0x00, 0x00, // Flags LE
+            0x56, 0x34, 0x12, 0x00, // Navmesh FormID LE
+            0xEF, 0xCD, 0xAB, 0x00, // Location FormID LE
+            0x04, 0x03, 0x02, 0x01, // Grid key LE
+            0x00, 0x00, 0x80, 0x3F, // Approx X = 1.0f LE
+            0x00, 0x00, 0x00, 0x40, // Approx Y = 2.0f LE
+            0x00, 0x00, 0x40, 0x40, // Approx Z = 3.0f LE
+            0x00, 0x00, 0x00, 0x3F // Preferred % = 0.5f LE
+        ];
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4)]
+    [InlineData(27)]
+    [InlineData(31)]
+    public void ConvertNvmi_TooShort_PassesThroughUnmodified(int length)
+    {
+        // Below the 32-byte minimum nothing can be swapped safely; the converter must
+        // return the input byte-identical instead of throwing (the write path has no catch).
+        var data = new byte[length];
+        for (var i = 0; i < length; i++)
+        {
+            data[i] = (byte)(i * 7 + 1);
+        }
+
+        var expected = (byte[])data.Clone();
+
+        var result = EsmSubrecordConverter.ConvertSubrecordData("NVMI", data, "NAVI");
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void ConvertNvmi_IslandVertexCountLie_DoesNotThrow()
+    {
+        // 60 bytes: base(28) + bounds(24) + counts(4) + trailing float(4).
+        // vertexCount claims 0xFFFF but zero vertex bytes are present.
+        var data = new byte[60];
+        data[3] = 0x20; // Flags BE 0x00000020 — island bit 5
+        data[52] = 0xFF;
+        data[53] = 0xFF; // vertexCount BE 0xFFFF (lie); triangleCount stays 0
+
+        var result = EsmSubrecordConverter.ConvertSubrecordData("NVMI", data, "NAVI");
+
+        Assert.Equal(60, result.Length);
+        // Flags swapped; vertex loop consumed nothing (no room before the trailing float).
+        Assert.Equal(0x20, result[0]);
+        Assert.Equal(0x00, result[3]);
+    }
+
+    [Fact]
+    public void ConvertNvmi_IslandTriangleCountLie_DoesNotThrow()
+    {
+        // 72 bytes: base(28) + bounds(24) + counts(4) + one vertex(12) + trailing float(4).
+        // triangleCount claims 0xFFFF but zero triangle bytes are present.
+        var data = new byte[72];
+        data[3] = 0x20; // island flag
+        data[53] = 0x01; // vertexCount BE = 1
+        data[54] = 0xFF;
+        data[55] = 0xFF; // triangleCount BE 0xFFFF (lie)
+
+        var result = EsmSubrecordConverter.ConvertSubrecordData("NVMI", data, "NAVI");
+
+        Assert.Equal(72, result.Length);
+        Assert.Equal(0x20, result[0]);
+        // vertexCount swapped to LE 1; triangle loop consumed nothing.
+        Assert.Equal(0x01, result[52]);
+        Assert.Equal(0x00, result[53]);
+    }
+
+    [Fact]
+    public void ConvertNvmi_IslandTruncatedMidBounds_DoesNotThrow()
+    {
+        // 40 bytes with the island flag set: the island section needs 28 bytes (bounds + counts)
+        // before the trailing float, but only 8 are present — the whole island block is skipped
+        // and bytes 28..35 pass through unconverted (accepted partial-swap degrade).
+        var data = new byte[40];
+        data[3] = 0x20; // island flag
+        data[28] = 0xAA; // island-region remainder that must survive untouched
+        data[35] = 0xBB;
+        data[36] = 0x11; // trailing Preferred % float BE 0x11000044
+        data[39] = 0x44;
+
+        var result = EsmSubrecordConverter.ConvertSubrecordData("NVMI", data, "NAVI");
+
+        Assert.Equal(40, result.Length);
+        // Unconverted island remainder.
+        Assert.Equal(0xAA, result[28]);
+        Assert.Equal(0xBB, result[35]);
+        // Trailing float still swapped.
+        Assert.Equal(0x44, result[36]);
+        Assert.Equal(0x11, result[39]);
+    }
+
+    [Fact]
+    public void ConvertNvmi_ValidIslandOneVertexOneTriangle_SwapsAllFields()
+    {
+        // 78 bytes: base(28) + bounds(24) + counts(4) + vertex(12) + triangle(6) + trailer(4).
+        byte[] data =
+        [
+            0x00, 0x00, 0x00, 0x20, // Flags BE 0x00000020 (island bit 5 set)
+            0x00, 0x12, 0x34, 0x56, // Navmesh FormID BE 0x00123456
+            0x00, 0xAB, 0xCD, 0xEF, // Location FormID BE 0x00ABCDEF
+            0x01, 0x02, 0x03, 0x04, // Grid key BE
+            0x3F, 0x80, 0x00, 0x00, // Approx X = 1.0f BE
+            0x40, 0x00, 0x00, 0x00, // Approx Y = 2.0f BE
+            0x40, 0x40, 0x00, 0x00, // Approx Z = 3.0f BE
+            0x40, 0x80, 0x00, 0x00, // Bounds min X = 4.0f BE
+            0x40, 0xA0, 0x00, 0x00, // Bounds min Y = 5.0f BE
+            0x40, 0xC0, 0x00, 0x00, // Bounds min Z = 6.0f BE
+            0x40, 0xE0, 0x00, 0x00, // Bounds max X = 7.0f BE
+            0x41, 0x00, 0x00, 0x00, // Bounds max Y = 8.0f BE
+            0x41, 0x10, 0x00, 0x00, // Bounds max Z = 9.0f BE
+            0x00, 0x01, // Vertex count BE = 1
+            0x00, 0x01, // Triangle count BE = 1
+            0x41, 0x20, 0x00, 0x00, // Vertex X = 10.0f BE
+            0x41, 0x30, 0x00, 0x00, // Vertex Y = 11.0f BE
+            0x41, 0x40, 0x00, 0x00, // Vertex Z = 12.0f BE
+            0x00, 0x01, // Triangle index 0 BE
+            0x00, 0x02, // Triangle index 1 BE
+            0x00, 0x03, // Triangle index 2 BE
+            0x3F, 0x00, 0x00, 0x00 // Preferred % = 0.5f BE
+        ];
+
+        var result = EsmSubrecordConverter.ConvertSubrecordData("NVMI", data, "NAVI");
+
+        byte[] expected =
+        [
+            0x20, 0x00, 0x00, 0x00, // Flags LE
+            0x56, 0x34, 0x12, 0x00, // Navmesh FormID LE
+            0xEF, 0xCD, 0xAB, 0x00, // Location FormID LE
+            0x04, 0x03, 0x02, 0x01, // Grid key LE
+            0x00, 0x00, 0x80, 0x3F, // Approx X LE
+            0x00, 0x00, 0x00, 0x40, // Approx Y LE
+            0x00, 0x00, 0x40, 0x40, // Approx Z LE
+            0x00, 0x00, 0x80, 0x40, // Bounds min X LE
+            0x00, 0x00, 0xA0, 0x40, // Bounds min Y LE
+            0x00, 0x00, 0xC0, 0x40, // Bounds min Z LE
+            0x00, 0x00, 0xE0, 0x40, // Bounds max X LE
+            0x00, 0x00, 0x00, 0x41, // Bounds max Y LE
+            0x00, 0x00, 0x10, 0x41, // Bounds max Z LE
+            0x01, 0x00, // Vertex count LE
+            0x01, 0x00, // Triangle count LE
+            0x00, 0x00, 0x20, 0x41, // Vertex X LE
+            0x00, 0x00, 0x30, 0x41, // Vertex Y LE
+            0x00, 0x00, 0x40, 0x41, // Vertex Z LE
+            0x01, 0x00, // Triangle index 0 LE
+            0x02, 0x00, // Triangle index 1 LE
+            0x03, 0x00, // Triangle index 2 LE
+            0x00, 0x00, 0x00, 0x3F // Preferred % LE
+        ];
+        Assert.Equal(expected, result);
+    }
+
+    #endregion
+
     #region Empty Data
 
     [Fact]

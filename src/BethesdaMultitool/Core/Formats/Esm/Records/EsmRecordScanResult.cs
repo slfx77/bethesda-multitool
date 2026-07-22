@@ -107,6 +107,13 @@ public record EsmRecordScanResult
     /// </summary>
     public Dictionary<uint, uint> LandToCellMap { get; init; } = [];
 
+    /// <summary>
+    ///     PGRD FormID → parent CELL FormID mapping, resolved structurally from the Cell Children
+    ///     GRUP hierarchy exactly like <see cref="LandToCellMap" />. TES4-era pathgrids carry no cell
+    ///     linkage in their own data, so this map is the only parentage source for them.
+    /// </summary>
+    public Dictionary<uint, uint> PathgridToCellMap { get; init; } = [];
+
     /// <summary>Cell FormID → child REFR/ACHR/ACRE FormIDs (from ESM GRUP hierarchy type 8/9/10).</summary>
     public Dictionary<uint, List<uint>> CellToRefrMap { get; init; } = [];
 

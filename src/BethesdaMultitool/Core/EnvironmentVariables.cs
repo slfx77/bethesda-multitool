@@ -154,6 +154,9 @@ internal static class EnvironmentVariables
         /// <summary>When 1, renders engine marker objects (XMarker/heading, map/travel markers, etc.) that are hidden by default to match the game.</summary>
         public const string ShowMarkers = "FALLOUT_VIEWER_SHOW_MARKERS";
 
+        /// <summary>When 1, the 3D navigation overlay (NAVM navmeshes / TES4 PGRD pathgrids) starts ON — headless captures can prove the overlay without the toolbar toggle.</summary>
+        public const string ShowNavMesh = "FALLOUT_VIEWER_SHOW_NAVMESH";
+
         /// <summary>When 1, renders imposter (distant LOD stand-in) objects that are suppressed by default where a co-located full model exists.</summary>
         public const string ShowImposters = "FALLOUT_VIEWER_SHOW_IMPOSTERS";
 
