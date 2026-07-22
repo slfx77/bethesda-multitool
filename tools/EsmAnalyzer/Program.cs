@@ -48,6 +48,9 @@ internal sealed class Program
         rootCommand.Subcommands.Add(CompressedRecordCheckCommand.Create());
         rootCommand.Subcommands.Add(LtexAuditCommand.Create());
         rootCommand.Subcommands.Add(WaterLayoutCommand.Create());
+        rootCommand.Subcommands.Add(TerrainCellCommand.Create());
+        rootCommand.Subcommands.Add(PathgridSummaryCommand.Create());
+        rootCommand.Subcommands.Add(NpcDialogueCoverageCommand.Create());
         rootCommand.Subcommands.Add(ExportCommands.CreateExportLandCommand());
         rootCommand.Subcommands.Add(ExportCommands.CreateWorldmapCommand());
         rootCommand.Subcommands.Add(WorldMapDiagCommands.CreateWorldMapDiagCommand());

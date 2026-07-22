@@ -1,12 +1,25 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Tools.EsmAnalyzer;
 
 public sealed class CorpusCertificationScriptContractTests
 {
+    private const string PwshMissingSkipReason =
+        "pwsh (PowerShell 7) not found on PATH — corpus certification script contract tests skipped.";
+
+    private static readonly Lazy<bool> PwshAvailable = new(ProbePwshAvailability);
+
+    // Each Lazy runs ONE pwsh launch covering every fixture in its batch; the default
+    // ExecutionAndPublication mode guarantees a single launch even when xUnit runs the
+    // dependent tests in parallel. Individual tests read their slice of the cached JSON.
+    private static readonly Lazy<JsonElement> ProvenanceResults = new(RunProvenanceHarness);
+    private static readonly Lazy<JsonElement> SourceCoverageResults = new(RunSourceCoverageHarness);
+
     [Theory]
     [InlineData("Run-DmpCorpus.ps1")]
     [InlineData("Verify-DmpCorpus.ps1")]
@@ -94,12 +107,7 @@ public sealed class CorpusCertificationScriptContractTests
     [InlineData("Verify-DmpCorpus.ps1")]
     public void SourceCertificationAcceptsAnEmptyScriptPayloadCategory(string scriptName)
     {
-        var result = InvokeScriptSourceCoverageAssessment(
-            scriptName,
-            """
-            Get-ScriptSourceCoverageAssessment -SourceRows @() -SubrecordRows @() |
-                ConvertTo-Json -Compress
-            """);
+        var result = GetSourceCoverageResult(scriptName);
 
         Assert.True(result.GetProperty("Pass").GetBoolean());
         Assert.Equal(0, result.GetProperty("HardContradictions").GetInt32());
@@ -157,17 +165,8 @@ public sealed class CorpusCertificationScriptContractTests
     [Fact]
     public void VerifierAssessmentRejectsMissingProvenanceForEmittedScptSource()
     {
-        var result = InvokeVerifierProvenanceAssessment(
-            """
-            $hash = 'A' * 64
-            $sourceRows = @([pscustomobject]@{
-                record_type = 'SCPT'; form_id = '0x01000800'; sctx_present = 'True'
-                sctx_count = '1'; sctx_sha256 = $hash; sctx_decoded_length = '1'
-                scda_count = '0'; scda_sha256 = $null; scda_length = '0'
-            })
-            Get-ScriptProvenanceAssessment -Events @() -SourceRows $sourceRows -AuditRows @() |
-                ConvertTo-Json -Compress
-            """);
+        var result = GetProvenanceResult(
+            nameof(VerifierAssessmentRejectsMissingProvenanceForEmittedScptSource));
 
         Assert.False(result.GetProperty("Pass").GetBoolean());
         Assert.Equal(0, result.GetProperty("EventCount").GetInt32());
@@ -178,7 +177,130 @@ public sealed class CorpusCertificationScriptContractTests
     [Fact]
     public void VerifierAssessmentValidatesCapturedExpectedHashAgainstEmittedPayload()
     {
-        var result = InvokeVerifierProvenanceAssessment(
+        var result = GetProvenanceResult(
+            nameof(VerifierAssessmentValidatesCapturedExpectedHashAgainstEmittedPayload));
+
+        Assert.False(result.GetProperty("Pass").GetBoolean());
+        Assert.Equal(1, result.GetProperty("EventCount").GetInt32());
+        Assert.Equal(1, result.GetProperty("ExpectedCount").GetInt32());
+        Assert.Equal(0, result.GetProperty("MatchedCount").GetInt32());
+    }
+
+    [Fact]
+    public void VerifierAssessmentRejectsDirectSourceAbsentFromSameDumpAudit()
+    {
+        var result = GetProvenanceResult(
+            nameof(VerifierAssessmentRejectsDirectSourceAbsentFromSameDumpAudit));
+
+        Assert.False(result.GetProperty("Pass").GetBoolean());
+        Assert.Equal(1, result.GetProperty("ExpectedCount").GetInt32());
+        Assert.Equal(0, result.GetProperty("MatchedCount").GetInt32());
+    }
+
+    [Fact]
+    public void VerifierAssessmentAcceptsStructurallyEmptySourceOnlyPreservation()
+    {
+        var result = GetProvenanceResult(
+            nameof(VerifierAssessmentAcceptsStructurallyEmptySourceOnlyPreservation));
+
+        Assert.True(result.GetProperty("Pass").GetBoolean());
+        Assert.Equal(1, result.GetProperty("MatchedCount").GetInt32());
+    }
+
+    [Fact]
+    public void VerifierAssessmentRequiresStructurallyExactZeroMismatchCompiledSourceAudit()
+    {
+        var result = GetProvenanceResult(
+            nameof(VerifierAssessmentRequiresStructurallyExactZeroMismatchCompiledSourceAudit));
+
+        Assert.True(result.GetProperty("Valid").GetBoolean());
+        Assert.False(result.GetProperty("Mismatch").GetBoolean());
+        Assert.False(result.GetProperty("DeclarationMismatch").GetBoolean());
+    }
+
+    [Fact]
+    public void VerifierAssessmentAcceptsFreshLocalAugmentationProofAndRejectsCorruption()
+    {
+        var result = GetProvenanceResult(
+            nameof(VerifierAssessmentAcceptsFreshLocalAugmentationProofAndRejectsCorruption));
+
+        Assert.True(result.GetProperty("Valid").GetBoolean());
+        Assert.False(result.GetProperty("Corrupt").GetBoolean());
+    }
+
+    [Fact]
+    public void VerifierAssessmentAcceptsPreservedMasterSourceForStorageOnlyAugmentation()
+    {
+        var result = GetProvenanceResult(
+            nameof(VerifierAssessmentAcceptsPreservedMasterSourceForStorageOnlyAugmentation));
+
+        Assert.True(result.GetProperty("Valid").GetBoolean());
+        Assert.False(result.GetProperty("Corrupt").GetBoolean());
+    }
+
+    private static string ReadToolScript(string name) =>
+        File.ReadAllText(Path.Combine(SourceContract.RepoRoot, "tools", name));
+
+    private static JsonElement GetProvenanceResult(string fixtureName)
+    {
+        Assert.SkipWhen(!PwshAvailable.Value, PwshMissingSkipReason);
+        return GetFixtureResult(ProvenanceResults.Value, fixtureName);
+    }
+
+    private static JsonElement GetSourceCoverageResult(string scriptName)
+    {
+        Assert.SkipWhen(!PwshAvailable.Value, PwshMissingSkipReason);
+        return GetFixtureResult(SourceCoverageResults.Value, scriptName);
+    }
+
+    private static JsonElement GetFixtureResult(JsonElement batch, string key)
+    {
+        var entry = batch.GetProperty(key);
+        var error = entry.GetProperty("Error");
+        Assert.True(error.ValueKind is JsonValueKind.Null,
+            $"PowerShell fixture '{key}' failed: {error.GetString()}");
+        return JsonDocument.Parse(entry.GetProperty("Json").GetString()!).RootElement.Clone();
+    }
+
+    private static bool ProbePwshAvailability()
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                ArgumentList = { "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "exit 0" },
+            });
+            return process is not null && process.WaitForExit(30_000) && process.ExitCode == 0;
+        }
+        catch (Win32Exception)
+        {
+            return false;
+        }
+    }
+
+    // Fixture snippets for the pwsh-batched provenance facts, keyed by fact method name.
+    // Each snippet must emit exactly one compressed JSON string; the harness evaluates every
+    // snippet in its own child scope with per-fixture try/catch so one failing fixture
+    // surfaces as that fact's error without starving the others.
+    private static readonly (string Name, string Fixture)[] ProvenanceFixtures =
+    [
+        (nameof(VerifierAssessmentRejectsMissingProvenanceForEmittedScptSource),
+            """
+            $hash = 'A' * 64
+            $sourceRows = @([pscustomobject]@{
+                record_type = 'SCPT'; form_id = '0x01000800'; sctx_present = 'True'
+                sctx_count = '1'; sctx_sha256 = $hash; sctx_decoded_length = '1'
+                scda_count = '0'; scda_sha256 = $null; scda_length = '0'
+            })
+            Get-ScriptProvenanceAssessment -Events @() -SourceRows $sourceRows -AuditRows @() |
+                ConvertTo-Json -Compress
+            """),
+        (nameof(VerifierAssessmentValidatesCapturedExpectedHashAgainstEmittedPayload),
             """
             $actualHash = 'A' * 64
             $expectedHash = 'B' * 64
@@ -212,18 +334,8 @@ public sealed class CorpusCertificationScriptContractTests
             Get-ScriptProvenanceAssessment `
                 -Events @($event) -SourceRows $sourceRows -AuditRows $auditRows |
                 ConvertTo-Json -Compress
-            """);
-
-        Assert.False(result.GetProperty("Pass").GetBoolean());
-        Assert.Equal(1, result.GetProperty("EventCount").GetInt32());
-        Assert.Equal(1, result.GetProperty("ExpectedCount").GetInt32());
-        Assert.Equal(0, result.GetProperty("MatchedCount").GetInt32());
-    }
-
-    [Fact]
-    public void VerifierAssessmentRejectsDirectSourceAbsentFromSameDumpAudit()
-    {
-        var result = InvokeVerifierProvenanceAssessment(
+            """),
+        (nameof(VerifierAssessmentRejectsDirectSourceAbsentFromSameDumpAudit),
             """
             $sourceHash = 'A' * 64
             $unrelatedHash = 'B' * 64
@@ -256,17 +368,8 @@ public sealed class CorpusCertificationScriptContractTests
             Get-ScriptProvenanceAssessment `
                 -Events @($event) -SourceRows $sourceRows -AuditRows $auditRows |
                 ConvertTo-Json -Compress
-            """);
-
-        Assert.False(result.GetProperty("Pass").GetBoolean());
-        Assert.Equal(1, result.GetProperty("ExpectedCount").GetInt32());
-        Assert.Equal(0, result.GetProperty("MatchedCount").GetInt32());
-    }
-
-    [Fact]
-    public void VerifierAssessmentAcceptsStructurallyEmptySourceOnlyPreservation()
-    {
-        var result = InvokeVerifierProvenanceAssessment(
+            """),
+        (nameof(VerifierAssessmentAcceptsStructurallyEmptySourceOnlyPreservation),
             """
             $sourceHash = 'A' * 64
             $sourceRows = @([pscustomobject]@{
@@ -301,16 +404,8 @@ public sealed class CorpusCertificationScriptContractTests
             Get-ScriptProvenanceAssessment `
                 -Events @($event) -SourceRows $sourceRows -AuditRows $auditRows |
                 ConvertTo-Json -Compress
-            """);
-
-        Assert.True(result.GetProperty("Pass").GetBoolean());
-        Assert.Equal(1, result.GetProperty("MatchedCount").GetInt32());
-    }
-
-    [Fact]
-    public void VerifierAssessmentRequiresStructurallyExactZeroMismatchCompiledSourceAudit()
-    {
-        var result = InvokeVerifierProvenanceAssessment(
+            """),
+        (nameof(VerifierAssessmentRequiresStructurallyExactZeroMismatchCompiledSourceAudit),
             """
             $sourceHash = 'A' * 64
             $scdaHash = 'B' * 64
@@ -365,17 +460,8 @@ public sealed class CorpusCertificationScriptContractTests
                 Mismatch = $mismatch
                 DeclarationMismatch = $declarationMismatch
             } | ConvertTo-Json -Compress
-            """);
-
-        Assert.True(result.GetProperty("Valid").GetBoolean());
-        Assert.False(result.GetProperty("Mismatch").GetBoolean());
-        Assert.False(result.GetProperty("DeclarationMismatch").GetBoolean());
-    }
-
-    [Fact]
-    public void VerifierAssessmentAcceptsFreshLocalAugmentationProofAndRejectsCorruption()
-    {
-        var result = InvokeVerifierProvenanceAssessment(
+            """),
+        (nameof(VerifierAssessmentAcceptsFreshLocalAugmentationProofAndRejectsCorruption),
             """
             $outputHash = 'A' * 64
             $baseHash = 'B' * 64
@@ -412,16 +498,8 @@ public sealed class CorpusCertificationScriptContractTests
             $corrupt = (Get-ScriptProvenanceAssessment `
                 -Events @($event) -SourceRows $sourceRows -AuditRows @()).Pass
             [pscustomobject]@{ Valid = $valid; Corrupt = $corrupt } | ConvertTo-Json -Compress
-            """);
-
-        Assert.True(result.GetProperty("Valid").GetBoolean());
-        Assert.False(result.GetProperty("Corrupt").GetBoolean());
-    }
-
-    [Fact]
-    public void VerifierAssessmentAcceptsPreservedMasterSourceForStorageOnlyAugmentation()
-    {
-        var result = InvokeVerifierProvenanceAssessment(
+            """),
+        (nameof(VerifierAssessmentAcceptsPreservedMasterSourceForStorageOnlyAugmentation),
             """
             $sourceHash = 'A' * 64
             $sourceRows = @([pscustomobject]@{
@@ -454,19 +532,21 @@ public sealed class CorpusCertificationScriptContractTests
             $corrupt = (Get-ScriptProvenanceAssessment `
                 -Events @($event) -SourceRows $sourceRows -AuditRows @()).Pass
             [pscustomobject]@{ Valid = $valid; Corrupt = $corrupt } | ConvertTo-Json -Compress
-            """);
+            """),
+    ];
 
-        Assert.True(result.GetProperty("Valid").GetBoolean());
-        Assert.False(result.GetProperty("Corrupt").GetBoolean());
-    }
-
-    private static string ReadToolScript(string name) =>
-        File.ReadAllText(Path.Combine(FindRepositoryRoot(), "tools", name));
-
-    private static JsonElement InvokeVerifierProvenanceAssessment(string fixture)
+    private static JsonElement RunProvenanceHarness()
     {
-        var verifierPath = Path.Combine(FindRepositoryRoot(), "tools", "Verify-DmpCorpus.ps1");
+        var verifierPath = Path.Combine(SourceContract.RepoRoot, "tools", "Verify-DmpCorpus.ps1");
         var escapedVerifierPath = verifierPath.Replace("'", "''", StringComparison.Ordinal);
+        var registrations = new StringBuilder();
+        foreach (var (name, fixture) in ProvenanceFixtures)
+        {
+            registrations.AppendLine($"$fixtures['{name}'] = {{");
+            registrations.AppendLine(fixture);
+            registrations.AppendLine("}");
+        }
+
         var harness = $$"""
             $ErrorActionPreference = 'Stop'
             $tokens = $null
@@ -487,72 +567,71 @@ public sealed class CorpusCertificationScriptContractTests
                 if ($null -eq $function) { throw "Missing function $name" }
                 Invoke-Expression $function.Extent.Text
             }
-            {{fixture}}
+            $fixtures = [ordered]@{}
+            {{registrations}}
+            $results = [ordered]@{}
+            foreach ($entry in $fixtures.GetEnumerator()) {
+                try {
+                    $results[$entry.Key] = [pscustomobject]@{ Json = [string](& $entry.Value); Error = $null }
+                }
+                catch {
+                    $results[$entry.Key] = [pscustomobject]@{ Json = $null; Error = $_.ToString() }
+                }
+            }
+            [pscustomobject]$results | ConvertTo-Json -Compress -Depth 3
             """;
 
-        var harnessPath = Path.Combine(Path.GetTempPath(), $"corpus-provenance-{Guid.NewGuid():N}.ps1");
-        try
-        {
-            File.WriteAllText(harnessPath, harness, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-            using var process = Process.Start(new ProcessStartInfo
-            {
-                FileName = "pwsh",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                ArgumentList =
-                {
-                    "-NoLogo",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-File",
-                    harnessPath,
-                },
-            });
-            Assert.NotNull(process);
-            var output = process.StandardOutput.ReadToEnd();
-            var error = process.StandardError.ReadToEnd();
-            Assert.True(process.WaitForExit(30_000), "PowerShell provenance harness timed out.");
-            Assert.Equal(0, process.ExitCode);
-            Assert.True(string.IsNullOrWhiteSpace(error), error);
-            return JsonDocument.Parse(output).RootElement.Clone();
-        }
-        finally
-        {
-            File.Delete(harnessPath);
-        }
+        return RunPwshHarness(harness, "provenance");
     }
 
-    private static JsonElement InvokeScriptSourceCoverageAssessment(string scriptName, string fixture)
+    private static JsonElement RunSourceCoverageHarness()
     {
-        var scriptPath = Path.Combine(FindRepositoryRoot(), "tools", scriptName);
-        var escapedScriptPath = scriptPath.Replace("'", "''", StringComparison.Ordinal);
+        var toolsDirectory = Path.Combine(SourceContract.RepoRoot, "tools");
+        var escapedToolsDirectory = toolsDirectory.Replace("'", "''", StringComparison.Ordinal);
         var harness = $$"""
             $ErrorActionPreference = 'Stop'
             Set-StrictMode -Version Latest
-            $tokens = $null
-            $parseErrors = $null
-            $ast = [Management.Automation.Language.Parser]::ParseFile(
-                '{{escapedScriptPath}}', [ref]$tokens, [ref]$parseErrors)
-            if ($parseErrors.Count -ne 0) { throw ($parseErrors | Out-String) }
-            foreach ($name in @(
-                'Get-NumericPropertySum',
-                'Get-PayloadCoverageSummary',
-                'Test-PayloadHashList',
-                'Get-ScriptSourceCoverageAssessment')) {
-                $function = $ast.Find({
-                    param($node)
-                    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-                        $node.Name -eq $name
-                }, $true)
-                if ($null -eq $function) { throw "Missing function $name" }
-                Invoke-Expression $function.Extent.Text
+            $results = [ordered]@{}
+            foreach ($scriptName in @('Run-DmpCorpus.ps1', 'Verify-DmpCorpus.ps1')) {
+                try {
+                    $json = & {
+                        param($scriptPath)
+                        $tokens = $null
+                        $parseErrors = $null
+                        $ast = [Management.Automation.Language.Parser]::ParseFile(
+                            $scriptPath, [ref]$tokens, [ref]$parseErrors)
+                        if ($parseErrors.Count -ne 0) { throw ($parseErrors | Out-String) }
+                        foreach ($name in @(
+                            'Get-NumericPropertySum',
+                            'Get-PayloadCoverageSummary',
+                            'Test-PayloadHashList',
+                            'Get-ScriptSourceCoverageAssessment')) {
+                            $function = $ast.Find({
+                                param($node)
+                                $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                                    $node.Name -eq $name
+                            }, $true)
+                            if ($null -eq $function) { throw "Missing function $name" }
+                            Invoke-Expression $function.Extent.Text
+                        }
+                        Get-ScriptSourceCoverageAssessment -SourceRows @() -SubrecordRows @() |
+                            ConvertTo-Json -Compress
+                    } (Join-Path '{{escapedToolsDirectory}}' $scriptName)
+                    $results[$scriptName] = [pscustomobject]@{ Json = [string]$json; Error = $null }
+                }
+                catch {
+                    $results[$scriptName] = [pscustomobject]@{ Json = $null; Error = $_.ToString() }
+                }
             }
-            {{fixture}}
+            [pscustomobject]$results | ConvertTo-Json -Compress -Depth 3
             """;
 
-        var harnessPath = Path.Combine(Path.GetTempPath(), $"corpus-source-coverage-{Guid.NewGuid():N}.ps1");
+        return RunPwshHarness(harness, "source-coverage");
+    }
+
+    private static JsonElement RunPwshHarness(string harness, string harnessKind)
+    {
+        var harnessPath = Path.Combine(Path.GetTempPath(), $"corpus-{harnessKind}-{Guid.NewGuid():N}.ps1");
         try
         {
             File.WriteAllText(harnessPath, harness, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
@@ -575,7 +654,7 @@ public sealed class CorpusCertificationScriptContractTests
             Assert.NotNull(process);
             var output = process.StandardOutput.ReadToEnd();
             var error = process.StandardError.ReadToEnd();
-            Assert.True(process.WaitForExit(30_000), "PowerShell source-coverage harness timed out.");
+            Assert.True(process.WaitForExit(30_000), $"PowerShell {harnessKind} harness timed out.");
             Assert.Equal(0, process.ExitCode);
             Assert.True(string.IsNullOrWhiteSpace(error), error);
             return JsonDocument.Parse(output).RootElement.Clone();
@@ -584,17 +663,5 @@ public sealed class CorpusCertificationScriptContractTests
         {
             File.Delete(harnessPath);
         }
-    }
-
-    private static string FindRepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory.FullName;
     }
 }

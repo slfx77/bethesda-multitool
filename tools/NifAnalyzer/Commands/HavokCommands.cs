@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.CommandLine;
 using NifAnalyzer.Parsers;
 using Spectre.Console;
+using NifVersions = BethesdaMultitool.Core.Formats.Nif.Parser.NifVersions;
 
 namespace NifAnalyzer.Commands;
 
@@ -33,17 +34,17 @@ internal static class HavokCommands
         switch (typeName)
         {
             case "hkPackedNiTriStripsData":
-                ParseHkPackedNiTriStripsData(data, offset, size, nif.IsBigEndian);
+                ParseHkPackedNiTriStripsData(data, offset, size, nif.IsBigEndian, nif.Version);
                 break;
             case "bhkPackedNiTriStripsShape":
-                ParseBhkPackedNiTriStripsShape(data, offset, size, nif.IsBigEndian);
+                ParseBhkPackedNiTriStripsShape(data, offset, size, nif.IsBigEndian, nif.Version);
                 break;
             case "bhkMoppBvTreeShape":
                 ParseBhkMoppBvTreeShape(data, offset, size, nif.IsBigEndian);
                 break;
             case "bhkRigidBody":
             case "bhkRigidBodyT":
-                ParseBhkRigidBody(data, offset, size, nif.IsBigEndian);
+                ParseBhkRigidBody(data, offset, size, nif.IsBigEndian, nif.Version);
                 break;
             case "bhkCollisionObject":
             case "bhkBlendCollisionObject":
@@ -164,31 +165,50 @@ internal static class HavokCommands
         }
     }
 
-    private static void ParseHkPackedNiTriStripsData(byte[] data, int offset, int size, bool isBE)
+    private static void ParseHkPackedNiTriStripsData(byte[] data, int offset, int size, bool isBE,
+        uint version)
     {
         var pos = offset;
         var end = offset + size;
 
+        // TES4-era (≤20.0.0.5): TriangleData carries a trailing Vector3 normal (stride 20, not 8),
+        // there is NO Compressed flag (since 20.2.0.7), and NO trailing sub-shape array (that array
+        // lives on bhkPackedNiTriStripsShape instead at that era).
+        var tes4Era = NifVersions.IsTes4Era(version);
+        var triStride = tes4Era ? 20 : 8;
+
         var numTriangles = ReadUInt32(data, pos, isBE);
         pos += 4;
 
-        AnsiConsole.WriteLine($"NumTriangles: {numTriangles}");
+        AnsiConsole.WriteLine($"NumTriangles: {numTriangles} (TriangleData stride {triStride})");
         AnsiConsole.WriteLine();
 
         // Show first few triangles
         AnsiConsole.WriteLine("First 5 TriangleData entries (Triangle v1,v2,v3 + WeldInfo):");
-        for (var i = 0; i < Math.Min(5, (int)numTriangles) && pos + 8 <= end; i++)
+        for (var i = 0; i < Math.Min(5, (int)numTriangles) && pos + triStride <= end; i++)
         {
             var v1 = ReadUInt16(data, pos, isBE);
             var v2 = ReadUInt16(data, pos + 2, isBE);
             var v3 = ReadUInt16(data, pos + 4, isBE);
             var weld = ReadUInt16(data, pos + 6, isBE);
-            AnsiConsole.WriteLine($"  [{i}] Triangle({v1}, {v2}, {v3}) WeldInfo=0x{weld:X4}");
-            pos += 8;
+            if (tes4Era)
+            {
+                var nx = ReadFloat(data, pos + 8, isBE);
+                var ny = ReadFloat(data, pos + 12, isBE);
+                var nz = ReadFloat(data, pos + 16, isBE);
+                AnsiConsole.WriteLine(
+                    $"  [{i}] Triangle({v1}, {v2}, {v3}) WeldInfo=0x{weld:X4} Normal({nx:F3}, {ny:F3}, {nz:F3})");
+            }
+            else
+            {
+                AnsiConsole.WriteLine($"  [{i}] Triangle({v1}, {v2}, {v3}) WeldInfo=0x{weld:X4}");
+            }
+
+            pos += triStride;
         }
 
         // Skip remaining triangles
-        pos = offset + 4 + (int)numTriangles * 8;
+        pos = offset + 4 + (int)numTriangles * triStride;
 
         if (pos + 4 > end)
         {
@@ -202,8 +222,13 @@ internal static class HavokCommands
         AnsiConsole.WriteLine($"NumVertices: {numVertices}");
 
         // Compressed flag (since NIF 20.2.0.7)
-        var compressed = data[pos];
-        pos += 1;
+        byte compressed = 0;
+        if (!tes4Era)
+        {
+            compressed = data[pos];
+            pos += 1;
+        }
+
         Console.WriteLine(
             $"Compressed: {compressed} ({(compressed == 1 ? "HalfVector3 - 6 bytes/vertex" : "Vector3 - 12 bytes/vertex")})");
         AnsiConsole.WriteLine();
@@ -224,7 +249,7 @@ internal static class HavokCommands
                 pos += 6;
             }
 
-            pos = offset + 4 + (int)numTriangles * 8 + 4 + 1 + (int)numVertices * 6;
+            pos = offset + 4 + (int)numTriangles * triStride + 4 + 1 + (int)numVertices * 6;
         }
         else
         {
@@ -238,10 +263,17 @@ internal static class HavokCommands
                 pos += 12;
             }
 
-            pos = offset + 4 + (int)numTriangles * 8 + 4 + 1 + (int)numVertices * 12;
+            pos = offset + 4 + (int)numTriangles * triStride + (tes4Era ? 4 : 5) + (int)numVertices * 12;
         }
 
-        // NumSubShapes
+        // NumSubShapes (moved into this data block at 20.2.0.7; TES4-era files carry it on the shape)
+        if (tes4Era)
+        {
+            AnsiConsole.WriteLine();
+            AnsiConsole.WriteLine("SubShapes: (none in TES4-era data blocks — see bhkPackedNiTriStripsShape)");
+            return;
+        }
+
         if (pos + 2 > end)
         {
             AnsiConsole.WriteLine("\nTruncated before SubShapes");
@@ -298,9 +330,30 @@ internal static class HavokCommands
         return BitConverter.Int32BitsToSingle(bits);
     }
 
-    private static void ParseBhkPackedNiTriStripsShape(byte[] data, int offset, int size, bool isBE)
+    private static void ParseBhkPackedNiTriStripsShape(byte[] data, int offset, int size, bool isBE,
+        uint version)
     {
         var pos = offset;
+
+        // TES4-era (≤20.0.0.5) shapes are prefixed by Num Sub Shapes (ushort) + hkSubPartData[]
+        // (12 bytes each); 20.2.0.7 moved the array into hkPackedNiTriStripsData.
+        if (NifVersions.IsTes4Era(version))
+        {
+            var numSubShapes = ReadUInt16(data, pos, isBE);
+            pos += 2;
+            AnsiConsole.WriteLine($"NumSubShapes: {numSubShapes}");
+            for (var i = 0; i < numSubShapes && pos + 12 <= offset + size; i++)
+            {
+                var filter = ReadUInt32(data, pos, isBE);
+                var subVerts = ReadUInt32(data, pos + 4, isBE);
+                var material = ReadUInt32(data, pos + 8, isBE);
+                Console.WriteLine(
+                    $"  [{i}] Filter=0x{filter:X8}, NumVerts={subVerts}, Material=0x{material:X8}");
+                pos += 12;
+            }
+
+            AnsiConsole.WriteLine();
+        }
 
         var userData = ReadUInt32(data, pos, isBE);
         AnsiConsole.WriteLine($"UserData: {userData}");
@@ -376,7 +429,9 @@ internal static class HavokCommands
     // Layout: nif.xml bhkRigidBodyCInfo550_660 (FO3/FNV), byte-verified against retail rockcave07.nif
     // (Translation @52 is a small Havok-unit vector, Rotation @68 a unit quaternion; the old 28/44 read
     // landed on CollisionResponse/ProcessContactCallbackDelay=0xFFFF, a guaranteed-NaN float).
-    private static void ParseBhkRigidBody(byte[] data, int offset, int size, bool isBE)
+    // The CInfo's five leading header fields (16 bytes) are since="10.1.0.0" — Oblivion's oldest
+    // 10.0.1.x meshes go straight from Unused04 to Translation (@36).
+    private static void ParseBhkRigidBody(byte[] data, int offset, int size, bool isBE, uint version)
     {
         var pos = offset;
 
@@ -398,9 +453,9 @@ internal static class HavokCommands
         AnsiConsole.WriteLine($"ProcessContactCallbackDelay: 0x{callbackDelay:X4}");
         pos += 4;
 
-        // bhkRigidBodyCInfo preamble: Unused01[4] + HavokFilter copy(4) + Unused02[4]
-        //                            + CollisionResponse/CallbackDelay copy(4) + Unused04[4]
-        pos += 20;
+        // bhkRigidBodyCInfo preamble: [Unused01[4] + HavokFilter copy(4) + Unused02[4]
+        //   + CollisionResponse/CallbackDelay copy(4), since 10.1.0.0] + Unused04[4]
+        pos += version >= NifVersions.Gamebryo10100 ? 20 : 4;
 
         // Translation (Vector4, Havok units) @52
         Console.WriteLine(
