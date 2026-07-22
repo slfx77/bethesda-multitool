@@ -97,7 +97,9 @@ public static class AtmosphereState
         public float SunGlareDrawAlpha =>
             Math.Clamp(SunIntensity, 0f, 1f) * Math.Clamp(SunGlareIntensity, 0f, 1f);
         public float StarsDrawAlpha => Math.Clamp(StarVisibility, 0f, 1f);
+#pragma warning disable CA1822, S2325 // instance member by design — completes the Resolved DrawAlpha family; callers use instance syntax
         public float MoonDiscDrawAlpha(float pathVisibility) => Math.Clamp(pathVisibility, 0f, 1f);
+#pragma warning restore CA1822, S2325
     }
 
     /// <summary>
@@ -482,6 +484,11 @@ public static class AtmosphereState
             else if (atmosphere.SunPath == SunPathModel.FnvTriangleWave)
             {
                 sunDir = FnvSunPathDirection(
+                    hour, srB, srE, ssB, ssE, sunXExtreme, sunYExtreme, sunAlphaTransitionHours);
+            }
+            else if (atmosphere.SunPath == SunPathModel.Tes4TriangleWave)
+            {
+                sunDir = Tes4SunPathDirection(
                     hour, srB, srE, ssB, ssE, sunXExtreme, sunYExtreme, sunAlphaTransitionHours);
             }
 
@@ -909,9 +916,8 @@ public static class AtmosphereState
     // the unit-vector component against radians verbatim (≈ sin θ for small angles), reproduced exactly.
     private const float Fo4SunShadowMinAngleDegrees = 30f;
 
-    // FNV GMSTs verified from FalloutNV.esm (2026-07-13): fSunXExtreme=800, fSunYExtreme=−100 → noon
-    // apex atan(800/100) ≈ 83° with the sun slightly on the −Y (south) side — supersedes the fitted 50°
-    // arc (that figure was a stand-in guess; the engine constants are authored). FO3 shares the engine
+    // FNV GMSTs verified from FalloutNV.esm: fSunXExtreme=800, fSunYExtreme=−100 → noon
+    // apex atan(800/100) ≈ 83° with the sun slightly on the −Y (south) side. FO3 shares the engine
     // path; its GMSTs are unverified, so it rides the FNV values as a labeled stand-in. No z floor:
     // FNV has no shadow-min-angle clamp (FO4-only), and the night leg is unused (SunDirection's night
     // return keeps the (0,0,−1) convention the horizon-glow gating depends on).
@@ -953,6 +959,27 @@ public static class AtmosphereState
         }
 
         var p = SkySunProfile.ForGame(BethesdaGame.Skyrim).ResolveTrianglePosition(
+            hour, new ClimateTiming(srB, srE, ssB, ssE),
+            sunXExtreme, sunYExtreme, sunAlphaTransitionHours);
+        return p.LengthSquared() > 1e-6f ? Vector3.Normalize(p) : Vector3.UnitZ;
+    }
+
+    /// <summary>
+    ///     TES4 (Oblivion) daytime sun direction: the recovered original triangle wave (symbolized
+    ///     Remaster Sun::Update + retail Setting defaults 400/25/2h; day leg padded around the raw
+    ///     climate sunrise-begin/sunset-end). Noon apex ≈ 86° — near-zenith. Only the day leg is
+    ///     served; night keeps the analytic (0,0,−1) convention like the FNV path.
+    /// </summary>
+    internal static Vector3 Tes4SunPathDirection(
+        float hour, float srB, float srE, float ssB, float ssE,
+        float? sunXExtreme = null, float? sunYExtreme = null, float? sunAlphaTransitionHours = null)
+    {
+        if (hour <= srB || hour >= ssE)
+        {
+            return new Vector3(0f, 0f, -1f);
+        }
+
+        var p = SkySunProfile.ForGame(BethesdaGame.Oblivion).ResolveTrianglePosition(
             hour, new ClimateTiming(srB, srE, ssB, ssE),
             sunXExtreme, sunYExtreme, sunAlphaTransitionHours);
         return p.LengthSquared() > 1e-6f ? Vector3.Normalize(p) : Vector3.UnitZ;
@@ -1096,8 +1123,7 @@ public static class AtmosphereState
     //   solid Night outside the daylight span (FNV's stored Midnight field is not a color band);
     //   night→sunrise  over sunriseBegin..sunriseMid, sunrise→day over sunriseMid..sunriseEnd;
     //   day→highNoon→day  over sunriseEnd..sunsetBegin, pivoting at the fixed 12:00 member —
-    //     this is the engine's "extra daytime slot pivoting at a stored noon time" previously
-    //     simplified to solid Day;
+    //     this is the engine's "extra daytime slot pivoting at a stored noon time";
     //   day→sunset over sunsetBegin..sunsetMid, sunset→night over sunsetMid..sunsetEnd.
     // FNV authors the HighNoon slot per fopdoc. Presence, not color value, selects it: retail
     // FillColorBlend always reads index 4, including an explicitly all-zero RGBA entry.
@@ -1157,7 +1183,7 @@ public static class AtmosphereState
             // Day span, pivoting at the engine's fixed noon member: Day → HighNoon → Day.
             if (highNoon is not { } hn || ssB - srE < 0.2f)
             {
-                return day; // no authored High Noon (or degenerate span): solid day, the old behavior
+                return day; // no authored High Noon (or degenerate span): solid day
             }
 
             var noon = Math.Clamp(ClassicColorNoonHour, srE + 0.05f, ssB - 0.05f);
@@ -1189,15 +1215,6 @@ public static class AtmosphereState
         if (hour < ssB) return day;
         var sunsetT = (hour - ssB) / (ssE - ssB);
         return SampleFive(day, earlySunset, sunset, lateSunset, night, sunsetT);
-    }
-
-    private static Vector3 SampleFive(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 e, float t)
-    {
-        var x = Math.Clamp(t, 0f, 1f) * 4f;
-        if (x < 1f) return Vector3.Lerp(a, b, x);
-        if (x < 2f) return Vector3.Lerp(b, c, x - 1f);
-        if (x < 3f) return Vector3.Lerp(c, d, x - 2f);
-        return Vector3.Lerp(d, e, x - 3f);
     }
 
     private static Vector3 ToVec(WeatherRgba c) => new(c.R / 255f, c.G / 255f, c.B / 255f);
@@ -1272,6 +1289,15 @@ public static class AtmosphereState
         return Vector4.Lerp(sunset, night, (hour - ssMid) / (ssE - ssMid));
     }
 
+    private static Vector3 SampleFive(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 e, float t)
+    {
+        var x = Math.Clamp(t, 0f, 1f) * 4f;
+        if (x < 1f) return Vector3.Lerp(a, b, x);
+        if (x < 2f) return Vector3.Lerp(b, c, x - 1f);
+        if (x < 3f) return Vector3.Lerp(c, d, x - 2f);
+        return Vector3.Lerp(d, e, x - 3f);
+    }
+
     private static Vector4 SampleFive(Vector4 a, Vector4 b, Vector4 c, Vector4 d, Vector4 e, float t)
     {
         var x = Math.Clamp(t, 0f, 1f) * 4f;
@@ -1279,6 +1305,15 @@ public static class AtmosphereState
         if (x < 2f) return Vector4.Lerp(b, c, x - 1f);
         if (x < 3f) return Vector4.Lerp(c, d, x - 2f);
         return Vector4.Lerp(d, e, x - 3f);
+    }
+
+    private static float SampleFive(float a, float b, float c, float d, float e, float t)
+    {
+        var x = Math.Clamp(t, 0f, 1f) * 4f;
+        if (x < 1f) return Lerp1(a, b, x);
+        if (x < 2f) return Lerp1(b, c, x - 1f);
+        if (x < 3f) return Lerp1(c, d, x - 2f);
+        return Lerp1(d, e, x - 3f);
     }
 
     private static Vector4 ToVec4(WeatherRgba c) => new(c.R / 255f, c.G / 255f, c.B / 255f, c.A / 255f);
@@ -1328,15 +1363,6 @@ public static class AtmosphereState
         if (hour < ssB) return a.Day;
         if (hour < ssMid) return Lerp1(a.Day, a.Sunset, (hour - ssB) / (ssMid - ssB));
         return Lerp1(a.Sunset, a.Night, (hour - ssMid) / (ssE - ssMid));
-    }
-
-    private static float SampleFive(float a, float b, float c, float d, float e, float t)
-    {
-        var x = Math.Clamp(t, 0f, 1f) * 4f;
-        if (x < 1f) return Lerp1(a, b, x);
-        if (x < 2f) return Lerp1(b, c, x - 1f);
-        if (x < 3f) return Lerp1(c, d, x - 2f);
-        return Lerp1(d, e, x - 3f);
     }
 
     private static float Lerp1(float a, float b, float t) => a + ((b - a) * t);

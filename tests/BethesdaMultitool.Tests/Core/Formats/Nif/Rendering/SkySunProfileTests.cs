@@ -22,6 +22,7 @@ public sealed class SkySunProfileTests
     [InlineData(BethesdaGame.FalloutNewVegas, 750f, 800f, 800f, -100f)]
     [InlineData(BethesdaGame.Skyrim, 425f, 600f, 400f, 25f)]
     [InlineData(BethesdaGame.Fallout4, 425f, 600f, 400f, 25f)]
+    [InlineData(BethesdaGame.Oblivion, 250f, 350f, 400f, 25f)]
     public void ForGame_RecoveredProfilesExposeRetailDefaults(
         BethesdaGame game, float disc, float glare, float xExtreme, float yExtreme)
     {
@@ -33,6 +34,69 @@ public sealed class SkySunProfileTests
         Assert.Equal(xExtreme, profile.DefaultSunXExtreme);
         Assert.Equal(yExtreme, profile.DefaultSunYExtreme);
         Assert.Equal(2f, profile.DefaultAlphaTransitionHours);
+    }
+
+    [Fact]
+    public void Tes4TrianglePosition_DayWindowPadsRawBeginAndEnd()
+    {
+        // TES4 Sun::Update (symbolized Remaster decompile): day leg = sunriseBegin−1h .. sunsetEnd+1h.
+        // Climate 6/7/18/19 with trans 2h → edges 5..20; x=+1 (east, +400) exactly at hour 5, x=0
+        // (near-zenith) at the 12.5 span midpoint, x=−1 (west, −400) at hour 20.
+        var profile = SkySunProfile.ForGame(BethesdaGame.Oblivion);
+        var timing = new AtmosphereState.ClimateTiming(6f, 7f, 18f, 19f);
+
+        var dawnEdge = profile.ResolveTrianglePosition(5f, timing);
+        var midday = profile.ResolveTrianglePosition(12.5f, timing);
+        var duskEdge = profile.ResolveTrianglePosition(20f, timing);
+
+        AssertClose(400f, dawnEdge.X);
+        AssertClose(0f, dawnEdge.Z);
+        AssertClose(0f, midday.X);
+        AssertClose(400f, midday.Z);
+        AssertClose(25f, midday.Y);
+        AssertClose(-400f, duskEdge.X);
+        AssertClose(0f, duskEdge.Z);
+    }
+
+    [Fact]
+    public void Tes4TrianglePosition_NoonApexIsNearZenith()
+    {
+        // The recovered constants (folded fSunXExtreme=400, fSunYExtreme=25) put the midday sun at
+        // atan(400/25) ≈ 86° elevation — the near-overhead apex the 50° analytic stand-in missed.
+        var profile = SkySunProfile.ForGame(BethesdaGame.Oblivion);
+        var midday = profile.ResolveTrianglePosition(12.5f, new AtmosphereState.ClimateTiming(6f, 7f, 18f, 19f));
+
+        var elevation = MathF.Atan2(midday.Z, MathF.Sqrt((midday.X * midday.X) + (midday.Y * midday.Y)));
+        Assert.True(elevation > 80f * (MathF.PI / 180f),
+            $"expected a near-zenith noon apex, got {elevation * 180f / MathF.PI:F1} deg");
+    }
+
+    [Fact]
+    public void Tes4Visibility_RampsAcrossClimateHalfWindows()
+    {
+        // TES4-exact visibility (retail decompile): fade out sunsetBegin→sunsetMid, night until
+        // sunriseMid, fade in sunriseMid→sunriseEnd, no fSunAlphaTransTime term. Climate 6/8/18/20:
+        // sunriseMid=7, sunsetMid=19.
+        var profile = SkySunProfile.ForGame(BethesdaGame.Oblivion);
+        var timing = new AtmosphereState.ClimateTiming(6f, 8f, 18f, 20f);
+
+        Assert.Equal(1f, profile.ResolveVisibility(12f, timing));
+        AssertClose(0.5f, profile.ResolveVisibility(18.5f, timing)); // halfway down the sunset ramp
+        Assert.Equal(0f, profile.ResolveVisibility(19f, timing));    // sunset midpoint → hidden
+        Assert.Equal(0f, profile.ResolveVisibility(2f, timing));     // deep night
+        Assert.Equal(0f, profile.ResolveVisibility(7f, timing));     // sunrise midpoint → still hidden
+        AssertClose(0.5f, profile.ResolveVisibility(7.5f, timing));  // halfway up the sunrise ramp
+        Assert.Equal(1f, profile.ResolveVisibility(8.5f, timing));
+    }
+
+    [Fact]
+    public void Tes4SunPathDirection_ServesDayLegAndKeepsNightConvention()
+    {
+        var noon = AtmosphereState.Tes4SunPathDirection(12.5f, 6f, 7f, 18f, 19f);
+        var night = AtmosphereState.Tes4SunPathDirection(2f, 6f, 7f, 18f, 19f);
+
+        Assert.True(noon.Z > 0.99f, $"noon direction should be near-zenith, got Z={noon.Z:F3}");
+        Assert.Equal(new Vector3(0f, 0f, -1f), night);
     }
 
     [Fact]
@@ -141,7 +205,6 @@ public sealed class SkySunProfileTests
 
     [Theory]
     [InlineData(BethesdaGame.Morrowind)]
-    [InlineData(BethesdaGame.Oblivion)]
     [InlineData(BethesdaGame.Fallout76)]
     [InlineData(BethesdaGame.Starfield)]
     [InlineData(BethesdaGame.Unknown)]

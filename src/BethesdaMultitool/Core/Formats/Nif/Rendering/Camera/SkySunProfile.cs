@@ -38,6 +38,22 @@ public sealed record SkySunProfile
     public float DefaultAlphaTransitionHours { get; init; } = 2f;
 
     /// <summary>
+    ///     TES4 (Oblivion) <c>Sun::Update</c> pads the day leg around the raw climate sunrise BEGIN and
+    ///     sunset END hours, not the sunrise/sunset midpoints the later engines use — recovered from the
+    ///     Oblivion Remastered symbolized decompile (the remaster ships the original engine logic;
+    ///     <c>docs/research/tes4_celestial_pipeline.md</c>).
+    /// </summary>
+    public bool TriangleWindowUsesBeginEnd { get; init; }
+
+    /// <summary>
+    ///     TES4 sun visibility ramps across the climate HALF-WINDOWS themselves (fade out from sunset
+    ///     begin to the sunset midpoint, fade in from the sunrise midpoint to sunrise end), with no
+    ///     <c>fSunAlphaTransTime</c> involvement — recovered from the retail Oblivion.exe sun-visibility
+    ///     decompile. Later engines center a fixed-width transition on the midpoints instead.
+    /// </summary>
+    public bool VisibilityUsesClimateHalfWindows { get; init; }
+
+    /// <summary>
     ///     Resolves the maximum (unoccluded) base and glare quad half-extents at the viewer's sky radius.
     ///     GMST overrides remain plugin-aware; optional INI overrides leave a future settings reader able
     ///     to reproduce a user's runtime configuration without changing this contract.
@@ -129,6 +145,16 @@ public sealed record SkySunProfile
         AtmosphereState.ClimateTiming climate,
         float? alphaTransitionHours = null)
     {
+        if (VisibilityUsesClimateHalfWindows)
+        {
+            return ComputeTes4Visibility(
+                gameHour,
+                climate.SunriseBeginHour,
+                climate.SunriseEndHour,
+                climate.SunsetBeginHour,
+                climate.SunsetEndHour);
+        }
+
         var transition = FiniteOr(alphaTransitionHours, DefaultAlphaTransitionHours);
         return ComputeVisibility(
             gameHour,
@@ -161,7 +187,8 @@ public sealed record SkySunProfile
             climate.SunsetEndHour,
             xExtreme,
             yExtreme,
-            transition);
+            transition,
+            TriangleWindowUsesBeginEnd);
     }
 
     /// <summary>
@@ -176,11 +203,18 @@ public sealed record SkySunProfile
         float sunsetEnd,
         float sunXExtreme,
         float sunYExtreme,
-        float alphaTransitionHours = 2f)
+        float alphaTransitionHours = 2f,
+        bool windowUsesBeginEnd = false)
     {
         var hour = WrapHour(gameHour);
-        var dayStart = ((sunriseBegin + sunriseEnd) * 0.5f) - (alphaTransitionHours * 0.5f);
-        var dayEnd = ((sunsetBegin + sunsetEnd) * 0.5f) + (alphaTransitionHours * 0.5f);
+        // TES4 Sun::Update pads the raw climate sunrise-begin/sunset-end; FNV and the Creation
+        // engines pad the window midpoints. Same triangle shape either way.
+        var dayStart = windowUsesBeginEnd
+            ? sunriseBegin - (alphaTransitionHours * 0.5f)
+            : ((sunriseBegin + sunriseEnd) * 0.5f) - (alphaTransitionHours * 0.5f);
+        var dayEnd = windowUsesBeginEnd
+            ? sunsetEnd + (alphaTransitionHours * 0.5f)
+            : ((sunsetBegin + sunsetEnd) * 0.5f) + (alphaTransitionHours * 0.5f);
         var daySpan = dayEnd - dayStart;
         if (!float.IsFinite(daySpan) || daySpan <= MinimumPathLength || daySpan >= 24f)
         {
@@ -251,6 +285,45 @@ public sealed record SkySunProfile
         return 1f;
     }
 
+    /// <summary>
+    ///     TES4-exact sun visibility (retail Oblivion.exe decompile; confirmed by the symbolized
+    ///     remaster): fade OUT across the first half of the sunset window (begin → midpoint), solid
+    ///     night until the sunrise midpoint, fade IN across the second half of the sunrise window
+    ///     (midpoint → end), and full day elsewhere. No <c>fSunAlphaTransTime</c> term.
+    /// </summary>
+    public static float ComputeTes4Visibility(
+        float gameHour,
+        float sunriseBegin,
+        float sunriseEnd,
+        float sunsetBegin,
+        float sunsetEnd)
+    {
+        var hour = WrapHour(gameHour);
+        var sunriseMid = (sunriseBegin + sunriseEnd) * 0.5f;
+        var sunsetMid = (sunsetBegin + sunsetEnd) * 0.5f;
+        if (!float.IsFinite(sunriseMid) || !float.IsFinite(sunsetMid))
+        {
+            return 0f;
+        }
+
+        if (hour > sunsetBegin && hour < sunsetMid && sunsetMid > sunsetBegin)
+        {
+            return Math.Clamp((sunsetMid - hour) / (sunsetMid - sunsetBegin), 0f, 1f);
+        }
+
+        if (hour >= sunsetMid || hour <= sunriseMid)
+        {
+            return 0f;
+        }
+
+        if (hour < sunriseEnd && sunriseEnd > sunriseMid)
+        {
+            return Math.Clamp((hour - sunriseMid) / (sunriseEnd - sunriseMid), 0f, 1f);
+        }
+
+        return 1f;
+    }
+
     private static float FiniteOr(float? candidate, float fallback) =>
         candidate is { } value && float.IsFinite(value) ? value : fallback;
 
@@ -288,12 +361,32 @@ public sealed record SkySunProfile
         DefaultAlphaTransitionHours = 2f,
     };
 
+    // TES4 (Oblivion): recovered 2026-07-20 from the symbolized Oblivion Remastered Sun::Update
+    // (the remaster runs the original engine logic) + retail Oblivion.exe Setting defaults
+    // (docs/research/tes4_celestial_pipeline.md). Retail authored fSunXExtreme=−400 with the stored
+    // X negated in Sun::Update — folded here to the positive convention the shared triangle uses
+    // (dawn = +X/east). fSunYExtreme=25, fSunAlphaTransTime=2, fSunBaseSize=250, fSunGlareSize=350.
+    // Noon apex atan(400/25) ≈ 86° — near-zenith, which the previous 50° analytic stand-in missed
+    // (the reported "sun never appears overhead").
+    private static readonly SkySunProfile Tes4 = new()
+    {
+        HasRecoveredTriangleProjection = true,
+        DefaultDiscHalfExtent = 250f,
+        DefaultGlareHalfExtent = 350f,
+        DefaultSunXExtreme = 400f,
+        DefaultSunYExtreme = 25f,
+        DefaultAlphaTransitionHours = 2f,
+        TriangleWindowUsesBeginEnd = true,
+        VisibilityUsesClimateHalfWindows = true,
+    };
+
     /// <summary>
-    ///     Returns the objective per-game profile. Oblivion and FO76 retain the previous calibrated
-    ///     fractions until their complete path/projection chains have independent binary oracles.
+    ///     Returns the objective per-game profile. FO76 retains the previous calibrated fractions
+    ///     until its complete path/projection chain has an independent binary oracle.
     /// </summary>
     public static SkySunProfile ForGame(BethesdaGame game) => game switch
     {
+        BethesdaGame.Oblivion => Tes4,
         BethesdaGame.Fallout3 => Fallout,
         BethesdaGame.FalloutNewVegas => Fallout,
         BethesdaGame.Skyrim => Creation,

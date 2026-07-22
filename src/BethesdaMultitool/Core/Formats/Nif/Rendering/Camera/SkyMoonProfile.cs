@@ -29,7 +29,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 ///         them from the loaded ESM at runtime (see <see cref="HalfSizeFractionFromGmst" />) and falls back
 ///         to these constants when the required GMSTs are absent (e.g. Morrowind TES3, or DMP captures
 ///         without a settings table). Fractions are relative to the billboard radius
-///         (<see cref="D3D12.SkyBillboardRenderer12.Radius" />).
+///         (<c>SkyBillboardRenderer12.Radius</c>).
 ///     </para>
 /// </summary>
 public sealed record SkyMoonProfile
@@ -363,8 +363,7 @@ public sealed record SkyMoonProfile
     // FO4/FO76: single moon drawn from the Creation SECUNDA slot. The FO4 BA2s ship ONLY the Skyrim
     // Masser_*/Secunda_* sets (full name-table sweep — no Moon_full/other moon asset exists), and the
     // in-game night sky shows the small white-gray cratered disc + soft halo that is exactly FO4's
-    // Secunda_full.DDS artwork (user in-game screenshot matched against the extracted texture
-    // 2026-07-06). Masser is the unused leftover of the pair — drawing it rendered the red-brown TES
+    // Secunda_full.DDS artwork. Masser is the unused leftover of the pair — drawing it rendered the red-brown TES
     // "Mars moon". The complete 8-texture secunda phase set ships and the engine cycles phases.
     // Fallback size = FO4's shipped GMSTs (iSecundaSize 75 / fSunXExtreme 600 = 0.125); the runtime
     // GMST read overrides, taking iSecundaSize for the primary via PrimaryUsesSecundaSize.

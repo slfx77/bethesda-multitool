@@ -14,6 +14,13 @@ public enum SunPathModel
     /// <summary>FNV/FO3 triangle-wave arc with the FNV GMST constants (noon apex ≈ 83°, slight −Y offset).</summary>
     FnvTriangleWave,
 
+    /// <summary>
+    ///     TES4's original triangle-wave arc, recovered from the symbolized Oblivion Remastered
+    ///     Sun::Update + retail Oblivion.exe Setting defaults: day leg padded around the raw climate
+    ///     sunrise-begin/sunset-end (not midpoints), folded constants 400/25 → noon apex ≈ 86°.
+    /// </summary>
+    Tes4TriangleWave,
+
     /// <summary>Skyrim's triangle-wave variant of the same Sun::Update contract.</summary>
     SkyrimTriangleWave,
 
@@ -88,6 +95,15 @@ public sealed record AtmosphereProfile
         SunPath = SunPathModel.FnvTriangleWave,
     };
 
+    /// <summary>
+    ///     TES4 (Oblivion): recovered triangle-wave sun path (see <see cref="SunPathModel.Tes4TriangleWave" />);
+    ///     classic daylight-scaled sunlight band (Sky::UpdateColors lineage, like FNV/FO3).
+    /// </summary>
+    private static readonly AtmosphereProfile Tes4 = Legacy with
+    {
+        SunPath = SunPathModel.Tes4TriangleWave,
+    };
+
     private static readonly AtmosphereProfile Skyrim = new()
     {
         SunPath = SunPathModel.SkyrimTriangleWave,
@@ -123,6 +139,7 @@ public sealed record AtmosphereProfile
         BethesdaGame.Fallout4 => Fallout4,
         BethesdaGame.Fallout76 or BethesdaGame.Starfield => Fallout76,
         BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 => Fnv,
+        BethesdaGame.Oblivion => Tes4,
         _ => Legacy,
     };
 }

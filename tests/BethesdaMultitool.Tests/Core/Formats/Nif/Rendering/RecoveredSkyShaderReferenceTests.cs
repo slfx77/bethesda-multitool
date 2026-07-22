@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -21,7 +22,7 @@ public sealed class RecoveredSkyShaderReferenceTests
         var expected = new Vector3(expectedR, expectedG, expectedB);
         var actual = SkyBlendWeights.Evaluate(new Vector3(r, g, b), Horizon, Lower, Upper);
 
-        AssertVector(expected, actual);
+        VectorAssert.Equal(expected, actual, 1e-6f);
     }
 
     [Fact]
@@ -30,7 +31,7 @@ public sealed class RecoveredSkyShaderReferenceTests
         var weights = new Vector3(0.25f, 0.5f, 0.125f);
         var expected = (Horizon * 0.25f) + (Lower * 0.5f) + (Upper * 0.125f);
 
-        AssertVector(expected, SkyBlendWeights.Evaluate(weights, Horizon, Lower, Upper));
+        VectorAssert.Equal(expected, SkyBlendWeights.Evaluate(weights, Horizon, Lower, Upper), 1e-6f);
     }
 
     [Fact]
@@ -38,9 +39,9 @@ public sealed class RecoveredSkyShaderReferenceTests
     {
         var tint = new Vector3(0.7f, 0.8f, 0.9f);
 
-        AssertVector(tint, SkyBlendWeights.Evaluate(Vector3.UnitX, tint, Vector3.Zero, Vector3.Zero));
-        AssertVector(Vector3.Zero,
-            SkyBlendWeights.Evaluate(Vector3.UnitY, tint, Vector3.Zero, Vector3.Zero));
+        VectorAssert.Equal(tint, SkyBlendWeights.Evaluate(Vector3.UnitX, tint, Vector3.Zero, Vector3.Zero), 1e-6f);
+        VectorAssert.Equal(Vector3.Zero,
+            SkyBlendWeights.Evaluate(Vector3.UnitY, tint, Vector3.Zero, Vector3.Zero), 1e-6f);
     }
 
     [Fact]
@@ -49,13 +50,6 @@ public sealed class RecoveredSkyShaderReferenceTests
         var weighted = new Vector3(0.1f, 0.2f, 0.3f);
         var expected = new Vector3(0.5f, 0.25f, 0.2f);
 
-        AssertVector(expected, SkyBlendWeights.CompositeAtmosphere(weighted, Horizon, 0.5f));
-    }
-
-    private static void AssertVector(Vector3 expected, Vector3 actual)
-    {
-        Assert.InRange(MathF.Abs(expected.X - actual.X), 0f, 1e-6f);
-        Assert.InRange(MathF.Abs(expected.Y - actual.Y), 0f, 1e-6f);
-        Assert.InRange(MathF.Abs(expected.Z - actual.Z), 0f, 1e-6f);
+        VectorAssert.Equal(expected, SkyBlendWeights.CompositeAtmosphere(weighted, Horizon, 0.5f), 1e-6f);
     }
 }

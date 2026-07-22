@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -123,7 +124,7 @@ public class MoonSkyTests
     public void Profile_Fallout_UsesEngineMasserPhaseSet()
     {
         // FNV's engine moon is "Masser" with the full 8-phase texture set shipped in Textures2.bsa
-        // (decompile + archive verified 2026-07-13; docs/research/fnv_engine_hdr_imagespace.md §2).
+        // (decompile + archive verified; docs/research/fnv_engine_hdr_imagespace.md §2).
         // The FO3/FNV phase cycle is anchored at FULL on day 0 (Moon::Update member table), the
         // reverse anchor of the TES games' new-first order, and the black masser_new stub phase is
         // hidden rather than drawn.
@@ -148,12 +149,12 @@ public class MoonSkyTests
 
         // Moon::Update initializes the arm angle to 90 degrees. These values are expanded independently
         // from the recovered X(-angle) * Z(inclination) matrices and local +Y arm.
-        AssertVector(new Vector3(sin35, 0f, cos35),
-            MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, gameHour: 0f, day: 0f));
-        AssertVector(new Vector3(sin35, -cos35, 0f),
-            MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, gameHour: 6f, day: 0f));
-        AssertVector(new Vector3(sin35, cos35, 0f),
-            MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, gameHour: 18f, day: 0f));
+        VectorAssert.Equal(new Vector3(sin35, 0f, cos35),
+            MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, gameHour: 0f, day: 0f), 1e-5f);
+        VectorAssert.Equal(new Vector3(sin35, -cos35, 0f),
+            MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, gameHour: 6f, day: 0f), 1e-5f);
+        VectorAssert.Equal(new Vector3(sin35, cos35, 0f),
+            MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, gameHour: 18f, day: 0f), 1e-5f);
     }
 
     [Theory]
@@ -191,7 +192,7 @@ public class MoonSkyTests
         var day0 = MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, 19f, 0f);
         var day7 = MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, 19f, 7f);
 
-        AssertVector(day0, day7);
+        VectorAssert.Equal(day0, day7, 1e-5f);
     }
 
     [Fact]
@@ -218,18 +219,18 @@ public class MoonSkyTests
         const float sin50 = 0.76604444f;
         const float cos50 = 0.64278761f;
 
-        AssertVector(new Vector3(sin35, 0f, cos35),
-            profile.Direction(secondary: false, gameHour: 0f, day: 0f, climate: timing));
-        AssertVector(new Vector3(sin35, -cos35, 0f),
-            profile.Direction(secondary: false, gameHour: 6f, day: 0f, climate: timing));
+        VectorAssert.Equal(new Vector3(sin35, 0f, cos35),
+            profile.Direction(secondary: false, gameHour: 0f, day: 0f, climate: timing), 1e-5f);
+        VectorAssert.Equal(new Vector3(sin35, -cos35, 0f),
+            profile.Direction(secondary: false, gameHour: 6f, day: 0f, climate: timing), 1e-5f);
 
         // Secunda advances 18 degrees/hour, so five hours advances the initialized 90-degree arm to 180.
-        AssertVector(new Vector3(sin50, -cos50, 0f),
-            profile.Direction(secondary: true, gameHour: 5f, day: 0f, climate: timing));
+        VectorAssert.Equal(new Vector3(sin50, -cos50, 0f),
+            profile.Direction(secondary: true, gameHour: 5f, day: 0f, climate: timing), 1e-5f);
 
         // Masser is exactly daily; Secunda's 20-hour period advances 72 degrees between midnights.
-        AssertVector(profile.Direction(false, 0f, 0f, timing),
-            profile.Direction(false, 0f, 7f, timing));
+        VectorAssert.Equal(profile.Direction(false, 0f, 0f, timing),
+            profile.Direction(false, 0f, 7f, timing), 1e-5f);
         var secundaDay0 = profile.Direction(true, 0f, 0f, timing);
         var secundaDay1 = profile.Direction(true, 0f, 1f, timing);
         Assert.True(Vector3.Distance(secundaDay0, secundaDay1) > 0.5f,
@@ -271,7 +272,7 @@ public class MoonSkyTests
         // X(-180)*Z(+30) column-vector result; expected values do not call the production helper.
         var direction = profile.Direction(false, 3f, 0f, AtmosphereState.ClimateTiming.Default,
             rotatedArmSpeedOverride: 0.5f, rotatedArmInclinationOverride: 30f);
-        AssertVector(new Vector3(0.5f, -0.8660254f, 0f), direction);
+        VectorAssert.Equal(new Vector3(0.5f, -0.8660254f, 0f), direction, 1e-5f);
     }
 
     [Fact]
@@ -284,11 +285,6 @@ public class MoonSkyTests
         // dayStart = sunrise midpoint - 1h = 5h; at 6h x is inside the recovered day-leg.
         var x = 1f - ((6f - 5f) / 14f * 2f);
         var expected = Vector3.Normalize(new Vector3(x * 400f, 25f, 400f - MathF.Abs(x * 400f)));
-        AssertVector(expected, direction);
-    }
-
-    private static void AssertVector(Vector3 expected, Vector3 actual)
-    {
-        Assert.InRange(Vector3.Distance(expected, actual), 0f, 1e-5f);
+        VectorAssert.Equal(expected, direction, 1e-5f);
     }
 }

@@ -17,7 +17,7 @@ public sealed class AtmosphereProfileTests
     [Theory]
     [InlineData(BethesdaGame.Unknown, SunPathModel.AnalyticArc, true, false, false, StarVisibilityModel.DaylightFade)]
     [InlineData(BethesdaGame.Morrowind, SunPathModel.AnalyticArc, true, false, false, StarVisibilityModel.DaylightFade)]
-    [InlineData(BethesdaGame.Oblivion, SunPathModel.AnalyticArc, true, false, false, StarVisibilityModel.DaylightFade)]
+    [InlineData(BethesdaGame.Oblivion, SunPathModel.Tes4TriangleWave, true, false, false, StarVisibilityModel.DaylightFade)]
     [InlineData(BethesdaGame.Fallout3, SunPathModel.FnvTriangleWave, true, false, false, StarVisibilityModel.DaylightFade)]
     [InlineData(BethesdaGame.FalloutNewVegas, SunPathModel.FnvTriangleWave, true, false, false, StarVisibilityModel.DaylightFade)]
     [InlineData(BethesdaGame.Skyrim, SunPathModel.SkyrimTriangleWave, true, true, true, StarVisibilityModel.CreationColorWindows)]
