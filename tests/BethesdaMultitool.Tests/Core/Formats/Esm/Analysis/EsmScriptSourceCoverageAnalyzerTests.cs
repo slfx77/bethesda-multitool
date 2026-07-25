@@ -15,7 +15,7 @@ public sealed class EsmScriptSourceCoverageAnalyzerTests
             Header = new MainRecordHeader
             {
                 Signature = "SCPT",
-                FormId = 0x01000800,
+                FormId = 0x01000800
             },
             // Windows-1252 0x85 is U+2026 HORIZONTAL ELLIPSIS. Latin-1 would decode it
             // as U+0085 NEXT LINE, which .NET classifies as whitespace and would hide the
@@ -25,9 +25,9 @@ public sealed class EsmScriptSourceCoverageAnalyzerTests
                 new ParsedSubrecord
                 {
                     Signature = "SCTX",
-                    Data = [0x85, 0x00],
-                },
-            ],
+                    Data = [0x85, 0x00]
+                }
+            ]
         };
 
         var row = Assert.Single(EsmScriptSourceCoverageAnalyzer.Analyze([script]));

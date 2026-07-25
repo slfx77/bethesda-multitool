@@ -42,7 +42,8 @@
               Background="{ThemeResource SubtleFillColorSecondaryBrush}"
               CornerRadius="4"
               Padding="8,2"
-              HorizontalAlignment="Left">
+              HorizontalAlignment="Left"
+              VerticalAlignment="Center">
               <TextBlock
                 Text="{x:Bind Keys}"
                 FontFamily="Consolas, Courier New"

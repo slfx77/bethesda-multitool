@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Tests.Core.Formats.Esm;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -53,7 +54,7 @@ public sealed class FnvRegionWeatherRetailTests(SampleFileFixture samples)
         Assert.Equal(1024u, area.EdgeFalloff);
         Assert.Equal(4, area.Points.Count);
         Assert.Equal(
-            new BethesdaMultitool.Core.Formats.Esm.Models.Records.World.RegionWeatherType(
+            new RegionWeatherType(
                 SearchlightWeatherFormId, 100, 0),
             Assert.Single(searchlight.WeatherTypes));
 

@@ -46,6 +46,28 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         OpaqueDoubleDecalPso = CreatePipelineState(instancedVsBytecode, _psBytecode, doubleSided: true,
             blendAttachment: null, depthWriteEnabled: true, decal: true);
 
+        // Grass cutouts: alpha-to-coverage variants (engine mechanism — BSRenderState::
+        // SetAlphaToCoverageEnable) so MSAA dithers the alpha-test edge instead of the binary
+        // discard's hard staircase. The paired ALPHA_TO_COVERAGE pixel shader converts the
+        // authored NiAlphaProperty threshold into a sharpened coverage gradient. When the scene
+        // is single-sampled A2C is a hardware no-op AND the gradient PS would render solid
+        // cards, so the properties alias the plain opaque PSOs — renderer routing never branches.
+        AlphaToCoverageAvailable = _gpu.SceneSampleCount > 1;
+        if (AlphaToCoverageAvailable)
+        {
+            var a2cPsBytecode = CompileEmbeddedShader("reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("ALPHA_TO_COVERAGE", "1"));
+            OpaqueBackA2CPso = CreatePipelineState(instancedVsBytecode, a2cPsBytecode, doubleSided: false,
+                blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true);
+            OpaqueDoubleA2CPso = CreatePipelineState(instancedVsBytecode, a2cPsBytecode, doubleSided: true,
+                blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true);
+        }
+        else
+        {
+            OpaqueBackA2CPso = OpaqueBackPso;
+            OpaqueDoubleA2CPso = OpaqueDoublePso;
+        }
+
         // Sun-shadow depth pass: the instanced VS replayed against the light's viewProj into a
         // depth-only target — compiled as the SHADOW_CARD_LIGHT_FACING variant, whose extended b0
         // carries a light-perpendicular leaf-card basis (camera-facing cards can be edge-on to the
@@ -69,6 +91,16 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
 
     /// <summary>Depth-biased variant of <see cref="OpaqueDoublePso" /> for decal overlay submeshes.</summary>
     public ID3D12PipelineState OpaqueDoubleDecalPso { get; }
+
+    /// <summary>True when the scene target is multisampled and the A2C PSOs are distinct variants;
+    /// false = <see cref="OpaqueBackA2CPso" />/<see cref="OpaqueDoubleA2CPso" /> alias the plain PSOs.</summary>
+    public bool AlphaToCoverageAvailable { get; }
+
+    /// <summary>Alpha-to-coverage variant of <see cref="OpaqueBackPso" /> (grass cutout edges).</summary>
+    public ID3D12PipelineState OpaqueBackA2CPso { get; }
+
+    /// <summary>Alpha-to-coverage variant of <see cref="OpaqueDoublePso" /> (grass cutout edges).</summary>
+    public ID3D12PipelineState OpaqueDoubleA2CPso { get; }
 
     /// <summary>Depth-only shadow-pass PSO for opaque batches (instanced VS, no pixel shader).</summary>
     public ID3D12PipelineState ShadowOpaquePso { get; }
@@ -141,7 +173,8 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         bool doubleSided,
         D12.RenderTargetBlendDescription? blendAttachment,
         bool depthWriteEnabled,
-        bool decal = false)
+        bool decal = false,
+        bool alphaToCoverage = false)
     {
         var rasterizer = new D12.RasterizerDescription
         {
@@ -174,7 +207,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
 
         var blend = new D12.BlendDescription
         {
-            AlphaToCoverageEnable = false,
+            AlphaToCoverageEnable = alphaToCoverage,
             IndependentBlendEnable = false,
         };
         blend.RenderTarget[0] = blendAttachment ?? new D12.RenderTargetBlendDescription
@@ -309,6 +342,12 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         _blendDepthWritePsos.Clear();
         ShadowAlphaTestPso.Dispose();
         ShadowOpaquePso.Dispose();
+        if (AlphaToCoverageAvailable)
+        {
+            // Distinct variants only — when MSAA is off these alias the plain opaque PSOs below.
+            OpaqueDoubleA2CPso.Dispose();
+            OpaqueBackA2CPso.Dispose();
+        }
         OpaqueDoubleDecalPso.Dispose();
         OpaqueBackDecalPso.Dispose();
         OpaqueDoublePso.Dispose();

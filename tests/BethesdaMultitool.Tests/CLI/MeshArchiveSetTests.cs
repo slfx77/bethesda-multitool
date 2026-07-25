@@ -1,4 +1,3 @@
-using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using Xunit;
@@ -83,7 +82,7 @@ public sealed class MeshArchiveSetTests
 
         // Fuzzy enabled (the DMP-browsing viewer): resolves to the renamed file and reports the
         // substituted path so the inspect panel can show "Fallback Mesh".
-        using var fuzzy = MeshArchiveSet.Open(bsaPath, null, enableFuzzy: true);
+        using var fuzzy = MeshArchiveSet.Open(bsaPath, null, true);
         Assert.True(fuzzy.TryExtractFile(request, out var data, out _, out var resolvedPath));
         Assert.Equal(new byte[] { 7, 7, 7 }, data);
         Assert.Equal("meshes\\clutter\\moved\\widget.nif", resolvedPath);

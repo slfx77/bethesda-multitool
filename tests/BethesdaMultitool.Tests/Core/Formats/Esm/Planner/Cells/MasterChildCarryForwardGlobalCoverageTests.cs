@@ -27,7 +27,7 @@ public sealed class MasterChildCarryForwardGlobalCoverageTests
     public void Globally_Emitted_Ref_Is_Neither_Carried_Nor_Tombstoned_In_Home_Cell()
     {
         var (persistent, vwd, temporary) = RunApply(
-            globallyEmitted: ImmutableHashSet.Create(MasterTempRefId));
+            ImmutableHashSet.Create(MasterTempRefId));
 
         Assert.Empty(persistent);
         Assert.Empty(vwd);
@@ -38,7 +38,7 @@ public sealed class MasterChildCarryForwardGlobalCoverageTests
     public void Uncovered_Ref_Still_Produces_A_Record_Without_Global_Coverage()
     {
         var (persistent, vwd, temporary) = RunApply(
-            globallyEmitted: ImmutableHashSet<uint>.Empty);
+            ImmutableHashSet<uint>.Empty);
 
         // Baseline sanity: without the global view the home cell acts on the ref
         // (carry-forward or removal — either produces at least one record).
@@ -56,27 +56,27 @@ public sealed class MasterChildCarryForwardGlobalCoverageTests
             Header = new MainRecordHeader
             {
                 Signature = "REFR", DataSize = 0, Flags = 0, FormId = MasterTempRefId,
-                Timestamp = 0, VcsInfo = 0, Version = 15,
+                Timestamp = 0, VcsInfo = 0, Version = 15
             },
             Offset = 0,
             Subrecords =
             [
                 new ParsedSubrecord { Signature = "NAME", Data = name },
-                new ParsedSubrecord { Signature = "DATA", Data = data },
-            ],
+                new ParsedSubrecord { Signature = "DATA", Data = data }
+            ]
         };
         var masterByFormId = new Dictionary<uint, ParsedMainRecord>
         {
             [MasterTempRefId] = masterRef,
-            [MasterStatBaseId] = new ParsedMainRecord
+            [MasterStatBaseId] = new()
             {
                 Header = new MainRecordHeader
                 {
                     Signature = "STAT", DataSize = 0, Flags = 0, FormId = MasterStatBaseId,
-                    Timestamp = 0, VcsInfo = 0, Version = 15,
+                    Timestamp = 0, VcsInfo = 0, Version = 15
                 },
-                Offset = 0,
-            },
+                Offset = 0
+            }
         };
         var masterIndex = new MasterRecordIndex
         {
@@ -88,13 +88,13 @@ public sealed class MasterChildCarryForwardGlobalCoverageTests
             StemToFormIdsByType = [],
             ChildLocations = new Dictionary<uint, MasterChildLocation>
             {
-                [MasterTempRefId] = new(CellId, 9, "REFR"),
+                [MasterTempRefId] = new(CellId, 9, "REFR")
             },
             RefToCell = new Dictionary<uint, uint> { [MasterTempRefId] = CellId },
             RefsByCell = new Dictionary<uint, List<uint>> { [CellId] = [MasterTempRefId] },
             NavmsByCell = [],
             LandsByCell = [],
-            CellContexts = [],
+            CellContexts = []
         };
         var plan = new EmitPlan
         {
@@ -106,15 +106,15 @@ public sealed class MasterChildCarryForwardGlobalCoverageTests
             Meta = new PlanMetadata
             {
                 NextObjectId = 0x800,
-                PlannerCoverage = ImmutableHashSet<string>.Empty,
-            },
+                PlannerCoverage = ImmutableHashSet<string>.Empty
+            }
         };
         var context = new CellChildEncodeContext(
             plan, masterByFormId, [], new PluginBuildOptions(), null, masterIndex,
             new HashSet<uint>(), null,
             new Dictionary<uint, PlannerXespParentClassifier.Resolution>())
         {
-            GloballyEmittedMasterRefs = globallyEmitted,
+            GloballyEmittedMasterRefs = globallyEmitted
         };
         var state = new CellEncodeState
         {
@@ -122,7 +122,7 @@ public sealed class MasterChildCarryForwardGlobalCoverageTests
             Mode = CellMergeMode.LoadedReplacement,
             IsMasterAnchored = true,
             IsInterior = false,
-            DropRenderCullingMarkers = false,
+            DropRenderCullingMarkers = false
         };
 
         var persistent = new List<byte[]>();

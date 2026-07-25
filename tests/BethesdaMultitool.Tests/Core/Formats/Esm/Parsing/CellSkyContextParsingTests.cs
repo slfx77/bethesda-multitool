@@ -31,12 +31,12 @@ public sealed class CellSkyContextParsingTests
             new EsmRecordScanResult
             {
                 Game = BethesdaGame.FalloutNewVegas,
-                MainRecords = [record],
+                MainRecords = [record]
             },
-            formIdCorrelations: null,
-            accessor: new ByteArrayMemoryAccessor(bytes),
-            fileSize: bytes.Length,
-            minidumpInfo: null);
+            null,
+            new ByteArrayMemoryAccessor(bytes),
+            bytes.Length,
+            null);
 
         var cell = Assert.Single(new CellRecordHandler(context).ParseCells());
 
@@ -56,17 +56,17 @@ public sealed class CellSkyContextParsingTests
         var bytes = BuildRecordBytes(
             cellFormId,
             "CELL",
-            bigEndian: false,
+            false,
             ("DATA", new byte[] { 0x81 }),
-            ("XCCM", FormIdBytes(0x01002000, bigEndian: false)));
+            ("XCCM", FormIdBytes(0x01002000, false)));
         var record = new DetectedMainRecord(
             "CELL", (uint)(bytes.Length - 24), 0, cellFormId, 0, false);
         var context = new RecordParserContext(
             new EsmRecordScanResult { Game = game, MainRecords = [record] },
-            formIdCorrelations: null,
-            accessor: new ByteArrayMemoryAccessor(bytes),
-            fileSize: bytes.Length,
-            minidumpInfo: null);
+            null,
+            new ByteArrayMemoryAccessor(bytes),
+            bytes.Length,
+            null);
 
         var cell = Assert.Single(new CellRecordHandler(context).ParseCells());
 

@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
@@ -413,7 +412,7 @@ public class CellGrupBuilderTests
         Assert.Equal(-1, IndexOfSignature(bytes, "XXXX"));
 
         // The anchor's dataSize must reflect the strip: EDID (6 + 9) only.
-        var wrldOffset = IndexOfSignature(bytes, "WRLD", searchFrom: 24); // skip top GRUP label
+        var wrldOffset = IndexOfSignature(bytes, "WRLD", 24); // skip top GRUP label
         Assert.True(wrldOffset >= 0);
         var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(wrldOffset + 4, 4));
         Assert.Equal(15u, dataSize);
@@ -424,7 +423,7 @@ public class CellGrupBuilderTests
         for (var i = searchFrom; i + 4 <= bytes.Length; i++)
         {
             if (bytes[i] == signature[0] && bytes[i + 1] == signature[1]
-                && bytes[i + 2] == signature[2] && bytes[i + 3] == signature[3])
+                                         && bytes[i + 2] == signature[2] && bytes[i + 3] == signature[3])
             {
                 return i;
             }

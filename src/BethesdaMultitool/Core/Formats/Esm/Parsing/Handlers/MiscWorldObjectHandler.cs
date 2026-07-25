@@ -219,35 +219,10 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
                     break;
-                case "DATA" when sub.DataLength >= 32:
-                {
-                    // LIGH DATA: Duration(int32) + Radius(uint32) + Color(RGBA uint32) +
-                    // Flags(uint32) + FalloffExponent(float) + FOV(float) + Value(int32) + Weight(float)
-                    if (record.IsBigEndian)
-                    {
-                        duration = BinaryPrimitives.ReadInt32BigEndian(subData);
-                        radius = BinaryPrimitives.ReadUInt32BigEndian(subData[4..]);
-                        color = BinaryPrimitives.ReadUInt32BigEndian(subData[8..]);
-                        flags = BinaryPrimitives.ReadUInt32BigEndian(subData[12..]);
-                        falloffExponent = BinaryPrimitives.ReadSingleBigEndian(subData[16..]);
-                        fov = BinaryPrimitives.ReadSingleBigEndian(subData[20..]);
-                        value = BinaryPrimitives.ReadInt32BigEndian(subData[24..]);
-                        weight = BinaryPrimitives.ReadSingleBigEndian(subData[28..]);
-                    }
-                    else
-                    {
-                        duration = BinaryPrimitives.ReadInt32LittleEndian(subData);
-                        radius = BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
-                        color = BinaryPrimitives.ReadUInt32LittleEndian(subData[8..]);
-                        flags = BinaryPrimitives.ReadUInt32LittleEndian(subData[12..]);
-                        falloffExponent = BinaryPrimitives.ReadSingleLittleEndian(subData[16..]);
-                        fov = BinaryPrimitives.ReadSingleLittleEndian(subData[20..]);
-                        value = BinaryPrimitives.ReadInt32LittleEndian(subData[24..]);
-                        weight = BinaryPrimitives.ReadSingleLittleEndian(subData[28..]);
-                    }
-
+                case "DATA" when sub.DataLength >= 24:
+                    (duration, radius, color, flags, falloffExponent, fov, value, weight) =
+                        ReadLightData(subData, record.IsBigEndian);
                     break;
-                }
             }
         }
 
@@ -274,6 +249,53 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    /// <summary>
+    ///     LIGH DATA: Duration(int32) + Radius(uint32) + Color(RGBA uint32) + Flags(uint32) +
+    ///     FalloffExponent(float) + FOV(float), then OPTIONAL Value(int32) + Weight(float). TES4
+    ///     ships both 24- and 32-byte variants (xEdit wbDefinitionsTES4 wbStruct(DATA, …, 6): the
+    ///     elements from Value on are optional); FO3+ always author 32. A hard 32-byte guard left
+    ///     every 24-byte TES4 light at radius 0, so no Oblivion placed light ever built.
+    /// </summary>
+    internal static (int Duration, uint Radius, uint Color, uint Flags, float FalloffExponent,
+        float Fov, int Value, float Weight) ReadLightData(ReadOnlySpan<byte> subData, bool bigEndian)
+    {
+        int duration;
+        uint radius, color, flags;
+        float falloffExponent, fov;
+        var value = 0;
+        var weight = 0f;
+        if (bigEndian)
+        {
+            duration = BinaryPrimitives.ReadInt32BigEndian(subData);
+            radius = BinaryPrimitives.ReadUInt32BigEndian(subData[4..]);
+            color = BinaryPrimitives.ReadUInt32BigEndian(subData[8..]);
+            flags = BinaryPrimitives.ReadUInt32BigEndian(subData[12..]);
+            falloffExponent = BinaryPrimitives.ReadSingleBigEndian(subData[16..]);
+            fov = BinaryPrimitives.ReadSingleBigEndian(subData[20..]);
+            if (subData.Length >= 32)
+            {
+                value = BinaryPrimitives.ReadInt32BigEndian(subData[24..]);
+                weight = BinaryPrimitives.ReadSingleBigEndian(subData[28..]);
+            }
+        }
+        else
+        {
+            duration = BinaryPrimitives.ReadInt32LittleEndian(subData);
+            radius = BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
+            color = BinaryPrimitives.ReadUInt32LittleEndian(subData[8..]);
+            flags = BinaryPrimitives.ReadUInt32LittleEndian(subData[12..]);
+            falloffExponent = BinaryPrimitives.ReadSingleLittleEndian(subData[16..]);
+            fov = BinaryPrimitives.ReadSingleLittleEndian(subData[20..]);
+            if (subData.Length >= 32)
+            {
+                value = BinaryPrimitives.ReadInt32LittleEndian(subData[24..]);
+                weight = BinaryPrimitives.ReadSingleLittleEndian(subData[28..]);
+            }
+        }
+
+        return (duration, radius, color, flags, falloffExponent, fov, value, weight);
     }
 
     #endregion

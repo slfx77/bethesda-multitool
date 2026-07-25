@@ -89,6 +89,29 @@ internal static class NifBillboardFacing
         {
             var authoredHorizontal = new Vector2(authoredFrontNormal.X, authoredFrontNormal.Y);
             var targetHorizontal = new Vector2(target.X, target.Y);
+
+            // Gamebryo Y-up effect cards (TES4 FireTorchLarge / FXLightBeam02: a quad spanning
+            // X × +Y with a near-vertical ±Z normal) have NO horizontal front, so the cylindrical
+            // yaw left them lying flat — visible from above, edge-on/invisible head-on, while
+            // retail shows an upright flame/beam. Erect the card's authored +Y height onto world
+            // +Z first, then yaw its now-horizontal normal to the camera azimuth — the result is
+            // still strictly cylindrical about world Z after erection (no per-frame pitch).
+            // Geometry-keyed, not game-keyed: FNV/Skyrim rotate-about-up cards author coherent
+            // horizontal normals and never enter this branch, and the degenerate-geometry UnitY
+            // fallback (horizontal by construction) keeps its historical route.
+            if (authoredHorizontal.LengthSquared() <
+                MinHorizontalCoherence * MinHorizontalCoherence &&
+                MathF.Abs(authoredFrontNormal.Z) >= MinHorizontalCoherence)
+            {
+                // Row-vector convention: v · E maps model +Y → world +Z; the ±Z normal lands on ∓Y.
+                var erect = Matrix4x4.CreateRotationX(MathF.PI / 2f);
+                var erectedNormal = Vector3.TransformNormal(
+                    NormalizeOr(authoredFrontNormal, Vector3.UnitZ), erect);
+                var erectedHorizontal = new Vector2(erectedNormal.X, erectedNormal.Y);
+                return erect * Matrix4x4.CreateRotationZ(
+                    ResolveYaw(erectedHorizontal, targetHorizontal));
+            }
+
             return Matrix4x4.CreateRotationZ(ResolveYaw(authoredHorizontal, targetHorizontal));
         }
 

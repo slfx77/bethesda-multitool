@@ -88,12 +88,12 @@ public class ConditionFunctionTableTests
         // representative FNV sample (the formatter now delegates to it — this pins the seam).
         var samples = new (ushort FunctionIndex, int ParamIndex, bool ExpectFormId)[]
         {
-            (0x02F, 0, true),  // GetItemCount(ObjectID)
-            (0x00E, 0, true),  // GetActorValue — FNV's historic switch resolves AV params as names (parity-preserved)
-            (0x04F, 0, true),  // GetQuestVariable(Quest, var) — quest is a FormID
+            (0x02F, 0, true), // GetItemCount(ObjectID)
+            (0x00E, 0, true), // GetActorValue — FNV's historic switch resolves AV params as names (parity-preserved)
+            (0x04F, 0, true), // GetQuestVariable(Quest, var) — quest is a FormID
             (0x04F, 1, false), // …the variable index is numeric (ScriptVar)
             (0x00A, 0, false), // GetStartingPos(Axis)
-            (0x046, 0, false), // GetIsSex(Sex)
+            (0x046, 0, false) // GetIsSex(Sex)
         };
 
         foreach (var (functionIndex, paramIndex, expectFormId) in samples)
@@ -102,7 +102,7 @@ public class ConditionFunctionTableTests
             {
                 FunctionIndex = functionIndex,
                 Parameter1 = 0x1234,
-                Parameter2 = 0x5678,
+                Parameter2 = 0x5678
             };
             var actual = DialogueConditionDisplayFormatter.IsFormReference(condition, paramIndex);
             Assert.True(expectFormId == actual,

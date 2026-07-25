@@ -113,9 +113,9 @@ public class Tes3ParsingTests
         // cells are excluded from the exterior worldspace.
         var cells = new List<CellRecord>
         {
-            new() { FormId = 0x1000, GridX = 0, GridY = 0, Flags = 0x00 },  // exterior
-            new() { FormId = 0x1001, GridX = 1, GridY = 0, Flags = 0x00 },  // exterior
-            new() { FormId = 0x2000, Flags = 0x01 },                        // interior — excluded
+            new() { FormId = 0x1000, GridX = 0, GridY = 0, Flags = 0x00 }, // exterior
+            new() { FormId = 0x1001, GridX = 1, GridY = 0, Flags = 0x00 }, // exterior
+            new() { FormId = 0x2000, Flags = 0x01 } // interior — excluded
         };
 
         var ws = Assert.Single(Tes3RecordParser.BuildWorldspaces(cells, 0x0000BCA9));
@@ -210,15 +210,15 @@ public class Tes3ParsingTests
         // the inputs for the map viewer's "Links to" line, previously dropped by the TES3 parser.
         var stream = new List<byte>();
         AppendSub(stream, "NAME", "Seyda Neen\0"u8.ToArray());
-        AppendSub(stream, "DATA", CellHeader(flags: 0, gridX: -2, gridY: -9));
+        AppendSub(stream, "DATA", CellHeader(0, -2, -9));
         AppendSub(stream, "FRMR", [1, 0, 0, 0]);
         AppendSub(stream, "NAME", "ex_nord_door_01\0"u8.ToArray());
-        AppendSub(stream, "DODT", DoorDestination(x: 100f, y: 200f, z: 50f, rotZ: 1.5f));
+        AppendSub(stream, "DODT", DoorDestination(100f, 200f, 50f, 1.5f));
         AppendSub(stream, "DNAM", "Seyda Neen, Arrille's Tradehouse\0"u8.ToArray());
         AppendSub(stream, "DATA", new byte[24]);
         var data = stream.ToArray();
 
-        var draft = Tes3CellParser.Parse(data, data.Length, formId: 0x10, offset: 0);
+        var draft = Tes3CellParser.Parse(data, data.Length, 0x10, 0);
 
         var reference = Assert.Single(draft.References);
         Assert.True(reference.HasTeleportDestination);
@@ -234,7 +234,7 @@ public class Tes3ParsingTests
     {
         var byName = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase)
         {
-            ["Seyda Neen, Arrille's Tradehouse"] = 0x2000,
+            ["Seyda Neen, Arrille's Tradehouse"] = 0x2000
         };
         var byGrid = new Dictionary<(int GridX, int GridY), uint> { [(-2, -10)] = 0x3000 };
 
@@ -255,7 +255,7 @@ public class Tes3ParsingTests
             new Tes3RefDraft
             {
                 DestinationCellName = "Not In This File",
-                HasTeleportDestination = true, DestX = -12000f, DestY = -76000f,
+                HasTeleportDestination = true, DestX = -12000f, DestY = -76000f
             },
             byName, byGrid));
         Assert.Null(Tes3RecordParser.ResolveTeleportDestination(new Tes3RefDraft(), byName, byGrid));

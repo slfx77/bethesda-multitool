@@ -16,7 +16,7 @@ public sealed class RuntimeImageSpaceModifierMergeTests
     public void RawRecordWithSameFormId_WinsWithoutInvokingRuntimeReader()
     {
         var context = CreateContext([RuntimeEntry(), RuntimeEntry()]);
-        var raw = ImageSpaceModifierTestFactory.Complete(FormId);
+        var raw = ImageSpaceModifierTestFactory.Complete();
         var records = new List<ImageSpaceModifierRecord> { raw };
         var factoryCalls = 0;
 
@@ -27,7 +27,7 @@ public sealed class RuntimeImageSpaceModifierMergeTests
             (_, _) =>
             {
                 factoryCalls++;
-                return ImageSpaceModifierTestFactory.Complete(FormId) with { FromRuntime = true };
+                return ImageSpaceModifierTestFactory.Complete() with { FromRuntime = true };
             },
             "image-space modifiers");
 
@@ -40,7 +40,7 @@ public sealed class RuntimeImageSpaceModifierMergeTests
     public void DuplicateRuntimeEntries_AddOneRecordAndReadOnce()
     {
         var context = CreateContext([RuntimeEntry(), RuntimeEntry()]);
-        var runtime = ImageSpaceModifierTestFactory.Complete(FormId) with { FromRuntime = true };
+        var runtime = ImageSpaceModifierTestFactory.Complete() with { FromRuntime = true };
         var records = new List<ImageSpaceModifierRecord>();
         var factoryCalls = 0;
 
@@ -77,7 +77,7 @@ public sealed class RuntimeImageSpaceModifierMergeTests
             {
                 IsValid = true,
                 ProcessorArchitecture = 0x03,
-                MemoryRegions = [],
+                MemoryRegions = []
             });
     }
 
@@ -87,7 +87,7 @@ public sealed class RuntimeImageSpaceModifierMergeTests
         {
             EditorId = "HVSimISFX",
             FormId = FormId,
-            FormType = 0x54,
+            FormType = 0x54
         };
     }
 }

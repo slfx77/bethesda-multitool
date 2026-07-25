@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using Xunit;
 
@@ -11,7 +13,9 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 public sealed class PlannerLegacyStateBridgeTests
 {
     private static Func<uint, string?> TypeLookup(Dictionary<uint, string> emittedTypes)
-        => formId => emittedTypes.TryGetValue(formId, out var type) ? type : null;
+    {
+        return formId => emittedTypes.TryGetValue(formId, out var type) ? type : null;
+    }
 
     [Fact]
     public void Merge_AddsPlannerAllocatedQuestAndNpc_WithTypes()
@@ -109,7 +113,7 @@ public sealed class PlannerLegacyStateBridgeTests
         var sourceToEmitted = new Dictionary<uint, uint>
         {
             [identity] = identity, // source == emitted
-            [0u] = zeroTarget      // zero source
+            [0u] = zeroTarget // zero source
         };
         var emittedTypes = new Dictionary<uint, string>
         {
@@ -130,32 +134,32 @@ public sealed class PlannerLegacyStateBridgeTests
     {
         var records = new[]
         {
-            new BethesdaMultitool.Core.Formats.Esm.Planner.RecordPlan
+            new RecordPlan
             {
                 Type = "SCPT",
-                Disposition = BethesdaMultitool.Core.Formats.Esm.Planner.RecordDisposition.New,
+                Disposition = RecordDisposition.New,
                 FormId = 0x0100525E,
                 SourceFormId = 0x000DA71A,
-                References = System.Collections.Immutable.ImmutableArray<
-                    BethesdaMultitool.Core.Formats.Esm.Planner.ResolvedRef>.Empty,
-                ContainedBy = System.Collections.Immutable.ImmutableArray<
-                    BethesdaMultitool.Core.Formats.Esm.Planner.RecordContainmentEdge>.Empty,
-                Provenance = new BethesdaMultitool.Core.Formats.Esm.Planner.PlanProvenance
+                References = ImmutableArray<
+                    ResolvedRef>.Empty,
+                ContainedBy = ImmutableArray<
+                    RecordContainmentEdge>.Empty,
+                Provenance = new PlanProvenance
                 {
                     PolicyId = "test",
                     Reason = "test"
                 }
             },
-            new BethesdaMultitool.Core.Formats.Esm.Planner.RecordPlan
+            new RecordPlan
             {
                 Type = "INFO",
-                Disposition = BethesdaMultitool.Core.Formats.Esm.Planner.RecordDisposition.New,
+                Disposition = RecordDisposition.New,
                 FormId = 0x01006000,
-                References = System.Collections.Immutable.ImmutableArray<
-                    BethesdaMultitool.Core.Formats.Esm.Planner.ResolvedRef>.Empty,
-                ContainedBy = System.Collections.Immutable.ImmutableArray<
-                    BethesdaMultitool.Core.Formats.Esm.Planner.RecordContainmentEdge>.Empty,
-                Provenance = new BethesdaMultitool.Core.Formats.Esm.Planner.PlanProvenance
+                References = ImmutableArray<
+                    ResolvedRef>.Empty,
+                ContainedBy = ImmutableArray<
+                    RecordContainmentEdge>.Empty,
+                Provenance = new PlanProvenance
                 {
                     PolicyId = "test",
                     Reason = "test"
@@ -175,16 +179,16 @@ public sealed class PlannerLegacyStateBridgeTests
     [Fact]
     public void RegisterEmittedNewRecords_ExcludesDiagnosticSkips()
     {
-        var record = new BethesdaMultitool.Core.Formats.Esm.Planner.RecordPlan
+        var record = new RecordPlan
         {
             Type = "SCPT",
-            Disposition = BethesdaMultitool.Core.Formats.Esm.Planner.RecordDisposition.New,
+            Disposition = RecordDisposition.New,
             FormId = 0x0100525E,
-            References = System.Collections.Immutable.ImmutableArray<
-                BethesdaMultitool.Core.Formats.Esm.Planner.ResolvedRef>.Empty,
-            ContainedBy = System.Collections.Immutable.ImmutableArray<
-                BethesdaMultitool.Core.Formats.Esm.Planner.RecordContainmentEdge>.Empty,
-            Provenance = new BethesdaMultitool.Core.Formats.Esm.Planner.PlanProvenance
+            References = ImmutableArray<
+                ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<
+                RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance
             {
                 PolicyId = "test",
                 Reason = "test"

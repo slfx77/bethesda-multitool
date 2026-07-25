@@ -38,7 +38,7 @@ public sealed class RuntimeScriptEmissionPipelineTests
                 IsCompiled = true,
                 VariablesComplete = true,
                 ReferencedObjectsComplete = true,
-                DumpOffset = 0x1234,
+                DumpOffset = 0x1234
             }));
         var accepted = ScriptRecordHandler.EnforceCapturedSourceCorrespondence(
             captured with { DecompiledText = $"ScriptName {scriptName}" });
@@ -57,16 +57,16 @@ public sealed class RuntimeScriptEmissionPipelineTests
                 {
                     FormId = sourceDoorFormId,
                     EditorId = "RuntimeOnlyScriptedDoor",
-                    Script = sourceScriptFormId,
-                },
-            ],
+                    Script = sourceScriptFormId
+                }
+            ]
         };
         var plan = BuildPlanner().Build(
-            masterRecords: [],
-            dmpRecords: records,
-            enabledTypes: new HashSet<string>(StringComparer.Ordinal) { "SCPT", "DOOR" },
-            masterFormIds: new HashSet<uint>(),
-            masterPath: null);
+            [],
+            records,
+            new HashSet<string>(StringComparer.Ordinal) { "SCPT", "DOOR" },
+            new HashSet<uint>(),
+            null);
 
         var scriptPlan = Assert.Single(plan.Records,
             record => record.Type == "SCPT" && record.SourceFormId == sourceScriptFormId);
@@ -115,7 +115,7 @@ public sealed class RuntimeScriptEmissionPipelineTests
         var disposition = new DispositionEngine(
         [
             new ScriptDispositionPolicy(),
-            new DefaultDispositionPolicy(),
+            new DefaultDispositionPolicy()
         ]);
         var degradation = new DegradationPolicy();
         degradation.SetDefaultForType("SCPT", DanglingAction.DropSubrecord);
@@ -131,7 +131,10 @@ public sealed class RuntimeScriptEmissionPipelineTests
         {
         }
 
-        public void OnEvent(ConversionProgressEvent evt) => Events.Add(evt);
+        public void OnEvent(ConversionProgressEvent evt)
+        {
+            Events.Add(evt);
+        }
 
         public void OnPhaseEnd(string phase, ConversionPipelineStats partialStats)
         {

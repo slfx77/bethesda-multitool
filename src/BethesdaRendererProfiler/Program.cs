@@ -1,9 +1,9 @@
-using BethesdaMultitool;
-using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using BethesdaMultitool;
+using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using WinRT;

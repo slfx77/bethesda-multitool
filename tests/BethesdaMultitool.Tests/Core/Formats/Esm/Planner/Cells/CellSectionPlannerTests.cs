@@ -1,8 +1,7 @@
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
@@ -213,7 +212,7 @@ public sealed class CellSectionPlannerTests
             [],
             new HashSet<uint> { 0x000ABCDE },
             new FormIdAllocator(),
-            emitMasterCellNavmAugmentation: true);
+            true);
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         var planForNavm = Assert.Single(cellPlan.TemporaryChildren);
@@ -243,7 +242,7 @@ public sealed class CellSectionPlannerTests
             [],
             new HashSet<uint> { 0x000ABCDE },
             new FormIdAllocator(),
-            emitMasterCellNavmAugmentation: false);
+            false);
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         Assert.Empty(cellPlan.TemporaryChildren);
@@ -272,7 +271,7 @@ public sealed class CellSectionPlannerTests
             [],
             new HashSet<uint>(),
             new FormIdAllocator(),
-            emitMasterCellNavmAugmentation: false);
+            false);
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         var planForNavm = Assert.Single(cellPlan.TemporaryChildren);

@@ -27,6 +27,18 @@ internal readonly record struct GrassScatterProfile(
 {
     internal static GrassScatterProfile ForGame(BethesdaGame game) => game switch
     {
+        // Oblivion_default.ini [Grass]: iMinGrassSize=80, iGrassDensityEvalSize=2,
+        // iMaxGrassTypesPerTexure=2 (sic — same inclusive zero-based semantics as the descendant
+        // FNV loop, so up to three LTEX GNAM entries), fGrassStartFadeDistance=2000 with
+        // fGrassEndDistance=3000 (TES4 authors an END distance, not a range → range 1000).
+        // Position quantization, terrain topology, and height flooring are UNVERIFIED for TES4
+        // (no CreateGrass decompile yet) — conservative None/null/false until recovered; the FNV
+        // values are plausible ancestry but not proven.
+        BethesdaGame.Oblivion => new(
+            true, 80f, 2, 3, 0f, GrassPositionQuantization.None,
+            null, false,
+            new GrassDistanceEnvelope(FadeStart: 2000f, FadeRange: 1000f)),
+
         // Shipped iMinGrassSize=80 and iGrassDensityEvalSize=2. The INI's
         // iMaxGrassTypesPerTexture=2 is an inclusive zero-based index: the engine loop uses <=,
         // so up to three GNAM entries are consumed. CreateGrass floors jittered XY, queries

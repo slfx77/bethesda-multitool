@@ -1,8 +1,7 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Conversion;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm;
@@ -23,7 +22,7 @@ public class CompressedRecordPartialRecoveryTests
         uint s = 0x12345678;
         for (var i = 0; i < n; i++)
         {
-            s = (s * 1664525) + 1013904223;
+            s = s * 1664525 + 1013904223;
             d[i] = (byte)(s >> 24);
         }
 
@@ -33,7 +32,7 @@ public class CompressedRecordPartialRecoveryTests
     private static byte[] ZlibCompress(byte[] data)
     {
         using var ms = new MemoryStream();
-        using (var z = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+        using (var z = new ZLibStream(ms, CompressionLevel.Optimal, true))
         {
             z.Write(data, 0, data.Length);
         }
@@ -87,7 +86,7 @@ public class CompressedRecordPartialRecoveryTests
         BinaryPrimitives.WriteUInt32LittleEndian(payload, (uint)data.Length);
         truncatedZlib.CopyTo(payload, 4);
 
-        var (got, isComplete) = EsmParser.DecompressRecordDataPartial(payload, bigEndian: false);
+        var (got, isComplete) = EsmParser.DecompressRecordDataPartial(payload, false);
 
         Assert.False(isComplete);
         Assert.InRange(got.Length, 1, data.Length - 1);
@@ -105,7 +104,7 @@ public class CompressedRecordPartialRecoveryTests
         BinaryPrimitives.WriteUInt32BigEndian(payload, (uint)data.Length); // Xbox 360 BE size prefix
         truncatedZlib.CopyTo(payload, 4);
 
-        var (got, isComplete) = EsmParser.DecompressRecordDataPartial(payload, bigEndian: true);
+        var (got, isComplete) = EsmParser.DecompressRecordDataPartial(payload, true);
 
         Assert.False(isComplete);
         Assert.Equal(data[..got.Length], got);
@@ -122,10 +121,9 @@ public class CompressedRecordPartialRecoveryTests
         payload[4] = 0x78;
         payload[5] = 0x9C;
 
-        var (got, isComplete) = EsmParser.DecompressRecordDataPartial(payload, bigEndian: false);
+        var (got, isComplete) = EsmParser.DecompressRecordDataPartial(payload, false);
 
         Assert.Empty(got);
         Assert.False(isComplete);
     }
 }
-

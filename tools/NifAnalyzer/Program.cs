@@ -18,6 +18,7 @@ internal sealed class Program
 
         // Register all commands
         rootCommand.Subcommands.Add(InfoCommands.CreateInfoCommand());
+        rootCommand.Subcommands.Add(SkinDiagCommands.Create());
         rootCommand.Subcommands.Add(InfoCommands.CreateBlocksCommand());
         rootCommand.Subcommands.Add(InfoCommands.CreateBlockCommand());
         rootCommand.Subcommands.Add(InfoCommands.CreateCompareCommand());

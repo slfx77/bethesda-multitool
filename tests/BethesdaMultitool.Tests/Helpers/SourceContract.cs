@@ -16,8 +16,10 @@ internal static class SourceContract
     public static string RepoRoot => LazyRepoRoot.Value;
 
     /// <summary>Read a source file addressed by path segments relative to the repo root.</summary>
-    public static string ReadSource(params string[] relativePath) =>
-        File.ReadAllText(Path.Combine(RepoRoot, Path.Combine(relativePath)));
+    public static string ReadSource(params string[] relativePath)
+    {
+        return File.ReadAllText(Path.Combine(RepoRoot, Path.Combine(relativePath)));
+    }
 
     /// <summary>Assert each value appears in <paramref name="source" /> after the previous one.</summary>
     public static void AssertOrder(string source, params string[] values)

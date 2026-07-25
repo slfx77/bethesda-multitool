@@ -1,8 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
 
@@ -62,14 +61,14 @@ public class DeletedRefSynthesizerTests
         var bundle = DeletedRefSynthesizer.Synthesize(
             [markerRef, ordinaryRef],
             new HashSet<uint>(),
-            preserveMissingRef: null,
-            useHardDeletion: r => r.Header.FormId == 0x500);
+            null,
+            r => r.Header.FormId == 0x500);
 
         Assert.Equal(2, bundle.Temporary.Count);
         var byId = bundle.Temporary.ToDictionary(
             b => BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(12, 4)),
             b => BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(8, 4)));
-        Assert.Equal(0x20u, byId[0x500] & 0x20u);   // marker: true deletion
+        Assert.Equal(0x20u, byId[0x500] & 0x20u); // marker: true deletion
         Assert.Equal(0u, byId[0x500] & 0x800u);
         Assert.Equal(0x800u, byId[0x501] & 0x800u); // ordinary: disabled override
         Assert.Equal(0u, byId[0x501] & 0x20u);

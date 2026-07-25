@@ -30,7 +30,7 @@ public class DdsBc5DecodeTests
     {
         return
         [
-            red, red, 0, 0, 0, 0, 0, 0,    // red BC4 sub-block
+            red, red, 0, 0, 0, 0, 0, 0, // red BC4 sub-block
             green, green, 0, 0, 0, 0, 0, 0 // green BC4 sub-block
         ];
     }
@@ -38,7 +38,7 @@ public class DdsBc5DecodeTests
     [Theory]
     [InlineData(128, 128)] // near (0,0) -> z ~ 1 -> Z ~ 255
     [InlineData(255, 255)] // nx^2+ny^2 > 1 -> clamped z = 0 -> Z = 127
-    [InlineData(0, 0)]     // (-1,-1) -> clamped z = 0
+    [InlineData(0, 0)] // (-1,-1) -> clamped z = 0
     [InlineData(64, 192)]
     [InlineData(200, 30)]
     public void DecodeBc5Level_ReconstructsZViaLut_MatchesReferenceFormula(byte red, byte green)
@@ -52,10 +52,10 @@ public class DdsBc5DecodeTests
         for (var i = 0; i < 4 * 4; i++)
         {
             var p = i * 4;
-            Assert.Equal(red, pixels![p + 0]);     // X preserved
-            Assert.Equal(green, pixels[p + 1]);    // Y preserved
+            Assert.Equal(red, pixels![p + 0]); // X preserved
+            Assert.Equal(green, pixels[p + 1]); // Y preserved
             Assert.Equal(expectedZ, pixels[p + 2]); // Z from LUT == reference
-            Assert.Equal(255, pixels[p + 3]);      // alpha
+            Assert.Equal(255, pixels[p + 3]); // alpha
         }
     }
 

@@ -22,7 +22,7 @@ public sealed class ImadOrderedStreamEncoderTests
         var plan = NewPlan(model.FormId,
         [
             Resolved("RDSD", 0x00123456, 0x01000A00),
-            Dropped("RDSI", 0x00654321),
+            Dropped("RDSI", 0x00654321)
         ]);
 
         var encoded = new PlannedImadEncoder().Encode(model, plan, new PlanReferenceLookup(plan));
@@ -32,7 +32,8 @@ public sealed class ImadOrderedStreamEncoderTests
             model.OrderedSubrecords.Where(static sub => sub.Signature != "RDSI").Select(static sub => sub.Signature),
             encoded.Subrecords.Select(static sub => sub.Signature));
         Assert.DoesNotContain(encoded.Subrecords, static sub => sub.Signature == "RDSI");
-        Assert.Contains(encoded.Warnings, static warning => warning.Contains("dropped dangling RDSI", StringComparison.Ordinal));
+        Assert.Contains(encoded.Warnings,
+            static warning => warning.Contains("dropped dangling RDSI", StringComparison.Ordinal));
 
         var dnam = Assert.Single(encoded.Subrecords, static sub => sub.Signature == "DNAM").Bytes;
         Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(dnam));
@@ -72,13 +73,14 @@ public sealed class ImadOrderedStreamEncoderTests
         {
             OrderedSubrecords = complete.OrderedSubrecords
                 .Where(static sub => sub.Signature != "NAM3")
-                .ToArray(),
+                .ToArray()
         };
 
         var encoded = ImadEncoder.EncodeNew(incomplete);
 
         Assert.Empty(encoded.Subrecords);
-        Assert.Contains(encoded.Warnings, static warning => warning.Contains("incomplete captured stream", StringComparison.Ordinal));
+        Assert.Contains(encoded.Warnings,
+            static warning => warning.Contains("incomplete captured stream", StringComparison.Ordinal));
 
         var plan = NewPlan(incomplete.FormId, []);
         Assert.Throws<InvalidOperationException>(() =>
@@ -101,8 +103,8 @@ public sealed class ImadOrderedStreamEncoderTests
             {
                 "DNAM" => sub with { Data = dnam },
                 "BNAM" => sub with { Data = singleKey },
-                _ => sub,
-            }).ToArray(),
+                _ => sub
+            }).ToArray()
         };
 
         var encoded = ImadEncoder.EncodeNew(invalid);
@@ -121,7 +123,7 @@ public sealed class ImadOrderedStreamEncoderTests
         var invalid = complete with
         {
             OrderedSubrecords = complete.OrderedSubrecords.Select(sub =>
-                sub.Signature == "BNAM" ? sub with { Data = blur } : sub).ToArray(),
+                sub.Signature == "BNAM" ? sub with { Data = blur } : sub).ToArray()
         };
 
         var encoded = ImadEncoder.EncodeNew(invalid);
@@ -140,7 +142,7 @@ public sealed class ImadOrderedStreamEncoderTests
         var invalid = complete with
         {
             OrderedSubrecords = complete.OrderedSubrecords.Select(sub =>
-                sub.Signature == "BNAM" ? sub with { Data = blur } : sub).ToArray(),
+                sub.Signature == "BNAM" ? sub with { Data = blur } : sub).ToArray()
         };
 
         var encoded = ImadEncoder.EncodeNew(invalid);
@@ -176,23 +178,29 @@ public sealed class ImadOrderedStreamEncoderTests
             Model = ImageSpaceModifierTestFactory.Complete(formId),
             References = references,
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
     }
 
-    private static ResolvedRef Resolved(string path, uint original, uint final) => new()
+    private static ResolvedRef Resolved(string path, uint original, uint final)
     {
-        FieldPath = path,
-        OriginalFormId = original,
-        Action = ResolvedRefAction.Resolved,
-        FinalFormId = final,
-    };
+        return new ResolvedRef
+        {
+            FieldPath = path,
+            OriginalFormId = original,
+            Action = ResolvedRefAction.Resolved,
+            FinalFormId = final
+        };
+    }
 
-    private static ResolvedRef Dropped(string path, uint original) => new()
+    private static ResolvedRef Dropped(string path, uint original)
     {
-        FieldPath = path,
-        OriginalFormId = original,
-        Action = ResolvedRefAction.DropSubrecord,
-        Reason = "test dangling",
-    };
+        return new ResolvedRef
+        {
+            FieldPath = path,
+            OriginalFormId = original,
+            Action = ResolvedRefAction.DropSubrecord,
+            Reason = "test dangling"
+        };
+    }
 }

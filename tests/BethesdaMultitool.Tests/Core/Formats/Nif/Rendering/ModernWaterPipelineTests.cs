@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using BethesdaMultitool;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Games;
 using Vortice.Direct3D12;
@@ -17,8 +16,8 @@ public sealed class ModernWaterPipelineTests
     public void ExplicitOptInIsLimitedToRecoveredCreationGames(BethesdaGame game, bool supported)
     {
         Assert.Equal(supported, ModernWaterPipeline.Supports(game));
-        Assert.Equal(supported, ModernWaterPipeline.ShouldUse(explicitlyEnabled: true, game));
-        Assert.False(ModernWaterPipeline.ShouldUse(explicitlyEnabled: false, game));
+        Assert.Equal(supported, ModernWaterPipeline.ShouldUse(true, game));
+        Assert.False(ModernWaterPipeline.ShouldUse(false, game));
     }
 
     [Theory]
@@ -52,13 +51,18 @@ public sealed class ModernWaterPipelineTests
     public void PrepassAndFrameLayoutsStayRegisterAligned()
     {
         Assert.Equal(128, Marshal.SizeOf<ModernWaterPrepassUniforms>());
-        Assert.Equal(0, Marshal.OffsetOf<ModernWaterPrepassUniforms>(nameof(ModernWaterPrepassUniforms.NormalIndex1)).ToInt32());
-        Assert.Equal(16, Marshal.OffsetOf<ModernWaterPrepassUniforms>(nameof(ModernWaterPrepassUniforms.ShallowCoverage)).ToInt32());
-        Assert.Equal(112, Marshal.OffsetOf<ModernWaterPrepassUniforms>(nameof(ModernWaterPrepassUniforms.Ranges)).ToInt32());
+        Assert.Equal(0,
+            Marshal.OffsetOf<ModernWaterPrepassUniforms>(nameof(ModernWaterPrepassUniforms.NormalIndex1)).ToInt32());
+        Assert.Equal(16,
+            Marshal.OffsetOf<ModernWaterPrepassUniforms>(nameof(ModernWaterPrepassUniforms.ShallowCoverage)).ToInt32());
+        Assert.Equal(112,
+            Marshal.OffsetOf<ModernWaterPrepassUniforms>(nameof(ModernWaterPrepassUniforms.Ranges)).ToInt32());
         Assert.Equal(64, Marshal.SizeOf<ModernWaterFrameUniforms>());
-        Assert.Equal(16, Marshal.OffsetOf<ModernWaterFrameUniforms>(nameof(ModernWaterFrameUniforms.TechniqueId)).ToInt32());
+        Assert.Equal(16,
+            Marshal.OffsetOf<ModernWaterFrameUniforms>(nameof(ModernWaterFrameUniforms.TechniqueId)).ToInt32());
         Assert.Equal(32, Marshal.OffsetOf<ModernWaterFrameUniforms>(nameof(ModernWaterFrameUniforms.Params)).ToInt32());
-        Assert.Equal(48, Marshal.OffsetOf<ModernWaterFrameUniforms>(nameof(ModernWaterFrameUniforms.LightSilt)).ToInt32());
+        Assert.Equal(48,
+            Marshal.OffsetOf<ModernWaterFrameUniforms>(nameof(ModernWaterFrameUniforms.LightSilt)).ToInt32());
         Assert.Equal(416u, ModernWaterPipeline.FrameUniformByteSize);
     }
 
@@ -80,7 +84,7 @@ public sealed class ModernWaterPipelineTests
         {
             WaterPipeline = "fo4-modern-0x141",
             WaterTechnique = "FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-1x",
-            WaterTelemetryUnavailableReason = "selective-content-mask-approximated-by-main-depth",
+            WaterTelemetryUnavailableReason = "selective-content-mask-approximated-by-main-depth"
         };
 
         var snapshot = stats.Snapshot();

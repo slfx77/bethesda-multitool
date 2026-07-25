@@ -43,7 +43,7 @@ public class WeaponProfileParityTests
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, cancellationToken: TestContext.Current.CancellationToken);
+            esm!, TestContext.Current.CancellationToken);
 
         var resolver = new FormIdResolver(result.Records.FormIdToEditorId, result.Records.FormIdToDisplayName);
         var profile = new WeaponProfile();
@@ -60,12 +60,14 @@ public class WeaponProfileParityTests
 
             var typed = Serialize(RecordDetailBuilders.BuildWeapon(weapon, resolver));
             var profiled = Serialize(profile.Build(
-                formId, weapon.EditorId, weapon.FullName, tree, BethesdaGame.FalloutNewVegas, resolver, result.Records));
+                formId, weapon.EditorId, weapon.FullName, tree, BethesdaGame.FalloutNewVegas, resolver,
+                result.Records));
 
             compared++;
             if (typed != profiled && mismatches.Count < 5)
             {
-                mismatches.Add($"WEAP 0x{formId:X8} ({weapon.EditorId}):\n--- typed ---\n{typed}\n--- profile ---\n{profiled}");
+                mismatches.Add(
+                    $"WEAP 0x{formId:X8} ({weapon.EditorId}):\n--- typed ---\n{typed}\n--- profile ---\n{profiled}");
             }
         }
 

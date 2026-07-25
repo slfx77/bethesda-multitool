@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
+using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 using BethesdaMultitool.Core.Vfs;
 using Xunit;
 
@@ -25,7 +26,7 @@ public sealed class GameFileSystemTests : IDisposable
     {
         try
         {
-            Directory.Delete(_root, recursive: true);
+            Directory.Delete(_root, true);
         }
         catch (IOException)
         {
@@ -35,7 +36,7 @@ public sealed class GameFileSystemTests : IDisposable
 
     private static byte[] PayloadFor(int index)
     {
-        var payload = new byte[64 + (index % 512)];
+        var payload = new byte[64 + index % 512];
         for (var i = 0; i < payload.Length; i++)
         {
             payload[i] = (byte)((index * 31 + i * 7) & 0xFF);
@@ -73,7 +74,7 @@ public sealed class GameFileSystemTests : IDisposable
 
         var stat = fs.TryStat(@"textures\armor\foo.dds");
         Assert.NotNull(stat);
-        Assert.Equal(@"textures\armor\foo.dds", stat!.Path, ignoreCase: true);
+        Assert.Equal(@"textures\armor\foo.dds", stat!.Path, true);
     }
 
     [Fact]
@@ -83,7 +84,7 @@ public sealed class GameFileSystemTests : IDisposable
         [
             ("meshes\\clutter\\a.nif", PayloadFor(1)),
             ("meshes\\clutter\\b.nif", PayloadFor(2)),
-            ("textures\\clutter\\a.dds", PayloadFor(3)),
+            ("textures\\clutter\\a.dds", PayloadFor(3))
         ]);
         using var fs = GameFileSystem.OpenArchive(bsa);
 
@@ -138,7 +139,7 @@ public sealed class GameFileSystemTests : IDisposable
 
         // With no loose copy, alphabetical archive order decides: aaa.bsa shadows bbb.bsa.
         File.Delete(Path.Combine(_root, "textures", "shared.dds"));
-        using var archivesOnly = GameFileSystem.OpenDataFolder(_root, includeLooseFiles: false);
+        using var archivesOnly = GameFileSystem.OpenDataFolder(_root, false);
         Assert.Equal(aPayload, archivesOnly.TryReadAllBytes(sharedPath));
         Assert.EndsWith("aaa.bsa", archivesOnly.TryStat(sharedPath)!.Source, StringComparison.OrdinalIgnoreCase);
 
@@ -190,10 +191,10 @@ public sealed class GameFileSystemTests : IDisposable
 
         // aaa.bsa gets a COMPRESSED copy whose payload we then corrupt in place, so extraction
         // fails; bbb.bsa holds the intact copy.
-        var corruptBsa = WriteBsa("aaa.bsa", [(sharedPath, PayloadFor(41))], compressed: true);
+        var corruptBsa = WriteBsa("aaa.bsa", [(sharedPath, PayloadFor(41))], true);
         WriteBsa("bbb.bsa", [(sharedPath, goodPayload)]);
 
-        var record = BethesdaMultitool.Core.Formats.Bsa.Parsing.BsaParser.Parse(corruptBsa)
+        var record = BsaParser.Parse(corruptBsa)
             .AllFiles.Single();
         using (var stream = new FileStream(corruptBsa, FileMode.Open, FileAccess.ReadWrite))
         {
@@ -208,7 +209,7 @@ public sealed class GameFileSystemTests : IDisposable
             Assert.Null(corruptOnly.TryReadAllBytes(sharedPath));
         }
 
-        using var layered = GameFileSystem.OpenDataFolder(_root, includeLooseFiles: false);
+        using var layered = GameFileSystem.OpenDataFolder(_root, false);
         Assert.True(layered.Exists(sharedPath));
         // Stat-first still reports the alphabetically winning (corrupt) layer…
         Assert.EndsWith("aaa.bsa", layered.TryStat(sharedPath)!.Source, StringComparison.OrdinalIgnoreCase);
@@ -253,7 +254,7 @@ public sealed class GameFileSystemTests : IDisposable
         var payload = PayloadFor(60);
         WriteBsa("real.bsa", [("meshes\\ok.nif", payload)]);
 
-        using var layered = GameFileSystem.OpenDataFolder(_root, includeLooseFiles: false);
+        using var layered = GameFileSystem.OpenDataFolder(_root, false);
         Assert.Equal(payload, layered.TryReadAllBytes("meshes/ok.nif"));
         Assert.False(layered.Exists("meshes/only-in-junk.nif"));
     }
@@ -270,8 +271,8 @@ public sealed class GameFileSystemTests : IDisposable
         WriteBsa("solo.bsa", [(path, payload)]);
         var registry = new ArchiveHandleRegistry();
 
-        var mount1 = GameFileSystem.OpenDataFolder(_root, includeLooseFiles: false, registry: registry);
-        var mount2 = GameFileSystem.OpenDataFolder(_root, includeLooseFiles: false, registry: registry);
+        var mount1 = GameFileSystem.OpenDataFolder(_root, false, registry: registry);
+        var mount2 = GameFileSystem.OpenDataFolder(_root, false, registry: registry);
         Assert.Equal(0, registry.OpenHandleCount); // lazy: nothing opened yet
 
         Assert.Equal(payload, mount1.TryReadAllBytes(path));

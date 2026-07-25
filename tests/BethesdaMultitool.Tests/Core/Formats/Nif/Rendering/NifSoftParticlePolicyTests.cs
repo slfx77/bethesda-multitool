@@ -42,10 +42,10 @@ public sealed class NifSoftParticlePolicyTests
     {
         var settings = NifSoftParticlePolicy.Resolve(Candidate(
             @"effects\NV\NVLimestoneDustStormHalfViz.NIF",
-            alphaBlend: !alphaBlendOff,
-            depthWritingBlend: depthWritingBlend,
-            isDecal: isDecal,
-            isParticleCloud: true,
+            !alphaBlendOff,
+            depthWritingBlend,
+            isDecal,
+            true,
             authoredFalloffDepth: 250f));
 
         Assert.False(settings.Enabled);
@@ -106,8 +106,9 @@ public sealed class NifSoftParticlePolicyTests
         bool hasEffectFalloff = false,
         float authoredFalloffDepth = 0f,
         byte srcBlendMode = 6,
-        byte dstBlendMode = 7) =>
-        new(
+        byte dstBlendMode = 7)
+    {
+        return new NifSoftParticleCandidate(
             path,
             alphaBlend,
             depthWritingBlend,
@@ -118,6 +119,7 @@ public sealed class NifSoftParticlePolicyTests
             authoredFalloffDepth,
             srcBlendMode,
             dstBlendMode);
+    }
 }
 
 public sealed class NifSoftParticleDepthMathTests
@@ -128,8 +130,8 @@ public sealed class NifSoftParticleDepthMathTests
     [Fact]
     public void DepthBinding_EncodesSingleSampleAndMsaaWithoutSlotZeroCollision()
     {
-        var singleSample = NifSoftParticleDepthBinding.Encode(bindlessIndex: 0, sampleCount: 1);
-        var multisampled = NifSoftParticleDepthBinding.Encode(bindlessIndex: 42, sampleCount: 4);
+        var singleSample = NifSoftParticleDepthBinding.Encode(0, 1);
+        var multisampled = NifSoftParticleDepthBinding.Encode(42, 4);
 
         Assert.Equal(1f, singleSample);
         Assert.True(NifSoftParticleDepthBinding.TryDecode(
@@ -162,7 +164,7 @@ public sealed class NifSoftParticleDepthMathTests
             NdcAtDistance(10f),
             Near,
             Far,
-            falloffDepth: 100f);
+            100f);
 
         Assert.True(result.Visible);
         Assert.Equal(50f, result.SceneGap, 2);
@@ -177,7 +179,7 @@ public sealed class NifSoftParticleDepthMathTests
             NdcAtDistance(60f),
             Near,
             Far,
-            falloffDepth: 100f);
+            100f);
 
         Assert.False(result.Visible);
         Assert.Equal(0f, result.Feather);
@@ -187,7 +189,7 @@ public sealed class NifSoftParticleDepthMathTests
     public void Evaluate_EqualDepth_PreservesHardTieButSoftlyFadesIntersection()
     {
         var ndc = NdcAtDistance(25f);
-        var result = NifSoftParticleDepthMath.Evaluate(ndc, ndc, Near, Far, falloffDepth: 100f);
+        var result = NifSoftParticleDepthMath.Evaluate(ndc, ndc, Near, Far, 100f);
 
         Assert.True(result.Visible);
         Assert.Equal(0f, result.Feather);
@@ -209,6 +211,8 @@ public sealed class NifSoftParticleDepthMathTests
             NifSoftParticleDepthMath.ApplyFade(source, 0.5f, NifSoftParticleFadeTarget.ColorTowardWhite));
     }
 
-    private static float NdcAtDistance(float distance) =>
-        (Near * Far / distance - Near) / (Far - Near);
+    private static float NdcAtDistance(float distance)
+    {
+        return (Near * Far / distance - Near) / (Far - Near);
+    }
 }

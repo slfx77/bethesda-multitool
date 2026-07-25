@@ -1,5 +1,4 @@
 using System.Numerics;
-using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -15,10 +14,10 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
     [Fact]
     public void DefaultCacheDirectories_AreUnderOsTempDirectory()
     {
-        var tempRoot = System.IO.Path.GetFullPath(System.IO.Path.GetTempPath());
-        if (!System.IO.Path.EndsInDirectorySeparator(tempRoot))
+        var tempRoot = Path.GetFullPath(Path.GetTempPath());
+        if (!Path.EndsInDirectorySeparator(tempRoot))
         {
-            tempRoot += System.IO.Path.DirectorySeparatorChar;
+            tempRoot += Path.DirectorySeparatorChar;
         }
 
         var meshCache = ReferenceDiskCachePaths.ResolveDefaultCacheDirectory(
@@ -28,8 +27,8 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
             "ReferenceDecodedTextureCache12",
             ReferenceDecodedTextureDiskCache12.DecoderVersion);
 
-        Assert.StartsWith(tempRoot, System.IO.Path.GetFullPath(meshCache), StringComparison.OrdinalIgnoreCase);
-        Assert.StartsWith(tempRoot, System.IO.Path.GetFullPath(textureCache), StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(tempRoot, Path.GetFullPath(meshCache), StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(tempRoot, Path.GetFullPath(textureCache), StringComparison.OrdinalIgnoreCase);
         Assert.Contains("BethesdaMultitool", meshCache, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("BethesdaMultitool", textureCache, StringComparison.OrdinalIgnoreCase);
     }
@@ -42,9 +41,9 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         var metadata = CreateMetadata(64, 1000);
         var payload = CreatePayload();
 
-        cache.Store(metadata, variantKey: null, payload);
+        cache.Store(metadata, null, payload);
 
-        Assert.True(cache.TryLoad(metadata, variantKey: null, out var entry));
+        Assert.True(cache.TryLoad(metadata, null, out var entry));
         Assert.False(entry.IsNegative);
         Assert.NotNull(entry.Mesh);
         var mesh = entry.Mesh;
@@ -94,7 +93,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.Null(loaded.ClassicParallaxHeightMapTexturePath);
         Assert.Equal(FnvClassicBasicShaderMode.Sls1013VertexColor, loaded.ClassicBasicShaderMode);
         Assert.Equal(41, loaded.SourceBlockIndex);
-        Assert.Equal(65, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+        Assert.Equal(66, ReferenceDecodedMeshDiskCache12.DecoderVersion);
     }
 
     [Fact]
@@ -116,14 +115,14 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
                     ClassicEnvironmentMapScale = 0f,
                     ClassicEnvironmentMapUsesWindowReflection = false,
                     ClassicParallaxHeightMapTexturePath =
-                        "textures\\landscape\\RubblePile05_p.dds"
+                    "textures\\landscape\\RubblePile05_p.dds"
                 }
             ]
         };
 
-        cache.Store(metadata, variantKey: null, payload);
+        cache.Store(metadata, null, payload);
 
-        Assert.True(cache.TryLoad(metadata, variantKey: null, out var entry));
+        Assert.True(cache.TryLoad(metadata, null, out var entry));
         var loaded = Assert.Single(Assert.IsType<ReferenceDecodedMeshPayload12>(entry.Mesh).Submeshes);
         Assert.Null(loaded.ClassicEnvironmentMapTexturePath);
         Assert.Null(loaded.ClassicEnvironmentMaskTexturePath);
@@ -139,9 +138,9 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
         var metadata = CreateMetadata(null, 1000, false);
 
-        cache.Store(metadata, variantKey: null, payload: null);
+        cache.Store(metadata, null, null);
 
-        Assert.True(cache.TryLoad(metadata, variantKey: null, out var entry));
+        Assert.True(cache.TryLoad(metadata, null, out var entry));
         Assert.True(entry.IsNegative);
         Assert.Null(entry.Mesh);
     }
@@ -154,9 +153,9 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         var metadata = CreateMetadata(64, 1000);
         var payload = CreatePayload() with { ContainsParticleSource = true };
 
-        cache.Store(metadata, variantKey: null, payload);
+        cache.Store(metadata, null, payload);
 
-        Assert.True(cache.TryLoad(metadata, variantKey: null, out var entry));
+        Assert.True(cache.TryLoad(metadata, null, out var entry));
         Assert.False(entry.IsNegative);
         var loaded = Assert.IsType<ReferenceDecodedMeshPayload12>(entry.Mesh);
         Assert.True(loaded.ContainsParticleSource);
@@ -171,10 +170,10 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         var original = CreateMetadata(64, 1000);
         var changed = CreateMetadata(65, 1000);
 
-        cache.Store(original, variantKey: null, CreatePayload());
+        cache.Store(original, null, CreatePayload());
 
-        Assert.True(cache.TryLoad(original, variantKey: null, out _));
-        Assert.False(cache.TryLoad(changed, variantKey: null, out _));
+        Assert.True(cache.TryLoad(original, null, out _));
+        Assert.False(cache.TryLoad(changed, null, out _));
     }
 
     [Fact]
@@ -183,11 +182,11 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         using var tempDir = new TempDirectory();
         var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
         var metadata = CreateMetadata(64, 1000);
-        cache.Store(metadata, variantKey: null, CreatePayload());
+        cache.Store(metadata, null, CreatePayload());
         var path = cache.GetCachePath(metadata);
         File.WriteAllBytes(path, [0x42, 0x61, 0x64]);
 
-        Assert.False(cache.TryLoad(metadata, variantKey: null, out _));
+        Assert.False(cache.TryLoad(metadata, null, out _));
         Assert.False(File.Exists(path));
     }
 
@@ -256,7 +255,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
                     [
                         new NifFloatKey(0f, 0f),
                         new NifFloatKey(2.3333f, 0.5f),
-                        new NifFloatKey(45f, 0f),
+                        new NifFloatKey(45f, 0f)
                     ],
                     null,
                     new NifAlphaControllerClock(1f, 0f, 0f, 45f, NifCycleType.Loop),

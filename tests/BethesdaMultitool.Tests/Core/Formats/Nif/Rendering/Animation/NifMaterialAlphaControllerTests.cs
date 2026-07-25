@@ -81,11 +81,11 @@ public class NifMaterialAlphaControllerTests
         Assert.Equal(0f, storm04Submesh.MaterialAlpha);
         Assert.Equal(1f, particleSubmesh.MaterialAlpha);
         Assert.Equal(0.5f, storm03Submesh.MaterialAlphaController!.ResolveTargetAlpha(
-            2.3333f, animationsEnabled: true), 3);
+            2.3333f, true), 3);
         Assert.Equal(0.25f, storm04Submesh.MaterialAlphaController!.ResolveTargetAlpha(
-            2.3333f, animationsEnabled: true), 3);
+            2.3333f, true), 3);
         Assert.Equal(0.05f, particleSubmesh.MaterialAlphaController!.ResolveTargetAlpha(
-            2.3333f, animationsEnabled: true), 3);
+            2.3333f, true), 3);
         Assert.All(controlledSubmeshes.Values, static submesh =>
         {
             Assert.True(submesh.HasAlphaBlend);
@@ -124,8 +124,8 @@ public class NifMaterialAlphaControllerTests
         Assert.Equal(0f, particles.Sample(0f));
         Assert.Equal(0f, storm03.Sample(45f));
         Assert.InRange(storm03.Sample(46f), 0.20f, 0.23f);
-        Assert.Equal(0.5f, storm03.ResolveTargetAlpha(2.3333f, animationsEnabled: true), 3);
-        Assert.Equal(0f, storm03.ResolveTargetAlpha(2.3333f, animationsEnabled: false));
+        Assert.Equal(0.5f, storm03.ResolveTargetAlpha(2.3333f, true), 3);
+        Assert.Equal(0f, storm03.ResolveTargetAlpha(2.3333f, false));
     }
 
     [Fact]
@@ -163,7 +163,7 @@ public class NifMaterialAlphaControllerTests
         var nif = new NifInfo
         {
             BinaryVersion = NifVersions.Gamebryo202007,
-            BsVersion = 34,
+            BsVersion = 34
         };
         nif.Strings.AddRange([
             "Idle",
@@ -171,10 +171,11 @@ public class NifMaterialAlphaControllerTests
             "sStorm04:0",
             "PCloud01",
             "NiMaterialProperty",
-            "NiAlphaController",
+            "NiAlphaController"
         ]);
 
         var nextOffset = 0;
+
         int AddBlock(string type, int size)
         {
             var index = nif.Blocks.Count;
@@ -183,7 +184,7 @@ public class NifMaterialAlphaControllerTests
                 Index = index,
                 TypeName = type,
                 DataOffset = nextOffset,
-                Size = size,
+                Size = size
             });
             nextOffset += size;
             return index;
@@ -193,25 +194,25 @@ public class NifMaterialAlphaControllerTests
         {
             AddBlock("NiMaterialProperty", 4),
             AddBlock("NiMaterialProperty", 4),
-            AddBlock("NiMaterialProperty", 4),
+            AddBlock("NiMaterialProperty", 4)
         };
         var controllerRefs = new[]
         {
             AddBlock("NiAlphaController", NifTimeControllerHeader.HeaderSize),
             AddBlock("NiAlphaController", NifTimeControllerHeader.HeaderSize),
-            AddBlock("NiAlphaController", NifTimeControllerHeader.HeaderSize),
+            AddBlock("NiAlphaController", NifTimeControllerHeader.HeaderSize)
         };
         var interpolatorRefs = new[]
         {
             AddBlock("NiFloatInterpolator", 8),
             AddBlock("NiFloatInterpolator", 8),
-            AddBlock("NiFloatInterpolator", 8),
+            AddBlock("NiFloatInterpolator", 8)
         };
         var floatDataRefs = new[]
         {
             AddBlock("NiFloatData", 48),
             AddBlock("NiFloatData", 48),
-            AddBlock("NiFloatData", 48),
+            AddBlock("NiFloatData", 48)
         };
         const int controlledBlockStride = 29;
         const int sequenceTailSize = 32;
@@ -242,7 +243,7 @@ public class NifMaterialAlphaControllerTests
             (2.3333f, 0.5f),
             (3f, 0.5f),
             (5.3333f, 0f),
-            (45f, 0f),
+            (45f, 0f)
         ]);
         WriteFloatKeys(data, nif.Blocks[floatDataRefs[1]].DataOffset,
         [
@@ -250,7 +251,7 @@ public class NifMaterialAlphaControllerTests
             (2.3333f, 0.25f),
             (3f, 0.35f),
             (5.3333f, 0f),
-            (45f, 0f),
+            (45f, 0f)
         ]);
         WriteFloatKeys(data, nif.Blocks[floatDataRefs[2]].DataOffset,
         [
@@ -258,7 +259,7 @@ public class NifMaterialAlphaControllerTests
             (0.6667f, 0.05f),
             (4f, 0.05f),
             (6.3333f, 0f),
-            (45f, 0f),
+            (45f, 0f)
         ]);
 
         var sequenceOffset = nif.Blocks[sequenceRef].DataOffset;
@@ -306,17 +307,25 @@ public class NifMaterialAlphaControllerTests
         }
     }
 
-    private static void WriteInt32(byte[] data, int offset, int value) =>
+    private static void WriteInt32(byte[] data, int offset, int value)
+    {
         BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(offset, 4), value);
+    }
 
-    private static void WriteUInt32(byte[] data, int offset, uint value) =>
+    private static void WriteUInt32(byte[] data, int offset, uint value)
+    {
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(offset, 4), value);
+    }
 
-    private static void WriteUInt16(byte[] data, int offset, ushort value) =>
+    private static void WriteUInt16(byte[] data, int offset, ushort value)
+    {
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(offset, 2), value);
+    }
 
-    private static void WriteSingle(byte[] data, int offset, float value) =>
+    private static void WriteSingle(byte[] data, int offset, float value)
+    {
         BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(offset, 4), value);
+    }
 
     private static void AssertCurve(NifFloatKey[] actual, (float Time, float Value)[] expected)
     {

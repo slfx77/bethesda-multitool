@@ -1,8 +1,7 @@
 using System.Buffers.Binary;
 using System.Numerics;
-using BethesdaMultitool.Core.Formats.Nif.Parser;
-using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -200,13 +199,13 @@ public sealed class HavokCollisionExtractorTests
         Vector3[] vertices =
         [
             new(-1, -1, -1), new(-1, -1, 1), new(-1, 1, -1), new(-1, 1, 1),
-            new(1, -1, -1), new(1, -1, 1), new(1, 1, -1), new(1, 1, 1),
+            new(1, -1, -1), new(1, -1, 1), new(1, 1, -1), new(1, 1, 1)
         ];
         Vector4[] planes =
         [
             new(1, 0, 0, -1), new(-1, 0, 0, -1),
             new(0, 1, 0, -1), new(0, -1, 0, -1),
-            new(0, 0, 1, -1), new(0, 0, -1, -1),
+            new(0, 0, 1, -1), new(0, 0, -1, -1)
         ];
         var (data, nif) = BuildNif(
             true,
@@ -326,7 +325,7 @@ public sealed class HavokCollisionExtractorTests
             NifVersions.Gamebryo20005,
             CollisionObject(99, 1, false),
             RigidBody(2, false),
-            Tes4PackedShape(3, new Vector3(2, 2, 2), false, subShapeCount: 2),
+            Tes4PackedShape(3, new Vector3(2, 2, 2), false, 2),
             Tes4PackedData(
                 [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)],
                 [(0, 1, 2)],
@@ -353,7 +352,7 @@ public sealed class HavokCollisionExtractorTests
             NifVersions.Gamebryo20005,
             CollisionObject(99, 1, false),
             RigidBody(2, false),
-            Tes4PackedShape(3, Vector3.One, false, subShapeCount: 0),
+            Tes4PackedShape(3, Vector3.One, false, 0),
             Tes4PackedData(
                 [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)],
                 [(0, 1, 2)],
@@ -379,7 +378,7 @@ public sealed class HavokCollisionExtractorTests
             NifVersions.Gamebryo10012,
             CollisionObject(99, 1, false),
             Tes4RigidBodyT(2, new Vector3(10, 0, 0), Quaternion.Identity, false),
-            Tes4PackedShape(3, Vector3.One, false, subShapeCount: 0),
+            Tes4PackedShape(3, Vector3.One, false, 0),
             Tes4PackedData([new Vector3(1, 0, 0)], [(0, 0, 0)], false));
 
         var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
@@ -429,7 +428,9 @@ public sealed class HavokCollisionExtractorTests
     // Existing fixtures model FO3/FNV-layout blocks, so the no-version overload pins the modern
     // 20.2.0.7 stream version; TES4-era fixtures pass their own.
     private static (byte[] data, NifInfo nif) BuildNif(bool bigEndian, params (string type, byte[] payload)[] blocks)
-        => BuildNif(bigEndian, NifVersions.Gamebryo202007, blocks);
+    {
+        return BuildNif(bigEndian, NifVersions.Gamebryo202007, blocks);
+    }
 
     private static (byte[] data, NifInfo nif) BuildNif(bool bigEndian, uint version,
         params (string type, byte[] payload)[] blocks)
@@ -658,7 +659,7 @@ public sealed class HavokCollisionExtractorTests
             transform.M11, transform.M12, transform.M13, transform.M14,
             transform.M21, transform.M22, transform.M23, transform.M24,
             transform.M31, transform.M32, transform.M33, transform.M34,
-            transform.M41, transform.M42, transform.M43, transform.M44,
+            transform.M41, transform.M42, transform.M43, transform.M44
         ];
         for (var i = 0; i < values.Length; i++) WriteF(b, 20 + i * 4, values[i], be);
         return (shapeType, b);

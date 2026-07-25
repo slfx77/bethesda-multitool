@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using BethesdaMultitool;
@@ -6,7 +7,6 @@ using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
-using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
@@ -14,6 +14,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using Vortice.Direct3D12;
+using Vortice.Mathematics;
 
 namespace BethesdaRendererProfiler;
 
@@ -23,10 +24,16 @@ namespace BethesdaRendererProfiler;
 ///     CLI <c>render</c> command (which uses the lightweight <c>GpuSpriteRenderer12</c> + skin shaders),
 ///     this reproduces the viewer's material/alpha/pass behaviour, so viewer-specific bugs (opaque-vs-
 ///     transparent, effect shaders, baked shadows) are reproducible + verifiable offscreen.
-///     <para>Invoked via <c>--render-nif &lt;esm-relative-path&gt; --archive &lt;meshes.bsa&gt;
-///     --textures-bsa &lt;a.bsa&gt; [&lt;b.bsa&gt; …] --out &lt;png&gt; [--size N]
-///     [--bg &lt;#RRGGBB|magenta|gray|checker&gt;]</c>. <c>--bg</c> composites the (transparent)
-///     render over an opaque backdrop so transparency-vs-opacity bugs are visible.</para>
+///     <para>
+///         Invoked via
+///         <c>
+///             --render-nif &lt;esm-relative-path&gt; --archive &lt;meshes.bsa&gt;
+///             --textures-bsa &lt;a.bsa&gt; [&lt;b.bsa&gt; …] --out &lt;png&gt; [--size N]
+///             [--bg &lt;#RRGGBB|magenta|gray|checker&gt;]
+///         </c>
+///         . <c>--bg</c> composites the (transparent)
+///         render over an opaque backdrop so transparency-vs-opacity bugs are visible.
+///     </para>
 /// </summary>
 internal static class NifHeadlessRenderer
 {
@@ -40,11 +47,12 @@ internal static class NifHeadlessRenderer
         string? bgSpec = null;
         string? bgClearSpec = null; // --bg-clear: clear the target OPAQUE before rendering (see below)
         string? leafTextureOverride = null; // --leaf-texture: SPT leaf atlas (the TREE ICON stand-in)
-        float? leafDimming = null;   // --leaf-dimming: TREE CNAM LeafDimmingValue stand-in (0..1)
+        float? leafDimming = null; // --leaf-dimming: TREE CNAM LeafDimmingValue stand-in (0..1)
         float? branchDimming = null; // --branch-dimming: TREE CNAM BranchDimmingValue stand-in (0..1)
         float? litHour = null; // when set, bind real AtmosphereState lighting (sun+ambient) at this hour
         var azimuthDeg = 315f; // camera azimuth; override with --yaw to view a specific face
-        var animTime = 0f; // --anim-time: pins the animation clock (UV scroll / skinned pose) for deterministic captures
+        var animTime =
+            0f; // --anim-time: pins the animation clock (UV scroll / skinned pose) for deterministic captures
         // Verification-only override for CameraOrigin.w. Paired direct-NIF captures can vary the
         // active IMGS EmissiveMult while holding every other GPU input constant.
         var emissiveMult = 1f;
@@ -85,8 +93,8 @@ internal static class NifHeadlessRenderer
                 case "--emissive-mult":
                     emissiveMult = float.TryParse(
                                        Next(args, ref i),
-                                       System.Globalization.NumberStyles.Float,
-                                       System.Globalization.CultureInfo.InvariantCulture,
+                                       NumberStyles.Float,
+                                       CultureInfo.InvariantCulture,
                                        out var em)
                                    && float.IsFinite(em)
                         ? em
@@ -101,11 +109,13 @@ internal static class NifHeadlessRenderer
                     {
                         textureArchives.Add(args[++i]);
                     }
+
                     break;
             }
         }
 
-        if (string.IsNullOrWhiteSpace(nifPath) || string.IsNullOrWhiteSpace(meshArchive) || string.IsNullOrWhiteSpace(outPng))
+        if (string.IsNullOrWhiteSpace(nifPath) || string.IsNullOrWhiteSpace(meshArchive) ||
+            string.IsNullOrWhiteSpace(outPng))
         {
             Console.Error.WriteLine("Usage: --render-nif <esm-relative-nif-path> --archive <meshes.bsa> " +
                                     "--textures-bsa <tex.bsa> [<tex2.bsa> ...] --out <png> [--size N] " +
@@ -113,6 +123,7 @@ internal static class NifHeadlessRenderer
                                     "[--emissive-mult <n>]");
             return 2;
         }
+
         if (!File.Exists(meshArchive))
         {
             Console.Error.WriteLine($"Meshes archive not found: {meshArchive}");
@@ -128,7 +139,7 @@ internal static class NifHeadlessRenderer
 
         Console.WriteLine(
             $"[nif-render] {nifPath}  via {Path.GetFileName(meshArchive)}  -> {outPng} ({size}px) " +
-            $"EmissiveMult={emissiveMult.ToString("G9", System.Globalization.CultureInfo.InvariantCulture)}");
+            $"EmissiveMult={emissiveMult.ToString("G9", CultureInfo.InvariantCulture)}");
 
         var gpu = GpuDevice12.Create(false);
         if (gpu is null)
@@ -174,7 +185,7 @@ internal static class NifHeadlessRenderer
                 leafTextures = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     [nifPath!] = leafTextureOverride!,
-                    ["trees\\" + Path.GetFileName(nifPath!)] = leafTextureOverride!,
+                    ["trees\\" + Path.GetFileName(nifPath!)] = leafTextureOverride!
                 };
             }
 
@@ -187,7 +198,7 @@ internal static class NifHeadlessRenderer
                 dimming = new Dictionary<string, SpeedTreeDimming>(StringComparer.OrdinalIgnoreCase)
                 {
                     [nifPath!] = pair,
-                    ["trees\\" + Path.GetFileName(nifPath!)] = pair,
+                    ["trees\\" + Path.GetFileName(nifPath!)] = pair
                 };
             }
 
@@ -204,7 +215,7 @@ internal static class NifHeadlessRenderer
                 // sibling. Never hide it solely because its filename resembles a world LOD/imposter;
                 // Skyrim's placed WRCastleMainBuilding01LOD is a real retail regression fixture.
                 ShowImposters = true,
-                StreamingThrottled = false, // drain decodes/uploads as fast as possible
+                StreamingThrottled = false // drain decodes/uploads as fast as possible
             };
 
             // Water-shader submeshes are DIVERTED out of the reference draw path into authored
@@ -214,7 +225,7 @@ internal static class NifHeadlessRenderer
             // (WorldView3DControl.Frame) by rendering the accumulated planes each frame.
             water = new WaterRenderer12(gpu, recorder, ring, rootSig, heap, deletion)
             {
-                ModernPipelineEnabled = EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ModernWater),
+                ModernPipelineEnabled = EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ModernWater)
             };
 
             // Synthetic 1-cell scene: one REFR at the world origin in grid cell (0,0). A null spatial
@@ -228,7 +239,7 @@ internal static class NifHeadlessRenderer
                 X = 0,
                 Y = 0,
                 Z = 0,
-                Scale = 1f,
+                Scale = 1f
             };
             var cell = new CellRecord { FormId = 1, GridX = 0, GridY = 0, PlacedObjects = [placement] };
             var cells = new Dictionary<(int gx, int gy), CellRecord> { [(0, 0)] = cell };
@@ -248,7 +259,8 @@ internal static class NifHeadlessRenderer
             {
                 frameCenter = (bMin + bMax) * 0.5f;
                 frameRadius = (bMax - bMin).Length() * 0.5f;
-                Console.WriteLine($"[nif-render] AABB center=({frameCenter.X:F0},{frameCenter.Y:F0},{frameCenter.Z:F0}) radius={frameRadius:F0}");
+                Console.WriteLine(
+                    $"[nif-render] AABB center=({frameCenter.X:F0},{frameCenter.Y:F0},{frameCenter.Z:F0}) radius={frameRadius:F0}");
             }
 
             // Render until the mesh + textures finish streaming (or a safety cap), then save. The first
@@ -291,6 +303,7 @@ internal static class NifHeadlessRenderer
                 {
                     BindFlatAtmosphere(cmd, recorder.FrameIndex, ring, emissiveMult);
                 }
+
                 // --bg-clear: clear the target to an OPAQUE color BEFORE rendering, instead of the
                 // post-composite --bg. Required to judge multiplicative (ZERO/SRC_COLOR) decals —
                 // e.g. baked soft-shadow planes — whose output is fb·srcColor: over the default
@@ -299,7 +312,7 @@ internal static class NifHeadlessRenderer
                 if (!string.IsNullOrWhiteSpace(bgClearSpec))
                 {
                     var (cr, cg, cb) = ParseColor(bgClearSpec);
-                    target.Bind(cmd, new Vortice.Mathematics.Color4(cr / 255f, cg / 255f, cb / 255f, 1f));
+                    target.Bind(cmd, new Color4(cr / 255f, cg / 255f, cb / 255f));
                 }
                 else
                 {
@@ -385,6 +398,7 @@ internal static class NifHeadlessRenderer
                         $"local radius {localRadius:F0})");
                     break;
                 }
+
                 Thread.Sleep(40); // let background decode/texture-resolve advance before re-rendering
             }
 
@@ -418,6 +432,7 @@ internal static class NifHeadlessRenderer
             {
                 CompositeOverBackground(rgba, size, size, bgSpec);
             }
+
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPng))!);
             PngWriter.SaveRgba(rgba, size, size, outPng);
             Console.WriteLine($"[nif-render] saved {outPng}");
@@ -460,7 +475,7 @@ internal static class NifHeadlessRenderer
 
                     target.Bind(cmd);
                     references.SetLeafBillboardBasis(camRight, camUp);
-                    references.SetWind(Vector2.UnitX, 0f, animTime + (k / 30f));
+                    references.SetWind(Vector2.UnitX, 0f, animTime + k / 30f);
                     if (guiShape)
                     {
                         var pose = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12
@@ -502,7 +517,7 @@ internal static class NifHeadlessRenderer
                     // exercise the frozen-scene path; a handful ⇒ the scene froze as intended.
                     Console.WriteLine(
                         $"[nif-render] saved {outPng2} (hold {animHoldIterations} iters, clock " +
-                        $"{animTime:F2}->{animTime + (animHoldIterations / 30f):F2}s, " +
+                        $"{animTime:F2}->{animTime + animHoldIterations / 30f:F2}s, " +
                         $"rebuilds during hold={references.BatchContentVersion - holdStartContentVersion})");
                 }
             }
@@ -516,7 +531,15 @@ internal static class NifHeadlessRenderer
         }
         finally
         {
-            try { recorder?.WaitForGpuIdle(); } catch { /* best effort */ }
+            try
+            {
+                recorder?.WaitForGpuIdle();
+            }
+            catch
+            {
+                /* best effort */
+            }
+
             target?.Dispose();
             water?.Dispose();
             references?.Dispose();
@@ -532,9 +555,11 @@ internal static class NifHeadlessRenderer
         }
     }
 
-    /// <summary>Binds a neutral atmosphere CB (b3) — lighting/fog/sky disabled, so
-    /// reference.frag uses its legacy flat shade (0.4 + 0.6·lambert). Faithful for verifying
-    /// material/alpha, not time-of-day.</summary>
+    /// <summary>
+    ///     Binds a neutral atmosphere CB (b3) — lighting/fog/sky disabled, so
+    ///     reference.frag uses its legacy flat shade (0.4 + 0.6·lambert). Faithful for verifying
+    ///     material/alpha, not time-of-day.
+    /// </summary>
     private static void BindFlatAtmosphere(
         ID3D12GraphicsCommandList cmd,
         int frameIndex,
@@ -555,12 +580,14 @@ internal static class NifHeadlessRenderer
         BindEmptyPointLights(cmd, frameIndex, ring);
     }
 
-    /// <summary>Binds the REAL <see cref="AtmosphereState" /> lighting (sun + ambient) at
-    /// <paramref name="gameHour" /> — the exact constants the live viewer uploads — so the worldspace
-    /// shading path (full-strength ambient + sun·N·L, the engine SLS sum) is reproduced offscreen. Sky +
-    /// fog are disabled to isolate the surface lighting. Mirrors the complete append-only
-    /// WorldView3DControl.AtmosphereConstants layout. uAmbientColor.w stays 0 → the shader's
-    /// 1.0 fallback (engine value).</summary>
+    /// <summary>
+    ///     Binds the REAL <see cref="AtmosphereState" /> lighting (sun + ambient) at
+    ///     <paramref name="gameHour" /> — the exact constants the live viewer uploads — so the worldspace
+    ///     shading path (full-strength ambient + sun·N·L, the engine SLS sum) is reproduced offscreen. Sky +
+    ///     fog are disabled to isolate the surface lighting. Mirrors the complete append-only
+    ///     WorldView3DControl.AtmosphereConstants layout. uAmbientColor.w stays 0 → the shader's
+    ///     1.0 fallback (engine value).
+    /// </summary>
     private static void BindLitAtmosphere(
         ID3D12GraphicsCommandList cmd,
         int frameIndex,
@@ -575,22 +602,27 @@ internal static class NifHeadlessRenderer
         // zero: this verifier has no world placement cache, so it binds an empty local-light list.
         const int atmosphereBytes = 10 * 16 + 4 * 64 + 4 * 16 + 6 * 16;
         var cb = new float[atmosphereBytes / sizeof(float)];
+
         void Put(int slot, float x, float y, float z, float w)
         {
-            cb[slot * 4 + 0] = x; cb[slot * 4 + 1] = y; cb[slot * 4 + 2] = z; cb[slot * 4 + 3] = w;
+            cb[slot * 4 + 0] = x;
+            cb[slot * 4 + 1] = y;
+            cb[slot * 4 + 2] = z;
+            cb[slot * 4 + 3] = w;
         }
+
         Put(0, a.SunWorldDirection.X, a.SunWorldDirection.Y, a.SunWorldDirection.Z, a.SunIntensity);
-        Put(1, a.SunColor.X, a.SunColor.Y, a.SunColor.Z, 1f);   // w = lightingEnabled
+        Put(1, a.SunColor.X, a.SunColor.Y, a.SunColor.Z, 1f); // w = lightingEnabled
         Put(2, a.AmbientColor.X, a.AmbientColor.Y, a.AmbientColor.Z, 0f);
-        Put(3, a.SkyTopColor.X, a.SkyTopColor.Y, a.SkyTopColor.Z, 0f);   // w = skyEnabled OFF
+        Put(3, a.SkyTopColor.X, a.SkyTopColor.Y, a.SkyTopColor.Z, 0f); // w = skyEnabled OFF
         Put(4, a.SkyHorizonColor.X, a.SkyHorizonColor.Y, a.SkyHorizonColor.Z, 1f); // w = HDR active
-        Put(5, a.FogColor.X, a.FogColor.Y, a.FogColor.Z, 0f);   // w = fogEnabled OFF
+        Put(5, a.FogColor.X, a.FogColor.Y, a.FogColor.Z, 0f); // w = fogEnabled OFF
         // Oblique eye matching the 315°/30° ortho view — NOT directly above. A straight-up eye makes V
         // point along +Z, and a below-horizon/degenerate sunDir gives H = normalize(sunDir+V) ≈
         // normalize(0) = NaN in the specular path, which 4×MSAA resolves to a blank frame.
         var eye = new Vector3(focus.X - 5793f, focus.Y - 5793f, focus.Z + 4096f); // NW + up
         Put(6, gameHour, a.FogNear, a.FogFar, 0f);
-        Put(7, eye.X, eye.Y, eye.Z, a.FogPower);  // camera pos for spec/fog
+        Put(7, eye.X, eye.Y, eye.Z, a.FogPower); // camera pos for spec/fog
         Put(8, a.FogFarColor.X, a.FogFarColor.Y, a.FogFarColor.Z, a.FogMaxOpacity);
         // CameraOrigin (camera-relative render origin) = 0: this is an ABSOLUTE ortho render, so nothing is
         // shifted. The reference VS no longer reads this slot anyway (it folds the origin CPU-side); leaving
@@ -616,8 +648,10 @@ internal static class NifHeadlessRenderer
             alloc.GpuAddress);
     }
 
-    /// <summary>Extracts the NIF's local-space AABB (for framing) by parsing the mesh from the archive.
-    /// The path is tried as-is and with a <c>meshes\</c> prefix (ESM-relative vs archive-internal).</summary>
+    /// <summary>
+    ///     Extracts the NIF's local-space AABB (for framing) by parsing the mesh from the archive.
+    ///     The path is tried as-is and with a <c>meshes\</c> prefix (ESM-relative vs archive-internal).
+    /// </summary>
     private static bool TryExtractModelBounds(
         MeshArchiveSet meshArchives, NifTextureResolver textureResolver, string nifPath,
         out Vector3 min, out Vector3 max)
@@ -667,6 +701,7 @@ internal static class NifHeadlessRenderer
         {
             return false;
         }
+
         try
         {
             var nif = NifParser.Parse(bytes);
@@ -686,8 +721,10 @@ internal static class NifHeadlessRenderer
         }
     }
 
-    private static bool StreamingComplete(WorldRenderStats r) =>
-        StreamingQuiescence.IsQuiesced(r, terrain: null, strict: false);
+    private static bool StreamingComplete(WorldRenderStats r)
+    {
+        return StreamingQuiescence.IsQuiesced(r, terrain: null, strict: false);
+    }
 
     private static void WaitForFence(ID3D12Fence fence, ulong value)
     {
@@ -696,10 +733,12 @@ internal static class NifHeadlessRenderer
         D3D12FenceWaiter.WaitForFence(fence, value, ev);
     }
 
-    /// <summary>Alpha-composites <paramref name="rgba" /> (premultiplied) over a solid backdrop or a
-    /// checkerboard in place, forcing the result opaque. <paramref name="spec" /> is a hex color
-    /// (<c>#RRGGBB</c>/<c>RRGGBB</c>), a named color (magenta/gray/white/black/green), or
-    /// <c>checker</c> (alternating grays — best for spotting transparency holes).</summary>
+    /// <summary>
+    ///     Alpha-composites <paramref name="rgba" /> (premultiplied) over a solid backdrop or a
+    ///     checkerboard in place, forcing the result opaque. <paramref name="spec" /> is a hex color
+    ///     (<c>#RRGGBB</c>/<c>RRGGBB</c>), a named color (magenta/gray/white/black/green), or
+    ///     <c>checker</c> (alternating grays — best for spotting transparency holes).
+    /// </summary>
     private static void CompositeOverBackground(byte[] rgba, int width, int height, string spec)
     {
         var checker = spec.Equals("checker", StringComparison.OrdinalIgnoreCase);
@@ -713,12 +752,14 @@ internal static class NifHeadlessRenderer
                 byte br, bg, bb;
                 if (checker)
                 {
-                    var dark = ((x / cell) + (y / cell)) % 2 == 0;
+                    var dark = (x / cell + y / cell) % 2 == 0;
                     br = bg = bb = dark ? (byte)80 : (byte)160;
                 }
                 else
                 {
-                    br = sr; bg = sg; bb = sb;
+                    br = sr;
+                    bg = sg;
+                    bb = sb;
                 }
 
                 var a = rgba[i + 3] / 255f;
@@ -743,14 +784,16 @@ internal static class NifHeadlessRenderer
             case "green": return (0, 200, 0);
             case "cyan": return (0, 255, 255);
         }
+
         var hex = spec.StartsWith('#') ? spec[1..] : spec;
         if (hex.Length == 6
-            && byte.TryParse(hex.AsSpan(0, 2), System.Globalization.NumberStyles.HexNumber, null, out var r)
-            && byte.TryParse(hex.AsSpan(2, 2), System.Globalization.NumberStyles.HexNumber, null, out var g)
-            && byte.TryParse(hex.AsSpan(4, 2), System.Globalization.NumberStyles.HexNumber, null, out var b))
+            && byte.TryParse(hex.AsSpan(0, 2), NumberStyles.HexNumber, null, out var r)
+            && byte.TryParse(hex.AsSpan(2, 2), NumberStyles.HexNumber, null, out var g)
+            && byte.TryParse(hex.AsSpan(4, 2), NumberStyles.HexNumber, null, out var b))
         {
             return (r, g, b);
         }
+
         return (255, 0, 255); // unparseable → magenta (loud, so it's obvious the spec was wrong)
     }
 
@@ -764,8 +807,12 @@ internal static class NifHeadlessRenderer
             rgba[i + 2] = bgra[i];
             rgba[i + 3] = bgra[i + 3];
         }
+
         return rgba;
     }
 
-    private static string? Next(string[] args, ref int i) => i + 1 < args.Length ? args[++i] : null;
+    private static string? Next(string[] args, ref int i)
+    {
+        return i + 1 < args.Length ? args[++i] : null;
+    }
 }

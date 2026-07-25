@@ -38,7 +38,7 @@ public class AlternateTextureHarvestIntegrationTests
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, cancellationToken: TestContext.Current.CancellationToken);
+            esm!, TestContext.Current.CancellationToken);
 
         var index = result.Records.AlternateTexturesByFormId;
         Assert.NotEmpty(index);

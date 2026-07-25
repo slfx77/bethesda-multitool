@@ -15,8 +15,10 @@ public sealed class FnvGeometryArtifactRetailTests
 {
     private const string MeshesBsaRelative =
         @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+
     private const string TexturesBsaRelative =
         @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Textures.bsa";
+
     private const string Textures2BsaRelative =
         @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Textures2.bsa";
 
@@ -89,7 +91,7 @@ public sealed class FnvGeometryArtifactRetailTests
 
             var vertices = GpuMeshUploader.BuildVertices(
                 submesh,
-                preserveAuthoredVertexAlpha: true);
+                true);
             Assert.Equal(submesh.VertexCount, vertices.Length);
 
             var deformed = new Vector3[3];
@@ -103,9 +105,9 @@ public sealed class FnvGeometryArtifactRetailTests
                     var offset = FnvTallGrassWind.EvaluateWorldOffset(
                         new Vector2(MathF.PI * 64f, 0f),
                         FnvTallGrassWind.GrassWindMagnitudeMaxDefault,
-                        timerValue: 0.0,
-                        grassWaveMultiplier: 15f,
-                        authoredVertexAlpha: vertex.VertexColor.W);
+                        0.0,
+                        15f,
+                        vertex.VertexColor.W);
                     deformed[corner] = vertex.Position + new Vector3(offset, 0f);
                     Assert.True(IsFinite(deformed[corner]));
                     Assert.Equal(vertex.Position.Z, deformed[corner].Z);
@@ -159,22 +161,29 @@ public sealed class FnvGeometryArtifactRetailTests
             submesh.Positions[offset + 2]);
     }
 
-    private static float MaximumEdge(Vector3 a, Vector3 b, Vector3 c) =>
-        MathF.Max(Vector3.Distance(a, b), MathF.Max(Vector3.Distance(b, c), Vector3.Distance(c, a)));
+    private static float MaximumEdge(Vector3 a, Vector3 b, Vector3 c)
+    {
+        return MathF.Max(Vector3.Distance(a, b), MathF.Max(Vector3.Distance(b, c), Vector3.Distance(c, a)));
+    }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 
-    private static float[] FrontPlaneCoordinates(RenderableSubmesh submesh) =>
-        Enumerable.Range(0, submesh.VertexCount)
+    private static float[] FrontPlaneCoordinates(RenderableSubmesh submesh)
+    {
+        return Enumerable.Range(0, submesh.VertexCount)
             .Select(index => Position(submesh, index).Y)
             .Where(y => y < -1800f)
             .Distinct()
             .ToArray();
+    }
 
     private static ComponentSummary[] Components(RenderableSubmesh submesh)
     {
         var parent = Enumerable.Range(0, submesh.VertexCount).ToArray();
+
         int Find(int value)
         {
             while (parent[value] != value)
@@ -210,11 +219,11 @@ public sealed class FnvGeometryArtifactRetailTests
             .ToArray();
     }
 
-    private static NifTextureResolver OpenRetailTextures() => new(
-    [
-        FindRetailArchive(TexturesBsaRelative, "textures"),
-        FindRetailArchive(Textures2BsaRelative, "textures2"),
-    ]);
+    private static NifTextureResolver OpenRetailTextures()
+    {
+        return new NifTextureResolver(FindRetailArchive(TexturesBsaRelative, "textures"),
+            FindRetailArchive(Textures2BsaRelative, "textures2"));
+    }
 
     private static string FindRetailArchive(string relativePath, string label)
     {

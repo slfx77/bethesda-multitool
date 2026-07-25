@@ -1,9 +1,8 @@
 using System.Numerics;
-using BethesdaMultitool.Core.Formats.Nif.Parser;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
-using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using Xunit;
 using Xunit.Sdk;
@@ -210,4 +209,3 @@ public sealed class NifTextureAnimationEvaluatorTests
         NifTextureAnimationEvaluator.NifTextureTransformSnapshot Transform,
         RenderableSubmesh RawSubmesh);
 }
-

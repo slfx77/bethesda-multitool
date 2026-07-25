@@ -24,5 +24,7 @@ public sealed class DialogueExtractorsTests
     [InlineData(BethesdaGame.Starfield, typeof(OblivionDialogueExtractor))]
     [InlineData(BethesdaGame.Unknown, typeof(OblivionDialogueExtractor))]
     public void For_PinsExtractorPerGame(BethesdaGame game, Type expected)
-        => Assert.IsType(expected, DialogueExtractors.For(game));
+    {
+        Assert.IsType(expected, DialogueExtractors.For(game));
+    }
 }

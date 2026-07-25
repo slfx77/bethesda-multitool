@@ -58,10 +58,10 @@ public sealed class MasterChildCarryForwardLandTests
                 FormId = MasterLandId,
                 Timestamp = 0,
                 VcsInfo = 0,
-                Version = 15,
+                Version = 15
             },
             Offset = 0,
-            Subrecords = [new ParsedSubrecord { Signature = "DATA", Data = [0, 0, 0, 0] }],
+            Subrecords = [new ParsedSubrecord { Signature = "DATA", Data = [0, 0, 0, 0] }]
         };
         var masterByFormId = new Dictionary<uint, ParsedMainRecord> { [MasterLandId] = masterLand };
         var masterIndex = new MasterRecordIndex
@@ -77,7 +77,7 @@ public sealed class MasterChildCarryForwardLandTests
             RefsByCell = [],
             NavmsByCell = [],
             LandsByCell = new Dictionary<uint, List<uint>> { [CellId] = [MasterLandId] },
-            CellContexts = [],
+            CellContexts = []
         };
         var plan = new EmitPlan
         {
@@ -89,8 +89,8 @@ public sealed class MasterChildCarryForwardLandTests
             Meta = new PlanMetadata
             {
                 NextObjectId = 0x800,
-                PlannerCoverage = ImmutableHashSet<string>.Empty,
-            },
+                PlannerCoverage = ImmutableHashSet<string>.Empty
+            }
         };
 
         return new CellChildEncodeContext(
@@ -99,12 +99,15 @@ public sealed class MasterChildCarryForwardLandTests
             new Dictionary<uint, PlannerXespParentClassifier.Resolution>());
     }
 
-    private static CellEncodeState MakeState() => new()
+    private static CellEncodeState MakeState()
     {
-        CellFormId = CellId,
-        Mode = CellMergeMode.PersistentOnly,
-        IsMasterAnchored = true,
-        IsInterior = false,
-        DropRenderCullingMarkers = false,
-    };
+        return new CellEncodeState
+        {
+            CellFormId = CellId,
+            Mode = CellMergeMode.PersistentOnly,
+            IsMasterAnchored = true,
+            IsInterior = false,
+            DropRenderCullingMarkers = false
+        };
+    }
 }

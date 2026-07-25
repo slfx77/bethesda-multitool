@@ -201,14 +201,17 @@ public sealed class WaterAppearanceTests
         Assert.Equal(water.SurfaceTexture, appearance.SurfaceTexture);
     }
 
-    private static WaterRecord WaterWith(string? editorId, byte flags) => new()
+    private static WaterRecord WaterWith(string? editorId, byte flags)
     {
-        FormId = 0x1,
-        EditorId = editorId,
-        WaterFlags = [flags],
-        // FromWaterRecord needs at least one color or it returns null.
-        VisualProperties = new Dictionary<string, object?> { ["ShallowColor"] = 0x00_30_20_10u }
-    };
+        return new WaterRecord
+        {
+            FormId = 0x1,
+            EditorId = editorId,
+            WaterFlags = [flags],
+            // FromWaterRecord needs at least one color or it returns null.
+            VisualProperties = new Dictionary<string, object?> { ["ShallowColor"] = 0x00_30_20_10u }
+        };
+    }
 
     [Fact]
     public void FromWaterRecord_LavaByName_IsLavaAndCausesDamage()

@@ -21,7 +21,7 @@ public class LeveledListDecodeTests
         Assert.SkipUnless(File.Exists(esm), $"Not found: {esm}");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm, cancellationToken: TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
 
         var leveled = result.Records.GenericRecords
             .Where(r => r.RecordType is "LVLI" or "LVLC" or "LVSP")

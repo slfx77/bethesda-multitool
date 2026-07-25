@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Utilities;
-using BethesdaMultitool.Core.Formats.Esm;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm;

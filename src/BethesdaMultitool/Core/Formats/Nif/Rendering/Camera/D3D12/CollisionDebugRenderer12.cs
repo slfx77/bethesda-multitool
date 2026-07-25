@@ -19,21 +19,30 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 ///     so the user can visually compare collision against the rendered meshes. Off by default; toggled
 ///     from the Visibility menu.
 ///     <para>
-///         Reuses the cellgrid line shaders + PSO and draws one <c>DrawInstanced</c> line list. Each
-///         collision triangle contributes three edges (6 line vertices). The transformed line list lives
-///         in a content-addressed persistent upload buffer, so an unchanged view reuses it across frames;
-///         only the small view/projection constant remains in the per-frame ring. Depth is DISABLED so the
-///         cage stays visible through the meshes it overlays. It is drawn into the LDR back buffer after
-///         tonemapping, keeping this editor diagnostic out of scene bloom/exposure. References are globally
-///         distance-sorted; warm meshes draw immediately and a bounded cold-path warmup offers the nearest
-///         misses to the shared reference cache.
+///         Each collision triangle contributes three edges (6 line vertices) into a content-addressed
+///         persistent upload buffer reused across frames; only the small per-frame constant block is
+///         transient. The buffer is bound as a <c>StructuredBuffer&lt;float3&gt;</c> root SRV and the
+///         collision_line vertex shader expands every edge into a screen-space quad from SV_VertexID
+///         (no input-assembler stream); the pixel shader feathers the edge analytically in
+///         render-target pixels. This replaces the driver-dependent fixed-function line-AA
+///         rasterizer state — the quads render identically on every
+///         monitor/adapter/DPI. Depth is DISABLED so the cage stays visible through the meshes it
+///         overlays. It is drawn into the LDR back buffer after tonemapping, keeping this editor
+///         diagnostic out of scene bloom/exposure. References are globally distance-sorted; warm
+///         meshes draw immediately and a bounded cold-path warmup offers the nearest misses to the
+///         shared reference cache.
 ///     </para>
 /// </summary>
 internal sealed class CollisionDebugRenderer12 : IDisposable
 {
-    private const uint UniformsByteSize = 80; // float4x4 (64) + float4 color (16)
-    private const uint VertexStride = 12;     // sizeof(Vector3)
+    private const uint UniformsByteSize = 96; // float4x4 (64) + float4 color (16) + float4 params (16)
+    private const uint VertexStride = 12;     // sizeof(Vector3) — sizing only; the buffer binds as a root SRV
     private const int MaxColdWarmupRequestsPerFrame = 2;
+
+    // Screen-space line profile (render-target pixels): core + feather ≈ a 2.5 px antialiased line,
+    // visually matching the old 1 px fixed-function-AA'd line. Tunable without shader edits.
+    private const float CoreHalfWidthPx = 0.6f;
+    private const float FeatherPx = 0.65f;
 
     // Cap on line vertices retained in the persistent wireframe buffer (each 12 B → ~6 MB at the cap).
     // A dense area's collision cages fit comfortably; beyond this we stop adding (debug overlay — move
@@ -131,13 +140,8 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
             deletionQueue.EnqueueDispose,
             MaxLineVertices);
 
-        var vsBytecode = CompileEmbeddedShader("cellgrid.vert.hlsl", "main", "vs_5_1");
-        var psBytecode = CompileEmbeddedShader("cellgrid.frag.hlsl", "main", "ps_5_1");
-
-        var inputElements = new[]
-        {
-            new InputElementDescription("TEXCOORD", 0, Format.R32G32B32_Float, 0, 0)
-        };
+        var vsBytecode = CompileEmbeddedShader("collision_line.vert.hlsl", "main", "vs_5_1");
+        var psBytecode = CompileEmbeddedShader("collision_line.frag.hlsl", "main", "ps_5_1");
 
         // Depth DISABLED: the collision cage is a comparison overlay — it must stay visible through the
         // meshes it sits inside (you're checking the cage matches/spans the visible geometry), like the
@@ -156,10 +160,9 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
             CullMode = D12.CullMode.None,
             FrontCounterClockwise = true,
             DepthClipEnable = true,
-            // The post-tonemap back buffer is single-sample. Fixed-function line AA keeps the
-            // diagnostic readable without routing it through the scene's MSAA resolve/bloom path.
+            // Antialiasing is analytic in the pixel shader (screen-space quads with a feathered
+            // edge) — deterministic on every GPU/monitor, unlike fixed-function line AA.
             MultisampleEnable = false,
-            AntialiasedLineEnable = true,
         };
 
         var blend = new D12.BlendDescription
@@ -187,8 +190,10 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
             BlendState = blend,
             RasterizerState = rasterizer,
             DepthStencilState = depth,
-            InputLayout = new InputLayoutDescription(inputElements),
-            PrimitiveTopologyType = PrimitiveTopologyType.Line,
+            // No input-assembler stream: the VS reads the line buffer through the t8 root SRV and
+            // expands quads from SV_VertexID.
+            InputLayout = new InputLayoutDescription(),
+            PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
             RenderTargetFormats = new[] { Gpu.D3D12.GpuSceneFormats.LdrOutput },
             DepthStencilFormat = Format.Unknown,
             SampleDescription = new SampleDescription(1, 0),
@@ -197,11 +202,10 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
         _ldrPso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
 
         // Projection exports still composite the optional cage into their HDR/MSAA scene target
-        // before readback. Keep a matching scene PSO for that path; the live viewer selects the
-        // single-sample LDR PSO above after tonemapping.
-        var sceneMsaa = gpu.SceneSampleCount > 1;
-        rasterizer.MultisampleEnable = sceneMsaa;
-        rasterizer.AntialiasedLineEnable = !sceneMsaa;
+        // before readback. Same quad expansion (identical line style to the live viewer); only the
+        // target format/sample count differ. Depth stays disabled — the format merely matches the
+        // bound DSV.
+        rasterizer.MultisampleEnable = gpu.SceneSampleCount > 1;
         psoDesc.RasterizerState = rasterizer;
         psoDesc.RenderTargetFormats = new[] { Gpu.D3D12.GpuSceneFormats.SceneColor };
         psoDesc.DepthStencilFormat = Format.D32_Float;
@@ -236,9 +240,11 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     /// </summary>
     public int Render(
         Matrix4x4 viewProj, VisibilityCylinder cylinder,
+        float viewportWidth, float viewportHeight,
         Vector3 renderOrigin = default, bool ldrTarget = false)
     {
         if (_disposed || SpatialIndex is null || _collisionResolver is null) return 0;
+        if (viewportWidth < 1f || viewportHeight < 1f) return 0;
 
         _candidateScratch.Clear();
         SpatialIndex.QueryCellsInRadius(cylinder.Position.X, -cylinder.Position.Y, cylinder.Radius, _visibleCellScratch);
@@ -302,20 +308,20 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
         var uniforms = new CollisionUniforms
         {
             ViewProj = viewProj,
-            LineColor = new Vector4(0.2f, 1.0f, 0.35f, 0.85f) // bright green, distinct from grid/navmesh
+            LineColor = new Vector4(0.2f, 1.0f, 0.35f, 0.85f), // bright green, distinct from grid/navmesh
+            LineParams = new Vector4(viewportWidth, viewportHeight, CoreHalfWidthPx, FeatherPx),
         };
         unsafe { *(CollisionUniforms*)cbAlloc.CpuPtr = uniforms; }
 
         cmd.SetPipelineState(ldrTarget ? _ldrPso : _scenePso);
-        cmd.IASetPrimitiveTopology(PrimitiveTopology.LineList);
-        cmd.IASetVertexBuffers(0, new VertexBufferView
-        {
-            BufferLocation = cached.Buffer.GPUVirtualAddress,
-            SizeInBytes = (uint)(cached.LineVertexCount * VertexStride),
-            StrideInBytes = VertexStride,
-        });
+        cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        // The line buffer binds as a VS root SRV (t8, space0) — same slot the reference renderer
+        // rebinds per batch, so per-draw rebinding here is the established pattern.
+        cmd.SetGraphicsRootShaderResourceView(
+            (uint)GpuRootSignature12.Slots.ReferenceInstanceSrv, cached.Buffer.GPUVirtualAddress);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, cbAlloc.GpuAddress);
-        cmd.DrawInstanced((uint)cached.LineVertexCount, 1, 0, 0);
+        // Line list is always even (edges are vertex PAIRS): 6 quad vertices per edge.
+        cmd.DrawInstanced((uint)(cached.LineVertexCount / 2 * 6), 1, 0, 0);
 
         return cached.ReferencesDrawn;
     }
@@ -357,6 +363,8 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     {
         public Matrix4x4 ViewProj;
         public Vector4 LineColor;
+        /// <summary>x,y = viewport size px; z = core half-width px; w = feather px.</summary>
+        public Vector4 LineParams;
     }
 }
 #endif

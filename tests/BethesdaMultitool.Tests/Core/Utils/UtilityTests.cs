@@ -326,6 +326,57 @@ public class UtilityTests
         Assert.Empty(subs); // Should not yield since data exceeds buffer
     }
 
+    [Fact]
+    public void IterateSubrecords_LeXxxxExtendedSize_YieldsRealSubrecordWithTrueLength()
+    {
+        // XXXX(4) carrying a >0xFFFF size, followed by NVNM whose own u16 length field is 0.
+        const uint extendedSize = 0x10000; // 65536 — exceeds the 16-bit length field
+        var buf = new byte[10 + 6 + (int)extendedSize];
+
+        // XXXX marker: sig + u16(4) + u32(extendedSize)
+        Encoding.ASCII.GetBytes("XXXX").CopyTo(buf, 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(4), 4);
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(6), extendedSize);
+
+        // Real subrecord: NVNM + u16(0) + payload
+        Encoding.ASCII.GetBytes("NVNM").CopyTo(buf, 10);
+        BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(14), 0);
+
+        var subs = EsmSubrecordUtils.IterateSubrecords(buf, buf.Length, false).ToList();
+
+        Assert.Single(subs); // the XXXX marker itself is not yielded
+        Assert.Equal("NVNM", subs[0].Signature);
+        Assert.Equal(16, subs[0].DataOffset); // after the 10-byte XXXX + 6-byte NVNM header
+        Assert.Equal((int)extendedSize, subs[0].DataLength);
+    }
+
+    [Fact]
+    public void IterateSubrecords_BeXxxxExtendedSize_YieldsRealSubrecordWithTrueLength()
+    {
+        // Big-endian equivalent: sizes are BE and the real subrecord's signature is byte-reversed.
+        const uint extendedSize = 0x10000;
+        var buf = new byte[10 + 6 + (int)extendedSize];
+
+        // "XXXX" byte-reverses to itself.
+        Encoding.ASCII.GetBytes("XXXX").CopyTo(buf, 0);
+        BinaryPrimitives.WriteUInt16BigEndian(buf.AsSpan(4), 4);
+        BinaryPrimitives.WriteUInt32BigEndian(buf.AsSpan(6), extendedSize);
+
+        // "NVNM" stored byte-reversed as "MNVN" + u16(0) BE + payload
+        buf[10] = (byte)'M';
+        buf[11] = (byte)'N';
+        buf[12] = (byte)'V';
+        buf[13] = (byte)'N';
+        BinaryPrimitives.WriteUInt16BigEndian(buf.AsSpan(14), 0);
+
+        var subs = EsmSubrecordUtils.IterateSubrecords(buf, buf.Length, true).ToList();
+
+        Assert.Single(subs);
+        Assert.Equal("NVNM", subs[0].Signature);
+        Assert.Equal(16, subs[0].DataOffset);
+        Assert.Equal((int)extendedSize, subs[0].DataLength);
+    }
+
     #endregion
 
     #region EsmSubrecordUtils.ReadSignatureAsUInt32

@@ -1,6 +1,5 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
-using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -42,8 +41,15 @@ public sealed class VaultSignWindingProbe
         var sign = model.Submeshes.Single(s => s.ShapeName == "VSignStairsR01:0");
         Assert.NotNull(sign.Normals);
 
-        Vector3 Pos(int i) => new(sign.Positions[i * 3], sign.Positions[i * 3 + 1], sign.Positions[i * 3 + 2]);
-        float NormalY(int i) => sign.Normals![i * 3 + 1];
+        Vector3 Pos(int i)
+        {
+            return new Vector3(sign.Positions[i * 3], sign.Positions[i * 3 + 1], sign.Positions[i * 3 + 2]);
+        }
+
+        float NormalY(int i)
+        {
+            return sign.Normals![i * 3 + 1];
+        }
 
         // The back plate: every vertex at local Y == 0 whose authored normal is (0, +1, 0).
         var plate = new HashSet<int>();

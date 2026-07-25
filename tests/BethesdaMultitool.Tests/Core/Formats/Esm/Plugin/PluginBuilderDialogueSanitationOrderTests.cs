@@ -21,6 +21,6 @@ public sealed class PluginBuilderDialogueSanitationOrderTests
         Assert.True(deduplicateIndex >= 0, "PluginBuilder must deduplicate captured INFO records.");
         Assert.True(sanitizeIndex > deduplicateIndex,
             "Duplicate INFO records must be removed before quest-variable sanitation can reserve locals.");
-        Assert.Equal(1, source.Split(deduplicate, StringSplitOptions.None).Length - 1);
+        Assert.Equal(1, source.Split(deduplicate).Length - 1);
     }
 }

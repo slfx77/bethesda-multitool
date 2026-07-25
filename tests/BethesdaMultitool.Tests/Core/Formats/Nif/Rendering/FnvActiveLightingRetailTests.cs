@@ -1,7 +1,5 @@
 using System.Numerics;
-using BethesdaMultitool;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
@@ -25,8 +23,10 @@ public sealed class FnvActiveLightingRetailTests(
 {
     private const string MeshesBsaRelative =
         @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+
     private const string PrimmGatedWallModelPath =
         @"meshes\architecture\urban\civicspace\gatedwall\urbangatedwallstrstone01_nv.nif";
+
     private const uint PrimmParkingLotCellFormId = 0x000E1A03;
     private const uint PrimmGatedWallReferenceFormId = 0x000A6826;
     private const uint PrimmGatedWallBaseFormId = 0x00176233;
@@ -34,7 +34,9 @@ public sealed class FnvActiveLightingRetailTests(
     private const uint ProspectorMainEntranceExteriorDoorFormId = 0x0010636F;
     private const uint ProspectorMainEntranceInteriorDoorFormId = 0x0010618E;
     private const uint SouthGateFloodlightReferenceFormId = 0x0011A1F9;
+
     private const uint SouthGateFloodlightBaseFormId = 0x0004DECE;
+
     // FlythroughCameraController is WINDOWS_GUI-only; pin its production walk-eye default here so
     // the platform-neutral installed-master test can reproduce the same XTEL arrival pose.
     private const float WalkEyeHeight = 112f;
@@ -48,7 +50,7 @@ public sealed class FnvActiveLightingRetailTests(
         Assert.SkipWhen(meshesBsa is null, "FNV PC-final meshes BSA not available");
 
         using var archives = MeshArchiveSet.Open(
-            meshesBsa!, null, enableFuzzy: false, includeLooseFiles: false);
+            meshesBsa!, null, false, false);
         Assert.True(
             archives.TryExtractFile(PrimmGatedWallModelPath, out var data, out _),
             $"Retail NIF missing: {PrimmGatedWallModelPath}");
@@ -56,7 +58,7 @@ public sealed class FnvActiveLightingRetailTests(
         var model = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(
             data,
             nif,
-            textureResolver: null,
+            null,
             skipSkinning: true,
             treatRootsAsIdentity: true,
             collectBillboards: true,
@@ -66,13 +68,13 @@ public sealed class FnvActiveLightingRetailTests(
         {
             [15] = FnvClassicBasicShaderMode.Sls1009,
             [21] = FnvClassicBasicShaderMode.Sls1013VertexColor,
-            [25] = FnvClassicBasicShaderMode.Sls1013VertexColor,
+            [25] = FnvClassicBasicShaderMode.Sls1013VertexColor
         };
         var classified = model.Submeshes
             .Select(submesh => new
             {
                 Submesh = submesh,
-                Mode = FnvClassicBasicShaderPolicy.Resolve(nif, submesh),
+                Mode = FnvClassicBasicShaderPolicy.Resolve(nif, submesh)
             })
             .Where(static candidate => candidate.Mode != FnvClassicBasicShaderMode.None)
             .OrderBy(static candidate => candidate.Submesh.SourceBlockIndex)
@@ -96,10 +98,10 @@ public sealed class FnvActiveLightingRetailTests(
         var active = classified
             .Where(candidate => FnvActiveAdtBasePolicy.IsEligible(new FnvActiveAdtBaseEligibility(
                 BethesdaGame.FalloutNewVegas,
-                LightingEnabled: true,
-                PlacedLightCount: 0,
-                HasProjectedSunShadow: false,
-                FogEnabled: false,
+                true,
+                0,
+                false,
+                false,
                 candidate.Submesh.HasAlphaBlend,
                 candidate.Submesh.HasAlphaTest,
                 candidate.Submesh.MaterialAlpha,
@@ -162,7 +164,7 @@ public sealed class FnvActiveLightingRetailTests(
         var yawDegrees = MathF.Atan2(toFocus.X, toFocus.Y) * (180f / MathF.PI);
         var pitchDegrees = MathF.Atan2(
             toFocus.Z,
-            MathF.Sqrt((toFocus.X * toFocus.X) + (toFocus.Y * toFocus.Y))) * (180f / MathF.PI);
+            MathF.Sqrt(toFocus.X * toFocus.X + toFocus.Y * toFocus.Y)) * (180f / MathF.PI);
 
         output.WriteLine(
             $"Primm active ADT fixture REFR=0x{placement.FormId:X8}, base=0x{placement.BaseFormId:X8}, " +
@@ -231,8 +233,8 @@ public sealed class FnvActiveLightingRetailTests(
                 candidate.SourceCell.FormId != cell.FormId &&
                 candidate.Door.TeleportPosRot is not null &&
                 (candidate.Door.DestinationCellFormId == cell.FormId ||
-                 candidate.Door.DestinationDoorFormId is { } destinationDoor &&
-                 localDoorReferenceIds.Contains(destinationDoor)))
+                 (candidate.Door.DestinationDoorFormId is { } destinationDoor &&
+                  localDoorReferenceIds.Contains(destinationDoor))))
             .OrderBy(static candidate => candidate.SourceCell.FormId)
             .ThenBy(static candidate => candidate.Door.FormId)
             .ToArray();
@@ -253,7 +255,7 @@ public sealed class FnvActiveLightingRetailTests(
         var renderCache = new WorldRenderCache
         {
             Game = BethesdaGame.FalloutNewVegas,
-            LightIndex = lightIndex,
+            LightIndex = lightIndex
         };
         var lights = renderCache.GetPlacedLights(cell);
         var enabled = lights.Where(static light => !light.IsInitiallyDisabled).ToArray();
@@ -262,10 +264,10 @@ public sealed class FnvActiveLightingRetailTests(
         var clipped = PlacedLightSelector.AppendNearest(
             lights,
             camera,
-            maxPerCell: 16,
-            includeInitiallyDisabled: false,
-            destination: selected,
-            scratch: scratch);
+            16,
+            false,
+            selected,
+            scratch);
 
         output.WriteLine(
             $"Prospector Saloon placements={cell.PlacedObjects.Count:N0}, finite={finite.Length:N0}, " +
@@ -275,7 +277,8 @@ public sealed class FnvActiveLightingRetailTests(
         output.WriteLine(
             $"Main-entrance capture camera={camera}, yaw={cameraYaw} rad " +
             $"({cameraYaw * (180f / MathF.PI)} deg), pitch=0 deg.");
-        foreach (var placement in cell.PlacedObjects.Where(placement => localDoorReferenceIds.Contains(placement.FormId)))
+        foreach (var placement in
+                 cell.PlacedObjects.Where(placement => localDoorReferenceIds.Contains(placement.FormId)))
         {
             output.WriteLine(
                 $"LOCAL DOOR REFR=0x{placement.FormId:X8} base=0x{placement.BaseFormId:X8} " +
@@ -283,6 +286,7 @@ public sealed class FnvActiveLightingRetailTests(
                 $"rotZ={placement.RotZ} destination=0x{placement.DestinationDoorFormId.GetValueOrDefault():X8} " +
                 $"destinationCell=0x{placement.DestinationCellFormId.GetValueOrDefault():X8}.");
         }
+
         foreach (var incoming in incomingDoors)
         {
             var arrival = incoming.Door.TeleportPosRot!;
@@ -294,6 +298,7 @@ public sealed class FnvActiveLightingRetailTests(
                 $"{arrival.Z + WalkEyeHeight}> yaw={-arrival.RotZ} rad " +
                 $"({-arrival.RotZ * (180f / MathF.PI)} deg).");
         }
+
         foreach (var light in selected)
         {
             output.WriteLine(
@@ -353,6 +358,7 @@ public sealed class FnvActiveLightingRetailTests(
         {
             minimum = Math.Min(minimum, positions[offset]);
         }
+
         return minimum;
     }
 
@@ -363,6 +369,7 @@ public sealed class FnvActiveLightingRetailTests(
         {
             maximum = Math.Max(maximum, positions[offset]);
         }
+
         return maximum;
     }
 
@@ -371,8 +378,8 @@ public sealed class FnvActiveLightingRetailTests(
         var sin = MathF.Sin(radians);
         var cos = MathF.Cos(radians);
         return new Vector3(
-            (value.X * cos) - (value.Y * sin),
-            (value.X * sin) + (value.Y * cos),
+            value.X * cos - value.Y * sin,
+            value.X * sin + value.Y * cos,
             value.Z);
     }
 }

@@ -16,13 +16,18 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 /// </summary>
 internal sealed class RuntimeItemReader(
     RuntimeMemoryContext context,
-    RuntimeWeaponSoundProbeResult? weaponSoundProbe = null)
+    RuntimeWeaponSoundProbeResult? weaponSoundProbe = null,
+    RuntimeLayoutProbeResult<int>? ammoDataProbe = null)
 {
     private readonly RuntimeMemoryContext _context = context;
 
     // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
+
+    // Probed AMMO_DATA (fSpeed/iFlags/pProjectile) start offset — that block drifts per build (172/184/188),
+    // so the PDB-derived layout default is only used when no confident probe result is available.
+    private readonly int? _ammoDataOffset = ammoDataProbe?.Winner.Layout;
 
     // Selected weapon sound layout variant. V1 corresponds to the early FO3-derived
     // layout, V2 to the FNV layout. The probe picks whichever pattern matches better,
@@ -343,13 +348,15 @@ internal sealed class RuntimeItemReader(
         var iconPath = _context.ReadBsStringT(offset, Layouts.AmmoInventoryIconPathOffset);
         var messageIconPath = _context.ReadBsStringT(offset, Layouts.AmmoMessageIconPathOffset);
 
-        // AMMO_DATA: speed (float) + flags (uint32)
-        var speed = RuntimeMemoryContext.ReadValidatedFloat(buffer, Layouts.AmmoSpeedOffset, 0, 100000);
-        var flags = BinaryUtils.ReadUInt32BE(buffer, Layouts.AmmoFlagsOffset);
+        // AMMO_DATA: speed (float) + flags (uint32) + pProjectile (BGSProjectile*, AMMO_DATA_NV). The block's
+        // start drifts per build, so use the probed offset when available (Flags = +4, pProjectile = +8),
+        // falling back to the PDB-derived layout constants only when the probe found no confident winner.
+        var ammoDataOffset = _ammoDataOffset ?? Layouts.AmmoSpeedOffset;
+        var speed = RuntimeMemoryContext.ReadValidatedFloat(buffer, ammoDataOffset, 0, 100000);
+        var flags = BinaryUtils.ReadUInt32BE(buffer, ammoDataOffset + 4);
         var clipRounds = buffer[Layouts.AmmoClipRoundsOffset];
 
-        // AMMO_DATA_NV: pProjectile (BGSProjectile*)
-        var projectileFormId = _context.FollowPointerToFormId(buffer, Layouts.AmmoProjectilePtrOffset);
+        var projectileFormId = _context.FollowPointerToFormId(buffer, ammoDataOffset + 8);
 
         return new AmmoRecord
         {
@@ -548,8 +555,9 @@ internal sealed class RuntimeItemReader(
         // ENIT flags: AlchemyItemData.iFlags (byte at offset 188)
         var flags = (uint)buffer[Layouts.AlchFlagsOffset];
 
-        // Addiction: SpellItem* pointer → follow to FormID
-        var addictionFormId = _context.FollowPointerToFormId(buffer, Layouts.AlchAddictionPtrOffset);
+        // Withdrawal Effect: SpellItem* (SPEL) pointer → follow to FormID. (The AlchemyItem struct's
+        // spell pointer is the withdrawal effect, not an "addiction" FormID — FNV ALCH has none.)
+        var withdrawalEffectFormId = _context.FollowPointerToFormId(buffer, Layouts.AlchAddictionPtrOffset);
         var addictionChance = RuntimeMemoryContext.ReadValidatedFloat(
             buffer, Layouts.AlchAddictionChanceOffset, 0, 1);
 
@@ -568,7 +576,7 @@ internal sealed class RuntimeItemReader(
             Value = (uint)value,
             Weight = weight,
             Flags = flags,
-            AddictionFormId = addictionFormId,
+            WithdrawalEffectFormId = withdrawalEffectFormId,
             AddictionChance = addictionChance,
             Effects = effects,
             ModelPath = modelPath,

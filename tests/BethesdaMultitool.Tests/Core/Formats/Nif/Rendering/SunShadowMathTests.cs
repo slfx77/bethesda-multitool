@@ -17,15 +17,17 @@ public sealed class SunShadowMathTests
 {
     private static readonly Vector3 NoonishSun = Vector3.Normalize(new Vector3(0.3f, 0.2f, 0.9f));
 
-    private static Vector4 Project(Matrix4x4 viewProj, Vector3 originRelativePos) =>
-        Vector4.Transform(new Vector4(originRelativePos, 1f), viewProj);
+    private static Vector4 Project(Matrix4x4 viewProj, Vector3 originRelativePos)
+    {
+        return Vector4.Transform(new Vector4(originRelativePos, 1f), viewProj);
+    }
 
     [Fact]
     public void BuildLightFrustum_CenterMapsToMiddleOfMap_WithReversedDepth()
     {
         var center = new Vector3(41000f, -12500f, 900f);
         var frustum = SunShadowMath.BuildLightFrustum(
-            NoonishSun, center, renderOrigin: Vector3.Zero, radius: 8192f, resolution: 4096);
+            NoonishSun, center, Vector3.Zero, 8192f, 4096);
 
         var clip = Project(frustum.ViewProj, center);
         // Ortho: w stays 1, xy near the map middle (within the texel-snap slack of the center).
@@ -152,7 +154,7 @@ public sealed class SunShadowMathTests
     public void BuildKey_IsStableUnderSubSnapDrift_AndChangesWithRealInputs()
     {
         var center = new Vector3(10000f, 20000f, 500f);
-        var key = SunShadowMath.BuildKey(NoonishSun, center, 8192f, contentVersion: 7);
+        var key = SunShadowMath.BuildKey(NoonishSun, center, 8192f, 7);
 
         // Sub-snap camera drift and denormal sun noise re-produce the SAME key (no cache thrash)…
         Assert.Equal(key, SunShadowMath.BuildKey(
@@ -194,8 +196,10 @@ public sealed class SunShadowMathTests
         Assert.Contains("cascadeHasDraws[i] ? 1f : 0f", shadowMap, StringComparison.Ordinal);
     }
 
-    private static string ReadSource(params string[] relativePath) =>
-        File.ReadAllText(Path.Combine(FindRepoRoot(), Path.Combine(relativePath)));
+    private static string ReadSource(params string[] relativePath)
+    {
+        return File.ReadAllText(Path.Combine(FindRepoRoot(), Path.Combine(relativePath)));
+    }
 
     private static string FindRepoRoot()
     {

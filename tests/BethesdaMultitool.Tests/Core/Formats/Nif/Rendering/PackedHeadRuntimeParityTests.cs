@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Nif.GeometryAnalysis;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;

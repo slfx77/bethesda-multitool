@@ -10,7 +10,7 @@ public sealed class MapMarkerDisplayScaleTests
     {
         var profile = GameProfiles.For(BethesdaGame.FalloutNewVegas) with
         {
-            MarkerMinScreenScale = 0.5f,
+            MarkerMinScreenScale = 0.5f
         };
 
         Assert.Equal(1f, MapMarkerDisplayScale.Resolve(profile, 0.001f));
@@ -28,7 +28,7 @@ public sealed class MapMarkerDisplayScaleTests
         var profile = GameProfiles.For(BethesdaGame.FalloutNewVegas) with
         {
             MarkerMinScreenScale = 0.55f,
-            MarkerFullSizeZoom = 0.05f,
+            MarkerFullSizeZoom = 0.05f
         };
 
         Assert.Equal(expected, MapMarkerDisplayScale.Resolve(profile, zoom), 5);

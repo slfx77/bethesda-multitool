@@ -516,9 +516,11 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
                 case "INDX" when sub.DataLength >= 2:
                     FlushObjective();
                     FlushStage();
-                    currentStageIndex = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt16BigEndian(subData)
-                        : BinaryPrimitives.ReadInt16LittleEndian(subData);
+                    // QUST INDX is stored little-endian even in a big-endian Xbox 360 ESM (the
+                    // conversion schema pins it: SubrecordDialogueSchemas UInt16LittleEndian, "DO NOT
+                    // SWAP"). Reading it BE on Xbox byte-swaps the stage index and corrupts the
+                    // stages.OrderBy(Index) sort below.
+                    currentStageIndex = BinaryPrimitives.ReadInt16LittleEndian(subData);
                     break;
                 case "CNAM":
                     currentLogEntry = EsmStringUtils.ReadNullTermString(subData);

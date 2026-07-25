@@ -20,269 +20,6 @@ public sealed class CorpusCertificationScriptContractTests
     private static readonly Lazy<JsonElement> ProvenanceResults = new(RunProvenanceHarness);
     private static readonly Lazy<JsonElement> SourceCoverageResults = new(RunSourceCoverageHarness);
 
-    [Theory]
-    [InlineData("Run-DmpCorpus.ps1")]
-    [InlineData("Verify-DmpCorpus.ps1")]
-    public void SuppressionTelemetryTracksAtomicInlineOwnersAndRetainsStandaloneScripts(string scriptName)
-    {
-        var source = ReadToolScript(scriptName);
-
-        Assert.Contains("[ValidateSet('INFO', 'PACK', 'SCPT', 'TERM')]", source,
-            StringComparison.Ordinal);
-        Assert.Contains("'INFO' { @('quest-variable.record-suppressed', 'quest-variable.record-suppressed-no-emitted-producer', 'script-variable.record-suppressed', 'script-variable.owner-not-emitted', 'inline-script.suppress-unsafe-owner') }",
-            source, StringComparison.Ordinal);
-        Assert.Contains("'PACK' { @('quest-variable.record-suppressed', 'quest-variable.record-suppressed-no-emitted-producer', 'script-variable.record-suppressed', 'inline-script.suppress-unsafe-owner') }",
-            source, StringComparison.Ordinal);
-        Assert.Contains("'quest-variable.record-suppressed-no-emitted-producer'", source,
-            StringComparison.Ordinal);
-        Assert.Contains("'TERM' { @('quest-variable.menu-item-suppressed', 'quest-variable.menu-item-suppressed-no-emitted-producer', 'script-variable.menu-item-suppressed', 'inline-script.suppress-unsafe-owner') }", source,
-            StringComparison.Ordinal);
-        Assert.Contains("'script-variable.owner-not-emitted'", source, StringComparison.Ordinal);
-        Assert.Contains("'script.suppress-unsafe-reference-table'", source, StringComparison.Ordinal);
-        Assert.Contains("'script.suppress-post-verdict-reference-table'", source, StringComparison.Ordinal);
-        Assert.Contains("@('INFO', 'PACK', 'TERM')", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void RunnerAppendsTerminalColumnsAfterTheExistingManifestSchema()
-    {
-        var source = ReadToolScript("Run-DmpCorpus.ps1");
-        var oldTail = source.IndexOf("Output = $esmPath", StringComparison.Ordinal);
-        var terminalCount = source.IndexOf("TermSuppressions = $suppressedTerminalIds.Count",
-            StringComparison.Ordinal);
-        var terminalIds = source.IndexOf("SuppressedTerminalFormIds = $suppressedTerminalIds -join ';'",
-            StringComparison.Ordinal);
-
-        Assert.True(oldTail >= 0 && terminalCount > oldTail && terminalIds > terminalCount);
-    }
-
-    [Fact]
-    public void VerifierAppendsTerminalColumnsAfterTheExistingCertificationSchema()
-    {
-        var source = ReadToolScript("Verify-DmpCorpus.ps1");
-        var oldTail = source.IndexOf("Failures = $failures -join ';'", StringComparison.Ordinal);
-        var terminalCount = source.IndexOf("SuppressedTerminals = $suppressedTerminalIds.Count",
-            StringComparison.Ordinal);
-        var terminalIds = source.IndexOf("SuppressedTerminalFormIds = $suppressedTerminalIds -join ';'",
-            StringComparison.Ordinal);
-
-        Assert.True(oldTail >= 0 && terminalCount > oldTail && terminalIds > terminalCount);
-    }
-
-    [Fact]
-    public void RunnerAuditsEachDumpAndImportsTheSeparateSourceCoverageReport()
-    {
-        var source = ReadToolScript("Run-DmpCorpus.ps1");
-
-        Assert.Contains("'dmp', 'scripts', 'audit', $dump.FullName, '--output', $scriptAuditPath",
-            source, StringComparison.Ordinal);
-        Assert.Contains("$stem.script-audit.csv", source, StringComparison.Ordinal);
-        Assert.Contains("script_source_coverage.csv", source, StringComparison.Ordinal);
-        Assert.Contains("$scriptAuditHardContradictions -eq 0", source, StringComparison.Ordinal);
-        Assert.Contains("$scriptSourceAssessment.Pass", source, StringComparison.Ordinal);
-        Assert.Contains("$scriptProvenanceAssessment.Pass", source, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData("Run-DmpCorpus.ps1")]
-    [InlineData("Verify-DmpCorpus.ps1")]
-    public void SourceCertificationReconcilesPayloadCountsBytesAndHashes(string scriptName)
-    {
-        var source = ReadToolScript(scriptName);
-
-        Assert.Contains("Get-PayloadCoverageSummary $SourceRows 'Source' 'SCTX'", source,
-            StringComparison.Ordinal);
-        Assert.Contains("Get-PayloadCoverageSummary $SubrecordRows 'Subrecord' 'SCTX'", source,
-            StringComparison.Ordinal);
-        Assert.Contains("Get-PayloadCoverageSummary $SourceRows 'Source' 'SCDA'", source,
-            StringComparison.Ordinal);
-        Assert.Contains("Test-PayloadHashList", source, StringComparison.Ordinal);
-        Assert.Contains("$result.HardContradictions -eq 0", source, StringComparison.Ordinal);
-        Assert.Contains("$result.SctxReconciled", source, StringComparison.Ordinal);
-        Assert.Contains("$result.ScdaReconciled", source, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData("Run-DmpCorpus.ps1")]
-    [InlineData("Verify-DmpCorpus.ps1")]
-    public void SourceCertificationAcceptsAnEmptyScriptPayloadCategory(string scriptName)
-    {
-        var result = GetSourceCoverageResult(scriptName);
-
-        Assert.True(result.GetProperty("Pass").GetBoolean());
-        Assert.Equal(0, result.GetProperty("HardContradictions").GetInt32());
-        Assert.Equal(0, result.GetProperty("SctxCount").GetInt32());
-        Assert.True(result.GetProperty("HashIntegrity").GetBoolean());
-        Assert.True(result.GetProperty("SctxReconciled").GetBoolean());
-        Assert.True(result.GetProperty("ScdaReconciled").GetBoolean());
-    }
-
-    [Theory]
-    [InlineData("Run-DmpCorpus.ps1")]
-    [InlineData("Verify-DmpCorpus.ps1")]
-    public void AuthenticSemanticDriftIsDiagnosticOnly(string scriptName)
-    {
-        var source = ReadToolScript(scriptName);
-        var assessmentStart = source.IndexOf("function Get-ScriptSourceCoverageAssessment",
-            StringComparison.Ordinal);
-        var provenanceStart = source.IndexOf("function Get-ScriptProvenanceAssessment",
-            assessmentStart, StringComparison.Ordinal);
-        Assert.True(assessmentStart >= 0 && provenanceStart > assessmentStart);
-
-        var assessment = source[assessmentStart..provenanceStart];
-        Assert.DoesNotContain("semantic_mismatch_count", assessment, StringComparison.Ordinal);
-        Assert.DoesNotContain("semantic_mismatch_categories", assessment, StringComparison.Ordinal);
-        Assert.Contains("hard_contradiction", assessment, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData("Run-DmpCorpus.ps1")]
-    [InlineData("Verify-DmpCorpus.ps1")]
-    public void ProvenanceClaimsRequireExpectedSourceProofAndExactOutputSet(string scriptName)
-    {
-        var source = ReadToolScript(scriptName);
-
-        Assert.Contains("'script.source-provenance'", source, StringComparison.Ordinal);
-        Assert.Contains("'sctx-scda-semantic-match'", source, StringComparison.Ordinal);
-        Assert.Contains("'sctx-scda-match-count'", source, StringComparison.Ordinal);
-        Assert.Contains("Test-ScriptSemanticProof $metadata", source, StringComparison.Ordinal);
-        Assert.Contains("$_.comparison_mismatch_count -eq 0", source, StringComparison.Ordinal);
-        Assert.Contains("'expected-sctx-sha256'", source, StringComparison.Ordinal);
-        Assert.Contains("'captured-source-utf8-sha256'", source, StringComparison.Ordinal);
-        Assert.Contains("'augmentation-declarations-base64'", source, StringComparison.Ordinal);
-        Assert.Contains("Test-ScriptSourceProof $metadata", source, StringComparison.Ordinal);
-        Assert.Contains("$AuditRows | Where-Object", source, StringComparison.Ordinal);
-        Assert.Contains("$_.row_kind -eq 'merged'", source, StringComparison.Ordinal);
-        Assert.Contains("$metadata.'sctx-sha256' -ine [string]$coverage.sctx_sha256", source,
-            StringComparison.Ordinal);
-        Assert.Contains("$eventScdaHash -ieq [string]$coverage.scda_sha256", source,
-            StringComparison.Ordinal);
-        Assert.Contains("$matched -eq $expectedRows.Count", source,
-            StringComparison.Ordinal);
-        Assert.Contains("$setEqual", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void VerifierAssessmentRejectsMissingProvenanceForEmittedScptSource()
-    {
-        var result = GetProvenanceResult(
-            nameof(VerifierAssessmentRejectsMissingProvenanceForEmittedScptSource));
-
-        Assert.False(result.GetProperty("Pass").GetBoolean());
-        Assert.Equal(0, result.GetProperty("EventCount").GetInt32());
-        Assert.Equal(1, result.GetProperty("ExpectedCount").GetInt32());
-        Assert.Equal(0, result.GetProperty("MatchedCount").GetInt32());
-    }
-
-    [Fact]
-    public void VerifierAssessmentValidatesCapturedExpectedHashAgainstEmittedPayload()
-    {
-        var result = GetProvenanceResult(
-            nameof(VerifierAssessmentValidatesCapturedExpectedHashAgainstEmittedPayload));
-
-        Assert.False(result.GetProperty("Pass").GetBoolean());
-        Assert.Equal(1, result.GetProperty("EventCount").GetInt32());
-        Assert.Equal(1, result.GetProperty("ExpectedCount").GetInt32());
-        Assert.Equal(0, result.GetProperty("MatchedCount").GetInt32());
-    }
-
-    [Fact]
-    public void VerifierAssessmentRejectsDirectSourceAbsentFromSameDumpAudit()
-    {
-        var result = GetProvenanceResult(
-            nameof(VerifierAssessmentRejectsDirectSourceAbsentFromSameDumpAudit));
-
-        Assert.False(result.GetProperty("Pass").GetBoolean());
-        Assert.Equal(1, result.GetProperty("ExpectedCount").GetInt32());
-        Assert.Equal(0, result.GetProperty("MatchedCount").GetInt32());
-    }
-
-    [Fact]
-    public void VerifierAssessmentAcceptsStructurallyEmptySourceOnlyPreservation()
-    {
-        var result = GetProvenanceResult(
-            nameof(VerifierAssessmentAcceptsStructurallyEmptySourceOnlyPreservation));
-
-        Assert.True(result.GetProperty("Pass").GetBoolean());
-        Assert.Equal(1, result.GetProperty("MatchedCount").GetInt32());
-    }
-
-    [Fact]
-    public void VerifierAssessmentRequiresStructurallyExactZeroMismatchCompiledSourceAudit()
-    {
-        var result = GetProvenanceResult(
-            nameof(VerifierAssessmentRequiresStructurallyExactZeroMismatchCompiledSourceAudit));
-
-        Assert.True(result.GetProperty("Valid").GetBoolean());
-        Assert.False(result.GetProperty("Mismatch").GetBoolean());
-        Assert.False(result.GetProperty("DeclarationMismatch").GetBoolean());
-    }
-
-    [Fact]
-    public void VerifierAssessmentAcceptsFreshLocalAugmentationProofAndRejectsCorruption()
-    {
-        var result = GetProvenanceResult(
-            nameof(VerifierAssessmentAcceptsFreshLocalAugmentationProofAndRejectsCorruption));
-
-        Assert.True(result.GetProperty("Valid").GetBoolean());
-        Assert.False(result.GetProperty("Corrupt").GetBoolean());
-    }
-
-    [Fact]
-    public void VerifierAssessmentAcceptsPreservedMasterSourceForStorageOnlyAugmentation()
-    {
-        var result = GetProvenanceResult(
-            nameof(VerifierAssessmentAcceptsPreservedMasterSourceForStorageOnlyAugmentation));
-
-        Assert.True(result.GetProperty("Valid").GetBoolean());
-        Assert.False(result.GetProperty("Corrupt").GetBoolean());
-    }
-
-    private static string ReadToolScript(string name) =>
-        File.ReadAllText(Path.Combine(SourceContract.RepoRoot, "tools", name));
-
-    private static JsonElement GetProvenanceResult(string fixtureName)
-    {
-        Assert.SkipWhen(!PwshAvailable.Value, PwshMissingSkipReason);
-        return GetFixtureResult(ProvenanceResults.Value, fixtureName);
-    }
-
-    private static JsonElement GetSourceCoverageResult(string scriptName)
-    {
-        Assert.SkipWhen(!PwshAvailable.Value, PwshMissingSkipReason);
-        return GetFixtureResult(SourceCoverageResults.Value, scriptName);
-    }
-
-    private static JsonElement GetFixtureResult(JsonElement batch, string key)
-    {
-        var entry = batch.GetProperty(key);
-        var error = entry.GetProperty("Error");
-        Assert.True(error.ValueKind is JsonValueKind.Null,
-            $"PowerShell fixture '{key}' failed: {error.GetString()}");
-        return JsonDocument.Parse(entry.GetProperty("Json").GetString()!).RootElement.Clone();
-    }
-
-    private static bool ProbePwshAvailability()
-    {
-        try
-        {
-            using var process = Process.Start(new ProcessStartInfo
-            {
-                FileName = "pwsh",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                ArgumentList = { "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "exit 0" },
-            });
-            return process is not null && process.WaitForExit(30_000) && process.ExitCode == 0;
-        }
-        catch (Win32Exception)
-        {
-            return false;
-        }
-    }
-
     // Fixture snippets for the pwsh-batched provenance facts, keyed by fact method name.
     // Each snippet must emit exactly one compressed JSON string; the harness evaluates every
     // snippet in its own child scope with per-fixture try/catch so one failing fixture
@@ -532,8 +269,277 @@ public sealed class CorpusCertificationScriptContractTests
             $corrupt = (Get-ScriptProvenanceAssessment `
                 -Events @($event) -SourceRows $sourceRows -AuditRows @()).Pass
             [pscustomobject]@{ Valid = $valid; Corrupt = $corrupt } | ConvertTo-Json -Compress
-            """),
+            """)
     ];
+
+    [Theory]
+    [InlineData("Run-DmpCorpus.ps1")]
+    [InlineData("Verify-DmpCorpus.ps1")]
+    public void SuppressionTelemetryTracksAtomicInlineOwnersAndRetainsStandaloneScripts(string scriptName)
+    {
+        var source = ReadToolScript(scriptName);
+
+        Assert.Contains("[ValidateSet('INFO', 'PACK', 'SCPT', 'TERM')]", source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "'INFO' { @('quest-variable.record-suppressed', 'quest-variable.record-suppressed-no-emitted-producer', 'script-variable.record-suppressed', 'script-variable.owner-not-emitted', 'inline-script.suppress-unsafe-owner') }",
+            source, StringComparison.Ordinal);
+        Assert.Contains(
+            "'PACK' { @('quest-variable.record-suppressed', 'quest-variable.record-suppressed-no-emitted-producer', 'script-variable.record-suppressed', 'inline-script.suppress-unsafe-owner') }",
+            source, StringComparison.Ordinal);
+        Assert.Contains("'quest-variable.record-suppressed-no-emitted-producer'", source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "'TERM' { @('quest-variable.menu-item-suppressed', 'quest-variable.menu-item-suppressed-no-emitted-producer', 'script-variable.menu-item-suppressed', 'inline-script.suppress-unsafe-owner') }",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("'script-variable.owner-not-emitted'", source, StringComparison.Ordinal);
+        Assert.Contains("'script.suppress-unsafe-reference-table'", source, StringComparison.Ordinal);
+        Assert.Contains("'script.suppress-post-verdict-reference-table'", source, StringComparison.Ordinal);
+        Assert.Contains("@('INFO', 'PACK', 'TERM')", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RunnerAppendsTerminalColumnsAfterTheExistingManifestSchema()
+    {
+        var source = ReadToolScript("Run-DmpCorpus.ps1");
+        var oldTail = source.IndexOf("Output = $esmPath", StringComparison.Ordinal);
+        var terminalCount = source.IndexOf("TermSuppressions = $suppressedTerminalIds.Count",
+            StringComparison.Ordinal);
+        var terminalIds = source.IndexOf("SuppressedTerminalFormIds = $suppressedTerminalIds -join ';'",
+            StringComparison.Ordinal);
+
+        Assert.True(oldTail >= 0 && terminalCount > oldTail && terminalIds > terminalCount);
+    }
+
+    [Fact]
+    public void VerifierAppendsTerminalColumnsAfterTheExistingCertificationSchema()
+    {
+        var source = ReadToolScript("Verify-DmpCorpus.ps1");
+        var oldTail = source.IndexOf("Failures = $failures -join ';'", StringComparison.Ordinal);
+        var terminalCount = source.IndexOf("SuppressedTerminals = $suppressedTerminalIds.Count",
+            StringComparison.Ordinal);
+        var terminalIds = source.IndexOf("SuppressedTerminalFormIds = $suppressedTerminalIds -join ';'",
+            StringComparison.Ordinal);
+
+        Assert.True(oldTail >= 0 && terminalCount > oldTail && terminalIds > terminalCount);
+    }
+
+    [Fact]
+    public void RunnerAuditsEachDumpAndImportsTheSeparateSourceCoverageReport()
+    {
+        var source = ReadToolScript("Run-DmpCorpus.ps1");
+
+        Assert.Contains("'dmp', 'scripts', 'audit', $dump.FullName, '--output', $scriptAuditPath",
+            source, StringComparison.Ordinal);
+        Assert.Contains("$stem.script-audit.csv", source, StringComparison.Ordinal);
+        Assert.Contains("script_source_coverage.csv", source, StringComparison.Ordinal);
+        Assert.Contains("$scriptAuditHardContradictions -eq 0", source, StringComparison.Ordinal);
+        Assert.Contains("$scriptSourceAssessment.Pass", source, StringComparison.Ordinal);
+        Assert.Contains("$scriptProvenanceAssessment.Pass", source, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Run-DmpCorpus.ps1")]
+    [InlineData("Verify-DmpCorpus.ps1")]
+    public void SourceCertificationReconcilesPayloadCountsBytesAndHashes(string scriptName)
+    {
+        var source = ReadToolScript(scriptName);
+
+        Assert.Contains("Get-PayloadCoverageSummary $SourceRows 'Source' 'SCTX'", source,
+            StringComparison.Ordinal);
+        Assert.Contains("Get-PayloadCoverageSummary $SubrecordRows 'Subrecord' 'SCTX'", source,
+            StringComparison.Ordinal);
+        Assert.Contains("Get-PayloadCoverageSummary $SourceRows 'Source' 'SCDA'", source,
+            StringComparison.Ordinal);
+        Assert.Contains("Test-PayloadHashList", source, StringComparison.Ordinal);
+        Assert.Contains("$result.HardContradictions -eq 0", source, StringComparison.Ordinal);
+        Assert.Contains("$result.SctxReconciled", source, StringComparison.Ordinal);
+        Assert.Contains("$result.ScdaReconciled", source, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Run-DmpCorpus.ps1")]
+    [InlineData("Verify-DmpCorpus.ps1")]
+    public void SourceCertificationAcceptsAnEmptyScriptPayloadCategory(string scriptName)
+    {
+        var result = GetSourceCoverageResult(scriptName);
+
+        Assert.True(result.GetProperty("Pass").GetBoolean());
+        Assert.Equal(0, result.GetProperty("HardContradictions").GetInt32());
+        Assert.Equal(0, result.GetProperty("SctxCount").GetInt32());
+        Assert.True(result.GetProperty("HashIntegrity").GetBoolean());
+        Assert.True(result.GetProperty("SctxReconciled").GetBoolean());
+        Assert.True(result.GetProperty("ScdaReconciled").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("Run-DmpCorpus.ps1")]
+    [InlineData("Verify-DmpCorpus.ps1")]
+    public void AuthenticSemanticDriftIsDiagnosticOnly(string scriptName)
+    {
+        var source = ReadToolScript(scriptName);
+        var assessmentStart = source.IndexOf("function Get-ScriptSourceCoverageAssessment",
+            StringComparison.Ordinal);
+        var provenanceStart = source.IndexOf("function Get-ScriptProvenanceAssessment",
+            assessmentStart, StringComparison.Ordinal);
+        Assert.True(assessmentStart >= 0 && provenanceStart > assessmentStart);
+
+        var assessment = source[assessmentStart..provenanceStart];
+        Assert.DoesNotContain("semantic_mismatch_count", assessment, StringComparison.Ordinal);
+        Assert.DoesNotContain("semantic_mismatch_categories", assessment, StringComparison.Ordinal);
+        Assert.Contains("hard_contradiction", assessment, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Run-DmpCorpus.ps1")]
+    [InlineData("Verify-DmpCorpus.ps1")]
+    public void ProvenanceClaimsRequireExpectedSourceProofAndExactOutputSet(string scriptName)
+    {
+        var source = ReadToolScript(scriptName);
+
+        Assert.Contains("'script.source-provenance'", source, StringComparison.Ordinal);
+        Assert.Contains("'sctx-scda-semantic-match'", source, StringComparison.Ordinal);
+        Assert.Contains("'sctx-scda-match-count'", source, StringComparison.Ordinal);
+        Assert.Contains("Test-ScriptSemanticProof $metadata", source, StringComparison.Ordinal);
+        Assert.Contains("$_.comparison_mismatch_count -eq 0", source, StringComparison.Ordinal);
+        Assert.Contains("'expected-sctx-sha256'", source, StringComparison.Ordinal);
+        Assert.Contains("'captured-source-utf8-sha256'", source, StringComparison.Ordinal);
+        Assert.Contains("'augmentation-declarations-base64'", source, StringComparison.Ordinal);
+        Assert.Contains("Test-ScriptSourceProof $metadata", source, StringComparison.Ordinal);
+        Assert.Contains("$AuditRows | Where-Object", source, StringComparison.Ordinal);
+        Assert.Contains("$_.row_kind -eq 'merged'", source, StringComparison.Ordinal);
+        Assert.Contains("$metadata.'sctx-sha256' -ine [string]$coverage.sctx_sha256", source,
+            StringComparison.Ordinal);
+        Assert.Contains("$eventScdaHash -ieq [string]$coverage.scda_sha256", source,
+            StringComparison.Ordinal);
+        Assert.Contains("$matched -eq $expectedRows.Count", source,
+            StringComparison.Ordinal);
+        Assert.Contains("$setEqual", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void VerifierAssessmentRejectsMissingProvenanceForEmittedScptSource()
+    {
+        var result = GetProvenanceResult(
+            nameof(VerifierAssessmentRejectsMissingProvenanceForEmittedScptSource));
+
+        Assert.False(result.GetProperty("Pass").GetBoolean());
+        Assert.Equal(0, result.GetProperty("EventCount").GetInt32());
+        Assert.Equal(1, result.GetProperty("ExpectedCount").GetInt32());
+        Assert.Equal(0, result.GetProperty("MatchedCount").GetInt32());
+    }
+
+    [Fact]
+    public void VerifierAssessmentValidatesCapturedExpectedHashAgainstEmittedPayload()
+    {
+        var result = GetProvenanceResult(
+            nameof(VerifierAssessmentValidatesCapturedExpectedHashAgainstEmittedPayload));
+
+        Assert.False(result.GetProperty("Pass").GetBoolean());
+        Assert.Equal(1, result.GetProperty("EventCount").GetInt32());
+        Assert.Equal(1, result.GetProperty("ExpectedCount").GetInt32());
+        Assert.Equal(0, result.GetProperty("MatchedCount").GetInt32());
+    }
+
+    [Fact]
+    public void VerifierAssessmentRejectsDirectSourceAbsentFromSameDumpAudit()
+    {
+        var result = GetProvenanceResult(
+            nameof(VerifierAssessmentRejectsDirectSourceAbsentFromSameDumpAudit));
+
+        Assert.False(result.GetProperty("Pass").GetBoolean());
+        Assert.Equal(1, result.GetProperty("ExpectedCount").GetInt32());
+        Assert.Equal(0, result.GetProperty("MatchedCount").GetInt32());
+    }
+
+    [Fact]
+    public void VerifierAssessmentAcceptsStructurallyEmptySourceOnlyPreservation()
+    {
+        var result = GetProvenanceResult(
+            nameof(VerifierAssessmentAcceptsStructurallyEmptySourceOnlyPreservation));
+
+        Assert.True(result.GetProperty("Pass").GetBoolean());
+        Assert.Equal(1, result.GetProperty("MatchedCount").GetInt32());
+    }
+
+    [Fact]
+    public void VerifierAssessmentRequiresStructurallyExactZeroMismatchCompiledSourceAudit()
+    {
+        var result = GetProvenanceResult(
+            nameof(VerifierAssessmentRequiresStructurallyExactZeroMismatchCompiledSourceAudit));
+
+        Assert.True(result.GetProperty("Valid").GetBoolean());
+        Assert.False(result.GetProperty("Mismatch").GetBoolean());
+        Assert.False(result.GetProperty("DeclarationMismatch").GetBoolean());
+    }
+
+    [Fact]
+    public void VerifierAssessmentAcceptsFreshLocalAugmentationProofAndRejectsCorruption()
+    {
+        var result = GetProvenanceResult(
+            nameof(VerifierAssessmentAcceptsFreshLocalAugmentationProofAndRejectsCorruption));
+
+        Assert.True(result.GetProperty("Valid").GetBoolean());
+        Assert.False(result.GetProperty("Corrupt").GetBoolean());
+    }
+
+    [Fact]
+    public void VerifierAssessmentAcceptsPreservedMasterSourceForStorageOnlyAugmentation()
+    {
+        var result = GetProvenanceResult(
+            nameof(VerifierAssessmentAcceptsPreservedMasterSourceForStorageOnlyAugmentation));
+
+        Assert.True(result.GetProperty("Valid").GetBoolean());
+        Assert.False(result.GetProperty("Corrupt").GetBoolean());
+    }
+
+    private static string ReadToolScript(string name)
+    {
+        return File.ReadAllText(Path.Combine(SourceContract.RepoRoot, "tools", name));
+    }
+
+    private static JsonElement GetProvenanceResult(string fixtureName)
+    {
+        Assert.SkipWhen(!PwshAvailable.Value, PwshMissingSkipReason);
+        return GetFixtureResult(ProvenanceResults.Value, fixtureName);
+    }
+
+    private static JsonElement GetSourceCoverageResult(string scriptName)
+    {
+        Assert.SkipWhen(!PwshAvailable.Value, PwshMissingSkipReason);
+        return GetFixtureResult(SourceCoverageResults.Value, scriptName);
+    }
+
+    private static JsonElement GetFixtureResult(JsonElement batch, string key)
+    {
+        var entry = batch.GetProperty(key);
+        var error = entry.GetProperty("Error");
+        Assert.True(error.ValueKind is JsonValueKind.Null,
+            $"PowerShell fixture '{key}' failed: {error.GetString()}");
+        return JsonDocument.Parse(entry.GetProperty("Json").GetString()!).RootElement.Clone();
+    }
+
+    private static bool ProbePwshAvailability()
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                ArgumentList = { "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "exit 0" }
+            });
+            return process is not null && process.WaitForExit(30_000) && process.ExitCode == 0;
+        }
+        catch (Win32Exception)
+        {
+            return false;
+        }
+    }
 
     private static JsonElement RunProvenanceHarness()
     {
@@ -548,38 +554,38 @@ public sealed class CorpusCertificationScriptContractTests
         }
 
         var harness = $$"""
-            $ErrorActionPreference = 'Stop'
-            $tokens = $null
-            $parseErrors = $null
-            $ast = [Management.Automation.Language.Parser]::ParseFile(
-                '{{escapedVerifierPath}}', [ref]$tokens, [ref]$parseErrors)
-            if ($parseErrors.Count -ne 0) { throw ($parseErrors | Out-String) }
-            foreach ($name in @(
-                'Test-ObjectProperties',
-                'Test-ScriptSourceProof',
-                'Test-ScriptSemanticProof',
-                'Get-ScriptProvenanceAssessment')) {
-                $function = $ast.Find({
-                    param($node)
-                    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-                        $node.Name -eq $name
-                }, $true)
-                if ($null -eq $function) { throw "Missing function $name" }
-                Invoke-Expression $function.Extent.Text
-            }
-            $fixtures = [ordered]@{}
-            {{registrations}}
-            $results = [ordered]@{}
-            foreach ($entry in $fixtures.GetEnumerator()) {
-                try {
-                    $results[$entry.Key] = [pscustomobject]@{ Json = [string](& $entry.Value); Error = $null }
-                }
-                catch {
-                    $results[$entry.Key] = [pscustomobject]@{ Json = $null; Error = $_.ToString() }
-                }
-            }
-            [pscustomobject]$results | ConvertTo-Json -Compress -Depth 3
-            """;
+                        $ErrorActionPreference = 'Stop'
+                        $tokens = $null
+                        $parseErrors = $null
+                        $ast = [Management.Automation.Language.Parser]::ParseFile(
+                            '{{escapedVerifierPath}}', [ref]$tokens, [ref]$parseErrors)
+                        if ($parseErrors.Count -ne 0) { throw ($parseErrors | Out-String) }
+                        foreach ($name in @(
+                            'Test-ObjectProperties',
+                            'Test-ScriptSourceProof',
+                            'Test-ScriptSemanticProof',
+                            'Get-ScriptProvenanceAssessment')) {
+                            $function = $ast.Find({
+                                param($node)
+                                $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                                    $node.Name -eq $name
+                            }, $true)
+                            if ($null -eq $function) { throw "Missing function $name" }
+                            Invoke-Expression $function.Extent.Text
+                        }
+                        $fixtures = [ordered]@{}
+                        {{registrations}}
+                        $results = [ordered]@{}
+                        foreach ($entry in $fixtures.GetEnumerator()) {
+                            try {
+                                $results[$entry.Key] = [pscustomobject]@{ Json = [string](& $entry.Value); Error = $null }
+                            }
+                            catch {
+                                $results[$entry.Key] = [pscustomobject]@{ Json = $null; Error = $_.ToString() }
+                            }
+                        }
+                        [pscustomobject]$results | ConvertTo-Json -Compress -Depth 3
+                        """;
 
         return RunPwshHarness(harness, "provenance");
     }
@@ -589,42 +595,42 @@ public sealed class CorpusCertificationScriptContractTests
         var toolsDirectory = Path.Combine(SourceContract.RepoRoot, "tools");
         var escapedToolsDirectory = toolsDirectory.Replace("'", "''", StringComparison.Ordinal);
         var harness = $$"""
-            $ErrorActionPreference = 'Stop'
-            Set-StrictMode -Version Latest
-            $results = [ordered]@{}
-            foreach ($scriptName in @('Run-DmpCorpus.ps1', 'Verify-DmpCorpus.ps1')) {
-                try {
-                    $json = & {
-                        param($scriptPath)
-                        $tokens = $null
-                        $parseErrors = $null
-                        $ast = [Management.Automation.Language.Parser]::ParseFile(
-                            $scriptPath, [ref]$tokens, [ref]$parseErrors)
-                        if ($parseErrors.Count -ne 0) { throw ($parseErrors | Out-String) }
-                        foreach ($name in @(
-                            'Get-NumericPropertySum',
-                            'Get-PayloadCoverageSummary',
-                            'Test-PayloadHashList',
-                            'Get-ScriptSourceCoverageAssessment')) {
-                            $function = $ast.Find({
-                                param($node)
-                                $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-                                    $node.Name -eq $name
-                            }, $true)
-                            if ($null -eq $function) { throw "Missing function $name" }
-                            Invoke-Expression $function.Extent.Text
+                        $ErrorActionPreference = 'Stop'
+                        Set-StrictMode -Version Latest
+                        $results = [ordered]@{}
+                        foreach ($scriptName in @('Run-DmpCorpus.ps1', 'Verify-DmpCorpus.ps1')) {
+                            try {
+                                $json = & {
+                                    param($scriptPath)
+                                    $tokens = $null
+                                    $parseErrors = $null
+                                    $ast = [Management.Automation.Language.Parser]::ParseFile(
+                                        $scriptPath, [ref]$tokens, [ref]$parseErrors)
+                                    if ($parseErrors.Count -ne 0) { throw ($parseErrors | Out-String) }
+                                    foreach ($name in @(
+                                        'Get-NumericPropertySum',
+                                        'Get-PayloadCoverageSummary',
+                                        'Test-PayloadHashList',
+                                        'Get-ScriptSourceCoverageAssessment')) {
+                                        $function = $ast.Find({
+                                            param($node)
+                                            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                                                $node.Name -eq $name
+                                        }, $true)
+                                        if ($null -eq $function) { throw "Missing function $name" }
+                                        Invoke-Expression $function.Extent.Text
+                                    }
+                                    Get-ScriptSourceCoverageAssessment -SourceRows @() -SubrecordRows @() |
+                                        ConvertTo-Json -Compress
+                                } (Join-Path '{{escapedToolsDirectory}}' $scriptName)
+                                $results[$scriptName] = [pscustomobject]@{ Json = [string]$json; Error = $null }
+                            }
+                            catch {
+                                $results[$scriptName] = [pscustomobject]@{ Json = $null; Error = $_.ToString() }
+                            }
                         }
-                        Get-ScriptSourceCoverageAssessment -SourceRows @() -SubrecordRows @() |
-                            ConvertTo-Json -Compress
-                    } (Join-Path '{{escapedToolsDirectory}}' $scriptName)
-                    $results[$scriptName] = [pscustomobject]@{ Json = [string]$json; Error = $null }
-                }
-                catch {
-                    $results[$scriptName] = [pscustomobject]@{ Json = $null; Error = $_.ToString() }
-                }
-            }
-            [pscustomobject]$results | ConvertTo-Json -Compress -Depth 3
-            """;
+                        [pscustomobject]$results | ConvertTo-Json -Compress -Depth 3
+                        """;
 
         return RunPwshHarness(harness, "source-coverage");
     }
@@ -634,7 +640,7 @@ public sealed class CorpusCertificationScriptContractTests
         var harnessPath = Path.Combine(Path.GetTempPath(), $"corpus-{harnessKind}-{Guid.NewGuid():N}.ps1");
         try
         {
-            File.WriteAllText(harnessPath, harness, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            File.WriteAllText(harnessPath, harness, new UTF8Encoding(false));
             using var process = Process.Start(new ProcessStartInfo
             {
                 FileName = "pwsh",
@@ -648,8 +654,8 @@ public sealed class CorpusCertificationScriptContractTests
                     "-NoProfile",
                     "-NonInteractive",
                     "-File",
-                    harnessPath,
-                },
+                    harnessPath
+                }
             });
             Assert.NotNull(process);
             var output = process.StandardOutput.ReadToEnd();

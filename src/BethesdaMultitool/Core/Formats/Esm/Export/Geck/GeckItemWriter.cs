@@ -106,11 +106,11 @@ internal static class GeckItemWriter
             new("Weight", ReportValue.Float(item.Weight))
         };
 
-        if (item.AddictionFormId.HasValue)
+        if (item.WithdrawalEffectFormId.HasValue)
         {
-            statsFields.Add(new ReportField("Addiction",
-                ReportValue.FormId(item.AddictionFormId.Value, resolver),
-                $"0x{item.AddictionFormId.Value:X8}"));
+            statsFields.Add(new ReportField("Withdrawal Effect",
+                ReportValue.FormId(item.WithdrawalEffectFormId.Value, resolver),
+                $"0x{item.WithdrawalEffectFormId.Value:X8}"));
             statsFields.Add(new ReportField("Addict. Chance",
                 ReportValue.FloatDisplay(item.AddictionChance, $"{item.AddictionChance * 100:F0}%")));
         }

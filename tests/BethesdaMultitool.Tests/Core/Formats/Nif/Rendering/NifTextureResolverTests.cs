@@ -1,9 +1,9 @@
 using System.Buffers.Binary;
+using System.Numerics;
 using System.Text;
 using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
-using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
@@ -95,7 +95,7 @@ public sealed class NifTextureResolverTests
         // from a source resolves to its diffuse path, normalized for archive lookup.
         const string materialKey = @"materials\test\thing.bgsm";
         var source = new FakeMaterialSource(materialKey,
-            BuildBgsm(22, headerLength: 60, "SetDressing/Test/thing_d.dds", "Shared/flat_n.dds"));
+            BuildBgsm(22, 60, "SetDressing/Test/thing_d.dds", "Shared/flat_n.dds"));
 
         var diffuse = MaterialTexturePathResolver.ResolveDiffuseTexturePath(materialKey, [source]);
 
@@ -187,9 +187,9 @@ public sealed class NifTextureResolverTests
         WriteUInt32(data, 22, 0);
         WriteFloat(data, 26, 1f); // environment-map scale
         WriteUInt32(data, 30, 0); // texture clamp
-        WriteInt32(data, 34, 1);  // texture-set ref
+        WriteInt32(data, 34, 1); // texture-set ref
         WriteFloat(data, 38, 0f); // refraction strength
-        WriteInt32(data, 42, 0);  // refraction fire period
+        WriteInt32(data, 42, 0); // refraction fire period
         WriteFloat(data, 46, 4f); // POM max passes
         WriteFloat(data, 50, 1f); // POM scale
 
@@ -313,16 +313,16 @@ public sealed class NifTextureResolverTests
 
         WriteUInt32(data, pos, 0x0000FF03); // clamp=3, LightingInfluence=255
         pos += 4;
-        WriteFloat(data, pos, 1f);      // Falloff Start Angle
-        WriteFloat(data, pos + 4, 1f);  // Falloff Stop Angle
-        WriteFloat(data, pos + 8, 0f);  // Falloff Start Opacity
+        WriteFloat(data, pos, 1f); // Falloff Start Angle
+        WriteFloat(data, pos + 4, 1f); // Falloff Stop Angle
+        WriteFloat(data, pos + 8, 0f); // Falloff Start Opacity
         WriteFloat(data, pos + 12, 0f); // Falloff Stop Opacity
         pos += 16;
-        WriteFloat(data, pos, 0.25f);     // Base Color R
-        WriteFloat(data, pos + 4, 0.5f);  // Base Color G
+        WriteFloat(data, pos, 0.25f); // Base Color R
+        WriteFloat(data, pos + 4, 0.5f); // Base Color G
         WriteFloat(data, pos + 8, 0.75f); // Base Color B
         WriteFloat(data, pos + 12, 0.25f); // Base Color A (distinct authored opacity)
-        WriteFloat(data, pos + 16, 2f);   // Base Color Scale
+        WriteFloat(data, pos + 16, 2f); // Base Color Scale
         WriteFloat(data, pos + 20, 128f); // authored Soft Falloff Depth
         pos += 24;
 
@@ -335,8 +335,8 @@ public sealed class NifTextureResolverTests
         Assert.Equal(sourceTexture, metadata.DiffusePath);
         Assert.Equal(shaderFlags1, metadata.ShaderFlags);
         Assert.Equal(shaderFlags2, metadata.ShaderFlags2);
-        Assert.Equal(new System.Numerics.Vector2(0.125f, -0.25f), metadata.UvOffset);
-        Assert.Equal(new System.Numerics.Vector2(2f, 0.5f), metadata.UvScale);
+        Assert.Equal(new Vector2(0.125f, -0.25f), metadata.UvOffset);
+        Assert.Equal(new Vector2(2f, 0.5f), metadata.UvScale);
         Assert.Equal(1f, metadata.EffectLightingInfluence);
         Assert.Equal(2f, metadata.EffectBaseColorScale);
         Assert.Equal((0.25f, 0.5f, 0.75f, 0.25f), metadata.EffectBaseColor);
@@ -541,12 +541,20 @@ public sealed class NifTextureResolverTests
     /// <summary>Single-entry texture source that returns fixed bytes for one path (case-insensitive).</summary>
     private sealed class FakeMaterialSource(string key, byte[] bytes) : INifTextureSource
     {
-        public DecodedTexture? TryLoad(string path) => null;
+        public DecodedTexture? TryLoad(string path)
+        {
+            return null;
+        }
 
-        public byte[]? TryLoadRaw(string path) =>
-            string.Equals(path, key, StringComparison.OrdinalIgnoreCase) ? bytes : null;
+        public byte[]? TryLoadRaw(string path)
+        {
+            return string.Equals(path, key, StringComparison.OrdinalIgnoreCase) ? bytes : null;
+        }
 
-        public bool Exists(string path) => string.Equals(path, key, StringComparison.OrdinalIgnoreCase);
+        public bool Exists(string path)
+        {
+            return string.Equals(path, key, StringComparison.OrdinalIgnoreCase);
+        }
 
         public void Dispose()
         {

@@ -11,7 +11,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     model the lighting / sky / water shaders read. Grounded in the engine decompile (atmosphere P2b):
 ///     the sun intensity is the daylight fraction (0 below the horizon, flat across the day), and the
 ///     WTHR NAM0 bands cross-fade within the sunrise/sunset windows; FNV's optional HighNoon slot also
-///     peaks at the engine's fixed 12:00 member. These invariants (noon sun high + bright, night sun down + dark, lighting-off zeroes the
+///     peaks at the engine's fixed 12:00 member. These invariants (noon sun high + bright, night sun down + dark,
+///     lighting-off zeroes the
 ///     sun, FNAM drives fog, unit sun direction, hour wraps) must hold.
 /// </summary>
 public sealed class AtmosphereStateTests
@@ -101,7 +102,7 @@ public sealed class AtmosphereStateTests
             PositiveY = new WeatherRgba(0, 0, 255, 255),
             NegativeY = new WeatherRgba(255, 255, 0, 255),
             PositiveZ = new WeatherRgba(255, 0, 255, 255),
-            NegativeZ = new WeatherRgba(0, 255, 255, 255),
+            NegativeZ = new WeatherRgba(0, 255, 255, 255)
         };
         var weather = new WeatherRecord
         {
@@ -109,7 +110,7 @@ public sealed class AtmosphereStateTests
             // Compatibility mean deliberately disagrees: the lossless cube must win.
             DirectionalAmbient = new WeatherColor(
                 new WeatherRgba(1, 1, 1, 255), new WeatherRgba(1, 1, 1, 255),
-                new WeatherRgba(1, 1, 1, 255), new WeatherRgba(1, 1, 1, 255)),
+                new WeatherRgba(1, 1, 1, 255), new WeatherRgba(1, 1, 1, 255))
         };
 
         var resolved = AtmosphereState.Resolve(12f, weather, CleanTiming, game: BethesdaGame.Fallout4);
@@ -128,22 +129,25 @@ public sealed class AtmosphereStateTests
     [Fact]
     public void SampleDirectionalAmbientCube_UsesModernQuarterBandsWithoutCollapsingFaces()
     {
-        static WeatherAmbientCube Solid(byte value) => new()
+        static WeatherAmbientCube Solid(byte value)
         {
-            PositiveX = new WeatherRgba(value, 0, 0, 255),
-            NegativeX = new WeatherRgba(0, value, 0, 255),
-            PositiveY = new WeatherRgba(0, 0, value, 255),
-            NegativeY = new WeatherRgba(value, value, 0, 255),
-            PositiveZ = new WeatherRgba(value, 0, value, 255),
-            NegativeZ = new WeatherRgba(0, value, value, 255),
-        };
+            return new WeatherAmbientCube
+            {
+                PositiveX = new WeatherRgba(value, 0, 0, 255),
+                NegativeX = new WeatherRgba(0, value, 0, 255),
+                PositiveY = new WeatherRgba(0, 0, value, 255),
+                NegativeY = new WeatherRgba(value, value, 0, 255),
+                PositiveZ = new WeatherRgba(value, 0, value, 255),
+                NegativeZ = new WeatherRgba(0, value, value, 255)
+            };
+        }
 
         var bands = new WeatherTimeBands<WeatherAmbientCube>(Solid(64), Solid(192), Solid(96), Solid(16))
         {
             EarlySunrise = Solid(32),
             LateSunrise = Solid(128),
             EarlySunset = Solid(160),
-            LateSunset = Solid(48),
+            LateSunset = Solid(48)
         };
 
         // Sunrise window 5..7: hour 5.5 is exactly its first quarter key (Early Sunrise).
@@ -194,7 +198,7 @@ public sealed class AtmosphereStateTests
         var weather = new WeatherRecord
         {
             Colors = [filler, filler, filler, filler, filler],
-            DirectionalAmbient = filler,
+            DirectionalAmbient = filler
         };
 
         var midnight = AtmosphereState.Resolve(0f, weather, CleanTiming, game: BethesdaGame.Skyrim);
@@ -212,7 +216,7 @@ public sealed class AtmosphereStateTests
         var weather = new WeatherRecord
         {
             SunGlareColor = new WeatherColor(red, red, red, red),
-            MoonGlareColor = new WeatherColor(green, green, green, green),
+            MoonGlareColor = new WeatherColor(green, green, green, green)
         };
 
         var resolved = AtmosphereState.Resolve(12f, weather, CleanTiming, game: BethesdaGame.Skyrim);
@@ -238,7 +242,7 @@ public sealed class AtmosphereStateTests
         var weather = new WeatherRecord
         {
             Colors = colors,
-            Data = new WeatherData { SunGlare = 128 },
+            Data = new WeatherData { SunGlare = 128 }
         };
 
         var resolved = AtmosphereState.Resolve(12f, weather, CleanTiming, game: BethesdaGame.Fallout4);
@@ -268,7 +272,7 @@ public sealed class AtmosphereStateTests
             // Skyrim NAM2/NAM3 are explicit RGBX rows whose fourth byte is padding.
             SunGlareColor = new WeatherColor(sunGlareRgbx, sunGlareRgbx, sunGlareRgbx, sunGlareRgbx),
             MoonGlareColor = new WeatherColor(moonGlareRgbx, moonGlareRgbx, moonGlareRgbx, moonGlareRgbx),
-            Data = new WeatherData { SunGlare = 128 },
+            Data = new WeatherData { SunGlare = 128 }
         };
 
         var noon = AtmosphereState.Resolve(12f, weather, CleanTiming, game: BethesdaGame.Skyrim);
@@ -627,10 +631,10 @@ public sealed class AtmosphereStateTests
     {
         // A cloud layer's PNAM color: RGB tint + A opacity, sampled by the SAME band blend as the sky.
         var c = new WeatherColor(
-            new WeatherRgba(50, 50, 50, 50),    // sunrise
-            new WeatherRgba(10, 20, 30, 200),   // day
-            new WeatherRgba(60, 60, 60, 60),    // sunset
-            new WeatherRgba(1, 2, 3, 40));      // night
+            new WeatherRgba(50, 50, 50, 50), // sunrise
+            new WeatherRgba(10, 20, 30, 200), // day
+            new WeatherRgba(60, 60, 60, 60), // sunset
+            new WeatherRgba(1, 2, 3, 40)); // night
 
         var noon = AtmosphereState.SampleCloudColor(c, 12f, CleanTiming);
         Assert.Equal(10f / 255f, noon.X, 3);
@@ -721,7 +725,7 @@ public sealed class AtmosphereStateTests
             EarlySunrise = new WeatherRgba(20, 0, 0, 255),
             LateSunrise = new WeatherRgba(120, 0, 0, 255),
             EarlySunset = new WeatherRgba(144, 0, 0, 255),
-            LateSunset = new WeatherRgba(40, 0, 0, 255),
+            LateSunset = new WeatherRgba(40, 0, 0, 255)
         });
         var weather = new WeatherRecord { Colors = colors };
 
@@ -752,14 +756,14 @@ public sealed class AtmosphereStateTests
             EarlySunrise = new WeatherRgba(20, 0, 0, 255),
             LateSunrise = new WeatherRgba(120, 0, 0, 255),
             EarlySunset = zero,
-            LateSunset = zero,
+            LateSunset = zero
         });
         var alpha = new WeatherCloudAlpha(new WeatherTimeBands<float>(0.4f, 0.8f, 0f, 0f)
         {
             EarlySunrise = 0.1f,
             LateSunrise = 0.6f,
             EarlySunset = 0f,
-            LateSunset = 0f,
+            LateSunset = 0f
         });
 
         var tint = AtmosphereState.SampleCloudColor(
@@ -835,9 +839,9 @@ public sealed class AtmosphereStateTests
     public void HorizonGlow_ContinuousAcrossSunsetEnd()
     {
         // Just inside daylight the sun is at the horizon (sunDirZ ~ 0) => glow ~ 1.
-        var inside = AtmosphereState.HorizonGlow(18.99f, 5f, 19f, sunDirZ: 0.01f);
+        var inside = AtmosphereState.HorizonGlow(18.99f, 5f, 19f, 0.01f);
         // Just past sunset-end the twilight decay has barely started => glow ~ 1, NOT 0.
-        var outside = AtmosphereState.HorizonGlow(19.01f, 5f, 19f, sunDirZ: -1f);
+        var outside = AtmosphereState.HorizonGlow(19.01f, 5f, 19f, -1f);
 
         Assert.True(inside > 0.9f, $"glow just before sunset-end should be near 1, got {inside}");
         Assert.True(outside > 0.9f, $"glow just after sunset-end should be near 1, got {outside}");
@@ -849,9 +853,9 @@ public sealed class AtmosphereStateTests
     public void HorizonGlow_FadesOverCivilTwilight_ThenStaysZeroAllNight()
     {
         // Timing (5, 19): 14h daylight => descent rate π·50°/14h => ~0.53h twilight window.
-        var fifteenMinutesAfter = AtmosphereState.HorizonGlow(19.25f, 5f, 19f, sunDirZ: -1f);
-        var oneHourAfter = AtmosphereState.HorizonGlow(20f, 5f, 19f, sunDirZ: -1f);
-        var deepNight = AtmosphereState.HorizonGlow(1f, 5f, 19f, sunDirZ: -1f);
+        var fifteenMinutesAfter = AtmosphereState.HorizonGlow(19.25f, 5f, 19f, -1f);
+        var oneHourAfter = AtmosphereState.HorizonGlow(20f, 5f, 19f, -1f);
+        var deepNight = AtmosphereState.HorizonGlow(1f, 5f, 19f, -1f);
 
         Assert.True(fifteenMinutesAfter is > 0.2f and < 0.8f,
             $"afterglow should be mid-decay 15 min past sunset-end, got {fifteenMinutesAfter}");
@@ -863,12 +867,12 @@ public sealed class AtmosphereStateTests
     public void HorizonGlow_PreSunriseMirrorsPostSunset_AndWrapsMidnight()
     {
         // 15 min before sunrise-begin: same decay as 15 min past sunset-end (dawn glow).
-        var beforeSunrise = AtmosphereState.HorizonGlow(4.75f, 5f, 19f, sunDirZ: -1f);
-        var afterSunset = AtmosphereState.HorizonGlow(19.25f, 5f, 19f, sunDirZ: -1f);
+        var beforeSunrise = AtmosphereState.HorizonGlow(4.75f, 5f, 19f, -1f);
+        var afterSunset = AtmosphereState.HorizonGlow(19.25f, 5f, 19f, -1f);
         Assert.Equal(afterSunset, beforeSunrise, 3);
 
         // Midnight wrap: hour 0 is 5 hours past sunset AND 5 hours before sunrise — zero either way.
-        Assert.Equal(0f, AtmosphereState.HorizonGlow(0f, 5f, 19f, sunDirZ: -1f));
+        Assert.Equal(0f, AtmosphereState.HorizonGlow(0f, 5f, 19f, -1f));
     }
 
     [Fact]
@@ -876,7 +880,7 @@ public sealed class AtmosphereStateTests
     {
         // Inside daylight the gate is the sun's horizon proximity — high sun => no glow (the daytime
         // sky must be untouched). sin(50°) ≈ 0.766 is the apex sunDir.Z.
-        Assert.Equal(0f, AtmosphereState.HorizonGlow(12f, 5f, 19f, sunDirZ: 0.766f));
+        Assert.Equal(0f, AtmosphereState.HorizonGlow(12f, 5f, 19f, 0.766f));
     }
 
     // --- FNV/FO3 engine sun path (triangle wave, FNV GMSTs fSunXExtreme=800 / fSunYExtreme=−100) ----
@@ -897,56 +901,61 @@ public sealed class AtmosphereStateTests
     {
         // Outside the daylight span the analytic (0,0,−1) convention is preserved — the horizon-glow
         // midnight gating depends on |sunDir.Z| being 1 at night.
-        Assert.Equal(new System.Numerics.Vector3(0f, 0f, -1f),
+        Assert.Equal(new Vector3(0f, 0f, -1f),
             AtmosphereState.FnvSunPathDirection(2f, 6f, 8f, 18f, 20f));
     }
 
     [Fact]
     public void Resolve_FalloutNewVegas_UsesEngineTriangleWaveAtNoon()
     {
-        var fnv = AtmosphereState.Resolve(13f, climate: FnvTiming(), game: BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas);
+        var fnv = AtmosphereState.Resolve(13f, climate: FnvTiming(), game: BethesdaGame.FalloutNewVegas);
         var generic = AtmosphereState.Resolve(13f, climate: FnvTiming());
 
         Assert.True(fnv.SunWorldDirection.Z > 0.98f, "FNV noon apex ≈ 83° (engine GMSTs)");
         Assert.True(generic.SunWorldDirection.Z < 0.85f, "non-FNV games keep the analytic 50° arc");
     }
 
-    private static AtmosphereState.ClimateTiming FnvTiming() =>
-        AtmosphereState.ClimateTiming.FromClimateData(
-            new BethesdaMultitool.Core.Formats.Esm.Models.Records.World.ClimateTimingData(36, 48, 108, 120, 0, 0x83));
+    private static AtmosphereState.ClimateTiming FnvTiming()
+    {
+        return AtmosphereState.ClimateTiming.FromClimateData(
+            new ClimateTimingData(36, 48, 108, 120, 0, 0x83));
+    }
 
     // --- Interior XCLL/LGTM lighting (time-of-day independent) ---------------------------------
 
     // GSProspectorSaloonInterior's real XCLL (FalloutNV.esm 0x00106185): packed colors are
     // R | G<<8 | B<<16.
-    private static Dictionary<string, object?> SaloonXcll() => new()
+    private static Dictionary<string, object?> SaloonXcll()
     {
-        ["AmbientColor"] = (uint)(30 | (41 << 8) | (77 << 16)),
-        ["DirectionalColor"] = (uint)(26 | (32 << 8) | (49 << 16)),
-        ["FogColor"] = (uint)(55 | (55 << 8) | (94 << 16)),
-        ["FogNear"] = 64f,
-        ["FogFar"] = 3750f,
-        ["DirectionalRotationXY"] = 0,
-        ["DirectionalRotationZ"] = 250,
-        ["DirectionalFade"] = 1.0f,
-        ["FogClipDistance"] = 6600f,
-        ["FogPow"] = 1.25f,
-    };
+        return new Dictionary<string, object?>
+        {
+            ["AmbientColor"] = (uint)(30 | (41 << 8) | (77 << 16)),
+            ["DirectionalColor"] = (uint)(26 | (32 << 8) | (49 << 16)),
+            ["FogColor"] = (uint)(55 | (55 << 8) | (94 << 16)),
+            ["FogNear"] = 64f,
+            ["FogFar"] = 3750f,
+            ["DirectionalRotationXY"] = 0,
+            ["DirectionalRotationZ"] = 250,
+            ["DirectionalFade"] = 1.0f,
+            ["FogClipDistance"] = 6600f,
+            ["FogPow"] = 1.25f
+        };
+    }
 
     [Fact]
     public void ResolveInterior_UsesAuthoredXcll_TimeIndependent()
     {
-        var r = AtmosphereState.ResolveInterior(SaloonXcll(), templateLighting: null);
+        var r = AtmosphereState.ResolveInterior(SaloonXcll(), null);
 
         Assert.Equal(30 / 255f, r.AmbientColor.X, 3);
         Assert.Equal(41 / 255f, r.AmbientColor.Y, 3);
         Assert.Equal(77 / 255f, r.AmbientColor.Z, 3);
-        Assert.Equal(26 / 255f, r.SunColor.X, 3);          // directional = the interior "sun"
+        Assert.Equal(26 / 255f, r.SunColor.X, 3); // directional = the interior "sun"
         Assert.Equal(64f, r.FogNear);
         Assert.Equal(3750f, r.FogFar);
         Assert.Equal(1.25f, r.FogPower, 3);
-        Assert.Equal(1f, r.SunIntensity);                   // never fades with game hour
-        Assert.Equal(r.FogColor, r.SkyTopColor);            // no sky: fog doubles as backdrop
+        Assert.Equal(1f, r.SunIntensity); // never fades with game hour
+        Assert.Equal(r.FogColor, r.SkyTopColor); // no sky: fog doubles as backdrop
     }
 
     [Fact]
@@ -955,7 +964,7 @@ public sealed class AtmosphereStateTests
         var template = new Dictionary<string, object?>
         {
             ["AmbientColor"] = (uint)(60 | (60 << 8) | (60 << 16)),
-            ["FogPower"] = 1.5f, // LGTM DATA spelling (vs XCLL "FogPow") — the dual-key trap
+            ["FogPower"] = 1.5f // LGTM DATA spelling (vs XCLL "FogPow") — the dual-key trap
         };
 
         // No XCLL at all → template values drive.
@@ -964,13 +973,13 @@ public sealed class AtmosphereStateTests
         Assert.Equal(1.5f, fromTemplate.FogPower, 3);
 
         // XCLL present but ambient inherit bit (0x01) set → template ambient wins, XCLL fog stays.
-        var inherited = AtmosphereState.ResolveInterior(SaloonXcll(), template, inheritanceFlags: 0x01);
+        var inherited = AtmosphereState.ResolveInterior(SaloonXcll(), template, 0x01);
         Assert.Equal(60 / 255f, inherited.AmbientColor.X, 3);
         Assert.Equal(64f, inherited.FogNear);
 
         // Inherit bits authored on a template-LESS cell (Saloon ships LNAM=0x9F, LTMP=NULL) must
         // still resolve from the XCLL, not to defaults.
-        var noTemplate = AtmosphereState.ResolveInterior(SaloonXcll(), null, inheritanceFlags: 0x9F);
+        var noTemplate = AtmosphereState.ResolveInterior(SaloonXcll(), null, 0x9F);
         Assert.Equal(30 / 255f, noTemplate.AmbientColor.X, 3);
     }
 
@@ -995,7 +1004,7 @@ public sealed class AtmosphereStateTests
         // extension. Quarter-window vectors therefore land exactly on each five-band segment edge.
         var blend = AtmosphereState.SelectWeatherBandBlend(
             hour, CleanTiming, BethesdaGame.Fallout76,
-            hasModernTransitions: true, hasAuthoredHighNoon: false);
+            true, false);
 
         Assert.Equal(expectedFrom, blend.From);
         Assert.Equal(expectedTo, blend.To);
@@ -1017,7 +1026,7 @@ public sealed class AtmosphereStateTests
     {
         var blend = AtmosphereState.SelectWeatherBandBlend(
             hour, CleanTiming, BethesdaGame.FalloutNewVegas,
-            hasModernTransitions: false, hasAuthoredHighNoon: true);
+            false, true);
 
         Assert.Equal(expectedFrom, blend.From);
         Assert.Equal(expectedTo, blend.To);
@@ -1031,7 +1040,7 @@ public sealed class AtmosphereStateTests
 
         var blend = AtmosphereState.SelectWeatherBandBlend(
             12f, asymmetricTiming, BethesdaGame.FalloutNewVegas,
-            hasModernTransitions: false, hasAuthoredHighNoon: true);
+            false, true);
 
         Assert.Equal(AtmosphereState.WeatherBandKind.Day, blend.From);
         Assert.Equal(AtmosphereState.WeatherBandKind.HighNoon, blend.To);

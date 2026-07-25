@@ -16,6 +16,10 @@ public static class EsmSubrecordUtils
     /// <summary>
     ///     Iterates through subrecords in a record's data section.
     ///     Returns (signature, data offset, data length) for each subrecord.
+    ///     Honors Bethesda extended-size (XXXX) subrecords: an <c>XXXX</c> subrecord carries the true
+    ///     4-byte length of the FOLLOWING subrecord (whose own u16 length field is then 0), used when a
+    ///     subrecord's payload exceeds 0xFFFF (e.g. NVNM navmesh geometry, OFST worldspace offset tables).
+    ///     The XXXX marker itself is not yielded; the following subrecord is yielded with its true length.
     /// </summary>
     /// <param name="data">Record data buffer.</param>
     /// <param name="dataSize">Size of valid data in buffer.</param>
@@ -23,6 +27,7 @@ public static class EsmSubrecordUtils
     public static IEnumerable<ParsedSubrecord> IterateSubrecords(byte[] data, int dataSize, bool bigEndian)
     {
         var offset = 0;
+        uint? pendingExtendedSize = null;
 
         while (offset + SubrecordHeaderSize <= dataSize)
         {
@@ -38,14 +43,28 @@ public static class EsmSubrecordUtils
                 ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset + 4))
                 : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(offset + 4));
 
-            if (offset + SubrecordHeaderSize + subSize > dataSize)
+            // XXXX carries the real size of the next subrecord; stash it and skip the marker itself.
+            if (sig == "XXXX" && subSize == 4 && offset + SubrecordHeaderSize + 4 <= dataSize)
+            {
+                pendingExtendedSize = bigEndian
+                    ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset + SubrecordHeaderSize))
+                    : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset + SubrecordHeaderSize));
+                offset += SubrecordHeaderSize + 4;
+                continue;
+            }
+
+            // The following subrecord's own u16 length is 0 when an XXXX preceded it — use the stashed size.
+            var actualSize = pendingExtendedSize ?? subSize;
+            pendingExtendedSize = null;
+
+            if ((long)offset + SubrecordHeaderSize + actualSize > dataSize)
             {
                 yield break;
             }
 
-            yield return new ParsedSubrecord(sig, offset + SubrecordHeaderSize, subSize);
+            yield return new ParsedSubrecord(sig, offset + SubrecordHeaderSize, (int)actualSize);
 
-            offset += SubrecordHeaderSize + subSize;
+            offset += SubrecordHeaderSize + (int)actualSize;
         }
     }
 

@@ -4,9 +4,11 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
 /// <summary>
 ///     One placed walk-collision source. A mesh source is the cache's Havok-first triangle soup;
-///     a box source is the existing, policy-gated cold-OBND fallback. Bounds are world-space and are
+///     a box source is the policy-gated cold-OBND fallback. Bounds are world-space and are
 ///     retained for the swept broadphase so a long frame cannot tunnel merely because neither end
-///     point overlaps the object.
+///     point overlaps the object. A placed box additionally carries its ROTATED XY footprint
+///     corners: walling the axis-aligned bounds of a yaw-rotated long piece (e.g. a 768-unit
+///     sidewalk median at 45°) blocked walkable road far outside the object's true silhouette.
 /// </summary>
 internal readonly record struct WalkCollisionInstance(
     CollisionMesh? Mesh,
@@ -16,10 +18,57 @@ internal readonly record struct WalkCollisionInstance(
 {
     public bool IsAxisAlignedBox => Mesh is null;
 
+    /// <summary>
+    ///     World-space XY corners of the placed box footprint, in winding order (null for mesh
+    ///     sources and for legacy axis-aligned boxes, whose footprint is the world AABB).
+    /// </summary>
+    public Vector2[]? FootprintCorners { get; private init; }
+
     public static WalkCollisionInstance FromMesh(CollisionMesh mesh, Matrix4x4 world)
     {
         ArgumentNullException.ThrowIfNull(mesh);
 
+        var (min, max) = TransformedCornerBounds(mesh.LocalMin, mesh.LocalMax, world);
+        return new WalkCollisionInstance(mesh, world, min, max);
+    }
+
+    public static WalkCollisionInstance FromAxisAlignedBox(Vector3 min, Vector3 max) =>
+        new(null, Matrix4x4.Identity, Vector3.Min(min, max), Vector3.Max(min, max));
+
+    /// <summary>
+    ///     Cold-OBND box honoring the full placement transform: the broadphase AABB comes from the
+    ///     eight transformed corners (correct Z range under tilt), and the wall sweep tests the
+    ///     ROTATED footprint quad instead of the axis-aligned bounds.
+    /// </summary>
+    public static WalkCollisionInstance FromPlacedBounds(Vector3 localMin, Vector3 localMax, in Matrix4x4 world)
+    {
+        var orderedMin = Vector3.Min(localMin, localMax);
+        var orderedMax = Vector3.Max(localMin, localMax);
+        localMin = orderedMin;
+        localMax = orderedMax;
+        var (min, max) = TransformedCornerBounds(localMin, localMax, world);
+        // The top-face corners in local winding order project to the placed footprint quad. Under
+        // the upright placements the cold path serves (yaw-only road furniture) this is the exact
+        // silhouette; under tilt it stays a sane quad while the AABB above stays conservative.
+        var corners = new[]
+        {
+            ProjectXY(new Vector3(localMin.X, localMin.Y, localMax.Z), world),
+            ProjectXY(new Vector3(localMax.X, localMin.Y, localMax.Z), world),
+            ProjectXY(new Vector3(localMax.X, localMax.Y, localMax.Z), world),
+            ProjectXY(new Vector3(localMin.X, localMax.Y, localMax.Z), world),
+        };
+        return new WalkCollisionInstance(null, world, min, max) { FootprintCorners = corners };
+    }
+
+    private static Vector2 ProjectXY(Vector3 local, in Matrix4x4 world)
+    {
+        var placed = Vector3.Transform(local, world);
+        return new Vector2(placed.X, placed.Y);
+    }
+
+    private static (Vector3 Min, Vector3 Max) TransformedCornerBounds(
+        Vector3 localMin, Vector3 localMax, in Matrix4x4 world)
+    {
         var min = new Vector3(float.MaxValue);
         var max = new Vector3(float.MinValue);
         for (var z = 0; z < 2; z++)
@@ -29,9 +78,9 @@ internal readonly record struct WalkCollisionInstance(
                 for (var x = 0; x < 2; x++)
                 {
                     var local = new Vector3(
-                        x == 0 ? mesh.LocalMin.X : mesh.LocalMax.X,
-                        y == 0 ? mesh.LocalMin.Y : mesh.LocalMax.Y,
-                        z == 0 ? mesh.LocalMin.Z : mesh.LocalMax.Z);
+                        x == 0 ? localMin.X : localMax.X,
+                        y == 0 ? localMin.Y : localMax.Y,
+                        z == 0 ? localMin.Z : localMax.Z);
                     var placed = Vector3.Transform(local, world);
                     min = Vector3.Min(min, placed);
                     max = Vector3.Max(max, placed);
@@ -39,11 +88,8 @@ internal readonly record struct WalkCollisionInstance(
             }
         }
 
-        return new WalkCollisionInstance(mesh, world, min, max);
+        return (min, max);
     }
-
-    public static WalkCollisionInstance FromAxisAlignedBox(Vector3 min, Vector3 max) =>
-        new(null, Matrix4x4.Identity, Vector3.Min(min, max), Vector3.Max(min, max));
 }
 
 /// <summary>
@@ -153,7 +199,19 @@ internal static class WalkHorizontalCollision
 
             if (candidate.IsAxisAlignedBox)
             {
-                TestBox(candidate.WorldMin, candidate.WorldMax);
+                // Placed boxes wall their ROTATED footprint quad; only the legacy axis-aligned
+                // form (and tests) fall back to the broadphase AABB rectangle.
+                if (candidate.FootprintCorners is { Length: 4 } corners)
+                {
+                    TestSegment(corners[0], corners[1]);
+                    TestSegment(corners[1], corners[2]);
+                    TestSegment(corners[2], corners[3]);
+                    TestSegment(corners[3], corners[0]);
+                }
+                else
+                {
+                    TestBox(candidate.WorldMin, candidate.WorldMax);
+                }
                 continue;
             }
 

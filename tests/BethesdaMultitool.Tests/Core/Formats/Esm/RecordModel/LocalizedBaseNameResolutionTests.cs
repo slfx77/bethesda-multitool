@@ -23,7 +23,7 @@ public class LocalizedBaseNameResolutionTests
         Assert.SkipUnless(File.Exists(esm), $"Localized plugin not found: {esm}");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm, cancellationToken: TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
 
         var total = 0;
         var rawIndex = 0;
@@ -46,6 +46,8 @@ public class LocalizedBaseNameResolutionTests
     // A resolved string is real prose (accented chars like é/å and spaces are fine). A raw 4-byte index
     // rendered as text is short, carries a high-bit/control byte, and has no spaces — that's the signature we
     // reject without flagging legitimate non-ASCII names.
-    private static bool LooksLikeRawStringIndex(string? s) =>
-        !string.IsNullOrEmpty(s) && s.Length <= 4 && !s.Contains(' ') && s.Any(c => c < 0x20 || c >= 0x7F);
+    private static bool LooksLikeRawStringIndex(string? s)
+    {
+        return !string.IsNullOrEmpty(s) && s.Length <= 4 && !s.Contains(' ') && s.Any(c => c < 0x20 || c >= 0x7F);
+    }
 }

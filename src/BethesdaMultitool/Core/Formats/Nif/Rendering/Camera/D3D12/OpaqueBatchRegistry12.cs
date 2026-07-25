@@ -77,7 +77,7 @@ internal sealed class OpaqueBatchRegistry12
             ? FnvTallGrassWind.SanitizeWaveMultiplier(grassWaveMultiplier)
             : 0f;
         var key = new OpaqueBatchKey(
-            submesh, usesGrassDistanceEnvelope, effectiveTallGrassWind, effectiveWaveMultiplier);
+            submesh, usesGrassDistanceEnvelope, effectiveTallGrassWind, effectiveWaveMultiplier, pso);
         if (!_batches.TryGetValue(key, out var batch))
         {
             batch = new OpaqueBatchState(
@@ -117,12 +117,17 @@ internal sealed class OpaqueBatchRegistry12
     ///     ordinary reference. Keeping those placements separate preserves the hard end during
     ///     exact filtering of frozen batches. The wind flag is independently keyed so acquiring a
     ///     distance envelope cannot silently enable FNV's GRASS2000 constants in another game.
+    ///     The pipeline state joins the key because it is no longer derivable from the submesh
+    ///     alone — grass cutouts reroute to the alpha-to-coverage PSO variants, and a grass and a
+    ///     non-grass placement of the same submesh must not alias one batch (reference identity
+    ///     equality is correct: factory PSOs are process-lifetime singletons).
     /// </summary>
     private readonly record struct OpaqueBatchKey(
         CachedSubmesh12 Submesh,
         bool UsesGrassDistanceEnvelope,
         bool UsesTallGrassWind,
-        float GrassWaveMultiplier);
+        float GrassWaveMultiplier,
+        ID3D12PipelineState Pso);
 }
 
 internal sealed class OpaqueBatchState(

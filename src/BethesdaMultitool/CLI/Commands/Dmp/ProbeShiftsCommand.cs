@@ -205,6 +205,18 @@ internal static class ProbeShiftsCommand
         yield return "EntriesCell";
         yield return "EntriesLand";
 
+        // REFR field-shift probe confidence (IsEarlyBuild is the winner)
+        yield return "RefrScore";
+        yield return "RefrRunnerUp";
+        yield return "RefrMargin";
+        yield return "RefrSamples";
+
+        // AMMO_DATA start-offset probe (winner is the detected fSpeed offset; drifts 172/184/188 per build)
+        yield return "AmmoDataOffset";
+        yield return "AmmoScore";
+        yield return "AmmoMargin";
+        yield return "AmmoSamples";
+
         // Race (2 shifts)
         yield return "RaceS0";
         yield return "RaceS1";
@@ -269,6 +281,16 @@ internal static class ProbeShiftsCommand
         yield return Csv(row.EntriesLand);
 
         var p = row.Probes;
+        yield return Csv(p.RefrScore);
+        yield return Csv(p.RefrRunnerUp);
+        yield return Csv(p.RefrMargin);
+        yield return Csv(p.RefrSamples);
+
+        yield return Csv(p.AmmoDataOffset);
+        yield return Csv(p.AmmoScore);
+        yield return Csv(p.AmmoMargin);
+        yield return Csv(p.AmmoSamples);
+
         yield return Csv(p.RaceShifts.ElementAtOrDefault(0));
         yield return Csv(p.RaceShifts.ElementAtOrDefault(1));
         yield return Csv(p.RaceLabel);
@@ -371,6 +393,14 @@ internal static class ProbeShiftsCommand
         AppendJsonField(sb, "EntriesWorld", row.EntriesWorld, indent: 4);
         AppendJsonField(sb, "EntriesCell", row.EntriesCell, indent: 4);
         AppendJsonField(sb, "EntriesLand", row.EntriesLand, indent: 4);
+        AppendJsonField(sb, "RefrScore", p.RefrScore, indent: 4);
+        AppendJsonField(sb, "RefrRunnerUp", p.RefrRunnerUp, indent: 4);
+        AppendJsonField(sb, "RefrMargin", p.RefrMargin, indent: 4);
+        AppendJsonField(sb, "RefrSamples", p.RefrSamples, indent: 4);
+        AppendJsonField(sb, "AmmoDataOffset", p.AmmoDataOffset, indent: 4);
+        AppendJsonField(sb, "AmmoScore", p.AmmoScore, indent: 4);
+        AppendJsonField(sb, "AmmoMargin", p.AmmoMargin, indent: 4);
+        AppendJsonField(sb, "AmmoSamples", p.AmmoSamples, indent: 4);
         AppendJsonField(sb, "RaceShifts", p.RaceShifts, indent: 4);
         AppendJsonField(sb, "RaceLabel", p.RaceLabel, indent: 4);
         AppendJsonField(sb, "RaceScore", p.RaceScore, indent: 4);
@@ -723,6 +753,19 @@ internal static class ProbeShiftsCommand
 
         public IReadOnlyDictionary<byte, int>? GenericTypeShifts { get; set; }
 
+        // REFR field-shift (early/final) probe confidence — IsEarlyBuild is the winner; these expose
+        // how decisive that pick was. A thin margin flags an outlier dump (the shift now also governs
+        // the heap-sweep recovery, so a low-confidence pick affects both REFR read paths).
+        public int? RefrScore { get; set; }
+        public int? RefrRunnerUp { get; set; }
+        public int? RefrMargin { get; set; }
+        public int? RefrSamples { get; set; }
+
+        public int? AmmoDataOffset { get; set; }
+        public int? AmmoScore { get; set; }
+        public int? AmmoMargin { get; set; }
+        public int? AmmoSamples { get; set; }
+
         public static ProbeSnapshot FromReader(RuntimeStructReader reader)
         {
             var snap = new ProbeSnapshot();
@@ -730,6 +773,22 @@ internal static class ProbeShiftsCommand
             if (probes == null)
             {
                 return snap;
+            }
+
+            if (probes.RefrLayout is { } refr)
+            {
+                snap.RefrScore = refr.WinnerScore;
+                snap.RefrRunnerUp = refr.RunnerUpScore;
+                snap.RefrMargin = refr.Margin;
+                snap.RefrSamples = refr.SampleCount;
+            }
+
+            if (probes.AmmoDataLayout is { } ammo)
+            {
+                snap.AmmoDataOffset = ammo.Winner.Layout;
+                snap.AmmoScore = ammo.WinnerScore;
+                snap.AmmoMargin = ammo.Margin;
+                snap.AmmoSamples = ammo.SampleCount;
             }
 
             if (probes.RaceLayout is { } race)

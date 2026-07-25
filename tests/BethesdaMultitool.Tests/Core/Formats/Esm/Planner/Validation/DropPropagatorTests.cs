@@ -16,7 +16,7 @@ public sealed class DropPropagatorTests
             Plan("GLOB", gameHour, RecordDisposition.Skip),
             Plan("SCPT", 0x01000800, RecordDisposition.New) with
             {
-                References = [Resolved("SCRO[0]", gameHour)],
+                References = [Resolved("SCRO[0]", gameHour)]
             });
 
         var result = DropPropagator.Propagate(records, RuntimeStateRecordPolicy.EngineFormIds);
@@ -34,7 +34,7 @@ public sealed class DropPropagatorTests
             Plan("IMAD", skippedTarget, RecordDisposition.Skip),
             Plan("SCPT", 0x01000800, RecordDisposition.New) with
             {
-                References = [Resolved("SCRO[0]", skippedTarget)],
+                References = [Resolved("SCRO[0]", skippedTarget)]
             });
 
         var result = DropPropagator.Propagate(records, RuntimeStateRecordPolicy.EngineFormIds);
@@ -54,7 +54,7 @@ public sealed class DropPropagatorTests
             Plan("GLOB", gameDaysPassed, RecordDisposition.Skip),
             Plan("SCPT", script, RecordDisposition.New) with
             {
-                References = [Resolved("SCRO[0]", gameDaysPassed)],
+                References = [Resolved("SCRO[0]", gameDaysPassed)]
             });
 
         var (validated, diagnostics) = PlanValidator.Validate(
@@ -68,21 +68,27 @@ public sealed class DropPropagatorTests
         Assert.Equal(gameDaysPassed, reference.FinalFormId);
     }
 
-    private static RecordPlan Plan(string type, uint formId, RecordDisposition disposition) => new()
+    private static RecordPlan Plan(string type, uint formId, RecordDisposition disposition)
     {
-        Type = type,
-        Disposition = disposition,
-        FormId = formId,
-        References = ImmutableArray<ResolvedRef>.Empty,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
-    };
+        return new RecordPlan
+        {
+            Type = type,
+            Disposition = disposition,
+            FormId = formId,
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+        };
+    }
 
-    private static ResolvedRef Resolved(string fieldPath, uint formId) => new()
+    private static ResolvedRef Resolved(string fieldPath, uint formId)
     {
-        FieldPath = fieldPath,
-        OriginalFormId = formId,
-        Action = ResolvedRefAction.Resolved,
-        FinalFormId = formId,
-    };
+        return new ResolvedRef
+        {
+            FieldPath = fieldPath,
+            OriginalFormId = formId,
+            Action = ResolvedRefAction.Resolved,
+            FinalFormId = formId
+        };
+    }
 }

@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using Xunit;
 
@@ -16,7 +15,7 @@ public class CellLayerWeightTableVtexTests
     {
         const uint ltex = 0x00F0002Au; // a synthetic Morrowind LTEX FormId (Tes3FormIdScheme.LtexFormIdBase + idx)
         var vtex = new uint[16 * 16];
-        System.Array.Fill(vtex, ltex);
+        Array.Fill(vtex, ltex);
 
         var table = CellLayerWeightTable.BuildFromVtexGrid(CellLayerWeightTable.CellVertexCount, vtex);
 
@@ -70,9 +69,9 @@ public class CellLayerWeightTableVtexTests
     {
         const uint own = 0xFF100001u, east = 0xFF100002u;
         var vtex = new uint[16 * 16];
-        System.Array.Fill(vtex, own);
+        Array.Fill(vtex, own);
         var eastVtex = new uint[16 * 16];
-        System.Array.Fill(eastVtex, east);
+        Array.Fill(eastVtex, east);
 
         const int grid = CellLayerWeightTable.CellVertexCount;
         var table = CellLayerWeightTable.BuildFromVtexGrid(grid, vtex, eastVtexFormIds: eastVtex);
@@ -89,9 +88,9 @@ public class CellLayerWeightTableVtexTests
     {
         const uint own = 0xFF100001u, north = 0xFF100003u;
         var vtex = new uint[16 * 16];
-        System.Array.Fill(vtex, own);
+        Array.Fill(vtex, own);
         var northVtex = new uint[16 * 16];
-        System.Array.Fill(northVtex, north);
+        Array.Fill(northVtex, north);
 
         const int grid = CellLayerWeightTable.CellVertexCount;
         var table = CellLayerWeightTable.BuildFromVtexGrid(grid, vtex, northVtexFormIds: northVtex);
@@ -110,9 +109,9 @@ public class CellLayerWeightTableVtexTests
     {
         const uint own = 0xFF100001u, ne = 0xFF100004u;
         var vtex = new uint[16 * 16];
-        System.Array.Fill(vtex, own);
+        Array.Fill(vtex, own);
         var neVtex = new uint[16 * 16];
-        System.Array.Fill(neVtex, ne);
+        Array.Fill(neVtex, ne);
 
         const int grid = CellLayerWeightTable.CellVertexCount;
         var table = CellLayerWeightTable.BuildFromVtexGrid(grid, vtex, northEastVtexFormIds: neVtex);
@@ -125,7 +124,7 @@ public class CellLayerWeightTableVtexTests
     {
         const uint own = 0xFF100001u;
         var vtex = new uint[16 * 16];
-        System.Array.Fill(vtex, own);
+        Array.Fill(vtex, own);
 
         const int grid = CellLayerWeightTable.CellVertexCount;
         var table = CellLayerWeightTable.BuildFromVtexGrid(grid, vtex);

@@ -128,6 +128,7 @@ public sealed class TerrainRaycasterTests
                 heights[y, x] = terrainHeight;
             }
         }
+
         var cell = Cell(heights, 4096f, grid, grid);
         var cache = new WorldRenderCache();
         var worldXy = grid * 4096f + 2048f;
@@ -154,7 +155,8 @@ public sealed class TerrainRaycasterTests
         var localDirection = Vector3.TransformNormal(rayDirection, inverseWorld);
         Assert.True(collision.RaycastNearest(localOrigin, localDirection, out var collisionT));
 
-        Assert.True(collisionT > terrainT, $"expected adjacent-float drift: collision={collisionT}, terrain={terrainT}");
+        Assert.True(collisionT > terrainT,
+            $"expected adjacent-float drift: collision={collisionT}, terrain={terrainT}");
         Assert.False(TerrainRaycaster.IsHitBehindTerrain(collisionT, terrainT));
         Assert.True(TerrainRaycaster.IsHitBehindTerrain(terrainT + 1f, terrainT));
     }
@@ -169,18 +171,22 @@ public sealed class TerrainRaycasterTests
                 heights[y, x] = height;
             }
         }
+
         return Cell(heights, cellSize);
     }
 
-    private static CellRecord Cell(float[,] heights, float cellSize, int gridX = 0, int gridY = 0) => new()
+    private static CellRecord Cell(float[,] heights, float cellSize, int gridX = 0, int gridY = 0)
     {
-        GridX = gridX,
-        GridY = gridY,
-        CellWorldSize = cellSize,
-        Heightmap = new LandHeightmap
+        return new CellRecord
         {
-            HeightDeltas = new sbyte[heights.Length],
-            ExactHeights = heights
-        }
-    };
+            GridX = gridX,
+            GridY = gridY,
+            CellWorldSize = cellSize,
+            Heightmap = new LandHeightmap
+            {
+                HeightDeltas = new sbyte[heights.Length],
+                ExactHeights = heights
+            }
+        };
+    }
 }

@@ -52,31 +52,31 @@ public sealed class FnvCloudMotionRetailTests(SampleFileFixture samples)
         Assert.Equal((byte)50, outgoing.Data.WindSpeed);
         Assert.Equal((byte)130, current.Data.WindSpeed);
         Assert.Equal(@"sky\alpha.dds", outgoing.FindCloudLayerBySourceIndex(0)?.Texture,
-            ignoreCase: true);
+            true);
         Assert.Equal(@"sky\wastelandcloudcloudyupper01.dds",
             current.FindCloudLayerBySourceIndex(0)?.Texture,
-            ignoreCase: true);
+            true);
 
         var transition = WeatherCloudTransitionResolver.Resolve(
             current,
             outgoing,
-            sourceLayerIndex: 0,
-            currentWeatherWeight: 0.5f,
-            game: BethesdaGame.FalloutNewVegas);
+            0,
+            0.5f,
+            BethesdaGame.FalloutNewVegas);
 
         var expectedEngine = 0.1f
-                             * (((52f / 255f) + (72f / 255f)) * 0.5f)
-                             * (((50f / 255f) + (130f / 255f)) * 0.5f);
+                             * ((52f / 255f + 72f / 255f) * 0.5f)
+                             * ((50f / 255f + 130f / 255f) * 0.5f);
         var oldBlendOfProducts = 0.5f
-                                 * ((0.1f * (52f / 255f) * (50f / 255f))
-                                    + (0.1f * (72f / 255f) * (130f / 255f)));
+                                 * (0.1f * (52f / 255f) * (50f / 255f)
+                                    + 0.1f * (72f / 255f) * (130f / 255f));
 
         Assert.Equal(0.008581315f, expectedEngine, 7);
         Assert.Equal(expectedEngine, transition.ScrollVelocity.X, 7);
         Assert.Equal(0f, transition.ScrollVelocity.Y);
         Assert.True(oldBlendOfProducts > transition.ScrollVelocity.X);
         Assert.InRange(
-            (oldBlendOfProducts / transition.ScrollVelocity.X) - 1f,
+            oldBlendOfProducts / transition.ScrollVelocity.X - 1f,
             0.071f,
             0.072f);
     }
@@ -88,8 +88,8 @@ public sealed class FnvCloudMotionRetailTests(SampleFileFixture samples)
         var texture = Encoding.ASCII.GetString(ReadSubrecord(fileData, record, "DNAM")).TrimEnd('\0');
         var speeds = MiscEnvironmentHandler.ReadCloudSpeeds(
             onam,
-            isBigEndian: false,
-            game: BethesdaGame.FalloutNewVegas);
+            false,
+            BethesdaGame.FalloutNewVegas);
 
         return new WeatherRecord
         {
@@ -103,9 +103,9 @@ public sealed class FnvCloudMotionRetailTests(SampleFileFixture samples)
                 {
                     SourceIndex = 0,
                     Texture = texture,
-                    SpeedU = speeds[0],
-                },
-            ],
+                    SpeedU = speeds[0]
+                }
+            ]
         };
     }
 

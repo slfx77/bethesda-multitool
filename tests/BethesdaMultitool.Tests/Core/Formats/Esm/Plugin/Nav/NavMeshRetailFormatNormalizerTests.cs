@@ -39,7 +39,7 @@ public sealed class NavMeshRetailFormatNormalizerTests
             new EncodedSubrecord("DATA", protoData),
             new EncodedSubrecord("NVER", nver),
             new EncodedSubrecord("NVVX", nvvx),
-            new EncodedSubrecord("NVTR", nvtr),
+            new EncodedSubrecord("NVTR", nvtr)
         ]);
 
         // Canonical order with a synthesized NVGD.
@@ -53,21 +53,21 @@ public sealed class NavMeshRetailFormatNormalizerTests
         var data = normalized[1].Bytes;
         Assert.Equal(24, data.Length);
         Assert.Equal(0x0010CC8Fu, BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0, 4)));
-        Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4, 4)));  // vertices
-        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(8, 4)));  // triangles
+        Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4, 4))); // vertices
+        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(8, 4))); // triangles
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(12, 4))); // edge links
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(16, 4))); // cover tris
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(20, 4))); // door links
 
         // NVGD: divisor-1 grid over the NVVX bounds listing the single triangle.
         var nvgd = normalized[4].Bytes;
-        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(nvgd.AsSpan(0, 4)));   // divisor
-        Assert.Equal(40f, BinaryPrimitives.ReadSingleLittleEndian(nvgd.AsSpan(4, 4)));  // max X dist
-        Assert.Equal(60f, BinaryPrimitives.ReadSingleLittleEndian(nvgd.AsSpan(8, 4)));  // max Y dist
+        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(nvgd.AsSpan(0, 4))); // divisor
+        Assert.Equal(40f, BinaryPrimitives.ReadSingleLittleEndian(nvgd.AsSpan(4, 4))); // max X dist
+        Assert.Equal(60f, BinaryPrimitives.ReadSingleLittleEndian(nvgd.AsSpan(8, 4))); // max Y dist
         Assert.Equal(-10f, BinaryPrimitives.ReadSingleLittleEndian(nvgd.AsSpan(12, 4))); // min X
-        Assert.Equal(5f, BinaryPrimitives.ReadSingleLittleEndian(nvgd.AsSpan(32, 4)));   // max Z
-        Assert.Equal(1, BinaryPrimitives.ReadUInt16LittleEndian(nvgd.AsSpan(36, 2)));    // cell count
-        Assert.Equal(0, BinaryPrimitives.ReadUInt16LittleEndian(nvgd.AsSpan(38, 2)));    // triangle 0
+        Assert.Equal(5f, BinaryPrimitives.ReadSingleLittleEndian(nvgd.AsSpan(32, 4))); // max Z
+        Assert.Equal(1, BinaryPrimitives.ReadUInt16LittleEndian(nvgd.AsSpan(36, 2))); // cell count
+        Assert.Equal(0, BinaryPrimitives.ReadUInt16LittleEndian(nvgd.AsSpan(38, 2))); // triangle 0
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public sealed class NavMeshRetailFormatNormalizerTests
             new EncodedSubrecord("DATA", data),
             new EncodedSubrecord("NVVX", new byte[12]),
             new EncodedSubrecord("NVTR", new byte[16]),
-            new EncodedSubrecord("NVGD", existingGrid),
+            new EncodedSubrecord("NVGD", existingGrid)
         ]);
 
         Assert.Equal(["NVER", "DATA", "NVVX", "NVTR", "NVGD"],

@@ -22,20 +22,23 @@ public sealed class ParticleColorModifierTests
 
     private static readonly Vector4 Tan = new(0.48f, 0.46f, 0.44f, 0.6f);
 
-    private static ColorModifierDefinition FxDustLike() => new()
+    private static ColorModifierDefinition FxDustLike()
     {
-        Kind = ParticleModifierKind.Color,
-        IsSimpleColor = true,
-        FadeInPercent = 0.05f,
-        FadeOutPercent = 0.35f,
-        Color1StartPercent = 0f,
-        Color1EndPercent = 0f,
-        Color2StartPercent = 0f,
-        Color2EndPercent = 0f,
-        Color0 = Vector4.Zero,
-        Color1 = Tan,
-        Color2 = Vector4.Zero,
-    };
+        return new ColorModifierDefinition
+        {
+            Kind = ParticleModifierKind.Color,
+            IsSimpleColor = true,
+            FadeInPercent = 0.05f,
+            FadeOutPercent = 0.35f,
+            Color1StartPercent = 0f,
+            Color1EndPercent = 0f,
+            Color2StartPercent = 0f,
+            Color2EndPercent = 0f,
+            Color0 = Vector4.Zero,
+            Color1 = Tan,
+            Color2 = Vector4.Zero
+        };
+    }
 
     [Fact]
     public void Sample_DegenerateWindows_ResolvesToBaseColorNotBlack()
@@ -81,12 +84,12 @@ public sealed class ParticleColorModifierTests
             Color2EndPercent = 0.75f, Color2StartPercent = 1f,
             Color0 = new Vector4(1, 0, 0, 1),
             Color1 = new Vector4(0, 1, 0, 1),
-            Color2 = new Vector4(0, 0, 1, 1),
+            Color2 = new Vector4(0, 0, 1, 1)
         };
 
-        Assert.Equal(new Vector4(1, 0, 0, 1), m.Sample(0f, Vector4.One));   // start = Color0 (red)
+        Assert.Equal(new Vector4(1, 0, 0, 1), m.Sample(0f, Vector4.One)); // start = Color0 (red)
         Assert.Equal(new Vector4(0, 1, 0, 1), m.Sample(0.5f, Vector4.One)); // middle = Color1 (green)
-        Assert.Equal(new Vector4(0, 0, 1, 1), m.Sample(1f, Vector4.One));   // end = Color2 (blue)
+        Assert.Equal(new Vector4(0, 0, 1, 1), m.Sample(1f, Vector4.One)); // end = Color2 (blue)
     }
 
     [Theory]
@@ -110,7 +113,7 @@ public sealed class ParticleColorModifierTests
             Color2StartPercent = 0.8f,
             Color0 = new Vector4(1, 0, 0, 0),
             Color1 = new Vector4(0, 1, 0, 1),
-            Color2 = new Vector4(0, 0, 1, 0),
+            Color2 = new Vector4(0, 0, 1, 0)
         };
 
         var actual = m.Sample(t, Vector4.One);

@@ -54,7 +54,7 @@ public sealed class WorldMapGridViewportTests
 
         Assert.False(WorldMapGridViewport.FromCorners(topLeft, bottomRight)
             .IntersectsCell(1, 0, FalloutCellSize));
-        Assert.True(WorldMapGridViewport.FromCorners(topLeft, bottomRight, margin: 1f)
+        Assert.True(WorldMapGridViewport.FromCorners(topLeft, bottomRight, 1f)
             .IntersectsCell(1, 0, FalloutCellSize));
     }
 

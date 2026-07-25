@@ -1,10 +1,9 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
@@ -27,15 +26,20 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
 public sealed class PlanCellSectionBuilderCarryForwardTests
 {
     private const uint CellId = 0x000ABCDE;
-    private const uint MasterTempRefId = 0x000A1001;   // temp REFR, base = STAT
-    private const uint MasterDoorRefId = 0x000A1002;   // persistent REFR (GroupType 8)
-    private const uint MasterFurnRefId = 0x000A1005;   // temp REFR, base = FURN
-    private const uint MasterTempAchrId = 0x000A1007;  // temp ACHR (GroupType 9), base = NPC_
+    private const uint MasterTempRefId = 0x000A1001; // temp REFR, base = STAT
+    private const uint MasterDoorRefId = 0x000A1002; // persistent REFR (GroupType 8)
+    private const uint MasterFurnRefId = 0x000A1005; // temp REFR, base = FURN
+    private const uint MasterTempAchrId = 0x000A1007; // temp ACHR (GroupType 9), base = NPC_
     private const uint MasterTempAchr2Id = 0x000A1008; // temp ACHR (GroupType 9), uncaptured
     private const uint MasterPersistentAchrId = 0x000A1009; // persistent ACHR (GroupType 8)
     private const uint MasterStatBaseId = 0x000A2001;
     private const uint MasterFurnBaseId = 0x000A2002;
     private const uint MasterNpcBaseId = 0x000A3001;
+
+    // A genuine NEW proto child so the interior cell clears the "no new content" stability
+    // gate (an ESM interior override is only emitted when it carries new records the master
+    // lacks). Its base is a master STAT so it passes base validation.
+    private const uint KeeperNewRefId = 0x01000901;
 
     [Fact]
     public void PersistentOnly_Carries_Uncovered_Master_Temporaries_But_Not_Persistent_Children()
@@ -61,12 +65,11 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
 
         var (section, stats) = BuildSection(
             dmpCell,
-            children:
             [
                 (MakeChildPlan("ACHR", RecordDisposition.New, 0x01000801, newAchr), 8),
-                (MakeChildPlan("REFR", RecordDisposition.Override, MasterDoorRefId, dmpCell.PlacedObjects[0]), 8),
+                (MakeChildPlan("REFR", RecordDisposition.Override, MasterDoorRefId, dmpCell.PlacedObjects[0]), 8)
             ],
-            emittedFormIds: [0x01000801u]);
+            [0x01000801u]);
 
         Assert.NotNull(section);
         var records = WalkChildRecords(section);
@@ -99,10 +102,9 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
 
         var (section, _) = BuildSection(
             dmpCell,
-            children:
             [
                 KeeperNewChild(),
-                (MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, captured), 9),
+                (MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, captured), 9)
             ]);
 
         Assert.NotNull(section);
@@ -130,7 +132,7 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
 
         var (section, stats) = BuildSection(
             dmpCell,
-            children: [(MakeChildPlan("REFR", RecordDisposition.Override, MasterDoorRefId, capturedDoor), 8)]);
+            [(MakeChildPlan("REFR", RecordDisposition.Override, MasterDoorRefId, capturedDoor), 8)]);
 
         Assert.Null(section);
         Assert.Equal(1, stats.DropReasonCounts["cell.itm-override-suppressed"]);
@@ -148,7 +150,7 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
 
         var (section, stats) = BuildSection(
             dmpCell,
-            children: [(MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, captured), 9)],
+            [(MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, captured), 9)],
             masterParentOfTempRef: 0x000FFFFF); // Master files the ref under a different cell.
 
         Assert.Null(section); // Only child dropped → ITM suppression.
@@ -170,10 +172,9 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
 
         var (section, _) = BuildSection(
             dmpCell,
-            children:
             [
                 KeeperNewChild(),
-                (MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, captured), 9),
+                (MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, captured), 9)
             ],
             includeExtraStatTemp: true);
 
@@ -210,11 +211,10 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
 
         var (section, stats) = BuildSection(
             dmpCell,
-            children:
             [
                 KeeperNewChild(),
                 (MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, capturedRefr), 9),
-                (MakeChildPlan("ACHR", RecordDisposition.Override, MasterTempAchrId, capturedActor), 9),
+                (MakeChildPlan("ACHR", RecordDisposition.Override, MasterTempAchrId, capturedActor), 9)
             ],
             includeTempActors: true);
 
@@ -250,18 +250,17 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
 
         var (section, _) = BuildSection(
             dmpCell,
-            children:
             [
                 KeeperNewChild(),
                 (MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, capturedRefr), 9),
-                (MakeChildPlan("ACHR", RecordDisposition.Override, MasterPersistentAchrId, capturedActor), 8),
+                (MakeChildPlan("ACHR", RecordDisposition.Override, MasterPersistentAchrId, capturedActor), 8)
             ],
             includeTempActors: true);
 
         Assert.NotNull(section);
         var records = WalkChildRecords(section);
         Assert.Contains(records, r => r is { Signature: "ACHR" } && r.FormId == MasterPersistentAchrId
-                                      && r.GroupType == 8 && !r.Deleted);
+                                                                 && r.GroupType == 8 && !r.Deleted);
     }
 
     [Fact]
@@ -273,8 +272,8 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
         // (temp children never stream → crash / empty interior). CellId 0x000ABCDE →
         // low 0x0ABCDE = 703710 → block 0, sub 1.
         const uint low = CellId & 0xFFFFFFu;
-        var expectedBlock = low % 10;          // 0
-        var expectedSub = low % 100 / 10;      // 1
+        var expectedBlock = low % 10; // 0
+        var expectedSub = low % 100 / 10; // 1
 
         var captured = new PlacedReference
         {
@@ -285,10 +284,9 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
 
         var (section, _) = BuildSection(
             dmpCell,
-            children:
             [
                 KeeperNewChild(),
-                (MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, captured), 9),
+                (MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, captured), 9)
             ]);
 
         Assert.NotNull(section);
@@ -310,8 +308,15 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
             {
                 var label = BinaryPrimitives.ReadUInt32LittleEndian(section.AsSpan(pos + 8, 4));
                 var type = BinaryPrimitives.ReadInt32LittleEndian(section.AsSpan(pos + 12, 4));
-                if (type == 2) { block = label; }
-                else if (type == 3) { sub = label; }
+                if (type == 2)
+                {
+                    block = label;
+                }
+                else if (type == 3)
+                {
+                    sub = label;
+                }
+
                 pos += 24;
                 continue;
             }
@@ -322,16 +327,13 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
         return (block, sub);
     }
 
-    // A genuine NEW proto child so the interior cell clears the "no new content" stability
-    // gate (an ESM interior override is only emitted when it carries new records the master
-    // lacks). Its base is a master STAT so it passes base validation.
-    private const uint KeeperNewRefId = 0x01000901;
-
-    private static (RecordPlan Plan, int Bucket) KeeperNewChild() =>
-        (MakeChildPlan("REFR", RecordDisposition.New, KeeperNewRefId, new PlacedReference
+    private static (RecordPlan Plan, int Bucket) KeeperNewChild()
+    {
+        return (MakeChildPlan("REFR", RecordDisposition.New, KeeperNewRefId, new PlacedReference
         {
             FormId = KeeperNewRefId, BaseFormId = MasterStatBaseId, RecordType = "REFR", IsPersistent = false
         }), 9);
+    }
 
     // ---- fixture plumbing ----------------------------------------------------------
 
@@ -349,7 +351,7 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
             [
                 new ParsedSubrecord { Signature = "EDID", Data = "Cell\0"u8.ToArray() },
                 new ParsedSubrecord { Signature = "DATA", Data = [0x01] }, // interior flag byte
-                new ParsedSubrecord { Signature = "XCLL", Data = new byte[40] }, // interior lighting
+                new ParsedSubrecord { Signature = "XCLL", Data = new byte[40] } // interior lighting
             ]
         };
         var masterTempRef = MakeMasterRefRecord(MasterTempRefId, MasterStatBaseId);
@@ -363,18 +365,18 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
             [MasterFurnRefId] = masterFurnRef,
             [MasterStatBaseId] = MakeMasterRecord("STAT", MasterStatBaseId),
             [MasterFurnBaseId] = MakeMasterRecord("FURN", MasterFurnBaseId),
-            [MasterNpcBaseId] = MakeMasterRecord("NPC_", MasterNpcBaseId),
+            [MasterNpcBaseId] = MakeMasterRecord("NPC_", MasterNpcBaseId)
         };
 
         var childLocations = new Dictionary<uint, MasterChildLocation>
         {
             [MasterTempRefId] = new(masterParentOfTempRef, 9, "REFR"),
             [MasterDoorRefId] = new(CellId, 8, "REFR"),
-            [MasterFurnRefId] = new(CellId, 9, "REFR"),
+            [MasterFurnRefId] = new(CellId, 9, "REFR")
         };
         var refsByCell = new Dictionary<uint, List<uint>>
         {
-            [CellId] = [MasterTempRefId, MasterDoorRefId, MasterFurnRefId],
+            [CellId] = [MasterTempRefId, MasterDoorRefId, MasterFurnRefId]
         };
 
         if (includeExtraStatTemp)
@@ -388,7 +390,8 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
         {
             masterByFormId[MasterTempAchrId] = MakeMasterRefRecord(MasterTempAchrId, MasterNpcBaseId, "ACHR");
             masterByFormId[MasterTempAchr2Id] = MakeMasterRefRecord(MasterTempAchr2Id, MasterNpcBaseId, "ACHR");
-            masterByFormId[MasterPersistentAchrId] = MakeMasterRefRecord(MasterPersistentAchrId, MasterNpcBaseId, "ACHR");
+            masterByFormId[MasterPersistentAchrId] =
+                MakeMasterRefRecord(MasterPersistentAchrId, MasterNpcBaseId, "ACHR");
             childLocations[MasterTempAchrId] = new MasterChildLocation(CellId, 9, "ACHR");
             childLocations[MasterTempAchr2Id] = new MasterChildLocation(CellId, 9, "ACHR");
             childLocations[MasterPersistentAchrId] = new MasterChildLocation(CellId, 8, "ACHR");
@@ -408,7 +411,7 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
             RefsByCell = refsByCell,
             NavmsByCell = [],
             LandsByCell = [],
-            CellContexts = [],
+            CellContexts = []
         };
 
         var context = MakeInteriorContext(CellId);
@@ -429,7 +432,7 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
             Context = context,
             PersistentChildren = [.. children.Where(c => c.Bucket == 8).Select(c => c.Plan)],
             VwdChildren = ImmutableArray<RecordPlan>.Empty,
-            TemporaryChildren = [.. children.Where(c => c.Bucket == 9).Select(c => c.Plan)],
+            TemporaryChildren = [.. children.Where(c => c.Bucket == 9).Select(c => c.Plan)]
         };
 
         var plan = new EmitPlan
@@ -442,7 +445,7 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
             RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
             Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
             Meta = new PlanMetadata { NextObjectId = 0x800, PlannerCoverage = ImmutableHashSet<string>.Empty },
-            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(CellId, cellPlan),
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(CellId, cellPlan)
         };
 
         var stats = new ConversionPipelineStats();
@@ -490,7 +493,7 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
             Subrecords =
             [
                 new ParsedSubrecord { Signature = "NAME", Data = name },
-                new ParsedSubrecord { Signature = "DATA", Data = data },
+                new ParsedSubrecord { Signature = "DATA", Data = data }
             ]
         };
     }
@@ -508,11 +511,6 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
         };
     }
 
-    // ---- section walker ------------------------------------------------------------
-
-    private sealed record ChildRecord(
-        string Signature, uint FormId, int GroupType, int RecordOffset, bool Deleted, uint Flags);
-
     private static List<ChildRecord> WalkChildRecords(byte[]? section)
     {
         var result = new List<ChildRecord>();
@@ -521,7 +519,7 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
             return result;
         }
 
-        Walk(section, 0, section.Length, currentChildGroupType: 0, result);
+        Walk(section, 0, section.Length, 0, result);
         return result;
     }
 
@@ -549,6 +547,7 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
                     result.Add(new ChildRecord(
                         sig, formId, currentChildGroupType, pos, (flags & 0x20) != 0, flags));
                 }
+
                 pos += 24 + dataSize;
             }
         }
@@ -567,9 +566,20 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
             {
                 return section.AsSpan(pos + 6, len).ToArray();
             }
+
             pos += 6 + len;
         }
 
         return null;
     }
+
+    // ---- section walker ------------------------------------------------------------
+
+    private sealed record ChildRecord(
+        string Signature,
+        uint FormId,
+        int GroupType,
+        int RecordOffset,
+        bool Deleted,
+        uint Flags);
 }

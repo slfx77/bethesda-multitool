@@ -33,10 +33,10 @@ public sealed class FnvTallGrassWindTests
 
         var offset = FnvTallGrassWind.EvaluateWorldOffset(
             placement,
-            windMagnitude: 8f,
-            timerValue: 0.0,
-            grassWaveMultiplier: 15f,
-            authoredVertexAlpha: alpha);
+            8f,
+            0.0,
+            15f,
+            alpha);
 
         Assert.Equal(0f, offset.X);
         Assert.Equal(expectedY, offset.Y, 4);
@@ -47,10 +47,10 @@ public sealed class FnvTallGrassWindTests
     {
         var offset = FnvTallGrassWind.EvaluateWorldOffset(
             new Vector2(12345f, -6789f),
-            windMagnitude: 0f,
-            timerValue: 173.25,
-            grassWaveMultiplier: 15f,
-            authoredVertexAlpha: 1f);
+            0f,
+            173.25,
+            15f,
+            1f);
 
         Assert.Equal(Vector2.Zero, offset);
     }
@@ -79,8 +79,8 @@ public sealed class FnvTallGrassWindTests
         // timer=60 and raw multiplier=15 produce one quarter-turn:
         // 60 / 3600 * 15 * 2π = π/2.
         var phase = FnvTallGrassWind.ComputeTimePhaseRadians(
-            timerValue: 60.0,
-            grassWaveMultiplier: 15f);
+            60.0,
+            15f);
 
         Assert.Equal(MathF.PI / 2f, phase, 5);
         Assert.Equal(0f, FnvTallGrassWind.ComputeTimePhaseRadians(60.0, 0f));

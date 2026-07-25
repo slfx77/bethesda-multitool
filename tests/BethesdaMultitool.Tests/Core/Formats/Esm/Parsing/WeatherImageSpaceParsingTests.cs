@@ -58,7 +58,7 @@ public sealed class WeatherImageSpaceParsingTests
         params (int Band, uint FormId)[] imageSpaces)
     {
         var subrecords = imageSpaces.Select(entry =>
-            (new string([(char)entry.Band, 'I', 'A', 'D']), FormIdBytes(entry.FormId, bigEndian)))
+                (new string([(char)entry.Band, 'I', 'A', 'D']), FormIdBytes(entry.FormId, bigEndian)))
             .ToArray();
         const uint weatherFormId = 0x0100_1000;
         var bytes = BuildRecordBytes(weatherFormId, "WTHR", bigEndian, subrecords);
@@ -66,10 +66,10 @@ public sealed class WeatherImageSpaceParsingTests
             "WTHR", (uint)(bytes.Length - 24), 0, weatherFormId, 0, bigEndian);
         var context = new RecordParserContext(
             new EsmRecordScanResult { Game = game, MainRecords = [record] },
-            formIdCorrelations: null,
-            accessor: new ByteArrayMemoryAccessor(bytes),
-            fileSize: bytes.Length,
-            minidumpInfo: null);
+            null,
+            new ByteArrayMemoryAccessor(bytes),
+            bytes.Length,
+            null);
 
         return Assert.Single(new MiscEnvironmentHandler(context).ParseWeather());
     }

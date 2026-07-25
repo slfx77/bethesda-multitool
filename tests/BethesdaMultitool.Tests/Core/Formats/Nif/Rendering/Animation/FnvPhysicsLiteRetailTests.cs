@@ -16,17 +16,19 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class FnvPhysicsLiteRetailTests
 {
+    private const string MeshesBsaRelative =
+        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+
+    private const string HangingLightPath =
+        @"meshes\dungeons\office\lights\offrmlighthanging01.nif";
+
+    private const string GoodspringsSignPath =
+        @"meshes\architecture\goodsprings\nv_gs-saloon-sign.nif";
+
     public FnvPhysicsLiteRetailTests()
     {
         BucketBTestGuard.SkipUnlessEnabled();
     }
-
-    private const string MeshesBsaRelative =
-        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
-    private const string HangingLightPath =
-        @"meshes\dungeons\office\lights\offrmlighthanging01.nif";
-    private const string GoodspringsSignPath =
-        @"meshes\architecture\goodsprings\nv_gs-saloon-sign.nif";
 
     [Fact]
     public void OfficeHangingLight_MapsRootLocalHingeOnlyToShadeSubmeshes()
@@ -51,7 +53,7 @@ public sealed class FnvPhysicsLiteRetailTests
 
         // Entity A is bhkRigidBodyT relative to target node 15; entity B is a plain bhkRigidBody
         // rooted at node 6. Converting either authored frame lands on the same physical hanger.
-        var plan = PhysicsLiteSway.CreatePlan(set, limitedHinge, stableSeed: 0);
+        var plan = PhysicsLiteSway.CreatePlan(set, limitedHinge, 0);
         var descriptor = Assert.IsType<PhysicsLiteSwayDescriptor>(plan.Descriptor);
         VectorAssert.Equal(new Vector3(-55.7041f, 0.05523f, -19.1407f), descriptor.Pivot, 0.02f);
         VectorAssert.Equal(-Vector3.UnitY, descriptor.Axis, 0.0001f);
@@ -92,7 +94,7 @@ public sealed class FnvPhysicsLiteRetailTests
     {
         var bsaPath = SampleFileFixture.FindSamplePath(MeshesBsaRelative);
         Assert.SkipWhen(bsaPath is null, "FNV PC final meshes BSA not available");
-        return MeshArchiveSet.Open(bsaPath!, null, enableFuzzy: false, includeLooseFiles: false);
+        return MeshArchiveSet.Open(bsaPath!, null, false, false);
     }
 
     private static (byte[] Data, NifInfo Nif) Extract(MeshArchiveSet archives, string path)

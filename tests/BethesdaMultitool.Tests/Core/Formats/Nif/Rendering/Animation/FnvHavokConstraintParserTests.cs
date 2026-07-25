@@ -22,7 +22,7 @@ public sealed class FnvHavokConstraintParserTests
     {
         var (data, nif) = BuildFixture(
             "bhkLimitedHingeConstraint",
-            BuildLimitedHinge(entityA: 4, entityB: 5));
+            BuildLimitedHinge(4, 5));
 
         var parsed = FnvHavokConstraintParser.Parse(data, nif);
 
@@ -57,7 +57,7 @@ public sealed class FnvHavokConstraintParserTests
     {
         var (data, nif) = BuildFixture(
             "bhkLimitedHingeConstraint",
-            BuildLimitedHinge(entityA: 4, entityB: 5));
+            BuildLimitedHinge(4, 5));
 
         // bhkRigidBodyT entity A: translation is Havok units and therefore scales by seven.
         var bodyA = nif.Blocks[4];
@@ -78,7 +78,7 @@ public sealed class FnvHavokConstraintParserTests
         VectorAssert.Equal(new Vector3(14f, 21f, 28f), bodyAToRoot.Translation, 1e-5f);
         Assert.Equal(Matrix4x4.Identity, constraint.EntityB.BodyToRootTransform);
 
-        var plan = PhysicsLiteSway.CreatePlan(set, constraint, stableSeed: 1);
+        var plan = PhysicsLiteSway.CreatePlan(set, constraint, 1);
         var descriptor = Assert.IsType<PhysicsLiteSwayDescriptor>(plan.Descriptor);
         VectorAssert.Equal(new Vector3(21f, 35f, 49f), descriptor.Pivot, 1e-5f);
         VectorAssert.Equal(Vector3.UnitY, descriptor.Axis, 1e-5f);
@@ -89,7 +89,7 @@ public sealed class FnvHavokConstraintParserTests
     {
         var (data, nif) = BuildFixture(
             "bhkRagdollConstraint",
-            BuildRagdoll(entityA: 4, entityB: 5));
+            BuildRagdoll(4, 5));
 
         var constraint = Assert.Single(FnvHavokConstraintParser.Parse(data, nif).Constraints);
 
@@ -116,7 +116,7 @@ public sealed class FnvHavokConstraintParserTests
     {
         var (data, nif) = BuildFixture(
             "bhkHingeConstraint",
-            BuildHinge(entityA: 4, entityB: 5));
+            BuildHinge(4, 5));
 
         var constraint = Assert.Single(FnvHavokConstraintParser.Parse(data, nif).Constraints);
 
@@ -134,7 +134,7 @@ public sealed class FnvHavokConstraintParserTests
     {
         var (data, nif) = BuildFixture(
             "bhkLimitedHingeConstraint",
-            BuildLimitedHinge(entityA: 4, entityB: 5));
+            BuildLimitedHinge(4, 5));
         nif.BsVersion = 83; // Skyrim uses a different bhkRigidBody CInfo layout.
 
         var parsed = FnvHavokConstraintParser.Parse(data, nif);
@@ -148,7 +148,7 @@ public sealed class FnvHavokConstraintParserTests
     {
         var (data, nif) = BuildFixture(
             "bhkLimitedHingeConstraint",
-            BuildLimitedHinge(entityA: 4, entityB: 5));
+            BuildLimitedHinge(4, 5));
         _ = data;
 
         Assert.True(FnvHavokConstraintParser.IsPhysicsLiteCandidate(nif));
@@ -165,8 +165,8 @@ public sealed class FnvHavokConstraintParserTests
     {
         var (data, nif) = BuildFixture(
             "bhkLimitedHingeConstraint",
-            BuildLimitedHinge(entityA: 4, entityB: 5),
-            includeOrdinaryAnimation: true);
+            BuildLimitedHinge(4, 5),
+            true);
 
         var parsed = FnvHavokConstraintParser.Parse(data, nif);
 
@@ -183,15 +183,15 @@ public sealed class FnvHavokConstraintParserTests
         // 0/2 target nodes, 1/3 child shapes, 4/5 rigid bodies, 6 constraint, 7/8 collision objects.
         var blocks = new List<(string Type, byte[] Payload)>
         {
-            ("NiNode", BuildNode(child: 1)),
+            ("NiNode", BuildNode(1)),
             ("NiTriShape", []),
-            ("NiNode", BuildNode(child: 3)),
+            ("NiNode", BuildNode(3)),
             ("NiTriShape", []),
-            ("bhkRigidBodyT", BuildRigidBody(FnvHavokMotionSystem.BoxInertia, constraint: 6)),
+            ("bhkRigidBodyT", BuildRigidBody(FnvHavokMotionSystem.BoxInertia, 6)),
             ("bhkRigidBody", BuildRigidBody(FnvHavokMotionSystem.Fixed)),
             (constraintType, constraintPayload),
-            ("bhkCollisionObject", BuildCollisionObject(target: 0, body: 4)),
-            ("bhkCollisionObject", BuildCollisionObject(target: 2, body: 5)),
+            ("bhkCollisionObject", BuildCollisionObject(0, 4)),
+            ("bhkCollisionObject", BuildCollisionObject(2, 5))
         };
         if (includeOrdinaryAnimation)
         {
@@ -204,7 +204,7 @@ public sealed class FnvHavokConstraintParserTests
             BinaryVersion = 0x14020007,
             BsVersion = 34,
             IsBigEndian = false,
-            BlockCount = blocks.Count,
+            BlockCount = blocks.Count
         };
         using var stream = new MemoryStream();
         for (var i = 0; i < blocks.Count; i++)
@@ -216,7 +216,7 @@ public sealed class FnvHavokConstraintParserTests
                 Index = i,
                 TypeName = blocks[i].Type,
                 DataOffset = offset,
-                Size = blocks[i].Payload.Length,
+                Size = blocks[i].Payload.Length
             });
         }
 
@@ -347,12 +347,18 @@ public sealed class FnvHavokConstraintParserTests
         WriteSingle(data, offset + 12, 0f);
     }
 
-    private static void WriteSingle(byte[] data, int offset, float value) =>
+    private static void WriteSingle(byte[] data, int offset, float value)
+    {
         WriteInt32(data, offset, BitConverter.SingleToInt32Bits(value));
+    }
 
-    private static void WriteInt32(byte[] data, int offset, int value) =>
+    private static void WriteInt32(byte[] data, int offset, int value)
+    {
         BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(offset, 4), value);
+    }
 
-    private static void WriteUInt32(byte[] data, int offset, uint value) =>
+    private static void WriteUInt32(byte[] data, int offset, uint value)
+    {
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(offset, 4), value);
+    }
 }

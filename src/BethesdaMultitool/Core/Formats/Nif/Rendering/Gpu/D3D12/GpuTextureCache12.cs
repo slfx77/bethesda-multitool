@@ -77,6 +77,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     private Entry? _whitePixel;
     private Entry? _flatNormal;
     private Entry? _waterSurface;
+    private readonly Dictionary<string, Entry> _syntheticEntries = new(StringComparer.OrdinalIgnoreCase);
     private int _pendingUploadCount;
     private bool _disposed;
 
@@ -138,6 +139,24 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         _registration?.Dispose();
         _registration = registry.Register(this, instanceTag);
         return this;
+    }
+
+    /// <summary>
+    ///     Returns (creating + uploading on first use) a pinned synthesized RGBA8 texture keyed by
+    ///     <paramref name="key" /> — e.g. the 32 Oblivion water-surface animation frames the engine
+    ///     generates at runtime (retail ships no water00-31.dds). Entries are pinned like the
+    ///     fallback singletons: never refcounted or evicted, released at cache disposal.
+    /// </summary>
+    public Entry GetOrCreateSynthetic(string key, int width, int height, byte[] rgba)
+    {
+        if (_syntheticEntries.TryGetValue(key, out var existing))
+        {
+            return existing;
+        }
+
+        var entry = _solidTextureFactory.CreateFromRgba(width, height, rgba);
+        _syntheticEntries[key] = entry;
+        return entry;
     }
 
     /// <summary>1x1 opaque white texture used as the fallback diffuse.</summary>
@@ -359,6 +378,8 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         if (_whitePixel is Entry wp) DisposeResource(wp.Texture);
         if (_flatNormal is Entry fn) DisposeResource(fn.Texture);
         if (_waterSurface is Entry ws) DisposeResource(ws.Texture);
+        foreach (var synthetic in _syntheticEntries.Values) DisposeResource(synthetic.Texture);
+        _syntheticEntries.Clear();
         _ownedTextures.Clear();
         _pendingDispatch.Clear();
         _cache.Clear();

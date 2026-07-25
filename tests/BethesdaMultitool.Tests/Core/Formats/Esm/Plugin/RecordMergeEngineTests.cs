@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
@@ -179,9 +178,9 @@ public class RecordMergeEngineTests
             Subrecords =
             [
                 new EncodedSubrecord("SNAM", new byte[] { 0xA1, 0xA2 }),
-                new EncodedSubrecord("SNAM", new byte[] { 0xA3, 0xA4 }),
+                new EncodedSubrecord("SNAM", new byte[] { 0xA3, 0xA4 })
             ],
-            Warnings = [],
+            Warnings = []
         };
         var policy = SubrecordMergePolicy.ForRecordType("NPC_")
             .WithAdditionalMasterRetention(["SNAM"]);
@@ -229,7 +228,7 @@ public class RecordMergeEngineTests
         for (var offset = 0; offset + 6 <= stream.Length;)
         {
             if (stream[offset] == sig[0] && stream[offset + 1] == sig[1]
-                && stream[offset + 2] == sig[2] && stream[offset + 3] == sig[3])
+                                         && stream[offset + 2] == sig[2] && stream[offset + 3] == sig[3])
             {
                 count++;
             }
@@ -248,8 +247,8 @@ public class RecordMergeEngineTests
         {
             var len = BinaryPrimitives.ReadUInt16LittleEndian(stream.AsSpan(offset + 4, 2));
             if (stream[offset] == sig[0] && stream[offset + 1] == sig[1]
-                && stream[offset + 2] == sig[2] && stream[offset + 3] == sig[3]
-                && seen++ == occurrence)
+                                         && stream[offset + 2] == sig[2] && stream[offset + 3] == sig[3]
+                                         && seen++ == occurrence)
             {
                 return stream.AsSpan(offset + 6, len).ToArray();
             }

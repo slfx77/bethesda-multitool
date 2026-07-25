@@ -87,15 +87,15 @@ public sealed class FnvActiveLocalLightOracleTests
     public void PreparedPointColor_UsesPackedDataColorAndKeepsShadowLodOutOfRgb()
     {
         var prepared = FnvActiveLocalLightOracle.PreparePointLightColor(
-            dataColor: 0x00102040,
-            negative: false,
-            dataFade: 0.5f,
-            hdr: false,
-            forcedDarkness: 1f,
-            lodDimmer: 0.25f,
-            shadowLodDimmer: 0.75f);
+            0x00102040,
+            false,
+            0.5f,
+            false,
+            1f,
+            0.25f,
+            0.75f);
 
-        VectorAssert.Equal(new Vector3(8f, 4f, 2f) / 255f, prepared.Rgb, 1e-6f);
+        VectorAssert.Equal(new Vector3(8f, 4f, 2f) / 255f, prepared.Rgb);
         Assert.Equal(0.75f, prepared.ShadowLodDimmer, 6);
     }
 
@@ -103,30 +103,30 @@ public sealed class FnvActiveLocalLightOracleTests
     public void PreparedPointColor_ClampsFadeOnlyAboveOneWhenHdrIsOff()
     {
         var nonHdr = FnvActiveLocalLightOracle.PreparePointLightColor(
-            0x000000ff, false, 2f, hdr: false, 1f, 1f, 0f);
+            0x000000ff, false, 2f, false, 1f, 1f, 0f);
         var hdr = FnvActiveLocalLightOracle.PreparePointLightColor(
-            0x000000ff, false, 2f, hdr: true, 1f, 1f, 0f);
+            0x000000ff, false, 2f, true, 1f, 1f, 0f);
         var negativeFade = FnvActiveLocalLightOracle.PreparePointLightColor(
-            0x000000ff, false, -0.5f, hdr: false, 1f, 1f, 0f);
+            0x000000ff, false, -0.5f, false, 1f, 1f, 0f);
         var negativeLightAndFade = FnvActiveLocalLightOracle.PreparePointLightColor(
-            0x000000ff, true, -0.5f, hdr: false, 1f, 1f, 0f);
+            0x000000ff, true, -0.5f, false, 1f, 1f, 0f);
 
-        VectorAssert.Equal(Vector3.UnitX, nonHdr.Rgb, 1e-6f);
-        VectorAssert.Equal(new Vector3(2f, 0f, 0f), hdr.Rgb, 1e-6f);
-        VectorAssert.Equal(new Vector3(-0.5f, 0f, 0f), negativeFade.Rgb, 1e-6f);
-        VectorAssert.Equal(new Vector3(0.5f, 0f, 0f), negativeLightAndFade.Rgb, 1e-6f);
+        VectorAssert.Equal(Vector3.UnitX, nonHdr.Rgb);
+        VectorAssert.Equal(new Vector3(2f, 0f, 0f), hdr.Rgb);
+        VectorAssert.Equal(new Vector3(-0.5f, 0f, 0f), negativeFade.Rgb);
+        VectorAssert.Equal(new Vector3(0.5f, 0f, 0f), negativeLightAndFade.Rgb);
     }
 
     [Fact]
     public void PreparedPointColor_BlacksAnyForcedDarknessBelowOneWithoutClampingAboveOne()
     {
         var darkened = FnvActiveLocalLightOracle.PreparePointLightColor(
-            0x00ffffff, false, 1f, hdr: false, 0.999f, 4f, 0f);
+            0x00ffffff, false, 1f, false, 0.999f, 4f, 0f);
         var amplified = FnvActiveLocalLightOracle.PreparePointLightColor(
-            0x00ffffff, false, 1f, hdr: false, 1.5f, 2f, 0f);
+            0x00ffffff, false, 1f, false, 1.5f, 2f, 0f);
 
-        VectorAssert.Equal(Vector3.Zero, darkened.Rgb, 1e-6f);
-        VectorAssert.Equal(new Vector3(3f), amplified.Rgb, 1e-6f);
+        VectorAssert.Equal(Vector3.Zero, darkened.Rgb);
+        VectorAssert.Equal(new Vector3(3f), amplified.Rgb);
     }
 
     [Fact]
@@ -150,21 +150,21 @@ public sealed class FnvActiveLocalLightOracleTests
     public void Id220VertexOracle_PreservesStageBoundaryAndBuildsAttenuationCoordinates()
     {
         var interpolants = FnvActiveLocalLightOracle.BuildId220VertexInterpolants(
-            vertexPositionObject: Vector3.Zero,
-            localLightPositionObject: new Vector3(2f, 0f, 0f),
-            localLightRadius: 4f,
-            tangent: new Vector3(2f, 0f, 0f),
-            bitangent: new Vector3(0f, 3f, 0f),
-            vertexNormal: new Vector3(0f, 0f, 4f),
-            sunLightData: new Vector3(1f, 2f, 0f));
+            Vector3.Zero,
+            new Vector3(2f, 0f, 0f),
+            4f,
+            new Vector3(2f, 0f, 0f),
+            new Vector3(0f, 3f, 0f),
+            new Vector3(0f, 0f, 4f),
+            new Vector3(1f, 2f, 0f));
 
         var inverseSqrt10 = 1f / MathF.Sqrt(10f);
         VectorAssert.Equal(
             new Vector3(inverseSqrt10, 3f * inverseSqrt10, 0f),
-            interpolants.SunTangentSpace, 1e-6f);
-        VectorAssert.Equal(new Vector3(2f, 0f, 0f), interpolants.LocalTangentSpace, 1e-6f);
+            interpolants.SunTangentSpace);
+        VectorAssert.Equal(new Vector3(2f, 0f, 0f), interpolants.LocalTangentSpace);
         VectorAssert.Equal(new Vector4(0.75f, 0.5f, 0.5f, 0.5f),
-            interpolants.AttenuationCoordinates, 1e-6f);
+            interpolants.AttenuationCoordinates);
     }
 
     [Fact]
@@ -172,23 +172,23 @@ public sealed class FnvActiveLocalLightOracleTests
     {
         var result = FnvActiveLocalLightOracle.EvaluateId220Pixel(
             FnvClassicBasicShaderMode.Sls1009,
-            normalMapSample: new Vector3(1f, 0.5f, 0.5f),
-            interpolatedSunTangentSpace: -Vector3.UnitX,
-            interpolatedLocalTangentSpace: Vector3.UnitX,
-            attenuationXyRed: 0.75f,
-            attenuationZRed: 0.5f,
-            ambientRgb: new Vector3(1f, 0.1f, 0.5f),
-            sunRgb: new Vector3(0.2f, 0.3f, 0.4f),
-            preparedLocalRgb: new Vector3(0.4f, 0.2f, 0.8f),
-            baseRgb: new Vector3(0.5f, 0.25f, 0.75f),
-            vertexRgb: new Vector3(0.01f));
+            new Vector3(1f, 0.5f, 0.5f),
+            -Vector3.UnitX,
+            Vector3.UnitX,
+            0.75f,
+            0.5f,
+            new Vector3(1f, 0.1f, 0.5f),
+            new Vector3(0.2f, 0.3f, 0.4f),
+            new Vector3(0.4f, 0.2f, 0.8f),
+            new Vector3(0.5f, 0.25f, 0.75f),
+            new Vector3(0.01f));
 
         Assert.Equal(-1f, result.RawSignedSunDot, 6);
         Assert.Equal(1f, result.RawSignedLocalDot, 6);
         Assert.Equal(-0.25f, result.RawAttenuation, 6);
-        VectorAssert.Equal(new Vector3(0.7f, -0.25f, -0.1f), result.TotalBeforeClamp, 1e-6f);
-        VectorAssert.Equal(new Vector3(0.7f, 0f, 0f), result.Shade, 1e-6f);
-        VectorAssert.Equal(new Vector3(0.35f, 0f, 0f), result.Rgb, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.7f, -0.25f, -0.1f), result.TotalBeforeClamp);
+        VectorAssert.Equal(new Vector3(0.7f, 0f, 0f), result.Shade);
+        VectorAssert.Equal(new Vector3(0.35f, 0f, 0f), result.Rgb);
     }
 
     [Fact]
@@ -196,39 +196,39 @@ public sealed class FnvActiveLocalLightOracleTests
     {
         var result = FnvActiveLocalLightOracle.EvaluateId220Pixel(
             FnvClassicBasicShaderMode.Sls1009,
-            normalMapSample: new Vector3(1f, 0.5f, 0.5f),
-            interpolatedSunTangentSpace: new Vector3(0.25f, 0f, 0f),
-            interpolatedLocalTangentSpace: Vector3.UnitX,
-            attenuationXyRed: 0f,
-            attenuationZRed: 0f,
-            ambientRgb: Vector3.Zero,
-            sunRgb: Vector3.One,
-            preparedLocalRgb: Vector3.Zero,
-            baseRgb: Vector3.One,
-            vertexRgb: Vector3.One);
+            new Vector3(1f, 0.5f, 0.5f),
+            new Vector3(0.25f, 0f, 0f),
+            Vector3.UnitX,
+            0f,
+            0f,
+            Vector3.Zero,
+            Vector3.One,
+            Vector3.Zero,
+            Vector3.One,
+            Vector3.One);
 
         Assert.Equal(0.25f, result.RawSignedSunDot, 6);
-        VectorAssert.Equal(new Vector3(0.25f), result.Shade, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.25f), result.Shade);
     }
 
     [Fact]
     public void Id143VertexOracle_NormalizesSunButLeavesLocalDirectionForPixelNormalization()
     {
         var sun = FnvActiveLocalLightOracle.BuildId143SunVertexInterpolant(
-            tangent: new Vector3(2f, 0f, 0f),
-            bitangent: new Vector3(0f, 3f, 0f),
-            vertexNormal: new Vector3(0f, 0f, 4f),
-            sunLightData: new Vector3(1f, 2f, 0f));
+            new Vector3(2f, 0f, 0f),
+            new Vector3(0f, 3f, 0f),
+            new Vector3(0f, 0f, 4f),
+            new Vector3(1f, 2f, 0f));
         var interpolants = FnvActiveLocalLightOracle.BuildId143LocalVertexInterpolants(
-            vertexPositionObject: new Vector3(1f, 0f, 0f),
-            localLightPositionObject: new Vector3(5f, 0f, 0f),
-            tangent: new Vector3(2f, 0f, 0f),
-            bitangent: Vector3.UnitY,
-            vertexNormal: Vector3.UnitZ);
+            new Vector3(1f, 0f, 0f),
+            new Vector3(5f, 0f, 0f),
+            new Vector3(2f, 0f, 0f),
+            Vector3.UnitY,
+            Vector3.UnitZ);
 
         var inverseSqrt10 = 1f / MathF.Sqrt(10f);
-        VectorAssert.Equal(new Vector3(inverseSqrt10, 3f * inverseSqrt10, 0f), sun, 1e-6f);
-        VectorAssert.Equal(new Vector3(2f, 0f, 0f), interpolants.TangentSpaceDirection, 1e-6f);
+        VectorAssert.Equal(new Vector3(inverseSqrt10, 3f * inverseSqrt10, 0f), sun);
+        VectorAssert.Equal(new Vector3(2f, 0f, 0f), interpolants.TangentSpaceDirection);
     }
 
     [Fact]
@@ -247,30 +247,30 @@ public sealed class FnvActiveLocalLightOracleTests
         var twoLocals = EvaluateId143(
             local0, local0Constants,
             local1, local1Constants,
-            local2: default, local2Constants: default,
-            totalLightCountGate: 3f);
+            default, default,
+            3f);
         Assert.True(twoLocals.Local0.Enabled);
         Assert.True(twoLocals.Local1.Enabled);
         Assert.False(twoLocals.Local2.Enabled);
         Assert.Equal(0.75f, twoLocals.Local0.RawAttenuation, 6);
         Assert.Equal(-1f, twoLocals.Local1.RawSignedDot, 6);
         Assert.Equal(0f, twoLocals.Local2.RawAttenuation, 6);
-        VectorAssert.Equal(Vector3.Zero, twoLocals.Local2.PointDeltaOverRadius, 1e-6f);
-        VectorAssert.Equal(Vector3.Zero, twoLocals.Local2.Contribution, 1e-6f);
-        VectorAssert.Equal(new Vector3(0.85f, -0.8f, 3.2f), twoLocals.TotalBeforeClamp, 1e-6f);
-        VectorAssert.Equal(new Vector3(0.85f, 0f, 3.2f), twoLocals.Shade, 1e-6f);
+        VectorAssert.Equal(Vector3.Zero, twoLocals.Local2.PointDeltaOverRadius);
+        VectorAssert.Equal(Vector3.Zero, twoLocals.Local2.Contribution);
+        VectorAssert.Equal(new Vector3(0.85f, -0.8f, 3.2f), twoLocals.TotalBeforeClamp);
+        VectorAssert.Equal(new Vector3(0.85f, 0f, 3.2f), twoLocals.Shade);
 
         var threeLocals = EvaluateId143(
             local0, local0Constants,
             local1, local1Constants,
             local2, local2Constants,
-            totalLightCountGate: 4f);
+            4f);
         Assert.True(threeLocals.Local2.Enabled);
-        VectorAssert.Equal(new Vector3(2f, 0f, 0f), threeLocals.Local2.PointDeltaOverRadius, 1e-6f);
+        VectorAssert.Equal(new Vector3(2f, 0f, 0f), threeLocals.Local2.PointDeltaOverRadius);
         Assert.Equal(-3f, threeLocals.Local2.RawAttenuation, 6);
-        VectorAssert.Equal(new Vector3(0f, 0f, -3f), threeLocals.Local2.Contribution, 1e-6f);
-        VectorAssert.Equal(new Vector3(0.85f, -0.8f, 0.2f), threeLocals.TotalBeforeClamp, 1e-6f);
-        VectorAssert.Equal(new Vector3(0.85f, 0f, 0.2f), threeLocals.Shade, 1e-6f);
+        VectorAssert.Equal(new Vector3(0f, 0f, -3f), threeLocals.Local2.Contribution);
+        VectorAssert.Equal(new Vector3(0.85f, -0.8f, 0.2f), threeLocals.TotalBeforeClamp);
+        VectorAssert.Equal(new Vector3(0.85f, 0f, 0.2f), threeLocals.Shade);
     }
 
     [Theory]
@@ -319,20 +319,20 @@ public sealed class FnvActiveLocalLightOracleTests
         var constants = new FnvActiveId143LocalConstants(Vector3.Zero, 1f, Vector3.Zero);
         var result = FnvActiveLocalLightOracle.EvaluateId143Pixel(
             FnvClassicBasicShaderMode.Sls1009,
-            normalMapSample: new Vector3(1f, 0.5f, 0.5f),
-            interpolatedSunTangentSpace: new Vector3(0.25f, 0f, 0f),
-            interpolatedObjectPosition: Vector3.Zero,
+            new Vector3(1f, 0.5f, 0.5f),
+            new Vector3(0.25f, 0f, 0f),
+            Vector3.Zero,
             local, constants,
             local, constants,
-            local2: default, local2Constants: default,
-            totalLightCountGate: 3f,
-            ambientRgb: Vector3.Zero,
-            sunRgb: Vector3.One,
-            baseRgb: Vector3.One,
-            vertexRgb: Vector3.One);
+            default, default,
+            3f,
+            Vector3.Zero,
+            Vector3.One,
+            Vector3.One,
+            Vector3.One);
 
         Assert.Equal(0.25f, result.RawSignedSunDot, 6);
-        VectorAssert.Equal(new Vector3(0.25f), result.Shade, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.25f), result.Shade);
     }
 
     [Fact]
@@ -341,24 +341,24 @@ public sealed class FnvActiveLocalLightOracleTests
         var local = new FnvActiveId143LocalInterpolants(Vector3.UnitX);
         var result = FnvActiveLocalLightOracle.EvaluateId143Pixel(
             FnvClassicBasicShaderMode.Sls1009,
-            normalMapSample: new Vector3(1f, 0.5f, 0.5f),
-            interpolatedSunTangentSpace: Vector3.Zero,
-            interpolatedObjectPosition: new Vector3(1f, 0f, 0f),
+            new Vector3(1f, 0.5f, 0.5f),
+            Vector3.Zero,
+            new Vector3(1f, 0f, 0f),
             local,
             new FnvActiveId143LocalConstants(
                 new Vector3(5f, 0f, 0f), 2f, Vector3.One),
             local,
             new FnvActiveId143LocalConstants(
                 new Vector3(1f, 0f, 0f), 1f, Vector3.Zero),
-            local2: default,
-            local2Constants: default,
-            totalLightCountGate: 3f,
-            ambientRgb: Vector3.Zero,
-            sunRgb: Vector3.Zero,
-            baseRgb: Vector3.One,
-            vertexRgb: Vector3.One);
+            default,
+            default,
+            3f,
+            Vector3.Zero,
+            Vector3.Zero,
+            Vector3.One,
+            Vector3.One);
 
-        VectorAssert.Equal(new Vector3(2f, 0f, 0f), result.Local0.PointDeltaOverRadius, 1e-6f);
+        VectorAssert.Equal(new Vector3(2f, 0f, 0f), result.Local0.PointDeltaOverRadius);
         Assert.Equal(-3f, result.Local0.RawAttenuation, 6);
     }
 
@@ -404,9 +404,9 @@ public sealed class FnvActiveLocalLightOracleTests
         var ordinary = EvaluateId220(FnvClassicBasicShaderMode.Sls1009);
         var vertexColor = EvaluateId220(FnvClassicBasicShaderMode.Sls1013VertexColor);
 
-        VectorAssert.Equal(new Vector3(0.5f, 0.25f, 0.75f), ordinary.Rgb, 1e-6f);
-        VectorAssert.Equal(new Vector3(0.4f, 0.1f, 0.15f), vertexColor.Rgb, 1e-6f);
-        VectorAssert.Equal(ordinary.Shade, vertexColor.Shade, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.5f, 0.25f, 0.75f), ordinary.Rgb);
+        VectorAssert.Equal(new Vector3(0.4f, 0.1f, 0.15f), vertexColor.Rgb);
+        VectorAssert.Equal(ordinary.Shade, vertexColor.Shade);
     }
 
     [Fact]
@@ -438,19 +438,21 @@ public sealed class FnvActiveLocalLightOracleTests
                 Vector3.One));
     }
 
-    private static FnvActiveId220Evaluation EvaluateId220(FnvClassicBasicShaderMode mode) =>
-        FnvActiveLocalLightOracle.EvaluateId220Pixel(
+    private static FnvActiveId220Evaluation EvaluateId220(FnvClassicBasicShaderMode mode)
+    {
+        return FnvActiveLocalLightOracle.EvaluateId220Pixel(
             mode,
-            normalMapSample: new Vector3(0.5f, 0.5f, 1f),
-            interpolatedSunTangentSpace: Vector3.UnitZ,
-            interpolatedLocalTangentSpace: Vector3.UnitZ,
-            attenuationXyRed: 0f,
-            attenuationZRed: 0f,
-            ambientRgb: Vector3.Zero,
-            sunRgb: Vector3.Zero,
-            preparedLocalRgb: Vector3.One,
-            baseRgb: new Vector3(0.5f, 0.25f, 0.75f),
-            vertexRgb: new Vector3(0.8f, 0.4f, 0.2f));
+            new Vector3(0.5f, 0.5f, 1f),
+            Vector3.UnitZ,
+            Vector3.UnitZ,
+            0f,
+            0f,
+            Vector3.Zero,
+            Vector3.Zero,
+            Vector3.One,
+            new Vector3(0.5f, 0.25f, 0.75f),
+            new Vector3(0.8f, 0.4f, 0.2f));
+    }
 
     private static FnvActiveId143Evaluation EvaluateId143(
         FnvActiveId143LocalInterpolants local0,
@@ -459,20 +461,25 @@ public sealed class FnvActiveLocalLightOracleTests
         FnvActiveId143LocalConstants local1Constants,
         FnvActiveId143LocalInterpolants local2,
         FnvActiveId143LocalConstants local2Constants,
-        float totalLightCountGate) =>
-        FnvActiveLocalLightOracle.EvaluateId143Pixel(
+        float totalLightCountGate)
+    {
+        return FnvActiveLocalLightOracle.EvaluateId143Pixel(
             FnvClassicBasicShaderMode.Sls1009,
-            normalMapSample: new Vector3(1f, 0.5f, 0.5f),
-            interpolatedSunTangentSpace: Vector3.UnitX,
-            interpolatedObjectPosition: Vector3.Zero,
+            new Vector3(1f, 0.5f, 0.5f),
+            Vector3.UnitX,
+            Vector3.Zero,
             local0, local0Constants,
             local1, local1Constants,
             local2, local2Constants,
             totalLightCountGate,
-            ambientRgb: new Vector3(0.1f, 0.2f, 3.2f),
-            sunRgb: Vector3.Zero,
-            baseRgb: Vector3.One,
-            vertexRgb: Vector3.One);
+            new Vector3(0.1f, 0.2f, 3.2f),
+            Vector3.Zero,
+            Vector3.One,
+            Vector3.One);
+    }
 
-    private static byte At(byte[] red, int x, int y) => red[(y * 128) + x];
+    private static byte At(byte[] red, int x, int y)
+    {
+        return red[(y * 128) + x];
+    }
 }

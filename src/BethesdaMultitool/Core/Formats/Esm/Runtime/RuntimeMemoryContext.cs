@@ -275,7 +275,11 @@ internal sealed class RuntimeMemoryContext(
         }
 
         var value = BinaryUtils.ReadFloatBE(buffer, offset);
-        if (!IsNormalFloat(value) || value < min || value > max)
+        // Reject NaN/Inf, out-of-range, AND subnormals. A subnormal (|value| < ~1.2e-38, e.g. ~1e-40)
+        // is never a legitimate game float — it is the signature of a misread, typically a pointer's
+        // low bytes decoded as a float when a struct offset is wrong for the captured build. Exact zero
+        // stays valid (IsSubnormal(0) is false).
+        if (!IsNormalFloat(value) || float.IsSubnormal(value) || value < min || value > max)
         {
             return 0;
         }

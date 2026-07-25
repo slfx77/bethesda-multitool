@@ -35,7 +35,7 @@ public sealed class InlineScriptAtomicSafetyTests
 
         Assert.True(result.IsSafe);
         Assert.Equal(
-            new uint[] { remapped, 0x80000007, direct, remapped },
+            new[] { remapped, 0x80000007, direct, remapped },
             result.ResolvedReferences);
         Assert.Equal(script.ReferencedObjects.Count, result.ResolvedReferences.Length);
     }
@@ -135,7 +135,7 @@ public sealed class InlineScriptAtomicSafetyTests
             ]
         };
 
-        var encoded = InfoEncoder.EncodeNew(info, new HashSet<uint>(), null);
+        var encoded = InfoEncoder.EncodeNew(info, new HashSet<uint>());
 
         Assert.Empty(encoded.Subrecords);
         Assert.Contains(encoded.Warnings, warning =>
@@ -164,7 +164,7 @@ public sealed class InlineScriptAtomicSafetyTests
             }
         };
 
-        var encoded = PackEncoder.EncodeNew(pack, new HashSet<uint>(), null);
+        var encoded = PackEncoder.EncodeNew(pack, new HashSet<uint>());
 
         Assert.Empty(encoded.Subrecords);
         Assert.Contains(encoded.Warnings, warning =>
@@ -191,7 +191,7 @@ public sealed class InlineScriptAtomicSafetyTests
             ]
         };
 
-        var encoded = TermEncoder.EncodeNew(terminal, new HashSet<uint>(), null);
+        var encoded = TermEncoder.EncodeNew(terminal, new HashSet<uint>());
 
         Assert.Empty(encoded.Subrecords);
         Assert.Contains(encoded.Warnings, warning =>
@@ -217,7 +217,7 @@ public sealed class InlineScriptAtomicSafetyTests
             ]
         };
 
-        var encoded = TermEncoder.EncodeNew(terminal, new HashSet<uint>(), null);
+        var encoded = TermEncoder.EncodeNew(terminal, new HashSet<uint>());
 
         Assert.Empty(encoded.Subrecords);
         Assert.Contains(encoded.Warnings, warning =>
@@ -293,7 +293,7 @@ public sealed class InlineScriptAtomicSafetyTests
         const string source = "float lOcAlStAtE\nBegin GameMode\nEnd";
         var script = CapturedCompiledScript(source, "Begin GameMode\nEnd") with
         {
-            Variables = [new ScriptVariableInfo(7, "LocalState", 0)],
+            Variables = [new ScriptVariableInfo(7, "LocalState", 0)]
         };
 
         var encoded = EncodeOwner(ownerType, script);
@@ -314,7 +314,7 @@ public sealed class InlineScriptAtomicSafetyTests
         const string source = "float DifferentLocal\nBegin GameMode\nEnd";
         var script = CapturedCompiledScript(source, "Begin GameMode\nEnd") with
         {
-            Variables = [new ScriptVariableInfo(7, "ExactLocal", 0)],
+            Variables = [new ScriptVariableInfo(7, "ExactLocal", 0)]
         };
 
         var encoded = EncodeOwner(ownerType, script);
@@ -352,7 +352,7 @@ public sealed class InlineScriptAtomicSafetyTests
     {
         var script = CapturedCompiledScript("Begin GameMode\nEnd", "Begin GameMode\nEnd") with
         {
-            CompiledData = [0xFF],
+            CompiledData = [0xFF]
         };
 
         var encoded = EncodeOwner(ownerType, script);
@@ -372,7 +372,7 @@ public sealed class InlineScriptAtomicSafetyTests
         {
             SourceText = "Set Local to 1",
             SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
-            IsDmpDerived = true,
+            IsDmpDerived = true
         });
 
         Assert.NotEmpty(encoded.Subrecords);
@@ -392,7 +392,7 @@ public sealed class InlineScriptAtomicSafetyTests
             DecompiledText = "Begin GameMode\nEnd",
             CompiledData = [0x00, 0x1D, 0x00, 0x00],
             IsBigEndianBytecode = true,
-            IsDmpDerived = false,
+            IsDmpDerived = false
         });
 
         Assert.NotEmpty(encoded.Subrecords);
@@ -400,31 +400,34 @@ public sealed class InlineScriptAtomicSafetyTests
         Assert.Contains(encoded.Subrecords, sub => sub.Signature == "SCTX");
     }
 
-    private static DialogueResultScript CapturedCompiledScript(string source, string decompiled) =>
-        new()
+    private static DialogueResultScript CapturedCompiledScript(string source, string decompiled)
+    {
+        return new DialogueResultScript
         {
             SourceText = source,
             SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject,
             IsDmpDerived = true,
             DecompiledText = decompiled,
             CompiledData = [0x00, 0x1D, 0x00, 0x00],
-            IsBigEndianBytecode = true,
+            IsBigEndianBytecode = true
         };
+    }
 
-    private static EncodedRecord EncodeOwner(string ownerType, DialogueResultScript script) =>
-        ownerType switch
+    private static EncodedRecord EncodeOwner(string ownerType, DialogueResultScript script)
+    {
+        return ownerType switch
         {
             "INFO" => InfoEncoder.EncodeNew(new DialogueRecord
             {
                 FormId = 0x00110001,
-                ResultScripts = [script],
+                ResultScripts = [script]
             }),
             "PACK" => PackEncoder.EncodeNew(new PackageRecord
             {
                 FormId = 0x00110002,
                 EditorId = "CapturedPack",
                 Data = new PackageData(),
-                OnBegin = new PackageEventAction { Scripts = [script] },
+                OnBegin = new PackageEventAction { Scripts = [script] }
             }),
             "TERM" => TermEncoder.EncodeNew(new TerminalRecord
             {
@@ -443,10 +446,11 @@ public sealed class InlineScriptAtomicSafetyTests
                         Variables = script.Variables,
                         ReferencedObjects = script.ReferencedObjects,
                         IsBigEndianBytecode = script.IsBigEndianBytecode,
-                        IsIncompleteExecutableBundle = script.IsIncompleteExecutableBundle,
-                    },
-                ],
+                        IsIncompleteExecutableBundle = script.IsIncompleteExecutableBundle
+                    }
+                ]
             }),
-            _ => throw new ArgumentOutOfRangeException(nameof(ownerType)),
+            _ => throw new ArgumentOutOfRangeException(nameof(ownerType))
         };
+    }
 }

@@ -162,6 +162,14 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     }
 
     /// <summary>
+    ///     Uploads (once, keyed) a synthesized RGBA8 texture and returns its stable bindless index.
+    ///     Used for the Oblivion water-surface animation frames the engine generates at runtime
+    ///     (retail ships no <c>water00-31.dds</c>) — see <c>OblivionWaterSurfaceSynthesizer</c>.
+    /// </summary>
+    public uint GetOrCreateSyntheticBindlessIndex(string key, int width, int height, byte[] rgba) =>
+        _textureCache.GetOrCreateSynthetic(key, width, height, rgba).BindlessIndex;
+
+    /// <summary>
     ///     Resolves an arbitrary diffuse texture path (e.g. the CLMT sun texture or a fixed sky texture
     ///     like <c>textures\sky\sun.dds</c>) to its stable bindless SRV index, or <c>null</c> when no
     ///     path is given. Streams through the same <see cref="GpuTextureCache12" /> as terrain (the

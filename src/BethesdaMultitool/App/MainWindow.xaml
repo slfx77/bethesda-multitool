@@ -260,6 +260,21 @@
             <FontIcon Glyph="&#xE72A;" FontSize="11" />
           </Button>
         </StackPanel>
+
+        <!--  Help: the visible twin of the F1 accelerator (same shortcuts dialog). A sibling of
+              NavButtonPanel, not a child, so it stays visible when the nav buttons are hidden.
+              Inside the title bar, so WinUI auto-excludes it from the drag region like Back/Forward.  -->
+        <Button
+          x:Name="HelpShortcutsButton"
+          Width="28" Height="24" Padding="0" Margin="8,0,0,0"
+          VerticalAlignment="Center"
+          Click="HelpShortcuts_Click"
+          ToolTipService.ToolTip="Keyboard shortcuts (F1)"
+          AutomationProperties.Name="Keyboard shortcuts"
+          AutomationProperties.HelpText="Show the keyboard shortcuts cheat sheet (F1)"
+          Background="Transparent" BorderBrush="Transparent">
+          <FontIcon Glyph="&#xE897;" FontSize="11" />
+        </Button>
       </StackPanel>
     </Grid>
   </Grid>

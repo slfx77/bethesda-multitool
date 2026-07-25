@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
@@ -21,7 +22,7 @@ public sealed class ImageSpaceModifierScriptClosureTests
     [Fact]
     public void CompleteNewImad_IsCatalogedEmitted_AndKeepsDependentScptLoadable()
     {
-        var records = RecordsWith(ImageSpaceModifierTestFactory.Complete(ModifierSourceFormId));
+        var records = RecordsWith(ImageSpaceModifierTestFactory.Complete());
 
         var plan = BuildPlanner().Build(
             [], records, new HashSet<string> { "IMAD", "SCPT" }, new HashSet<uint>(), null);
@@ -42,22 +43,22 @@ public sealed class ImageSpaceModifierScriptClosureTests
     [Fact]
     public void OneRuntimeImad_ClosesAllSixDependentScriptsOnce()
     {
-        var modifier = ImageSpaceModifierTestFactory.Complete(ModifierSourceFormId) with
+        var modifier = ImageSpaceModifierTestFactory.Complete() with
         {
-            FromRuntime = true,
+            FromRuntime = true
         };
         var scripts = Enumerable.Range(0, 6)
             .Select(index => new ScriptRecord
             {
                 FormId = ScriptSourceFormId + (uint)index,
                 EditorId = $"HVSimRuntimeClosure{index}",
-                ReferencedObjects = [ModifierSourceFormId],
+                ReferencedObjects = [ModifierSourceFormId]
             })
             .ToList();
         var records = new RecordCollection
         {
             ImageSpaceModifiers = [modifier],
-            Scripts = scripts,
+            Scripts = scripts
         };
 
         var plan = BuildPlanner().Build(
@@ -76,12 +77,12 @@ public sealed class ImageSpaceModifierScriptClosureTests
     [Fact]
     public void IncompleteNewImad_IsNotAllocated_AndDependentScptIsSuppressed()
     {
-        var complete = ImageSpaceModifierTestFactory.Complete(ModifierSourceFormId);
+        var complete = ImageSpaceModifierTestFactory.Complete();
         var incomplete = complete with
         {
             OrderedSubrecords = complete.OrderedSubrecords
                 .Where(static sub => sub.Signature != "NAM3")
-                .ToArray(),
+                .ToArray()
         };
 
         var plan = BuildPlanner().Build(
@@ -110,7 +111,7 @@ public sealed class ImageSpaceModifierScriptClosureTests
     }
 
     private static RecordCollection RecordsWith(
-        BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc.ImageSpaceModifierRecord modifier)
+        ImageSpaceModifierRecord modifier)
     {
         return new RecordCollection
         {
@@ -121,9 +122,9 @@ public sealed class ImageSpaceModifierScriptClosureTests
                 {
                     FormId = ScriptSourceFormId,
                     EditorId = "HVSimEnterScript",
-                    ReferencedObjects = [ModifierSourceFormId],
-                },
-            ],
+                    ReferencedObjects = [ModifierSourceFormId]
+                }
+            ]
         };
     }
 
@@ -133,7 +134,7 @@ public sealed class ImageSpaceModifierScriptClosureTests
         [
             new ImageSpaceModifierDispositionPolicy(),
             new ScriptDispositionPolicy(),
-            new DefaultDispositionPolicy(),
+            new DefaultDispositionPolicy()
         ]);
         var degradation = new DegradationPolicy();
         degradation.SetDefaultForType("IMAD", DanglingAction.DropSubrecord);
@@ -141,7 +142,7 @@ public sealed class ImageSpaceModifierScriptClosureTests
         var references = new ReferenceResolver(
         [
             new ImageSpaceModifierReferenceWalker(),
-            new ScriptReferenceWalker(),
+            new ScriptReferenceWalker()
         ], degradation);
         return new EsmPlanner(disposition, new FormIdAllocator(), references);
     }

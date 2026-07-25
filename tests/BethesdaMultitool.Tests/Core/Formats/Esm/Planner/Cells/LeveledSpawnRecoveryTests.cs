@@ -1,9 +1,9 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
@@ -13,6 +13,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
+using Xunit.Sdk;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
 
@@ -26,17 +27,17 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
 /// </summary>
 public sealed class LeveledSpawnRecoveryTests
 {
-    private const uint CellId = 0x000ABCDE;            // interior
-    private const uint MasterStatBaseId = 0x000A2001;  // keeper-ref base
-    private const uint MasterNpcBaseId = 0x000A3001;   // ACHR recovery target (master NPC_)
-    private const uint MasterCreaBaseId = 0x000A3002;  // ACRE recovery target (master CREA)
-    private const uint MasterLvlnBaseId = 0x000A3003;  // leveled list (type-incompatible base)
-    private const uint KeeperNewRefId = 0x01000901;    // clears the interior "no new content" gate
-    private const uint ActorFormId = 0x01000AAA;       // the re-populated actor's own FormID
-    private const uint RuntimeCloneBase = 0xFF000A48;  // the 0xFF base the planner can't resolve
+    private const uint CellId = 0x000ABCDE; // interior
+    private const uint MasterStatBaseId = 0x000A2001; // keeper-ref base
+    private const uint MasterNpcBaseId = 0x000A3001; // ACHR recovery target (master NPC_)
+    private const uint MasterCreaBaseId = 0x000A3002; // ACRE recovery target (master CREA)
+    private const uint MasterLvlnBaseId = 0x000A3003; // leveled list (type-incompatible base)
+    private const uint KeeperNewRefId = 0x01000901; // clears the interior "no new content" gate
+    private const uint ActorFormId = 0x01000AAA; // the re-populated actor's own FormID
+    private const uint RuntimeCloneBase = 0xFF000A48; // the 0xFF base the planner can't resolve
 
-    private const uint ProtoNpcSource = 0x0011EC2A;    // captured-proto NPC_ source FormID
-    private const uint ProtoNpcEmitted = 0x01004330;   // its emitted (plugin) FormID
+    private const uint ProtoNpcSource = 0x0011EC2A; // captured-proto NPC_ source FormID
+    private const uint ProtoNpcEmitted = 0x01004330; // its emitted (plugin) FormID
 
     [Fact]
     public void MasterNpc_Template_Recovers_Via_Template_When_OriginalBase_Is_Leveled()
@@ -44,7 +45,7 @@ public sealed class LeveledSpawnRecoveryTests
         // OriginalBase = master LVLN (xEdit-invalid ACHR base → skipped), Template = master NPC_.
         var actor = MakeActor("ACHR", MasterLvlnBaseId, MasterNpcBaseId);
 
-        var (section, stats) = BuildSection(actor, recover: true);
+        var (section, stats) = BuildSection(actor, true);
 
         var name = FindActorNameBase(section, ActorFormId);
         Assert.Equal(MasterNpcBaseId, name); // Template won; LVLN OriginalBase rejected.
@@ -58,7 +59,7 @@ public sealed class LeveledSpawnRecoveryTests
         // OriginalBase = master NPC_ (type-compatible) → wins; Template ignored.
         var actor = MakeActor("ACHR", MasterNpcBaseId, MasterCreaBaseId);
 
-        var (section, stats) = BuildSection(actor, recover: true);
+        var (section, stats) = BuildSection(actor, true);
 
         Assert.Equal(MasterNpcBaseId, FindActorNameBase(section, ActorFormId));
         Assert.Equal(1, stats.DropReasonCounts.GetValueOrDefault("refr.leveled-recovered"));
@@ -68,13 +69,13 @@ public sealed class LeveledSpawnRecoveryTests
     public void CapturedProto_Npc_Base_Recovers_Via_SourceToEmitted()
     {
         // OriginalBase = a captured-proto NPC_ emitted as new; NAME must land on the emitted FormID.
-        var actor = MakeActor("ACHR", ProtoNpcSource, template: null);
+        var actor = MakeActor("ACHR", ProtoNpcSource, null);
 
         var (section, stats) = BuildSection(
-            actor, recover: true,
-            sourceToEmitted: ImmutableDictionary<uint, uint>.Empty.Add(ProtoNpcSource, ProtoNpcEmitted),
-            emittedFormIds: [ProtoNpcEmitted],
-            dmpBaseTypes: new Dictionary<uint, string> { [ProtoNpcSource] = "NPC_" });
+            actor, true,
+            ImmutableDictionary<uint, uint>.Empty.Add(ProtoNpcSource, ProtoNpcEmitted),
+            [ProtoNpcEmitted],
+            new Dictionary<uint, string> { [ProtoNpcSource] = "NPC_" });
 
         Assert.Equal(ProtoNpcEmitted, FindActorNameBase(section, ActorFormId));
         Assert.Equal(1, stats.DropReasonCounts.GetValueOrDefault("refr.leveled-recovered"));
@@ -84,13 +85,13 @@ public sealed class LeveledSpawnRecoveryTests
     public void CapturedProto_WrongType_Base_Is_Rejected_And_Still_Drops()
     {
         // Emitted proto base is a STAT, not an NPC_ — the DmpBaseTypes gate must reject it.
-        var actor = MakeActor("ACHR", ProtoNpcSource, template: null);
+        var actor = MakeActor("ACHR", ProtoNpcSource, null);
 
         var (section, stats) = BuildSection(
-            actor, recover: true,
-            sourceToEmitted: ImmutableDictionary<uint, uint>.Empty.Add(ProtoNpcSource, ProtoNpcEmitted),
-            emittedFormIds: [ProtoNpcEmitted],
-            dmpBaseTypes: new Dictionary<uint, string> { [ProtoNpcSource] = "STAT" });
+            actor, true,
+            ImmutableDictionary<uint, uint>.Empty.Add(ProtoNpcSource, ProtoNpcEmitted),
+            [ProtoNpcEmitted],
+            new Dictionary<uint, string> { [ProtoNpcSource] = "STAT" });
 
         Assert.Null(FindActorRecord(section, ActorFormId));
         Assert.Equal(0, stats.DropReasonCounts.GetValueOrDefault("refr.leveled-recovered"));
@@ -100,9 +101,9 @@ public sealed class LeveledSpawnRecoveryTests
     [Fact]
     public void No_Leveled_Pointers_Still_Drops_As_Dangling()
     {
-        var actor = MakeActor("ACHR", original: null, template: null);
+        var actor = MakeActor("ACHR", null, null);
 
-        var (section, stats) = BuildSection(actor, recover: true);
+        var (section, stats) = BuildSection(actor, true);
 
         Assert.Null(FindActorRecord(section, ActorFormId));
         Assert.Equal(1, stats.DropReasonCounts.GetValueOrDefault("refr.dangling-base"));
@@ -111,9 +112,9 @@ public sealed class LeveledSpawnRecoveryTests
     [Fact]
     public void Flag_Off_Drops_Even_With_A_Valid_Master_Base()
     {
-        var actor = MakeActor("ACHR", MasterNpcBaseId, template: null);
+        var actor = MakeActor("ACHR", MasterNpcBaseId, null);
 
-        var (section, stats) = BuildSection(actor, recover: false);
+        var (section, stats) = BuildSection(actor, false);
 
         Assert.Null(FindActorRecord(section, ActorFormId));
         Assert.Equal(0, stats.DropReasonCounts.GetValueOrDefault("refr.leveled-recovered"));
@@ -124,9 +125,9 @@ public sealed class LeveledSpawnRecoveryTests
     public void Refr_With_Runtime_Base_And_Leveled_Pointers_Is_Unaffected()
     {
         // Recovery is ACHR/ACRE-only; a REFR with a 0xFF base still dangles.
-        var reffed = MakeActor("REFR", MasterNpcBaseId, template: null);
+        var reffed = MakeActor("REFR", MasterNpcBaseId, null);
 
-        var (section, stats) = BuildSection(reffed, recover: true);
+        var (section, stats) = BuildSection(reffed, true);
 
         Assert.Null(FindActorRecord(section, ActorFormId));
         Assert.Equal(0, stats.DropReasonCounts.GetValueOrDefault("refr.leveled-recovered"));
@@ -139,7 +140,7 @@ public sealed class LeveledSpawnRecoveryTests
         // ACRE parity: OriginalBase = LVLN (skipped), Template = master CREA.
         var actor = MakeActor("ACRE", MasterLvlnBaseId, MasterCreaBaseId);
 
-        var (section, stats) = BuildSection(actor, recover: true);
+        var (section, stats) = BuildSection(actor, true);
 
         Assert.Equal(MasterCreaBaseId, FindActorNameBase(section, ActorFormId));
         Assert.Equal(1, stats.DropReasonCounts.GetValueOrDefault("refr.leveled-recovered"));
@@ -159,8 +160,9 @@ public sealed class LeveledSpawnRecoveryTests
 
     // ---- fixture plumbing ----------------------------------------------------------
 
-    private static PlacedReference MakeActor(string recordType, uint? original, uint? template) =>
-        new()
+    private static PlacedReference MakeActor(string recordType, uint? original, uint? template)
+    {
+        return new PlacedReference
         {
             FormId = ActorFormId,
             BaseFormId = RuntimeCloneBase,
@@ -169,6 +171,7 @@ public sealed class LeveledSpawnRecoveryTests
             LeveledCreatureOriginalBaseFormId = original,
             LeveledCreatureTemplateFormId = template
         };
+    }
 
     private static (byte[]? Section, ConversionPipelineStats Stats) BuildSection(
         PlacedReference actor,
@@ -188,8 +191,8 @@ public sealed class LeveledSpawnRecoveryTests
             Subrecords =
             [
                 new ParsedSubrecord { Signature = "EDID", Data = "Cell\0"u8.ToArray() },
-                new ParsedSubrecord { Signature = "DATA", Data = [0x01] },   // interior flag
-                new ParsedSubrecord { Signature = "XCLL", Data = new byte[40] },
+                new ParsedSubrecord { Signature = "DATA", Data = [0x01] }, // interior flag
+                new ParsedSubrecord { Signature = "XCLL", Data = new byte[40] }
             ]
         };
         var masterByFormId = new Dictionary<uint, ParsedMainRecord>
@@ -198,7 +201,7 @@ public sealed class LeveledSpawnRecoveryTests
             [MasterStatBaseId] = MakeMasterRecord("STAT", MasterStatBaseId),
             [MasterNpcBaseId] = MakeMasterRecord("NPC_", MasterNpcBaseId),
             [MasterCreaBaseId] = MakeMasterRecord("CREA", MasterCreaBaseId),
-            [MasterLvlnBaseId] = MakeMasterRecord("LVLN", MasterLvlnBaseId),
+            [MasterLvlnBaseId] = MakeMasterRecord("LVLN", MasterLvlnBaseId)
         };
 
         var masterIndex = new MasterRecordIndex
@@ -214,7 +217,7 @@ public sealed class LeveledSpawnRecoveryTests
             RefsByCell = [],
             NavmsByCell = [],
             LandsByCell = [],
-            CellContexts = [],
+            CellContexts = []
         };
 
         var actorType = actor.RecordType;
@@ -228,8 +231,8 @@ public sealed class LeveledSpawnRecoveryTests
             TemporaryChildren =
             [
                 MakeChildPlan("REFR", KeeperNewRefId, keeper),
-                MakeChildPlan(actorType, ActorFormId, actor),
-            ],
+                MakeChildPlan(actorType, ActorFormId, actor)
+            ]
         };
 
         var plan = new EmitPlan
@@ -240,7 +243,7 @@ public sealed class LeveledSpawnRecoveryTests
             RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
             Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
             Meta = new PlanMetadata { NextObjectId = 0x800, PlannerCoverage = ImmutableHashSet<string>.Empty },
-            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(CellId, cellPlan),
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(CellId, cellPlan)
         };
 
         var options = new PluginBuildOptions { RecoverLeveledSpawnActors = recover };
@@ -251,8 +254,9 @@ public sealed class LeveledSpawnRecoveryTests
         return (section, stats);
     }
 
-    private static RecordPlan MakeCellPlan(CellRecord dmpCell, ParsedMainRecord masterCell) =>
-        new()
+    private static RecordPlan MakeCellPlan(CellRecord dmpCell, ParsedMainRecord masterCell)
+    {
+        return new RecordPlan
         {
             Type = "CELL",
             Disposition = RecordDisposition.Override,
@@ -263,9 +267,11 @@ public sealed class LeveledSpawnRecoveryTests
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
             Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
+    }
 
-    private static RecordPlan MakeChildPlan(string type, uint formId, PlacedReference model) =>
-        new()
+    private static RecordPlan MakeChildPlan(string type, uint formId, PlacedReference model)
+    {
+        return new RecordPlan
         {
             Type = type,
             Disposition = RecordDisposition.New,
@@ -275,9 +281,11 @@ public sealed class LeveledSpawnRecoveryTests
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
             Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
+    }
 
-    private static ParsedMainRecord MakeMasterRecord(string signature, uint formId) =>
-        new()
+    private static ParsedMainRecord MakeMasterRecord(string signature, uint formId)
+    {
+        return new ParsedMainRecord
         {
             Header = new MainRecordHeader
             {
@@ -286,9 +294,11 @@ public sealed class LeveledSpawnRecoveryTests
             },
             Offset = 0
         };
+    }
 
-    private static PcEsmCellContext MakeInteriorContext(uint cellFormId) =>
-        new()
+    private static PcEsmCellContext MakeInteriorContext(uint cellFormId)
+    {
+        return new PcEsmCellContext
         {
             CellFormId = cellFormId,
             IsInterior = true,
@@ -297,6 +307,7 @@ public sealed class LeveledSpawnRecoveryTests
             BlockLabel = [1, 0, 0, 0],
             SubblockLabel = [2, 0, 0, 0]
         };
+    }
 
     // ---- section reader ------------------------------------------------------------
 
@@ -304,9 +315,9 @@ public sealed class LeveledSpawnRecoveryTests
     private static uint FindActorNameBase(byte[]? section, uint actorFormId)
     {
         var offset = FindActorRecord(section, actorFormId)
-                     ?? throw new Xunit.Sdk.XunitException($"Actor 0x{actorFormId:X8} not emitted.");
+                     ?? throw new XunitException($"Actor 0x{actorFormId:X8} not emitted.");
         var name = FindSubrecord(section!, offset, "NAME")
-                   ?? throw new Xunit.Sdk.XunitException("Emitted actor has no NAME subrecord.");
+                   ?? throw new XunitException("Emitted actor has no NAME subrecord.");
         return BinaryPrimitives.ReadUInt32LittleEndian(name);
     }
 

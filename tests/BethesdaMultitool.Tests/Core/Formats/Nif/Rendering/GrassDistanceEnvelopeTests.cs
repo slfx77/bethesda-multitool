@@ -32,8 +32,8 @@ public sealed class GrassDistanceEnvelopeTests
         var actual = GrassDistanceCullPolicy.Passes(
             true,
             in envelope,
-            horizontalDistanceSquared: distance * distance,
-            activeRenderDistance: 12000f);
+            distance * distance,
+            12000f);
 
         Assert.Equal(expected, actual);
     }
@@ -46,8 +46,8 @@ public sealed class GrassDistanceEnvelopeTests
         Assert.True(GrassDistanceCullPolicy.Passes(
             false,
             in envelope,
-            horizontalDistanceSquared: 50000f * 50000f,
-            activeRenderDistance: 12000f));
+            50000f * 50000f,
+            12000f));
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public sealed class GrassDistanceEnvelopeTests
         var envelope = GrassScatterProfile.ForGame(BethesdaGame.Skyrim).DistanceEnvelope;
 
         Assert.Equal(expected, GrassDistanceCullPolicy.Passes(
-            true, in envelope, distance * distance, activeRenderDistance: 12000f));
+            true, in envelope, distance * distance, 12000f));
     }
 
     [Fact]
@@ -111,9 +111,9 @@ public sealed class GrassDistanceEnvelopeTests
         Assert.Equal(6000f, envelope.EffectiveHardEnd(6000f));
         Assert.Equal(8000f, envelope.EffectiveHardEnd(12000f));
         Assert.True(GrassDistanceCullPolicy.Passes(
-            true, in envelope, 6000f * 6000f, activeRenderDistance: 6000f));
+            true, in envelope, 6000f * 6000f, 6000f));
         Assert.False(GrassDistanceCullPolicy.Passes(
-            true, in envelope, 6001f * 6001f, activeRenderDistance: 6000f));
+            true, in envelope, 6001f * 6001f, 6000f));
     }
 
     [Fact]
@@ -126,13 +126,13 @@ public sealed class GrassDistanceEnvelopeTests
             true,
             in envelope,
             placementFromEstablishmentCamera * placementFromEstablishmentCamera,
-            activeRenderDistance: 12000f,
-            establishmentSlack: 512f));
+            12000f,
+            512f));
         Assert.False(GrassDistanceCullPolicy.Passes(
             true,
             in envelope,
             placementFromEstablishmentCamera * placementFromEstablishmentCamera,
-            activeRenderDistance: 12000f));
+            12000f));
 
         // After the camera moves 300 units toward the retained placement, the same frozen batch
         // becomes exactly eligible without rebuilding.
@@ -141,7 +141,7 @@ public sealed class GrassDistanceEnvelopeTests
             true,
             in envelope,
             placementFromDriftedCamera * placementFromDriftedCamera,
-            activeRenderDistance: 12000f));
+            12000f));
     }
 
     [Fact]
@@ -214,7 +214,8 @@ public sealed class GrassDistanceEnvelopeTests
         Assert.Contains("float GrassWaveMultiplier,", renderer, StringComparison.Ordinal);
         Assert.Equal(
             2,
-            SourceContract.CountOccurrences(renderer, "PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)"));
+            SourceContract.CountOccurrences(renderer,
+                "PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)"));
         Assert.Contains("draws[i].SourceWorld.Translation", renderer, StringComparison.Ordinal);
         Assert.Contains("draws[i].IsGrass", renderer, StringComparison.Ordinal);
 
@@ -222,12 +223,15 @@ public sealed class GrassDistanceEnvelopeTests
         // both shared-ring and fallback-ring copies.
         Assert.Equal(
             2,
-            SourceContract.CountOccurrences(renderer, "var filterGrassDistance = batchState.UsesGrassDistanceEnvelope;"));
+            SourceContract.CountOccurrences(renderer,
+                "var filterGrassDistance = batchState.UsesGrassDistanceEnvelope;"));
         Assert.Equal(
             2,
             SourceContract.CountOccurrences(renderer, "shadowSpan[i].Translation + _frameRenderOrigin"));
     }
 
-    private static string RemoveWhitespace(string source) =>
-        new string(source.Where(character => !char.IsWhiteSpace(character)).ToArray());
+    private static string RemoveWhitespace(string source)
+    {
+        return new string(source.Where(character => !char.IsWhiteSpace(character)).ToArray());
+    }
 }

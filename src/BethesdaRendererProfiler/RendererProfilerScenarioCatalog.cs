@@ -75,7 +75,7 @@ internal static class RendererProfilerScenarioCatalog
         FnvSunlightDimmer,
         FnvAdaptationHistory,
         FnvWeatherImageSpaceBands,
-        FnvActiveAdtBase,
+        FnvActiveAdtBase
     ];
 
     internal static bool TryNormalizeName(string? value, out string? normalized)
@@ -111,7 +111,7 @@ internal static class RendererProfilerScenarioCatalog
             FnvAdaptationHistory => CreateAdaptationHistory(),
             FnvWeatherImageSpaceBands => CreateWeatherImageSpaceBands(),
             FnvActiveAdtBase => CreateActiveAdtBase(),
-            _ => null,
+            _ => null
         };
         return plan is not null;
     }
@@ -121,8 +121,8 @@ internal static class RendererProfilerScenarioCatalog
         var camera = new Vector3(78320f, 51000f, 2600f);
         return FnvPlan(FnvWaterNightMatrix,
         [
-            new("noon", "NVWastelandClear", 12f, 0f, 0f, camera, -8f, 0f),
-            new("night", "NVWastelandClear", 2f, 0f, 0f, camera, -8f, 0f),
+            new RendererProfilerScenarioStep("noon", "NVWastelandClear", 12f, 0f, 0f, camera, -8f, 0f),
+            new RendererProfilerScenarioStep("night", "NVWastelandClear", 2f, 0f, 0f, camera, -8f, 0f)
         ]);
     }
 
@@ -135,16 +135,16 @@ internal static class RendererProfilerScenarioCatalog
         // satisfying WATER001's bounded homogeneous-plane/type contract deterministically.
         var camera = new Vector3(79872f, 51200f, 3400f);
         var postProcess = new RendererProfilerScenarioPostProcessSettings(
-            HdrEnabled: true,
-            BloomEnabled: false,
-            ImagespaceEnabled: true,
-            FogEnabled: true);
+            true,
+            false,
+            true,
+            true);
         var fixture = new RendererProfilerScenarioSyntheticWaterFixture(
-            SourceCellFormId: 0x000DDCF8,
-            GridX: 19,
-            GridY: 12,
-            WaterFormId: 0x001009CA,
-            PlaneHeight: 2600f);
+            0x000DDCF8,
+            19,
+            12,
+            0x001009CA,
+            2600f);
 
         return new RendererProfilerScenarioPlan(
             FnvWater001Synthetic,
@@ -161,7 +161,7 @@ internal static class RendererProfilerScenarioCatalog
                     -65f,
                     0f,
                     postProcess,
-                    ClearAdaptedLightBeforeCapture: true),
+                    true)
             ],
             SyntheticWaterFixture: fixture);
     }
@@ -173,17 +173,17 @@ internal static class RendererProfilerScenarioCatalog
         // cross-process shadow-map edge variable over the distant terrain. Pin every visual toggle
         // explicitly and isolate that pass so the image delta belongs to the animation clock.
         var isolated = new RendererProfilerScenarioPostProcessSettings(
-            HdrEnabled: true,
-            BloomEnabled: true,
-            ImagespaceEnabled: true,
-            FogEnabled: true,
-            ShadowsEnabled: false);
+            true,
+            true,
+            true,
+            true,
+            false);
         return FnvPlan(FnvCloudMotion,
         [
-            new("t-000", "NVWastelandClearWindy", 13f, 0f, 0f, camera, 5f, 0f,
-                isolated, ClearAdaptedLightBeforeCapture: true),
-            new("t-010", "NVWastelandClearWindy", 13f, 0f, 10f, camera, 5f, 0f,
-                isolated, ClearAdaptedLightBeforeCapture: true),
+            new RendererProfilerScenarioStep("t-000", "NVWastelandClearWindy", 13f, 0f, 0f, camera, 5f, 0f,
+                isolated, true),
+            new RendererProfilerScenarioStep("t-010", "NVWastelandClearWindy", 13f, 0f, 10f, camera, 5f, 0f,
+                isolated, true)
         ]);
     }
 
@@ -198,19 +198,19 @@ internal static class RendererProfilerScenarioCatalog
         const float moonYawDegrees = 125.538f;
         return FnvPlan(FnvCelestial,
         [
-            new("night-full-d000", "NVWastelandClear", 2f, 0f, 0f, camera,
+            new RendererProfilerScenarioStep("night-full-d000", "NVWastelandClear", 2f, 0f, 0f, camera,
                 moonPitchDegrees, moonYawDegrees),
-            new("night-phase-d003", "NVWastelandClear", 2f, 3f, 0f, camera,
+            new RendererProfilerScenarioStep("night-phase-d003", "NVWastelandClear", 2f, 3f, 0f, camera,
                 moonPitchDegrees, moonYawDegrees),
-            new("night-new-d012", "NVWastelandClear", 2f, 12f, 0f, camera,
+            new RendererProfilerScenarioStep("night-new-d012", "NVWastelandClear", 2f, 12f, 0f, camera,
                 moonPitchDegrees, moonYawDegrees),
-            new("night-cycle-d024", "NVWastelandClear", 2f, 24f, 0f, camera,
+            new RendererProfilerScenarioStep("night-cycle-d024", "NVWastelandClear", 2f, 24f, 0f, camera,
                 moonPitchDegrees, moonYawDegrees),
-            new("sunrise", "NVWastelandClear", 7f, 0f, 0f, camera, 80f, 0f),
-            new("morning", "NVWastelandClear", 9f, 0f, 0f, camera, 80f, 0f),
-            new("noon", "NVWastelandClear", 12f, 0f, 0f, camera, 80f, 0f),
-            new("afternoon", "NVWastelandClear", 13f, 0f, 0f, camera, 80f, 0f),
-            new("sunset", "NVWastelandClear", 19f, 0f, 0f, camera, 80f, 0f),
+            new RendererProfilerScenarioStep("sunrise", "NVWastelandClear", 7f, 0f, 0f, camera, 80f, 0f),
+            new RendererProfilerScenarioStep("morning", "NVWastelandClear", 9f, 0f, 0f, camera, 80f, 0f),
+            new RendererProfilerScenarioStep("noon", "NVWastelandClear", 12f, 0f, 0f, camera, 80f, 0f),
+            new RendererProfilerScenarioStep("afternoon", "NVWastelandClear", 13f, 0f, 0f, camera, 80f, 0f),
+            new RendererProfilerScenarioStep("sunset", "NVWastelandClear", 19f, 0f, 0f, camera, 80f, 0f)
         ]);
     }
 
@@ -242,18 +242,18 @@ internal static class RendererProfilerScenarioCatalog
         var yaw = MathF.Atan2(toFocus.X, toFocus.Y) * (180f / MathF.PI);
         var pitch = MathF.Atan2(
             toFocus.Z,
-            MathF.Sqrt((toFocus.X * toFocus.X) + (toFocus.Y * toFocus.Y))) * (180f / MathF.PI);
+            MathF.Sqrt(toFocus.X * toFocus.X + toFocus.Y * toFocus.Y)) * (180f / MathF.PI);
         var bloomOff = new RendererProfilerScenarioPostProcessSettings(
-            HdrEnabled: true,
-            BloomEnabled: false,
-            ImagespaceEnabled: true,
-            FogEnabled: true);
+            true,
+            false,
+            true,
+            true);
         var bloomOn = bloomOff with { BloomEnabled = true };
 
         return FnvPlan(FnvProspectorNeonBloom,
         [
-            new("bloom-off", "NVWastelandClear", 2f, 0f, 0f, camera, pitch, yaw, bloomOff),
-            new("bloom-on", "NVWastelandClear", 2f, 0f, 0f, camera, pitch, yaw, bloomOn),
+            new RendererProfilerScenarioStep("bloom-off", "NVWastelandClear", 2f, 0f, 0f, camera, pitch, yaw, bloomOff),
+            new RendererProfilerScenarioStep("bloom-on", "NVWastelandClear", 2f, 0f, 0f, camera, pitch, yaw, bloomOn)
         ], fixture);
     }
 
@@ -261,19 +261,19 @@ internal static class RendererProfilerScenarioCatalog
     {
         var camera = new Vector3(78320f, 51000f, 2600f);
         var enabled = new RendererProfilerScenarioPostProcessSettings(
-            HdrEnabled: true,
-            BloomEnabled: false,
-            ImagespaceEnabled: true,
-            FogEnabled: true);
+            true,
+            false,
+            true,
+            true);
 
         return FnvPlan(FnvSunlightDimmer,
         [
-            new("hdr-imagespace-on", "NVWastelandClear", 12f, 0f, 0f, camera, -8f, 0f,
+            new RendererProfilerScenarioStep("hdr-imagespace-on", "NVWastelandClear", 12f, 0f, 0f, camera, -8f, 0f,
                 enabled),
-            new("imagespace-off", "NVWastelandClear", 12f, 0f, 0f, camera, -8f, 0f,
+            new RendererProfilerScenarioStep("imagespace-off", "NVWastelandClear", 12f, 0f, 0f, camera, -8f, 0f,
                 enabled with { ImagespaceEnabled = false }),
-            new("hdr-off", "NVWastelandClear", 12f, 0f, 0f, camera, -8f, 0f,
-                enabled with { HdrEnabled = false }),
+            new RendererProfilerScenarioStep("hdr-off", "NVWastelandClear", 12f, 0f, 0f, camera, -8f, 0f,
+                enabled with { HdrEnabled = false })
         ]);
     }
 
@@ -285,17 +285,19 @@ internal static class RendererProfilerScenarioCatalog
         var west = new Vector3(24575.5f, -18432f, 5000f);
         var east = new Vector3(24576.5f, -18432f, 5000f);
         var enabled = new RendererProfilerScenarioPostProcessSettings(
-            HdrEnabled: true,
-            BloomEnabled: false,
-            ImagespaceEnabled: true,
-            FogEnabled: true);
+            true,
+            false,
+            true,
+            true);
 
         return FnvPlan(FnvAdaptationHistory,
         [
-            new("west-worldspace", "NVWastelandClear", 12f, 0f, 0f, west, -8f, 0f, enabled),
-            new("east-cell", "NVWastelandClear", 12f, 0f, 0f, east, -8f, 0f, enabled),
-            new("east-explicit-clear", "NVWastelandClear", 12f, 0f, 0f, east, -8f, 0f, enabled,
-                ClearAdaptedLightBeforeCapture: true),
+            new RendererProfilerScenarioStep("west-worldspace", "NVWastelandClear", 12f, 0f, 0f, west, -8f, 0f,
+                enabled),
+            new RendererProfilerScenarioStep("east-cell", "NVWastelandClear", 12f, 0f, 0f, east, -8f, 0f, enabled),
+            new RendererProfilerScenarioStep("east-explicit-clear", "NVWastelandClear", 12f, 0f, 0f, east, -8f, 0f,
+                enabled,
+                true)
         ]);
     }
 
@@ -306,19 +308,19 @@ internal static class RendererProfilerScenarioCatalog
         // PNAM/NAM0 color clock whose HighNoon color peaks then.
         var camera = new Vector3(78320f, 51000f, 2600f);
         var enabled = new RendererProfilerScenarioPostProcessSettings(
-            HdrEnabled: true,
-            BloomEnabled: false,
-            ImagespaceEnabled: true,
-            FogEnabled: true);
+            true,
+            false,
+            true,
+            true);
 
         return FnvPlan(FnvWeatherImageSpaceBands,
         [
-            new("morning-shoulder", "NVColoradoRiverWeather", 10f, 0f, 0f,
-                camera, -8f, 0f, enabled, ClearAdaptedLightBeforeCapture: true),
-            new("noon", "NVColoradoRiverWeather", 12f, 0f, 0f,
-                camera, -8f, 0f, enabled, ClearAdaptedLightBeforeCapture: true),
-            new("afternoon-shoulder", "NVColoradoRiverWeather", 15f, 0f, 0f,
-                camera, -8f, 0f, enabled, ClearAdaptedLightBeforeCapture: true),
+            new RendererProfilerScenarioStep("morning-shoulder", "NVColoradoRiverWeather", 10f, 0f, 0f,
+                camera, -8f, 0f, enabled, true),
+            new RendererProfilerScenarioStep("noon", "NVColoradoRiverWeather", 12f, 0f, 0f,
+                camera, -8f, 0f, enabled, true),
+            new RendererProfilerScenarioStep("afternoon-shoulder", "NVColoradoRiverWeather", 15f, 0f, 0f,
+                camera, -8f, 0f, enabled, true)
         ]);
     }
 
@@ -339,7 +341,7 @@ internal static class RendererProfilerScenarioCatalog
             @"architecture\urban\civicspace\gatedwall\urbangatedwallstrstone01_nv.nif",
             new Vector3(-55889.066f, -47042.832f, 5753.3906f),
             new Vector3(0f, 0f, MathF.PI),
-            CellFormId: 0x000E1A03);
+            0x000E1A03);
         var focus = fixture.PlacementPosition + RotateZ(
             new Vector3(0.0001f, -26.0110f, 174.81065f),
             -fixture.PlacementRotationRadians.Z);
@@ -348,13 +350,13 @@ internal static class RendererProfilerScenarioCatalog
         var yaw = MathF.Atan2(toFocus.X, toFocus.Y) * (180f / MathF.PI);
         var pitch = MathF.Atan2(
             toFocus.Z,
-            MathF.Sqrt((toFocus.X * toFocus.X) + (toFocus.Y * toFocus.Y))) * (180f / MathF.PI);
+            MathF.Sqrt(toFocus.X * toFocus.X + toFocus.Y * toFocus.Y)) * (180f / MathF.PI);
         var isolated = new RendererProfilerScenarioPostProcessSettings(
-            HdrEnabled: false,
-            BloomEnabled: false,
-            ImagespaceEnabled: false,
-            FogEnabled: false,
-            ShadowsEnabled: false);
+            false,
+            false,
+            false,
+            false,
+            false);
 
         return FnvPlan(FnvActiveAdtBase,
         [
@@ -368,7 +370,7 @@ internal static class RendererProfilerScenarioCatalog
                 pitch,
                 yaw,
                 isolated,
-                ClearAdaptedLightBeforeCapture: true),
+                true)
         ], fixture);
     }
 
@@ -377,14 +379,16 @@ internal static class RendererProfilerScenarioCatalog
         var sin = MathF.Sin(radians);
         var cos = MathF.Cos(radians);
         return new Vector3(
-            (value.X * cos) - (value.Y * sin),
-            (value.X * sin) + (value.Y * cos),
+            value.X * cos - value.Y * sin,
+            value.X * sin + value.Y * cos,
             value.Z);
     }
 
     private static RendererProfilerScenarioPlan FnvPlan(
         string name,
         IReadOnlyList<RendererProfilerScenarioStep> steps,
-        RendererProfilerScenarioFixture? fixture = null) =>
-        new(name, BethesdaGame.FalloutNewVegas, "WastelandNV", steps, fixture);
+        RendererProfilerScenarioFixture? fixture = null)
+    {
+        return new RendererProfilerScenarioPlan(name, BethesdaGame.FalloutNewVegas, "WastelandNV", steps, fixture);
+    }
 }

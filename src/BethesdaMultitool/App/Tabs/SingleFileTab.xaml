@@ -621,9 +621,10 @@
                                           InspectObject="WorldMap_InspectObject"
                                           InspectCell="WorldMap_InspectCell" />
 
-                <!--  Right: tabbed Settings / Inspection panel. Settings (default) hosts the ACTIVE
-                      viewer's settings expanders (content swapped on the 2D/3D view-mode change);
-                      Inspection holds the object/cell detail and is auto-selected on click/pick.  -->
+                <!--  Right: tabbed Settings / Inspection / Export panel. Settings (default) hosts the
+                      ACTIVE viewer's settings expanders (content swapped on the 2D/3D view-mode change);
+                      Inspection holds the object/cell detail and is auto-selected on click/pick; Export
+                      (3D only) hosts the 3D viewer's export options + Export button.  -->
               <Grid Grid.Column="2" Padding="12,0,0,0">
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
@@ -635,6 +636,7 @@
                              SelectionChanged="WorldPanelSelector_SelectionChanged">
                   <SelectorBarItem x:Name="WorldPanelSettingsItem" Text="Settings" />
                   <SelectorBarItem x:Name="WorldPanelInspectionItem" Text="Inspection" />
+                  <SelectorBarItem x:Name="WorldPanelExportItem" Text="Export" />
                 </SelectorBar>
 
                 <ScrollViewer x:Name="WorldSettingsHost" Grid.Row="1"
@@ -705,6 +707,13 @@
                     </ScrollViewer>
                   </Border>
                 </Grid>
+
+                <!--  Export (3D viewer only): the active 3D viewer's WorldView3DExportPanel is swapped
+                      into this presenter on the 2D/3D view-mode change; 2D leaves it empty.  -->
+                <ScrollViewer x:Name="WorldExportHost" Grid.Row="1" Visibility="Collapsed"
+                              VerticalScrollBarVisibility="Auto">
+                  <ContentPresenter x:Name="WorldExportPresenter" />
+                </ScrollViewer>
               </Grid>
               </Grid>
             </Grid>

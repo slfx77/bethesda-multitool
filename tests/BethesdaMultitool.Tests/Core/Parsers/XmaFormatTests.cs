@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Xma;
 using Xunit;
 

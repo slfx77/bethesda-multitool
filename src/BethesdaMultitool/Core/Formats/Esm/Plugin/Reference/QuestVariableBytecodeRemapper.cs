@@ -25,6 +25,17 @@ internal sealed record QuestVariableBytecodeRemapResult(
     IReadOnlyList<QuestVariableBytecodeRemapDiagnostic> Diagnostics);
 
 /// <summary>
+///     One writer-side reason a candidate producer bundle failed (or would fail) the
+///     structural write proof. Diagnostic-only: production evidence collection is unchanged.
+/// </summary>
+internal sealed record ProducerScanRejection(
+    string RecordType,
+    uint FormId,
+    string ScriptPath,
+    string Reason,
+    string Detail);
+
+/// <summary>
 ///     Applies the same exact source-to-target quest-local decisions used for CTDA to every
 ///     emission-eligible DMP script bundle. SCDA, its ordered SCRO/SCRV table, and its local table
 ///     are treated atomically; retained master scripts and shared master INFO overlays are
@@ -296,6 +307,89 @@ internal static class QuestVariableBytecodeRemapper
                 result.Add(new QuestVariableProducerEvidence(
                     mapping,
                     new QuestVariableProducerOwner("INFO", ownerSourceFormId, scriptPath)));
+            }
+        }
+
+        return result.Distinct().ToImmutableArray();
+    }
+
+    /// <summary>
+    ///     Diagnostic-only mirror of the per-INFO producer scan. Unlike
+    ///     <see cref="FindInfoProducerWrites(DialogueRecord,uint,string?,IReadOnlyList{QuestVariableRecoveryMapping},IReadOnlyDictionary{uint,uint}?,ProducerOperandIdentity,IReadOnlySet{uint}?,IReadOnlyDictionary{uint,uint}?)" />,
+    ///     it keeps scanning past the atomic-INFO gate and inspects EVERY result-script slot,
+    ///     recording one <see cref="ProducerScanRejection" /> per fail-closed condition. The
+    ///     returned evidence is what a scan of this INFO's bytecode WOULD prove — callers use
+    ///     "evidence exists here but production collected none" to attribute the gap (e.g., a
+    ///     writer INFO excluded from the combined NewInfos model). Never feed this evidence to
+    ///     the producer gate.
+    /// </summary>
+    internal static ImmutableArray<QuestVariableProducerEvidence> CollectInfoProducerDiagnostics(
+        DialogueRecord info,
+        IReadOnlyList<QuestVariableRecoveryMapping> mappings,
+        IReadOnlyDictionary<uint, uint>? formIdAliases,
+        ICollection<ProducerScanRejection> rejections)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        ArgumentNullException.ThrowIfNull(mappings);
+        ArgumentNullException.ThrowIfNull(rejections);
+        if (info.FormId == 0 || mappings.Count == 0)
+        {
+            return [];
+        }
+
+        var ownerLabel = info.EditorId ?? $"INFO 0x{info.FormId:X8}";
+        if (InlineScriptReferenceValidator.FindFirstIssue(info, null, null) is { } issue)
+        {
+            rejections.Add(new ProducerScanRejection(
+                "INFO", info.FormId, issue.ScriptPath, "atomic-info-validator",
+                $"{issue.Message} (field {issue.FieldPath}; any bad sibling slot disqualifies the whole INFO)"));
+        }
+
+        var index = BuildMappingIndex(mappings, formIdAliases, ProducerOperandIdentity.Source);
+        var result = ImmutableArray.CreateBuilder<QuestVariableProducerEvidence>();
+        for (var scriptIndex = 0; scriptIndex < info.ResultScripts.Count; scriptIndex++)
+        {
+            var script = info.ResultScripts[scriptIndex];
+            var scriptPath = $"{ownerLabel}/ResultScripts[{scriptIndex}]";
+            if (script.IsIncompleteExecutableBundle)
+            {
+                rejections.Add(new ProducerScanRejection(
+                    "INFO", info.FormId, scriptPath, "duplicate-merge-incomplete-sentinel",
+                    "The slot is marked incomplete-executable (raw partial capture, or two " +
+                    "complete duplicate captures conflicted during result-script merge)."));
+            }
+
+            var found = FindBundleProducerWrites(
+                "INFO",
+                info.FormId,
+                scriptPath,
+                script.CompiledData,
+                script.Variables,
+                script.ReferencedObjects,
+                script.IsBigEndianBytecode,
+                index,
+                formIdAliases,
+                ProducerOperandIdentity.Source,
+                rejections);
+            if (found.Count == 0)
+            {
+                continue;
+            }
+
+            if (scriptIndex >= 2)
+            {
+                rejections.Add(new ProducerScanRejection(
+                    "INFO", info.FormId, scriptPath, "surplus-slot-write-never-emitted",
+                    $"Slot {scriptIndex} structurally writes {found.Count} mapped channel(s), but " +
+                    "InfoEncoder serializes only slots 0-1 — the write never reaches the output."));
+                continue;
+            }
+
+            foreach (var mapping in found)
+            {
+                result.Add(new QuestVariableProducerEvidence(
+                    mapping,
+                    new QuestVariableProducerOwner("INFO", info.FormId, scriptPath)));
             }
         }
 
@@ -704,10 +798,15 @@ internal static class QuestVariableBytecodeRemapper
         bool isBigEndian,
         MappingIndex index,
         IReadOnlyDictionary<uint, uint>? aliases,
-        ProducerOperandIdentity operandIdentity)
+        ProducerOperandIdentity operandIdentity,
+        ICollection<ProducerScanRejection>? rejections = null)
     {
+        void Reject(string reason, string detail) => rejections?.Add(
+            new ProducerScanRejection(recordType, recordFormId, scriptPath, reason, detail));
+
         if (compiledData is not { Length: > 0 })
         {
+            Reject("no-bytecode", "The captured bundle carries no compiled SCDA.");
             return new HashSet<QuestVariableRecoveryMapping>();
         }
 
@@ -718,6 +817,8 @@ internal static class QuestVariableBytecodeRemapper
             .ToHashSet();
         if (relevantQuests.Count == 0)
         {
+            Reject("no-mapping-quest-reference",
+                "SCRO references no quest that owns an unsupported append-only local.");
             return new HashSet<QuestVariableRecoveryMapping>();
         }
 
@@ -731,21 +832,33 @@ internal static class QuestVariableBytecodeRemapper
                 referencedObjects,
                 scriptPath);
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException ex)
         {
             // An undecodable bundle is not producer evidence. If another proven producer
             // keeps this mapping live, Apply will inspect this bundle again and fail closed.
+            Reject("walk-exception", ex.Message);
             return new HashSet<QuestVariableRecoveryMapping>();
         }
 
-        if (!IsCompleteWalk(walk, compiledData.Length)
-            || walk.DecompiledText.Contains("GetQuestVariable", StringComparison.Ordinal)
+        if (!IsCompleteWalk(walk, compiledData.Length))
+        {
+            Reject("incomplete-walk",
+                "The bytecode walk did not fully decode (truncated/unknown-opcode/error marker).");
+            return new HashSet<QuestVariableRecoveryMapping>();
+        }
+
+        if (walk.DecompiledText.Contains("GetQuestVariable", StringComparison.Ordinal)
             || walk.DecompiledText.Contains("GetScriptVariable", StringComparison.Ordinal))
         {
+            Reject("unverified-variable-function-grammar",
+                "The walk is complete but contains GetQuestVariable/GetScriptVariable, whose " +
+                "function-parameter grammar the analyzer cannot yet structurally prove.");
             return new HashSet<QuestVariableRecoveryMapping>();
         }
 
         var result = new HashSet<QuestVariableRecoveryMapping>();
+        var unrelatedWrites = rejections is null ? null : new List<string>();
+        var rejectedBefore = 0;
         foreach (var access in walk.ExternalVariableReads)
         {
             if (!access.IsWrite)
@@ -758,6 +871,7 @@ internal static class QuestVariableBytecodeRemapper
                     new MappingKey(questFormId, access.VariableIndex),
                     out var mapping))
             {
+                unrelatedWrites?.Add($"0x{questFormId:X8}[{access.VariableIndex}]");
                 continue;
             }
 
@@ -771,14 +885,24 @@ internal static class QuestVariableBytecodeRemapper
                     mapping,
                     operandIdentity);
             }
-            catch (InvalidDataException)
+            catch (InvalidDataException ex)
             {
                 // A marker/type mismatch cannot qualify as an exact producer. As above,
                 // Apply still rejects it if some other exact producer keeps the channel.
+                Reject("operand-identity", ex.Message);
+                rejectedBefore++;
                 continue;
             }
 
             result.Add(mapping);
+        }
+
+        if (result.Count == 0 && rejectedBefore == 0)
+        {
+            Reject("no-matching-write",
+                unrelatedWrites is { Count: > 0 }
+                    ? $"The bundle writes only unmapped variables: {string.Join(", ", unrelatedWrites)}."
+                    : "The bundle references a mapping quest but performs no external variable write.");
         }
 
         return result;

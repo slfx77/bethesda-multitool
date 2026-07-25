@@ -43,8 +43,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // v63 flattened every billboard to rotate-about-up and rendered them as a horizontal glow.
     // v65: honor Skyrim BSLightingShaderProperty SLSF2 Double_Sided. Warm v64 grass cards keep
     // their incorrect backface-culling state and appear partial or as isolated floating triangles.
+    // v66: NiTexturingProperty ≤ 10.0.1.2 leading-Flags fix (Oblivion GroundCover* grass diffuse) +
+    // TES4-era Y-up billboard erect + texture-aware bone-attached-proxy drop. Warm v65 entries
+    // cache the null-diffuse decodes (white grass) and the pre-fix drop/billboard states.
     // (Full bump history for this constant lives in git blame.)
-    internal const int DecoderVersion = 65;
+    internal const int DecoderVersion = 66;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;

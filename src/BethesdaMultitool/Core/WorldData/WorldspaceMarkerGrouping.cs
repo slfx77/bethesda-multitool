@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool;
 
@@ -18,11 +19,12 @@ internal static class WorldspaceMarkerGrouping
 
     /// <summary>
     ///     Build a map of worldspace FormID → its map markers (the markers placed in that worldspace's own
-    ///     cells), then fold in markers inherited from child worldspaces that "Use Map Data" (see
-    ///     <see cref="AppendChildMarkersToParents" />).
+    ///     cells), then fold in markers inherited from child worldspaces — via the FO3+ PNAM "Use Map Data"
+    ///     flag (<see cref="AppendChildMarkersToParents" />) or, for TES4-era games whose WRLD has no PNAM,
+    ///     via the bare WNAM chain (<see cref="AppendTes4ChildMarkersToAncestors" />).
     /// </summary>
     public static Dictionary<uint, List<PlacedReference>> GroupByWorldspace(
-        List<WorldspaceRecord> worldspaces)
+        List<WorldspaceRecord> worldspaces, BethesdaGame game)
     {
         var markersByWorldspace = new Dictionary<uint, List<PlacedReference>>();
         foreach (var ws in worldspaces)
@@ -39,8 +41,62 @@ internal static class WorldspaceMarkerGrouping
             }
         }
 
-        AppendChildMarkersToParents(worldspaces, markersByWorldspace);
+        if (!GameProfiles.For(game).HasWorldspaceDefaultWaterHeight)
+        {
+            AppendTes4ChildMarkersToAncestors(worldspaces, markersByWorldspace);
+        }
+        else
+        {
+            AppendChildMarkersToParents(worldspaces, markersByWorldspace);
+        }
+
         return markersByWorldspace;
+    }
+
+    // TES4 WRLD carries no PNAM parent-use flags — the WNAM link IS the whole contract, and child
+    // worldspaces share the parent's coordinate space (ICMarketDistrict's cell (7,17) sits at
+    // Tamriel grid (7,17) world coordinates), so the engine surfaces city/district markers on the
+    // ancestor maps. Fold each worldspace's OWN markers (snapshot — folded copies never re-fold) up
+    // the entire WNAM chain, cycle-guarded. TransformMarkerToParentMap degrades to identity when
+    // ONAM/bounds are absent, which is always true for TES4.
+    private static void AppendTes4ChildMarkersToAncestors(
+        List<WorldspaceRecord> worldspaces,
+        Dictionary<uint, List<PlacedReference>> markersByWorldspace)
+    {
+        var worldspacesById = new Dictionary<uint, WorldspaceRecord>(worldspaces.Count);
+        foreach (var ws in worldspaces)
+        {
+            worldspacesById.TryAdd(ws.FormId, ws);
+        }
+
+        var ownMarkers = new Dictionary<uint, List<PlacedReference>>(markersByWorldspace.Count);
+        foreach (var (formId, markers) in markersByWorldspace)
+        {
+            ownMarkers[formId] = [.. markers];
+        }
+
+        foreach (var child in worldspaces)
+        {
+            if (!ownMarkers.TryGetValue(child.FormId, out var childMarkers) || childMarkers.Count == 0)
+            {
+                continue;
+            }
+
+            var visited = new HashSet<uint> { child.FormId };
+            var parentId = child.ParentWorldspaceFormId ?? 0;
+            while (parentId != 0 && visited.Add(parentId) &&
+                   worldspacesById.TryGetValue(parentId, out var ancestor))
+            {
+                if (!markersByWorldspace.TryGetValue(parentId, out var ancestorMarkers))
+                {
+                    ancestorMarkers = [];
+                    markersByWorldspace[parentId] = ancestorMarkers;
+                }
+
+                ancestorMarkers.AddRange(childMarkers.Select(m => TransformMarkerToParentMap(child, m)));
+                parentId = ancestor.ParentWorldspaceFormId ?? 0;
+            }
+        }
     }
 
     // A child worldspace flagged "Use Map Data" (WNAM parent + PNAM bit 2) is drawn on its parent's world

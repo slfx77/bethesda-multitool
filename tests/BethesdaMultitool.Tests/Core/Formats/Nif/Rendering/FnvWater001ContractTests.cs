@@ -12,17 +12,17 @@ public sealed class FnvWater001ContractTests
     public void ObliqueDepthReconstructionKeepsIndependentPathAndVerticalLanes()
     {
         var ok = FnvWater001Contract.TryReconstructDepthLanes(
-            eye: new Vector3(0f, 0f, 10f),
-            waterPoint: new Vector3(10f, 0f, 0f),
-            sceneDistance: 30f,
-            waterDistance: 10f,
-            planeHeight: 0f,
-            underwaterFogFar: 100f,
+            new Vector3(0f, 0f, 10f),
+            new Vector3(10f, 0f, 0f),
+            30f,
+            10f,
+            0f,
+            100f,
             out var depth,
             out var scenePoint);
 
         Assert.True(ok);
-        VectorAssert.Equal(new Vector3(30f, 0f, -20f), scenePoint, 1e-6f);
+        VectorAssert.Equal(new Vector3(30f, 0f, -20f), scenePoint);
         Assert.Equal(0.2828427f, depth.X, 6);
         Assert.Equal(0.2f, depth.Y, 6);
         Assert.NotEqual(depth.X, depth.Y);
@@ -32,12 +32,12 @@ public sealed class FnvWater001ContractTests
     public void DepthCorrectionAndDistortionUseRecoveredLaneRolesWithoutPreSaturation()
     {
         var raw = new Vector2(1.4f, 0.25f);
-        var corrected = FnvWater001Contract.CorrectDepthLanes(raw, noiseFade: 0.5f);
+        var corrected = FnvWater001Contract.CorrectDepthLanes(raw, 0.5f);
         var delta = FnvWater001Contract.DistortionDelta(
             raw,
-            depthFactor: 0.375f,
-            distortionScale: 7.2f,
-            normal: new Vector3(0.1f, -0.2f, 0.9746794f));
+            0.375f,
+            7.2f,
+            new Vector3(0.1f, -0.2f, 0.9746794f));
 
         // lerp(1,D,fade), then saturate: D.x is demonstrably not clamped before interpolation.
         Assert.Equal(1f, corrected.X);
@@ -57,10 +57,10 @@ public sealed class FnvWater001ContractTests
 
         var ok = FnvWater001Contract.TryProjectSnapshotUv(
             projection,
-            renderOrigin: Vector3.Zero,
-            displacedWorldPoint: new Vector3(0.3f, -0.15f, 0.5f),
-            snapshotWidth: 100,
-            snapshotHeight: 50,
+            Vector3.Zero,
+            new Vector3(0.3f, -0.15f, 0.5f),
+            100,
+            50,
             out var uv);
 
         Assert.True(ok);
@@ -109,8 +109,8 @@ public sealed class FnvWater001ContractTests
         var correctedDepth = FnvWater001Contract.CorrectDepthLanes(new Vector2(0.4f, 0.25f), 0.5f);
         var depthT = Math.Clamp((0.25f - 0.1f) / (0.5f - 0.1f), 0f, 1f);
         var aboveFog = FnvWater001Contract.AboveWaterFogWeight(
-            correctedDepth.X, underwaterFogNear: -0.25f, underwaterFogFar: 1f,
-            aboveWaterFogAmount: 0.75f);
+            correctedDepth.X, -0.25f, 1f,
+            0.75f);
         var body = Vector3.Lerp(new Vector3(0.1f, 0.2f, 0.3f),
             new Vector3(0.5f, 0.6f, 0.7f), correctedDepth.Y);
         var litBody = body * 0.8f;
@@ -123,9 +123,9 @@ public sealed class FnvWater001ContractTests
         Assert.Equal(new Vector2(0.7f, 0.625f), correctedDepth);
         Assert.Equal(0.375f, depthT, 6);
         Assert.Equal(0.57f, aboveFog, 6);
-        VectorAssert.Equal(new Vector3(0.2171f, 0.312825f, 0.40855f), transmitted, 1e-6f);
-        VectorAssert.Equal(new Vector3(0.28921357f, 0.36602426f, 0.44283494f), bodyReflection, 1e-6f);
-        VectorAssert.Equal(new Vector3(0.26217097f, 0.34607452f, 0.42997807f), composite, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.2171f, 0.312825f, 0.40855f), transmitted);
+        VectorAssert.Equal(new Vector3(0.28921357f, 0.36602426f, 0.44283494f), bodyReflection);
+        VectorAssert.Equal(new Vector3(0.26217097f, 0.34607452f, 0.42997807f), composite);
     }
 
     [Fact]
@@ -136,7 +136,7 @@ public sealed class FnvWater001ContractTests
             RequireSnapshot = false,
             HasSnapshot = false,
             SnapshotWidth = 0,
-            SnapshotHeight = 0,
+            SnapshotHeight = 0
         };
 
         var result = FnvWater001Contract.Evaluate(input);
@@ -165,7 +165,11 @@ public sealed class FnvWater001ContractTests
     {
         var valid = ValidInput();
         yield return [valid with { Game = BethesdaGame.Fallout3 }, FnvWater001FallbackReason.NotFalloutNewVegas];
-        yield return [valid with { ShaderVariant = WaterShaderVariant.OblivionWater000 }, FnvWater001FallbackReason.NonClassicWaterShader];
+        yield return
+        [
+            valid with { ShaderVariant = WaterShaderVariant.OblivionWater000 },
+            FnvWater001FallbackReason.NonClassicWaterShader
+        ];
         yield return [valid with { IsLava = true }, FnvWater001FallbackReason.Lava];
         yield return [valid with { IsPerspectiveProjection = false }, FnvWater001FallbackReason.OrthographicProjection];
         yield return [valid with { HasSceneDepth = false }, FnvWater001FallbackReason.SceneDepthUnavailable];
@@ -173,9 +177,11 @@ public sealed class FnvWater001ContractTests
         yield return [valid with { SnapshotWidth = 0 }, FnvWater001FallbackReason.SnapshotDimensionsInvalid];
         yield return [valid with { VisibleCellCount = 0 }, FnvWater001FallbackReason.NoVisibleCellWater];
         yield return [valid with { HasAppearance = false }, FnvWater001FallbackReason.MissingAppearance];
-        yield return [valid with { HasAuthoredClassicInputs = false }, FnvWater001FallbackReason.MissingAuthoredClassicInputs];
+        yield return
+            [valid with { HasAuthoredClassicInputs = false }, FnvWater001FallbackReason.MissingAuthoredClassicInputs];
         yield return [valid with { HasWaterTypeContext = false }, FnvWater001FallbackReason.MissingWaterTypeContext];
-        yield return [valid with { HasEffectiveWaterType = false }, FnvWater001FallbackReason.MissingEffectiveWaterType];
+        yield return
+            [valid with { HasEffectiveWaterType = false }, FnvWater001FallbackReason.MissingEffectiveWaterType];
         yield return [valid with { HasMixedWaterTypes = true }, FnvWater001FallbackReason.MixedVisibleWaterTypes];
         yield return [valid with { HasMixedPlaneHeights = true }, FnvWater001FallbackReason.MixedVisiblePlaneHeights];
         yield return [valid with { CameraHeight = 0f }, FnvWater001FallbackReason.CameraNotAbovePlane];
@@ -183,33 +189,37 @@ public sealed class FnvWater001ContractTests
         yield return [valid with { UnderwaterFogFar = 0f }, FnvWater001FallbackReason.InvalidUnderwaterFogFar];
         yield return [valid with { UnderwaterFogNear = 6000f }, FnvWater001FallbackReason.InvalidUnderwaterFogRange];
         yield return [valid with { AboveWaterFogAmount = 1.1f }, FnvWater001FallbackReason.InvalidAboveWaterFogAmount];
-        yield return [valid with { RefractionDistortionAmount = -1f }, FnvWater001FallbackReason.InvalidRefractionDistortion];
+        yield return
+            [valid with { RefractionDistortionAmount = -1f }, FnvWater001FallbackReason.InvalidRefractionDistortion];
     }
 
-    private static FnvWater001EligibilityInput ValidInput() => new(
-        BethesdaGame.FalloutNewVegas,
-        WaterShaderVariant.FnvWater000,
-        IsLava: false,
-        IsPerspectiveProjection: true,
-        HasSceneDepth: true,
-        RequireSnapshot: true,
-        HasSnapshot: true,
-        SnapshotWidth: 1920,
-        SnapshotHeight: 1080,
-        VisibleCellCount: 9,
-        HasAppearance: true,
-        HasAuthoredClassicInputs: true,
-        HasWaterTypeContext: true,
-        HasEffectiveWaterType: true,
-        HasMixedWaterTypes: false,
-        HasMixedPlaneHeights: false,
-        PlaneHeight: 0f,
-        CameraHeight: 128f,
-        DepthFalloffStart: 0f,
-        DepthFalloffEnd: 0.01f,
-        UnderwaterFogNear: -2500f,
-        UnderwaterFogFar: 5500f,
-        AboveWaterFogAmount: 0.75f,
-        RefractionDistortionAmount: 600f,
-        EffectiveWaterFormId: 0x001009CA);
+    private static FnvWater001EligibilityInput ValidInput()
+    {
+        return new FnvWater001EligibilityInput(
+            BethesdaGame.FalloutNewVegas,
+            WaterShaderVariant.FnvWater000,
+            false,
+            true,
+            true,
+            true,
+            true,
+            1920,
+            1080,
+            9,
+            true,
+            true,
+            true,
+            true,
+            false,
+            false,
+            0f,
+            128f,
+            0f,
+            0.01f,
+            -2500f,
+            5500f,
+            0.75f,
+            600f,
+            0x001009CA);
+    }
 }

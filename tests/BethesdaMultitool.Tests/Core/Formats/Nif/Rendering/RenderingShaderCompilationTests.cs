@@ -1,4 +1,4 @@
-using System.Reflection;
+using System.Text.RegularExpressions;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Tests.Helpers;
 using Vortice.D3DCompiler;
@@ -22,6 +22,8 @@ public sealed class RenderingShaderCompilationTests
             "vs_5_1",
             [new ShaderMacro("SHADOW_CARD_LIGHT_FACING", "1")]);
         Compile("reference.frag.hlsl", "main", "ps_5_1", []);
+        // Grass-cutout alpha-to-coverage PS variant (paired with the A2C opaque PSOs, MSAA only).
+        Compile("reference.frag.hlsl", "main", "ps_5_1", [new ShaderMacro("ALPHA_TO_COVERAGE", "1")]);
         Compile("shadow.frag.hlsl", "main", "ps_5_1", []);
     }
 
@@ -54,9 +56,41 @@ public sealed class RenderingShaderCompilationTests
             ("water.frag.hlsl", "main", "ps_5_1",
                 [new ShaderMacro("FO4_WATER", "1"), new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1")]),
             ("water.frag.hlsl", "main", "ps_5_1",
-                [new ShaderMacro("FO4_WATER", "1"), new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1"),
-                    new ShaderMacro("FO76_WATER", "1")]),
+            [
+                new ShaderMacro("FO4_WATER", "1"), new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1"),
+                new ShaderMacro("FO76_WATER", "1")
+            ]),
             ("water.frag.hlsl", "main", "ps_5_1", [new ShaderMacro("MORROWIND_WATER", "1")]),
+            // Depth-sample PSO compiles: WATER_HARDWARE_OCCLUSION drops the pixel-rate occlusion
+            // clip because the host binds a read-only DSV and the hardware GreaterEqual test
+            // rejects per sample. One entry per depth-sample PSO the renderer actually builds.
+            ("water.frag.hlsl", "main", "ps_5_1",
+                [new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")]),
+            ("water.frag.hlsl", "main", "ps_5_1",
+            [
+                new ShaderMacro("FNV_WATER001", "1"),
+                new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")
+            ]),
+            ("water.frag.hlsl", "main", "ps_5_1",
+            [
+                new ShaderMacro("OBLIVION_WATER", "1"),
+                new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")
+            ]),
+            ("water.frag.hlsl", "main", "ps_5_1",
+            [
+                new ShaderMacro("FO4_WATER", "1"),
+                new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")
+            ]),
+            ("water.frag.hlsl", "main", "ps_5_1",
+            [
+                new ShaderMacro("FO4_WATER", "1"), new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1"),
+                new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")
+            ]),
+            ("water.frag.hlsl", "main", "ps_5_1",
+            [
+                new ShaderMacro("MORROWIND_WATER", "1"),
+                new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")
+            ]),
             ("reference_instanced.vert.hlsl", "main", "vs_5_1", []),
             ("reference_instanced.vert.hlsl", "main", "vs_5_1",
                 [new ShaderMacro("SHADOW_CARD_LIGHT_FACING", "1")])
@@ -98,6 +132,8 @@ public sealed class RenderingShaderCompilationTests
             ("terrain_textured.frag.hlsl", "main", "ps_5_1"),
             ("cellgrid.vert.hlsl", "main", "vs_5_1"),
             ("cellgrid.frag.hlsl", "main", "ps_5_1"),
+            ("collision_line.vert.hlsl", "main", "vs_5_1"),
+            ("collision_line.frag.hlsl", "main", "ps_5_1"),
             ("triangle.vert.hlsl", "main", "vs_5_1"),
             ("triangle.frag.hlsl", "main", "ps_5_1")
         };
@@ -113,8 +149,7 @@ public sealed class RenderingShaderCompilationTests
     {
         var source = ReadEmbeddedShader("bloom.frag.hlsl");
 
-        Assert.Equal(2, source.Split("float2 offset = tapIndex * uBloom1.xy;",
-            StringSplitOptions.None).Length - 1);
+        Assert.Equal(2, source.Split("float2 offset = tapIndex * uBloom1.xy;").Length - 1);
         Assert.DoesNotContain("float2(tapIndex, tapIndex)", source, StringComparison.Ordinal);
         Assert.Contains("float4 mainBlur(PSInput input)", source, StringComparison.Ordinal);
     }
@@ -130,7 +165,7 @@ public sealed class RenderingShaderCompilationTests
             "max(input.vColor.r, max(input.vColor.g, input.vColor.b))",
             source,
             StringComparison.Ordinal);
-        Assert.Equal(2, source.Split("* vertexWeight", StringSplitOptions.None).Length - 1);
+        Assert.Equal(2, source.Split("* vertexWeight").Length - 1);
     }
 
     [Fact]
@@ -315,8 +350,8 @@ public sealed class RenderingShaderCompilationTests
         var source = ReadEmbeddedShader(name);
         // Match the runtime compiler's declaration-shape check so named tables such as
         // gWaterTextures[] and textures[] both receive D3DCOMPILE_ENABLE_UNBOUNDED_DESCRIPTOR_TABLES.
-        var flags = System.Text.RegularExpressions.Regex.IsMatch(
-            source, @"\[\]\s*:\s*register", System.Text.RegularExpressions.RegexOptions.CultureInvariant)
+        var flags = Regex.IsMatch(
+            source, @"\[\]\s*:\s*register", RegexOptions.CultureInvariant)
             ? EnableUnboundedDescriptorTables
             : ShaderFlags.None;
 
@@ -327,9 +362,9 @@ public sealed class RenderingShaderCompilationTests
             var result = Compiler.Compile(
                 source,
                 macros,
-                include: null!,
+                null!,
                 entryPoint,
-                sourceName: name,
+                name,
                 profile,
                 flags,
                 EffectFlags.None,

@@ -14,9 +14,9 @@ public sealed class WeatherImageSpaceEvaluatorTests
     public void RecoveredComposition_UsesWeightedAbsoluteMultiplyThenAdd()
     {
         var modifier = Modifier(0x100, ImageSpaceModifierParameter.EyeAdaptSpeed,
-            multiply: [new(0f, 2f)], add: [new(0f, 3f)]);
-        var weather = Weather(0x200, sunrise: 0x100, day: 0x100, sunset: 0x100, night: 0x100,
-            highNoon: 0x100, midnight: 0xDEADBEEF);
+            [new ImageSpaceModifierFloatKey(0f, 2f)], [new ImageSpaceModifierFloatKey(0f, 3f)]);
+        var weather = Weather(0x200, 0x100, 0x100, 0x100, 0x100,
+            0x100, 0xDEADBEEF);
         var baseSettings = GpuTonemapSettings.EngineExteriorDefaults with { EyeAdaptSpeed = 10f };
 
         var result = WeatherImageSpaceEvaluator.Evaluate(baseSettings, 2f, Timing, weather, null, 1f,
@@ -43,27 +43,27 @@ public sealed class WeatherImageSpaceEvaluatorTests
         var timelines = Enumerable.Range(0, 21)
             .Select(i => new ImageSpaceModifierParameterTimeline((ImageSpaceModifierParameter)i, [], []))
             .ToArray();
-        timelines[18] = new(ImageSpaceModifierParameter.CinematicContrastAvgLum,
-            [new(0f, 2f)], [new(0f, 0.1f)]);
-        timelines[19] = new(ImageSpaceModifierParameter.CinematicContrast,
-            [new(0f, 3f)], [new(0f, 0.2f)]);
-        timelines[20] = new(ImageSpaceModifierParameter.CinematicBrightness,
-            [new(0f, 4f)], [new(0f, 0.3f)]);
+        timelines[18] = new ImageSpaceModifierParameterTimeline(ImageSpaceModifierParameter.CinematicContrastAvgLum,
+            [new ImageSpaceModifierFloatKey(0f, 2f)], [new ImageSpaceModifierFloatKey(0f, 0.1f)]);
+        timelines[19] = new ImageSpaceModifierParameterTimeline(ImageSpaceModifierParameter.CinematicContrast,
+            [new ImageSpaceModifierFloatKey(0f, 3f)], [new ImageSpaceModifierFloatKey(0f, 0.2f)]);
+        timelines[20] = new ImageSpaceModifierParameterTimeline(ImageSpaceModifierParameter.CinematicBrightness,
+            [new ImageSpaceModifierFloatKey(0f, 4f)], [new ImageSpaceModifierFloatKey(0f, 0.3f)]);
         var modifier = new ImageSpaceModifierRecord { FormId = 0x100, Parameters = timelines };
         var weather = Weather(0x200, 0x100, 0x100, 0x100, 0x100, 0x100, 0);
         var basis = GpuTonemapSettings.EngineExteriorDefaults with
         {
             ContrastAvgLum = 0.25f,
             Contrast = 0.5f,
-            Brightness = 0.75f,
+            Brightness = 0.75f
         };
 
         var result = WeatherImageSpaceEvaluator.Evaluate(basis, 2f, Timing, weather, null, 1f,
             new Dictionary<uint, ImageSpaceModifierRecord> { [modifier.FormId] = modifier });
 
         Assert.Equal(0.6f, result.Settings.ContrastAvgLum, 6); // .25*2 + .1
-        Assert.Equal(1.7f, result.Settings.Contrast, 6);       // .5*3 + .2
-        Assert.Equal(3.3f, result.Settings.Brightness, 6);     // .75*4 + .3
+        Assert.Equal(1.7f, result.Settings.Contrast, 6); // .5*3 + .2
+        Assert.Equal(3.3f, result.Settings.Brightness, 6); // .75*4 + .3
     }
 
     [Fact]
@@ -74,36 +74,36 @@ public sealed class WeatherImageSpaceEvaluatorTests
             .ToArray();
         // Slot 2 is SkinDimmer and is intentionally not a display-tonemap field. A zero sentinel here
         // must not overwrite BrightClamp (the old ordinal alias did exactly that).
-        timelines[2] = new(ImageSpaceModifierParameter.HdrSkinDimmer,
-            [new(0f, 0f)], [new(0f, 0f)]);
-        timelines[3] = new(ImageSpaceModifierParameter.HdrEmissiveMult,
-            [new(0f, 2f)], [new(0f, 1f)]);
-        timelines[6] = new(ImageSpaceModifierParameter.HdrBrightScale,
-            [new(0f, 3f)], [new(0f, 2f)]);
-        timelines[7] = new(ImageSpaceModifierParameter.HdrBrightClamp,
-            [new(0f, 4f)], [new(0f, 3f)]);
+        timelines[2] = new ImageSpaceModifierParameterTimeline(ImageSpaceModifierParameter.HdrSkinDimmer,
+            [new ImageSpaceModifierFloatKey(0f, 0f)], [new ImageSpaceModifierFloatKey(0f, 0f)]);
+        timelines[3] = new ImageSpaceModifierParameterTimeline(ImageSpaceModifierParameter.HdrEmissiveMult,
+            [new ImageSpaceModifierFloatKey(0f, 2f)], [new ImageSpaceModifierFloatKey(0f, 1f)]);
+        timelines[6] = new ImageSpaceModifierParameterTimeline(ImageSpaceModifierParameter.HdrBrightScale,
+            [new ImageSpaceModifierFloatKey(0f, 3f)], [new ImageSpaceModifierFloatKey(0f, 2f)]);
+        timelines[7] = new ImageSpaceModifierParameterTimeline(ImageSpaceModifierParameter.HdrBrightClamp,
+            [new ImageSpaceModifierFloatKey(0f, 4f)], [new ImageSpaceModifierFloatKey(0f, 3f)]);
         var modifier = new ImageSpaceModifierRecord { FormId = 0x100, Parameters = timelines };
         var weather = Weather(0x200, 0x100, 0x100, 0x100, 0x100, 0x100, 0);
         var basis = GpuTonemapSettings.EngineExteriorDefaults with
         {
             EmissiveMult = 1f,
             BrightScale = 2f,
-            BrightClamp = 0.5f,
+            BrightClamp = 0.5f
         };
 
         var result = WeatherImageSpaceEvaluator.Evaluate(basis, 2f, Timing, weather, null, 1f,
             new Dictionary<uint, ImageSpaceModifierRecord> { [modifier.FormId] = modifier });
 
         Assert.Equal(3f, result.Settings.EmissiveMult, 6); // 1*2 + 1
-        Assert.Equal(8f, result.Settings.BrightScale, 6);  // 2*3 + 2
-        Assert.Equal(5f, result.Settings.BrightClamp, 6);  // .5*4 + 3, not slot-2 zero
+        Assert.Equal(8f, result.Settings.BrightScale, 6); // 2*3 + 2
+        Assert.Equal(5f, result.Settings.BrightClamp, 6); // .5*4 + 3, not slot-2 zero
     }
 
     [Fact]
     public void RecoveredSunlightDimmer_RoutesClassicSlot11ToDirectionalSceneScale()
     {
         var modifier = Modifier(0x100, ImageSpaceModifierParameter.HdrSunlightDimmer,
-            multiply: [new(0f, 1.1f)], add: [new(0f, 0f)]);
+            [new ImageSpaceModifierFloatKey(0f, 1.1f)], [new ImageSpaceModifierFloatKey(0f, 0f)]);
         var weather = Weather(0x200, 0x100, 0x100, 0x100, 0x100, 0x100, 0);
         var basis = GpuTonemapSettings.EngineExteriorDefaults with { SunlightScale = 1.1f };
 
@@ -128,19 +128,19 @@ public sealed class WeatherImageSpaceEvaluatorTests
         Assert.Equal(4, result.Contributions.Count);
         Assert.Equal(1f, result.Contributions.Sum(c => c.Weight), 6);
         Assert.Contains(result.Contributions, c => c.WeatherFormId == 1 && c.Band == WeatherImageSpaceBand.Sunrise
-                                                  && Math.Abs(c.Weight - 0.3f) < 1e-6f);
+                                                                        && Math.Abs(c.Weight - 0.3f) < 1e-6f);
         Assert.Contains(result.Contributions, c => c.WeatherFormId == 1 && c.Band == WeatherImageSpaceBand.Night
-                                                  && Math.Abs(c.Weight - 0.3f) < 1e-6f);
+                                                                        && Math.Abs(c.Weight - 0.3f) < 1e-6f);
         Assert.Contains(result.Contributions, c => c.WeatherFormId == 2 && c.Band == WeatherImageSpaceBand.Sunrise
-                                                  && Math.Abs(c.Weight - 0.2f) < 1e-6f);
+                                                                        && Math.Abs(c.Weight - 0.2f) < 1e-6f);
         Assert.Contains(result.Contributions, c => c.WeatherFormId == 2 && c.Band == WeatherImageSpaceBand.Night
-                                                  && Math.Abs(c.Weight - 0.2f) < 1e-6f);
+                                                                        && Math.Abs(c.Weight - 0.2f) < 1e-6f);
     }
 
     [Fact]
     public void DayPeaksAtNoon_HighNoonOccupiesShoulders_AndMidnightNeverIsSelected()
     {
-        var weather = Weather(1, 10, 11, 12, 13, highNoon: 14, midnight: 15);
+        var weather = Weather(1, 10, 11, 12, 13, 14, 15);
         var noon = WeatherImageSpaceEvaluator.Evaluate(GpuTonemapSettings.EngineExteriorDefaults,
             12f, Timing, weather, null, 1f, new Dictionary<uint, ImageSpaceModifierRecord>());
         var morningShoulder = WeatherImageSpaceEvaluator.Evaluate(GpuTonemapSettings.EngineExteriorDefaults,
@@ -179,7 +179,7 @@ public sealed class WeatherImageSpaceEvaluatorTests
             FormId = 1,
             // FO3 authors only these four bands. HighNoon must remain absent (null), not an
             // authored zero FormID, so the classic daytime pivot retains the Day modifier.
-            ImageSpaceModifiers = new WeatherTimeBands<uint>(10, 11, 12, 13),
+            ImageSpaceModifiers = new WeatherTimeBands<uint>(10, 11, 12, 13)
         };
 
         var shoulder = WeatherImageSpaceEvaluator.Evaluate(GpuTonemapSettings.EngineExteriorDefaults,
@@ -197,14 +197,15 @@ public sealed class WeatherImageSpaceEvaluatorTests
     public void AnimatableTimeline_InterpolatesIndependentlyAtElapsedTime()
     {
         var modifier = Modifier(0x100, ImageSpaceModifierParameter.HdrBrightScale,
-            multiply: [new(0f, 1f), new(1f, 3f)], add: [new(0f, 0f), new(1f, 4f)],
-            animatable: true, duration: 4f);
+            [new ImageSpaceModifierFloatKey(0f, 1f), new ImageSpaceModifierFloatKey(1f, 3f)],
+            [new ImageSpaceModifierFloatKey(0f, 0f), new ImageSpaceModifierFloatKey(1f, 4f)],
+            true, 4f);
         var weather = Weather(1, 0x100, 0x100, 0x100, 0x100, 0x100, 0);
         var baseSettings = GpuTonemapSettings.EngineExteriorDefaults with { BrightScale = 2f };
 
         var result = WeatherImageSpaceEvaluator.Evaluate(baseSettings, 2f, Timing, weather, null, 1f,
             new Dictionary<uint, ImageSpaceModifierRecord> { [0x100] = modifier },
-            modifierElapsedSeconds: 1f);
+            1f);
 
         // t=0.25: mult=1.5, add=1.0 => 2*1.5+1 = 4.
         Assert.Equal(4f, result.Settings.BrightScale, 6);
@@ -215,11 +216,16 @@ public sealed class WeatherImageSpaceEvaluatorTests
     public void AnimatableTimeline_WithUnknownElapsedClock_IsExplicitlyNeutral()
     {
         var modifier = Modifier(0x100, ImageSpaceModifierParameter.HdrBrightScale,
-            multiply: [new(0f, 9f), new(1f, 11f)], add: [new(0f, 7f), new(1f, 8f)],
-            animatable: true, duration: 4f) with
-        {
-            TintColorTimeline = [new(0f, 1f, 0f, 0f, 0.25f), new(1f, 0f, 1f, 0f, 0.75f)],
-        };
+                [new ImageSpaceModifierFloatKey(0f, 9f), new ImageSpaceModifierFloatKey(1f, 11f)],
+                [new ImageSpaceModifierFloatKey(0f, 7f), new ImageSpaceModifierFloatKey(1f, 8f)],
+                true, 4f) with
+            {
+                TintColorTimeline =
+                [
+                    new ImageSpaceModifierColorKey(0f, 1f, 0f, 0f, 0.25f),
+                    new ImageSpaceModifierColorKey(1f, 0f, 1f, 0f, 0.75f)
+                ]
+            };
         var weather = Weather(1, 0x100, 0x100, 0x100, 0x100, 0x100, 0);
         var baseSettings = GpuTonemapSettings.EngineExteriorDefaults with
         {
@@ -227,12 +233,11 @@ public sealed class WeatherImageSpaceEvaluatorTests
             TintR = 0.2f,
             TintG = 0.3f,
             TintB = 0.4f,
-            TintAmount = 0.5f,
+            TintAmount = 0.5f
         };
 
         var result = WeatherImageSpaceEvaluator.Evaluate(baseSettings, 2f, Timing, weather, null, 1f,
-            new Dictionary<uint, ImageSpaceModifierRecord> { [0x100] = modifier },
-            modifierElapsedSeconds: null);
+            new Dictionary<uint, ImageSpaceModifierRecord> { [0x100] = modifier });
 
         Assert.Equal(2f, result.Settings.BrightScale, 6);
         Assert.Equal(0.2f, result.Settings.TintR, 6);
@@ -247,15 +252,17 @@ public sealed class WeatherImageSpaceEvaluatorTests
     public void AnimatableTimeline_WithUnknownElapsedClock_RetainsTimeInvariantScalarCurves()
     {
         var modifier = Modifier(0x100, ImageSpaceModifierParameter.HdrBrightScale,
-            multiply: [new(0f, 3f)],
-            add: [new(0f, 4f), new(0.4f, 4f), new(1f, 4f)],
-            animatable: true, duration: 4f);
+            [new ImageSpaceModifierFloatKey(0f, 3f)],
+            [
+                new ImageSpaceModifierFloatKey(0f, 4f), new ImageSpaceModifierFloatKey(0.4f, 4f),
+                new ImageSpaceModifierFloatKey(1f, 4f)
+            ],
+            true, 4f);
         var weather = Weather(1, 0x100, 0x100, 0x100, 0x100, 0x100, 0);
         var baseSettings = GpuTonemapSettings.EngineExteriorDefaults with { BrightScale = 2f };
 
         var result = WeatherImageSpaceEvaluator.Evaluate(baseSettings, 2f, Timing, weather, null, 1f,
-            new Dictionary<uint, ImageSpaceModifierRecord> { [0x100] = modifier },
-            modifierElapsedSeconds: null);
+            new Dictionary<uint, ImageSpaceModifierRecord> { [0x100] = modifier });
 
         // Both authored curves are independent of time: 2*3+4 = 10.
         Assert.Equal(10f, result.Settings.BrightScale, 6);
@@ -267,15 +274,14 @@ public sealed class WeatherImageSpaceEvaluatorTests
     public void AnimatableTimeline_WithUnknownElapsedClock_NeutralizesOnlyVaryingScalarComponent()
     {
         var modifier = Modifier(0x100, ImageSpaceModifierParameter.HdrBrightScale,
-            multiply: [new(0f, 3f), new(1f, 3f)],
-            add: [new(0f, 4f), new(1f, 8f)],
-            animatable: true, duration: 4f);
+            [new ImageSpaceModifierFloatKey(0f, 3f), new ImageSpaceModifierFloatKey(1f, 3f)],
+            [new ImageSpaceModifierFloatKey(0f, 4f), new ImageSpaceModifierFloatKey(1f, 8f)],
+            true, 4f);
         var weather = Weather(1, 0x100, 0x100, 0x100, 0x100, 0x100, 0);
         var baseSettings = GpuTonemapSettings.EngineExteriorDefaults with { BrightScale = 2f };
 
         var result = WeatherImageSpaceEvaluator.Evaluate(baseSettings, 2f, Timing, weather, null, 1f,
-            new Dictionary<uint, ImageSpaceModifierRecord> { [0x100] = modifier },
-            modifierElapsedSeconds: null);
+            new Dictionary<uint, ImageSpaceModifierRecord> { [0x100] = modifier });
 
         // Multiply is provably 3 at every time; the varying add curve contributes neutral zero.
         Assert.Equal(6f, result.Settings.BrightScale, 6);
@@ -287,23 +293,22 @@ public sealed class WeatherImageSpaceEvaluatorTests
     public void AnimatableTimeline_WithUnknownElapsedClock_RetainsTimeInvariantTint()
     {
         var modifier = Modifier(0x100, ImageSpaceModifierParameter.EyeAdaptSpeed, [], [],
-            animatable: true, duration: 4f) with
-        {
-            TintColorTimeline =
-            [
-                new(0f, 1f, 0f, 0f, 0.5f),
-                new(1f, 1f, 0f, 0f, 0.5f),
-            ],
-        };
+                true, 4f) with
+            {
+                TintColorTimeline =
+                [
+                    new ImageSpaceModifierColorKey(0f, 1f, 0f, 0f, 0.5f),
+                    new ImageSpaceModifierColorKey(1f, 1f, 0f, 0f, 0.5f)
+                ]
+            };
         var weather = Weather(1, 0x100, 0x100, 0x100, 0x100, 0x100, 0);
         var settings = GpuTonemapSettings.EngineExteriorDefaults with
         {
-            TintR = 0f, TintG = 0f, TintB = 1f, TintAmount = 0.25f,
+            TintR = 0f, TintG = 0f, TintB = 1f, TintAmount = 0.25f
         };
 
         var result = WeatherImageSpaceEvaluator.Evaluate(settings, 2f, Timing, weather, null, 1f,
-            new Dictionary<uint, ImageSpaceModifierRecord> { [0x100] = modifier },
-            modifierElapsedSeconds: null);
+            new Dictionary<uint, ImageSpaceModifierRecord> { [0x100] = modifier });
 
         // Independent premultiplied oracle: ((red*.5) + (blue*.25)) / .75.
         Assert.Equal(2f / 3f, result.Settings.TintR, 6);
@@ -317,12 +322,12 @@ public sealed class WeatherImageSpaceEvaluatorTests
     {
         var modifier = Modifier(0x100, ImageSpaceModifierParameter.EyeAdaptSpeed, [], []) with
         {
-            TintColorTimeline = [new(0f, 1f, 0f, 0f, 0.5f)],
+            TintColorTimeline = [new ImageSpaceModifierColorKey(0f, 1f, 0f, 0f, 0.5f)]
         };
         var weather = Weather(1, 0x100, 0x100, 0x100, 0x100, 0x100, 0);
         var settings = GpuTonemapSettings.EngineExteriorDefaults with
         {
-            TintR = 0f, TintG = 0f, TintB = 1f, TintAmount = 0.25f,
+            TintR = 0f, TintG = 0f, TintB = 1f, TintAmount = 0.25f
         };
 
         var result = WeatherImageSpaceEvaluator.Evaluate(settings, 2f, Timing, weather, null, 1f,
@@ -341,16 +346,16 @@ public sealed class WeatherImageSpaceEvaluatorTests
     {
         var sunrise = Modifier(0x101, ImageSpaceModifierParameter.EyeAdaptSpeed, [], []) with
         {
-            TintColorTimeline = [new(0f, 1f, 0f, 0f, 1f)],
+            TintColorTimeline = [new ImageSpaceModifierColorKey(0f, 1f, 0f, 0f, 1f)]
         };
         var night = Modifier(0x102, ImageSpaceModifierParameter.EyeAdaptSpeed, [], []) with
         {
-            TintColorTimeline = [new(0f, 0f, 1f, 0f, 0.25f)],
+            TintColorTimeline = [new ImageSpaceModifierColorKey(0f, 0f, 1f, 0f, 0.25f)]
         };
         var weather = Weather(1, 0x101, 0, 0, 0x102, 0, 0);
         var settings = GpuTonemapSettings.EngineExteriorDefaults with
         {
-            TintR = 0f, TintG = 0f, TintB = 1f, TintAmount = 0.25f,
+            TintR = 0f, TintG = 0f, TintB = 1f, TintAmount = 0.25f
         };
 
         // At 06:30 Sunrise and Night each have weight 0.5. ApplyWeather first accumulates raw
@@ -360,7 +365,7 @@ public sealed class WeatherImageSpaceEvaluatorTests
             new Dictionary<uint, ImageSpaceModifierRecord>
             {
                 [sunrise.FormId] = sunrise,
-                [night.FormId] = night,
+                [night.FormId] = night
             });
 
         Assert.Equal(5f / 14f, result.Settings.TintR, 6);
@@ -391,8 +396,8 @@ public sealed class WeatherImageSpaceEvaluatorTests
                 EarlySunrise = 14,
                 LateSunrise = 15,
                 EarlySunset = 16,
-                LateSunset = 17,
-            },
+                LateSunset = 17
+            }
         };
         var spaces = Enumerable.Range(10, 8).ToDictionary(i => (uint)i, i => ModernSpace((uint)i, i));
         var basis = GpuTonemapSettings.ModernNeutralDefaults(ImageSpaceModernFamily.Fallout4);
@@ -417,7 +422,7 @@ public sealed class WeatherImageSpaceEvaluatorTests
         var weather = new WeatherRecord
         {
             FormId = 0x200,
-            ImageSpaceModifiers = new WeatherTimeBands<uint>(10, 11, 12, 13),
+            ImageSpaceModifiers = new WeatherTimeBands<uint>(10, 11, 12, 13)
         };
         var spaces = Enumerable.Range(10, 4).ToDictionary(i => (uint)i, i => ModernSpace((uint)i, i));
 
@@ -437,7 +442,7 @@ public sealed class WeatherImageSpaceEvaluatorTests
         var weather = new WeatherRecord
         {
             FormId = 0x200,
-            ImageSpaceModifiers = new WeatherTimeBands<uint>(10, 11, 12, 13),
+            ImageSpaceModifiers = new WeatherTimeBands<uint>(10, 11, 12, 13)
         };
         var day = new ImageSpaceRecord
         {
@@ -453,25 +458,25 @@ public sealed class WeatherImageSpaceEvaluatorTests
                 White = 1f,
                 SunlightScale = 2.7f,
                 SkyScale = 0.235f,
-                EyeAdaptStrength = 5f,
+                EyeAdaptStrength = 5f
             },
             Cinematic = new ImageSpaceCinematic
             {
                 Saturation = 0.8f,
                 Brightness = 1.035f,
-                Contrast = 1.25f,
+                Contrast = 1.25f
             },
             Tint = new ImageSpaceTint
             {
                 Amount = 0.42f,
                 Red = 0.894118f,
                 Green = 0.839216f,
-                Blue = 0.772549f,
-            },
+                Blue = 0.772549f
+            }
         };
         var basis = GpuTonemapSettings.ModernNeutralDefaults(ImageSpaceModernFamily.Skyrim) with
         {
-            Mode = GpuTonemapMode.GammaAces,
+            Mode = GpuTonemapMode.GammaAces
         };
 
         var result = WeatherImageSpaceEvaluator.EvaluateModern(
@@ -494,56 +499,66 @@ public sealed class WeatherImageSpaceEvaluatorTests
     {
         var channels = Enumerable.Range(0, 21).ToDictionary(
             i => (ImageSpaceModifierParameter)i, _ => new WeatherImageSpaceChannel(1f, 0f));
-        channels[ImageSpaceModifierParameter.HdrBlurRadius] = new(2f, 1f);
-        channels[ImageSpaceModifierParameter.HdrTargetLum] = new(3f, 2f);
-        channels[ImageSpaceModifierParameter.HdrLumRampNoTex] = new(4f, 3f);
+        channels[ImageSpaceModifierParameter.HdrBlurRadius] = new WeatherImageSpaceChannel(2f, 1f);
+        channels[ImageSpaceModifierParameter.HdrTargetLum] = new WeatherImageSpaceChannel(3f, 2f);
+        channels[ImageSpaceModifierParameter.HdrLumRampNoTex] = new WeatherImageSpaceChannel(4f, 3f);
 
         var fo4 = WeatherImageSpaceEvaluator.ApplyModernChannels(
             GpuTonemapSettings.ModernNeutralDefaults(ImageSpaceModernFamily.Fallout4) with
-            { TonemapE = 5f, AutoExposureMax = 7f, MiddleGray = 11f }, channels);
-        Assert.Equal(11f, fo4.TonemapE);          // 5*2+1
-        Assert.Equal(23f, fo4.AutoExposureMax);   // 7*3+2
-        Assert.Equal(47f, fo4.MiddleGray);        // 11*4+3
+            {
+                TonemapE = 5f, AutoExposureMax = 7f, MiddleGray = 11f
+            }, channels);
+        Assert.Equal(11f, fo4.TonemapE); // 5*2+1
+        Assert.Equal(23f, fo4.AutoExposureMax); // 7*3+2
+        Assert.Equal(47f, fo4.MiddleGray); // 11*4+3
 
         var skyrim = WeatherImageSpaceEvaluator.ApplyModernChannels(
             GpuTonemapSettings.ModernNeutralDefaults(ImageSpaceModernFamily.Skyrim) with
-            { BlurRadius = 5f, ReceiveBloomThreshold = 7f, EyeAdaptStrength = 11f }, channels);
+            {
+                BlurRadius = 5f, ReceiveBloomThreshold = 7f, EyeAdaptStrength = 11f
+            }, channels);
         Assert.Equal(11f, skyrim.BlurRadius);
         Assert.Equal(23f, skyrim.ReceiveBloomThreshold);
         Assert.Equal(47f, skyrim.EyeAdaptStrength);
     }
 
-    private static ImageSpaceRecord ModernSpace(uint formId, float value) => new()
+    private static ImageSpaceRecord ModernSpace(uint formId, float value)
     {
-        FormId = formId,
-        ModernHdr = new ImageSpaceModernHdr
+        return new ImageSpaceRecord
         {
-            Family = ImageSpaceModernFamily.Fallout4,
-            EyeAdaptSpeed = value,
-            TonemapE = value,
-            BloomThreshold = value,
-            BloomScale = value,
-            AutoExposureMax = value,
-            AutoExposureMin = value,
-            SunlightScale = value,
-            SkyScale = value,
-            MiddleGray = value,
-        },
-        Cinematic = new ImageSpaceCinematic { Saturation = value, Brightness = value, Contrast = value },
-        Tint = new ImageSpaceTint { Amount = value, Red = value, Green = value, Blue = value },
-        LutTexturePath = $"textures\\lut{formId}.dds",
-    };
+            FormId = formId,
+            ModernHdr = new ImageSpaceModernHdr
+            {
+                Family = ImageSpaceModernFamily.Fallout4,
+                EyeAdaptSpeed = value,
+                TonemapE = value,
+                BloomThreshold = value,
+                BloomScale = value,
+                AutoExposureMax = value,
+                AutoExposureMin = value,
+                SunlightScale = value,
+                SkyScale = value,
+                MiddleGray = value
+            },
+            Cinematic = new ImageSpaceCinematic { Saturation = value, Brightness = value, Contrast = value },
+            Tint = new ImageSpaceTint { Amount = value, Red = value, Green = value, Blue = value },
+            LutTexturePath = $"textures\\lut{formId}.dds"
+        };
+    }
 
     private static WeatherRecord Weather(
-        uint formId, uint sunrise, uint day, uint sunset, uint night, uint highNoon, uint midnight) => new()
+        uint formId, uint sunrise, uint day, uint sunset, uint night, uint highNoon, uint midnight)
     {
-        FormId = formId,
-        ImageSpaceModifiers = new WeatherTimeBands<uint>(sunrise, day, sunset, night)
+        return new WeatherRecord
         {
-            HighNoon = highNoon,
-            Midnight = midnight,
-        },
-    };
+            FormId = formId,
+            ImageSpaceModifiers = new WeatherTimeBands<uint>(sunrise, day, sunset, night)
+            {
+                HighNoon = highNoon,
+                Midnight = midnight
+            }
+        };
+    }
 
     private static ImageSpaceModifierRecord Modifier(
         uint formId,
@@ -561,7 +576,7 @@ public sealed class WeatherImageSpaceEvaluatorTests
         {
             FormId = formId,
             Data = new ImageSpaceModifierData { AnimatableFlag = animatable ? 1u : 0u, Duration = duration },
-            Parameters = timelines,
+            Parameters = timelines
         };
     }
 }

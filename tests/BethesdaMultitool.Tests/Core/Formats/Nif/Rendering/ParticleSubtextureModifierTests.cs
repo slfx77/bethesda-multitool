@@ -22,10 +22,10 @@ public sealed class ParticleSubtextureModifierTests
             EndFrame = startFrame,
             LoopStartFrame = startFrame,
             LoopStartFrameFudge = startFrameFudge,
-            FrameCount = 1f,
+            FrameCount = 1f
         };
 
-        Assert.Equal(expected, modifier.SampleFrame(age: 2f, seed, atlasCount));
+        Assert.Equal(expected, modifier.SampleFrame(2f, seed, atlasCount));
     }
 
     [Fact]
@@ -36,9 +36,9 @@ public sealed class ParticleSubtextureModifierTests
             StartFrame = 0f,
             EndFrame = 100f,
             LoopStartFrame = 0f,
-            FrameCount = 100f,
+            FrameCount = 100f
         };
 
-        Assert.Equal(4, modifier.SampleFrame(age: 1f, seed: 0f, atlasCount: 16));
+        Assert.Equal(4, modifier.SampleFrame(1f, 0f, 16));
     }
 }

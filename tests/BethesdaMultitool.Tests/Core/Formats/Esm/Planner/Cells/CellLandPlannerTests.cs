@@ -1,11 +1,12 @@
+using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
 
@@ -13,6 +14,9 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
 
 public sealed class CellLandPlannerTests
 {
+    private const uint MasterCellId = 0x000DDF1C;
+    private const uint MasterLandId = 0x000ABCDE;
+
     [Fact]
     public void DmpNew_Exterior_Prefers_Captured_Heightmap()
     {
@@ -20,7 +24,7 @@ public sealed class CellLandPlannerTests
         var cell = Exterior() with
         {
             Heightmap = captured,
-            RuntimeTerrainMesh = new RuntimeTerrainMesh { Vertices = [0f, 0f, 0f] },
+            RuntimeTerrainMesh = new RuntimeTerrainMesh { Vertices = [0f, 0f, 0f] }
         };
 
         var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
@@ -55,7 +59,7 @@ public sealed class CellLandPlannerTests
         var cell = Exterior() with
         {
             Heightmap = enriched,
-            RuntimeTerrainMesh = mesh,
+            RuntimeTerrainMesh = mesh
         };
 
         var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
@@ -76,7 +80,7 @@ public sealed class CellLandPlannerTests
         var cell = Exterior() with
         {
             Heightmap = mesh.ToLandHeightmap(),
-            RuntimeTerrainMesh = mesh,
+            RuntimeTerrainMesh = mesh
         };
 
         var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
@@ -122,7 +126,7 @@ public sealed class CellLandPlannerTests
     {
         var mesh = CompleteRuntimeMesh() with
         {
-            SourceVertexMask = Enumerable.Repeat(true, 33 * 33).ToArray(),
+            SourceVertexMask = Enumerable.Repeat(true, 33 * 33).ToArray()
         };
         var quality = mesh.DiagnoseQuality();
         Assert.Equal(100f, quality.SourceCoveragePercent);
@@ -179,7 +183,7 @@ public sealed class CellLandPlannerTests
         {
             SanitizedZCount = 1,
             SanitizedMask = sanitizedMask,
-            SanitizedZeroOriginIndex = 0,
+            SanitizedZeroOriginIndex = 0
         };
 
         var result = CellLandPlanner.DecideAll(
@@ -194,7 +198,7 @@ public sealed class CellLandPlannerTests
     {
         var mesh = CenteredFullGridMesh((_, _) => 0f) with
         {
-            SourceVertexMask = Enumerable.Repeat(true, 33 * 33).ToArray(),
+            SourceVertexMask = Enumerable.Repeat(true, 33 * 33).ToArray()
         };
         mesh = mesh.SanitizeVertices();
 
@@ -261,7 +265,7 @@ public sealed class CellLandPlannerTests
         {
             SourceVertexMask = Enumerable.Repeat(true, 33 * 33).ToArray(),
             SanitizedZCount = 1,
-            SanitizedMask = sanitizedMask,
+            SanitizedMask = sanitizedMask
         };
 
         var result = CellLandPlanner.DecideAll(
@@ -304,7 +308,7 @@ public sealed class CellLandPlannerTests
         var sanitized = unsanitized with
         {
             SanitizedZCount = 1,
-            SanitizedMask = sanitizedMask,
+            SanitizedMask = sanitizedMask
         };
 
         var stillRejected = CellLandPlanner.DecideAll(
@@ -321,7 +325,7 @@ public sealed class CellLandPlannerTests
         var mesh = FullGridMesh((_, _) => 42f) with
         {
             SanitizedZCount = 1,
-            SanitizedMask = sanitizedMask,
+            SanitizedMask = sanitizedMask
         };
 
         var result = CellLandPlanner.DecideAll(
@@ -371,8 +375,8 @@ public sealed class CellLandPlannerTests
             RuntimeTerrainMesh = new RuntimeTerrainMesh
             {
                 Vertices = [0f, 0f, 1f, 128f, 0f, 2f, 0f, 128f, 3f],
-                SourceParentCellFormId = 0x0010B902,
-            },
+                SourceParentCellFormId = 0x0010B902
+            }
         };
         var corruptQuality = partial.RuntimeTerrainMesh.DiagnoseQuality();
         Assert.Equal("None", corruptQuality.HeightSource);
@@ -395,7 +399,7 @@ public sealed class CellLandPlannerTests
         var cell = Exterior() with
         {
             Heightmap = mesh.ToLandHeightmap(),
-            RuntimeTerrainMesh = mesh,
+            RuntimeTerrainMesh = mesh
         };
 
         var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
@@ -421,7 +425,7 @@ public sealed class CellLandPlannerTests
         var mesh = new RuntimeTerrainMesh
         {
             Vertices = vertices.ToArray(),
-            SourceParentCellFormId = 0x0010B901,
+            SourceParentCellFormId = 0x0010B901
         };
         var quality = mesh.DiagnoseQuality();
         Assert.Equal("RuntimeMESH", quality.HeightSource);
@@ -467,7 +471,7 @@ public sealed class CellLandPlannerTests
         {
             CapturedLandHeightmap = captured,
             Heightmap = mesh.ToLandHeightmap(),
-            RuntimeTerrainMesh = mesh,
+            RuntimeTerrainMesh = mesh
         };
 
         var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
@@ -483,7 +487,7 @@ public sealed class CellLandPlannerTests
     {
         var cell = Exterior() with
         {
-            CapturedLandHeightmap = Heightmap(4, sourceParentCellFormId: 0x0010B999),
+            CapturedLandHeightmap = Heightmap(4, 0x0010B999)
         };
 
         var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
@@ -497,8 +501,8 @@ public sealed class CellLandPlannerTests
     {
         var cell = Exterior() with
         {
-            CapturedLandHeightmap = Heightmap(4, sourceParentCellFormId: 0x0010B999),
-            RuntimeTerrainMesh = CompleteRuntimeMesh(),
+            CapturedLandHeightmap = Heightmap(4, 0x0010B999),
+            RuntimeTerrainMesh = CompleteRuntimeMesh()
         };
 
         var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
@@ -526,12 +530,12 @@ public sealed class CellLandPlannerTests
         var mesh = CompleteRuntimeMesh() with
         {
             SourceParentCellFormId = 0x0010B999,
-            Colors = Enumerable.Repeat(1f, 33 * 33 * 3).ToArray(),
+            Colors = Enumerable.Repeat(1f, 33 * 33 * 3).ToArray()
         };
         var cell = Exterior() with
         {
             CapturedLandHeightmap = Heightmap(4),
-            RuntimeTerrainMesh = mesh,
+            RuntimeTerrainMesh = mesh
         };
 
         var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
@@ -548,8 +552,8 @@ public sealed class CellLandPlannerTests
             LandVisualData = new LandVisualData
             {
                 SourceParentCellFormId = 0x0010B999,
-                VertexColors = new byte[33 * 33 * 3],
-            },
+                VertexColors = new byte[33 * 33 * 3]
+            }
         };
 
         var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
@@ -565,26 +569,26 @@ public sealed class CellLandPlannerTests
         {
             FormId = 0x0010B903,
             Flags = 0x01,
-            Heightmap = Heightmap(2, 0x0010B903),
+            Heightmap = Heightmap(2, 0x0010B903)
         };
         var persistent = Exterior(0x0010B904) with
         {
             IsPersistentCell = true,
-            Heightmap = Heightmap(3, 0x0010B904),
+            Heightmap = Heightmap(3, 0x0010B904)
         };
         var interiorOverride = new CellRecord
         {
             FormId = 0x000DDF10,
             Flags = 0x01,
-            Heightmap = Heightmap(1, 0x000DDF10),
+            Heightmap = Heightmap(1, 0x000DDF10)
         };
 
         var result = CellLandPlanner.DecideAll(
-            [
-                Entry(interior, SourceKind.DmpNew),
-                Entry(persistent, SourceKind.DmpNew),
-                OverrideEntry(interiorOverride, isInterior: true),
-            ]);
+        [
+            Entry(interior, SourceKind.DmpNew),
+            Entry(persistent, SourceKind.DmpNew),
+            OverrideEntry(interiorOverride, true)
+        ]);
 
         Assert.Empty(result.DecisionsByCellSourceFormId);
     }
@@ -600,7 +604,7 @@ public sealed class CellLandPlannerTests
             [OverrideEntry(cell)],
             new Dictionary<uint, ParsedMainRecord>
             {
-                [MasterLandId] = MasterLand(MasterLandId, 3, masterVclr),
+                [MasterLandId] = MasterLand(MasterLandId, 3, masterVclr)
             },
             new Dictionary<uint, List<uint>> { [MasterCellId] = [MasterLandId] });
 
@@ -617,7 +621,7 @@ public sealed class CellLandPlannerTests
     {
         var cell = Exterior(MasterCellId) with
         {
-            CapturedLandHeightmap = Heightmap(0, MasterCellId),
+            CapturedLandHeightmap = Heightmap(0, MasterCellId)
         };
 
         var result = CellLandPlanner.DecideAll(
@@ -634,7 +638,7 @@ public sealed class CellLandPlannerTests
     {
         var cell = Exterior(MasterCellId) with
         {
-            CapturedLandHeightmap = Heightmap(4, MasterCellId),
+            CapturedLandHeightmap = Heightmap(4, MasterCellId)
         };
 
         var result = CellLandPlanner.DecideAll([OverrideEntry(cell)]);
@@ -646,10 +650,13 @@ public sealed class CellLandPlannerTests
     [Fact]
     public void Master_Override_Incomplete_Capture_Does_Not_Override()
     {
-        var cell = Exterior(MasterCellId) with { RuntimeTerrainMesh = PartialRuntimeMesh() with
+        var cell = Exterior(MasterCellId) with
         {
-            SourceParentCellFormId = MasterCellId,
-        } };
+            RuntimeTerrainMesh = PartialRuntimeMesh() with
+            {
+                SourceParentCellFormId = MasterCellId
+            }
+        };
 
         var result = CellLandPlanner.DecideAll(
             [OverrideEntry(cell)],
@@ -665,7 +672,7 @@ public sealed class CellLandPlannerTests
     {
         var protoCell = Exterior(0x01001670) with
         {
-            CapturedLandHeightmap = Heightmap(4, 0x01001670),
+            CapturedLandHeightmap = Heightmap(4, 0x01001670)
         };
 
         var result = CellLandPlanner.DecideAll(
@@ -691,15 +698,15 @@ public sealed class CellLandPlannerTests
                 {
                     FormId = 0xAA003000,
                     BaseFormId = 0x00001000,
-                    RecordType = "REFR",
-                },
-            ],
+                    RecordType = "REFR"
+                }
+            ]
         };
         var navm = new NavMeshRecord
         {
             FormId = 0xAA004000,
             CellFormId = cell.FormId,
-            RawSubrecords = [new NavMeshSubrecord("DATA", [1, 2, 3, 4])],
+            RawSubrecords = [new NavMeshSubrecord("DATA", [1, 2, 3, 4])]
         };
 
         var result = CellSectionPlanner.Plan(
@@ -710,54 +717,60 @@ public sealed class CellLandPlannerTests
             [],
             new HashSet<uint>(),
             new FormIdAllocator(),
-            emitMasterCellNavmAugmentation: false);
+            false);
 
         var plan = Assert.Single(result.CellsByFormId.Values);
         Assert.Equal(["LAND", "NAVM", "REFR"], plan.TemporaryChildren.Select(child => child.Type));
     }
 
-    private const uint MasterCellId = 0x000DDF1C;
-    private const uint MasterLandId = 0x000ABCDE;
-
-    private static CellRecord Exterior(uint formId = 0x0010B901) => new()
+    private static CellRecord Exterior(uint formId = 0x0010B901)
     {
-        FormId = formId,
-        WorldspaceFormId = 0x0010B96F,
-        GridX = 0,
-        GridY = 0,
-    };
+        return new CellRecord
+        {
+            FormId = formId,
+            WorldspaceFormId = 0x0010B96F,
+            GridX = 0,
+            GridY = 0
+        };
+    }
 
-    private static CellCatalogEntry Entry(CellRecord cell, SourceKind source) => new()
+    private static CellCatalogEntry Entry(CellRecord cell, SourceKind source)
     {
-        CellFormId = cell.FormId,
-        Source = source,
-        DmpModel = cell,
-    };
+        return new CellCatalogEntry
+        {
+            CellFormId = cell.FormId,
+            Source = source,
+            DmpModel = cell
+        };
+    }
 
     private static CellCatalogEntry OverrideEntry(
         CellRecord cell,
         bool isInterior = false,
-        uint? cellFormId = null) => new()
+        uint? cellFormId = null)
     {
-        CellFormId = cellFormId ?? cell.FormId,
-        Source = SourceKind.DmpOverride,
-        DmpModel = cell,
-        MasterContext = new PcEsmCellContext
+        return new CellCatalogEntry
         {
             CellFormId = cellFormId ?? cell.FormId,
-            IsInterior = isInterior,
-            WorldspaceFormId = isInterior ? null : 0x000DA726u,
-            BlockGroupType = isInterior ? 2 : 4,
-            SubblockGroupType = isInterior ? 3 : 5,
-            BlockLabel = new byte[4],
-            SubblockLabel = new byte[4],
-        },
-    };
+            Source = SourceKind.DmpOverride,
+            DmpModel = cell,
+            MasterContext = new PcEsmCellContext
+            {
+                CellFormId = cellFormId ?? cell.FormId,
+                IsInterior = isInterior,
+                WorldspaceFormId = isInterior ? null : 0x000DA726u,
+                BlockGroupType = isInterior ? 2 : 4,
+                SubblockGroupType = isInterior ? 3 : 5,
+                BlockLabel = new byte[4],
+                SubblockLabel = new byte[4]
+            }
+        };
+    }
 
     private static ParsedMainRecord MasterLand(uint formId, sbyte delta, byte[]? vclr = null)
     {
         var vhgt = new byte[1096];
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(vhgt.AsSpan(0, 4), 50f);
+        BinaryPrimitives.WriteSingleLittleEndian(vhgt.AsSpan(0, 4), 50f);
         for (var i = 0; i < 1089; i++)
         {
             vhgt[4 + i] = (byte)delta;
@@ -765,7 +778,7 @@ public sealed class CellLandPlannerTests
 
         var subrecords = new List<ParsedSubrecord>
         {
-            new() { Signature = "VHGT", Data = vhgt },
+            new() { Signature = "VHGT", Data = vhgt }
         };
         if (vclr is not null)
         {
@@ -782,24 +795,29 @@ public sealed class CellLandPlannerTests
                 FormId = formId,
                 Timestamp = 0,
                 VcsInfo = 0,
-                Version = 15,
+                Version = 15
             },
             Offset = 0,
-            Subrecords = subrecords,
+            Subrecords = subrecords
         };
     }
 
     private static LandHeightmap Heightmap(
         sbyte value,
-        uint sourceParentCellFormId = 0x0010B901) => new()
+        uint sourceParentCellFormId = 0x0010B901)
     {
-        HeightOffset = 100f,
-        HeightDeltas = Enumerable.Repeat(value, 33 * 33).ToArray(),
-        SourceParentCellFormId = sourceParentCellFormId,
-    };
+        return new LandHeightmap
+        {
+            HeightOffset = 100f,
+            HeightDeltas = Enumerable.Repeat(value, 33 * 33).ToArray(),
+            SourceParentCellFormId = sourceParentCellFormId
+        };
+    }
 
     private static RuntimeTerrainMesh CompleteRuntimeMesh()
-        => FullGridMesh((x, y) => x * 3f + y * 2f + (x * y % 7));
+    {
+        return FullGridMesh((x, y) => x * 3f + y * 2f + (x * y % 7));
+    }
 
     private static RuntimeTerrainMesh FullGridMesh(Func<int, int, float> height)
     {
@@ -819,7 +837,7 @@ public sealed class CellLandPlannerTests
         {
             Vertices = vertices,
             SourceParentCellFormId = 0x0010B901,
-            RuntimeBaseHeight = 0f,
+            RuntimeBaseHeight = 0f
         };
     }
 
@@ -841,7 +859,7 @@ public sealed class CellLandPlannerTests
         {
             Vertices = vertices,
             SourceParentCellFormId = 0x0010B901,
-            RuntimeBaseHeight = 0f,
+            RuntimeBaseHeight = 0f
         };
     }
 
@@ -856,7 +874,7 @@ public sealed class CellLandPlannerTests
                 var index = (y * gridSize + x) * 3;
                 vertices[index] = 2 * 4096f + x * spacing;
                 vertices[index + 1] = 3 * 4096f + y * spacing;
-                vertices[index + 2] = 100f + x * 3f + y * 2f + (x * y % 7);
+                vertices[index + 2] = 100f + x * 3f + y * 2f + x * y % 7;
             }
         }
 
@@ -864,7 +882,7 @@ public sealed class CellLandPlannerTests
         {
             Vertices = vertices,
             SourceParentCellFormId = 0x0010B901,
-            RuntimeBaseHeight = 0f,
+            RuntimeBaseHeight = 0f
         };
     }
 
@@ -885,7 +903,7 @@ public sealed class CellLandPlannerTests
         {
             Vertices = vertices.ToArray(),
             SourceParentCellFormId = 0x0010B901,
-            RuntimeBaseHeight = 0f,
+            RuntimeBaseHeight = 0f
         };
     }
 }

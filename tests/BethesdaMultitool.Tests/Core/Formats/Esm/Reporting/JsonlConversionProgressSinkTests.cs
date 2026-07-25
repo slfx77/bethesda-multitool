@@ -27,8 +27,8 @@ public sealed class JsonlConversionProgressSinkTests
                     {
                         ["script-editor-id"] = "SomeScript",
                         ["nullable"] = null,
-                        ["script-source-form-id"] = "0x01123456",
-                    },
+                        ["script-source-form-id"] = "0x01123456"
+                    }
                 });
                 sink.OnComplete(new ConversionPipelineStats
                 {
@@ -36,7 +36,7 @@ public sealed class JsonlConversionProgressSinkTests
                     RecordsEmitted = 3,
                     RecordsSkipped = 1,
                     RecordsFailed = 0,
-                    OutputBytes = 123,
+                    OutputBytes = 123
                 });
             }
 

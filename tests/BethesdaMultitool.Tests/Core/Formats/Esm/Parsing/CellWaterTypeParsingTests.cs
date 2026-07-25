@@ -31,12 +31,12 @@ public sealed class CellWaterTypeParsingTests
             new EsmRecordScanResult
             {
                 Game = BethesdaGame.FalloutNewVegas,
-                MainRecords = [record],
+                MainRecords = [record]
             },
-            formIdCorrelations: null,
-            accessor: new ByteArrayMemoryAccessor(bytes),
-            fileSize: bytes.Length,
-            minidumpInfo: null);
+            null,
+            new ByteArrayMemoryAccessor(bytes),
+            bytes.Length,
+            null);
 
         var cell = Assert.Single(new CellRecordHandler(context).ParseCells());
 

@@ -1,6 +1,5 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
@@ -207,9 +206,9 @@ public sealed class WorldRenderInfrastructureTests
         var wetCell = new CellRecord { FormId = 0x101, WaterHeight = null, Flags = 0x02 };
 
         Assert.Null(WorldRenderCache.ResolveEffectiveWaterHeight(
-            dryCell, 0f, defaultRequiresCellHasWater: true));
+            dryCell, 0f, true));
         Assert.Equal(0f, WorldRenderCache.ResolveEffectiveWaterHeight(
-            wetCell, 0f, defaultRequiresCellHasWater: true));
+            wetCell, 0f, true));
     }
 
     [Fact]
@@ -220,7 +219,7 @@ public sealed class WorldRenderInfrastructureTests
         var cell = new CellRecord { FormId = 0x100, WaterHeight = 3500f, Flags = 0x00 };
 
         Assert.Equal(3500f, WorldRenderCache.ResolveEffectiveWaterHeight(
-            cell, 0f, defaultRequiresCellHasWater: true));
+            cell, 0f, true));
     }
 
     [Fact]

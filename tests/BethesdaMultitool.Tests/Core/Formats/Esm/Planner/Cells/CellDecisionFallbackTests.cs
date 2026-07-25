@@ -26,10 +26,10 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
 /// </summary>
 public sealed class CellDecisionFallbackTests
 {
-    private const uint CellId = 0x000ABCDE;           // interior, master-anchored
+    private const uint CellId = 0x000ABCDE; // interior, master-anchored
     private const uint MasterStatBaseId = 0x000A2001; // valid master base for new refs
-    private const uint NewRefId = 0x01000901;         // plugin-range placed-ref FormID
-    private const uint PortalMarkerBase = 0x20;       // engine render-culling base (PortalMarker)
+    private const uint NewRefId = 0x01000901; // plugin-range placed-ref FormID
+    private const uint PortalMarkerBase = 0x20; // engine render-culling base (PortalMarker)
     private const uint MarkerRefId = 0x01000902;
 
     [Fact]
@@ -38,7 +38,7 @@ public sealed class CellDecisionFallbackTests
         // Planned PersistentOnly drops the non-persistent NEW ref. The writer-side
         // fallback would classify Skip (empty master ref set), which does NOT gate new
         // refs — so a drop here proves the planned Mode was consumed.
-        var (_, stats) = BuildSection(mode: CellMergeMode.PersistentOnly, dropMarkers: false);
+        var (_, stats) = BuildSection(CellMergeMode.PersistentOnly, false);
 
         Assert.Equal(1, stats.DropReasonCounts.GetValueOrDefault("cell.persistent-only-nonpersistent-ref"));
     }
@@ -46,7 +46,7 @@ public sealed class CellDecisionFallbackTests
     [Fact]
     public void Null_Mode_Falls_Back_To_Writer_Computation_And_Emits()
     {
-        var (section, stats) = BuildSection(mode: null, dropMarkers: false);
+        var (section, stats) = BuildSection(null, false);
 
         Assert.Equal(0, stats.DropReasonCounts.GetValueOrDefault("cell.persistent-only-nonpersistent-ref"));
         Assert.NotNull(FindRecord(section, NewRefId));
@@ -58,7 +58,7 @@ public sealed class CellDecisionFallbackTests
         // A planned marker-drop policy kills the engine-base (0x20) marker placement; the
         // writer fallback carries no marker policy for this fixture and would emit it.
         var (section, stats) = BuildSection(
-            mode: CellMergeMode.LoadedReplacement, dropMarkers: true, includeMarkerRef: true);
+            CellMergeMode.LoadedReplacement, true, true);
 
         Assert.Equal(1, stats.DropReasonCounts.GetValueOrDefault("cell.render-culling-marker-dropped"));
         Assert.Null(FindRecord(section, MarkerRefId));
@@ -67,7 +67,7 @@ public sealed class CellDecisionFallbackTests
     [Fact]
     public void Null_Mode_Fallback_Emits_Marker_Placement()
     {
-        var (section, stats) = BuildSection(mode: null, dropMarkers: false, includeMarkerRef: true);
+        var (section, stats) = BuildSection(null, false, true);
 
         Assert.Equal(0, stats.DropReasonCounts.GetValueOrDefault("cell.render-culling-marker-dropped"));
         Assert.NotNull(FindRecord(section, MarkerRefId));
@@ -102,13 +102,13 @@ public sealed class CellDecisionFallbackTests
             Subrecords =
             [
                 new ParsedSubrecord { Signature = "EDID", Data = "Cell\0"u8.ToArray() },
-                new ParsedSubrecord { Signature = "DATA", Data = [0x01] }, // interior flag
+                new ParsedSubrecord { Signature = "DATA", Data = [0x01] } // interior flag
             ]
         };
         var masterByFormId = new Dictionary<uint, ParsedMainRecord>
         {
             [CellId] = masterCell,
-            [MasterStatBaseId] = MakeMasterRecord("STAT", MasterStatBaseId),
+            [MasterStatBaseId] = MakeMasterRecord("STAT", MasterStatBaseId)
         };
         var masterIndex = new MasterRecordIndex
         {
@@ -123,7 +123,7 @@ public sealed class CellDecisionFallbackTests
             RefsByCell = [],
             NavmsByCell = [],
             LandsByCell = [],
-            CellContexts = [],
+            CellContexts = []
         };
 
         var cellPlan = new CellPlan
@@ -153,7 +153,7 @@ public sealed class CellDecisionFallbackTests
             VwdChildren = ImmutableArray<RecordPlan>.Empty,
             TemporaryChildren = children.ToImmutable(),
             Mode = mode,
-            DropRenderCullingMarkers = dropMarkers,
+            DropRenderCullingMarkers = dropMarkers
         };
 
         var plan = new EmitPlan
@@ -164,7 +164,7 @@ public sealed class CellDecisionFallbackTests
             RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
             Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
             Meta = new PlanMetadata { NextObjectId = 0x800, PlannerCoverage = ImmutableHashSet<string>.Empty },
-            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(CellId, cellPlan),
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(CellId, cellPlan)
         };
 
         var stats = new ConversionPipelineStats();
@@ -174,8 +174,9 @@ public sealed class CellDecisionFallbackTests
         return (section, stats);
     }
 
-    private static RecordPlan MakeChildPlan(string type, uint formId, PlacedReference model) =>
-        new()
+    private static RecordPlan MakeChildPlan(string type, uint formId, PlacedReference model)
+    {
+        return new RecordPlan
         {
             Type = type,
             Disposition = RecordDisposition.New,
@@ -185,9 +186,11 @@ public sealed class CellDecisionFallbackTests
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
             Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
+    }
 
-    private static ParsedMainRecord MakeMasterRecord(string signature, uint formId) =>
-        new()
+    private static ParsedMainRecord MakeMasterRecord(string signature, uint formId)
+    {
+        return new ParsedMainRecord
         {
             Header = new MainRecordHeader
             {
@@ -196,6 +199,7 @@ public sealed class CellDecisionFallbackTests
             },
             Offset = 0
         };
+    }
 
     private static int? FindRecord(byte[]? section, uint formId)
     {

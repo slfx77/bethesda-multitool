@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using Xunit;
 
@@ -17,58 +18,70 @@ public sealed class Fallout4WaterDataTests
     private static byte[] BuildFallout4Dnam(bool bigEndian = false)
     {
         var d = new byte[201];
-        WriteSingle(d, 0, 1087f, bigEndian);           // Depth Amount
-        d[4] = 0x3A; d[5] = 0x35; d[6] = 0x21;         // Shallow Color
-        d[8] = 0x3A; d[9] = 0x39; d[10] = 0x29;        // Deep Color
-        WriteSingle(d, 12, 64f, bigEndian);            // Color Shallow Range
-        WriteSingle(d, 16, 512f, bigEndian);           // Color Deep Range
-        WriteSingle(d, 20, 0.15f, bigEndian);          // Shallow Alpha
-        WriteSingle(d, 24, 0.9f, bigEndian);           // Deep Alpha
-        WriteSingle(d, 28, 32f, bigEndian);            // Alpha Shallow Range
-        WriteSingle(d, 32, 256f, bigEndian);           // Alpha Deep Range
-        d[36] = 0x12; d[37] = 0x34; d[38] = 0x56;      // Underwater Color
-        WriteSingle(d, 40, 0.7f, bigEndian);           // Underwater Fog Amount
-        WriteSingle(d, 44, 12f, bigEndian);            // Underwater Near Fog
-        WriteSingle(d, 48, 345f, bigEndian);           // Underwater Far Fog
-        WriteSingle(d, 52, 0.8f, bigEndian);           // Normal Magnitude
-        WriteSingle(d, 56, 21f, bigEndian);            // Shallow Normal Falloff
-        WriteSingle(d, 60, 87f, bigEndian);            // Deep Normal Falloff
-        WriteSingle(d, 64, 0.3732f, bigEndian);        // Reflectivity Amount
-        WriteSingle(d, 68, 0.0145f, bigEndian);        // Fresnel Amount
-        WriteSingle(d, 72, 432f, bigEndian);           // Surface Effect Falloff
-        WriteSingle(d, 76, 1.1f, bigEndian);           // Displacement Force
-        WriteSingle(d, 80, 2.2f, bigEndian);           // Displacement Velocity
-        WriteSingle(d, 84, 3.3f, bigEndian);           // Displacement Falloff
-        WriteSingle(d, 88, 4.4f, bigEndian);           // Displacement Dampener
-        WriteSingle(d, 92, 5.5f, bigEndian);           // Displacement Starting Size
-        d[96] = 0x51; d[97] = 0x62; d[98] = 0x73;      // Reflection Color
-        WriteSingle(d, 100, 951f, bigEndian);          // Sun Specular Power
-        WriteSingle(d, 104, 8.803f, bigEndian);        // Sun Specular Magnitude
-        WriteSingle(d, 108, 71f, bigEndian);           // Sun Sparkle Power
-        WriteSingle(d, 112, 6.25f, bigEndian);         // Sun Sparkle Magnitude
-        WriteSingle(d, 116, 700f, bigEndian);          // Interior Specular Radius
-        WriteSingle(d, 120, 2.75f, bigEndian);         // Interior Specular Brightness
-        WriteSingle(d, 124, 44f, bigEndian);           // Interior Specular Power
+        WriteSingle(d, 0, 1087f, bigEndian); // Depth Amount
+        d[4] = 0x3A;
+        d[5] = 0x35;
+        d[6] = 0x21; // Shallow Color
+        d[8] = 0x3A;
+        d[9] = 0x39;
+        d[10] = 0x29; // Deep Color
+        WriteSingle(d, 12, 64f, bigEndian); // Color Shallow Range
+        WriteSingle(d, 16, 512f, bigEndian); // Color Deep Range
+        WriteSingle(d, 20, 0.15f, bigEndian); // Shallow Alpha
+        WriteSingle(d, 24, 0.9f, bigEndian); // Deep Alpha
+        WriteSingle(d, 28, 32f, bigEndian); // Alpha Shallow Range
+        WriteSingle(d, 32, 256f, bigEndian); // Alpha Deep Range
+        d[36] = 0x12;
+        d[37] = 0x34;
+        d[38] = 0x56; // Underwater Color
+        WriteSingle(d, 40, 0.7f, bigEndian); // Underwater Fog Amount
+        WriteSingle(d, 44, 12f, bigEndian); // Underwater Near Fog
+        WriteSingle(d, 48, 345f, bigEndian); // Underwater Far Fog
+        WriteSingle(d, 52, 0.8f, bigEndian); // Normal Magnitude
+        WriteSingle(d, 56, 21f, bigEndian); // Shallow Normal Falloff
+        WriteSingle(d, 60, 87f, bigEndian); // Deep Normal Falloff
+        WriteSingle(d, 64, 0.3732f, bigEndian); // Reflectivity Amount
+        WriteSingle(d, 68, 0.0145f, bigEndian); // Fresnel Amount
+        WriteSingle(d, 72, 432f, bigEndian); // Surface Effect Falloff
+        WriteSingle(d, 76, 1.1f, bigEndian); // Displacement Force
+        WriteSingle(d, 80, 2.2f, bigEndian); // Displacement Velocity
+        WriteSingle(d, 84, 3.3f, bigEndian); // Displacement Falloff
+        WriteSingle(d, 88, 4.4f, bigEndian); // Displacement Dampener
+        WriteSingle(d, 92, 5.5f, bigEndian); // Displacement Starting Size
+        d[96] = 0x51;
+        d[97] = 0x62;
+        d[98] = 0x73; // Reflection Color
+        WriteSingle(d, 100, 951f, bigEndian); // Sun Specular Power
+        WriteSingle(d, 104, 8.803f, bigEndian); // Sun Specular Magnitude
+        WriteSingle(d, 108, 71f, bigEndian); // Sun Sparkle Power
+        WriteSingle(d, 112, 6.25f, bigEndian); // Sun Sparkle Magnitude
+        WriteSingle(d, 116, 700f, bigEndian); // Interior Specular Radius
+        WriteSingle(d, 120, 2.75f, bigEndian); // Interior Specular Brightness
+        WriteSingle(d, 124, 44f, bigEndian); // Interior Specular Power
         // Noise layers are grouped BY FIELD (all WindDirs, then WindSpeeds, Amplitudes, UVScales).
-        WriteSingle(d, 128, 10f, bigEndian);           // L1 Wind Dir
-        WriteSingle(d, 132, 20f, bigEndian);           // L2 Wind Dir
-        WriteSingle(d, 136, 30f, bigEndian);           // L3 Wind Dir
-        WriteSingle(d, 140, 0.05f, bigEndian);         // L1 Wind Speed
-        WriteSingle(d, 144, 0.06f, bigEndian);         // L2 Wind Speed
-        WriteSingle(d, 148, 0.07f, bigEndian);         // L3 Wind Speed
-        WriteSingle(d, 152, 0.4f, bigEndian);          // L1 Amplitude
-        WriteSingle(d, 156, 0.5f, bigEndian);          // L2 Amplitude
-        WriteSingle(d, 160, 0.6f, bigEndian);          // L3 Amplitude
-        WriteSingle(d, 164, 100f, bigEndian);          // L1 UV Scale
-        WriteSingle(d, 168, 200f, bigEndian);          // L2 UV Scale
-        WriteSingle(d, 172, 300f, bigEndian);          // L3 UV Scale
-        WriteSingle(d, 176, 0.11f, bigEndian);         // L1 Falloff
-        WriteSingle(d, 180, 0.22f, bigEndian);         // L2 Falloff
-        WriteSingle(d, 184, 0.33f, bigEndian);         // L3 Falloff
-        WriteSingle(d, 188, 1f, bigEndian);            // Silt Amount
-        d[192] = 0x60; d[193] = 0x4F; d[194] = 0x1A;   // Light (silt) Color
-        d[196] = 0x2F; d[197] = 0x2B; d[198] = 0x1A;   // Dark (silt) Color
-        d[200] = 1;                                    // Screen Space Reflections bool
+        WriteSingle(d, 128, 10f, bigEndian); // L1 Wind Dir
+        WriteSingle(d, 132, 20f, bigEndian); // L2 Wind Dir
+        WriteSingle(d, 136, 30f, bigEndian); // L3 Wind Dir
+        WriteSingle(d, 140, 0.05f, bigEndian); // L1 Wind Speed
+        WriteSingle(d, 144, 0.06f, bigEndian); // L2 Wind Speed
+        WriteSingle(d, 148, 0.07f, bigEndian); // L3 Wind Speed
+        WriteSingle(d, 152, 0.4f, bigEndian); // L1 Amplitude
+        WriteSingle(d, 156, 0.5f, bigEndian); // L2 Amplitude
+        WriteSingle(d, 160, 0.6f, bigEndian); // L3 Amplitude
+        WriteSingle(d, 164, 100f, bigEndian); // L1 UV Scale
+        WriteSingle(d, 168, 200f, bigEndian); // L2 UV Scale
+        WriteSingle(d, 172, 300f, bigEndian); // L3 UV Scale
+        WriteSingle(d, 176, 0.11f, bigEndian); // L1 Falloff
+        WriteSingle(d, 180, 0.22f, bigEndian); // L2 Falloff
+        WriteSingle(d, 184, 0.33f, bigEndian); // L3 Falloff
+        WriteSingle(d, 188, 1f, bigEndian); // Silt Amount
+        d[192] = 0x60;
+        d[193] = 0x4F;
+        d[194] = 0x1A; // Light (silt) Color
+        d[196] = 0x2F;
+        d[197] = 0x2B;
+        d[198] = 0x1A; // Dark (silt) Color
+        d[200] = 1; // Screen Space Reflections bool
         return d;
     }
 
@@ -128,7 +141,7 @@ public sealed class Fallout4WaterDataTests
     [InlineData(true)]
     public void ReadFallout4WaterData_FeedsWaterAppearanceAndFo4SurfaceParams(bool bigEndian)
     {
-        var appearance = BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance
+        var appearance = WaterAppearance
             .FromVisualProperties(MiscEnvironmentHandler.ReadFallout4WaterData(
                 BuildFallout4Dnam(bigEndian), bigEndian), null);
 
@@ -169,7 +182,7 @@ public sealed class Fallout4WaterDataTests
     {
         // The FO4-only fields default inert for every other game's decode path — the FNV/Oblivion
         // shader permutations never read them, and Default must stay byte-identical.
-        var def = BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterSurfaceParams.Default;
+        var def = WaterSurfaceParams.Default;
         Assert.Equal(0f, def.SunSpecularMagnitude);
         Assert.Equal(0f, def.SiltAmount);
         Assert.Equal(1f, def.ShallowAlpha);
@@ -186,7 +199,7 @@ public sealed class Fallout4WaterDataTests
         var d = BuildFallout4Dnam(bigEndian)[..148];
 
         var props = MiscEnvironmentHandler.ReadFallout76WaterData(d, bigEndian);
-        var appearance = BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance
+        var appearance = WaterAppearance
             .FromVisualProperties(props, @"textures\water\WaterRainRipples.dds");
 
         Assert.Equal(0x00_21_35_3Au, Assert.IsType<uint>(props["ShallowColor"]));
@@ -211,7 +224,7 @@ public sealed class Fallout4WaterDataTests
     {
         var d = BuildFallout4Dnam()[..108];
 
-        var props = MiscEnvironmentHandler.ReadFallout76WaterData(d, isBigEndian: false);
+        var props = MiscEnvironmentHandler.ReadFallout76WaterData(d, false);
 
         Assert.Equal(8.803f, Assert.IsType<float>(props["SunSpecularMagnitude"]), 3);
         Assert.DoesNotContain("SunSparklePower", props.Keys);

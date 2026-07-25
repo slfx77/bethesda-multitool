@@ -19,7 +19,7 @@ public sealed class MoonGmstRegistryTests
             FloatSetting(0x105, "fSecundaSpeed", 0.33f),
             FloatSetting(0x106, "fSecundaZOffset", 49f),
             FloatSetting(0x107, "fSecundaAngleFadeStart", 36f),
-            FloatSetting(0x108, "fSecundaAngleFadeEnd", 19f),
+            FloatSetting(0x108, "fSecundaAngleFadeEnd", 19f)
         };
 
         var index = GameSettingRegistry.BuildIndex(settings);
@@ -51,11 +51,14 @@ public sealed class MoonGmstRegistryTests
         Assert.Equal(0.42f, index["FMASSERSPEED"].FloatValue);
     }
 
-    private static GameSettingRecord FloatSetting(uint formId, string editorId, float value) => new()
+    private static GameSettingRecord FloatSetting(uint formId, string editorId, float value)
     {
-        FormId = formId,
-        EditorId = editorId,
-        ValueType = GameSettingType.Float,
-        FloatValue = value,
-    };
+        return new GameSettingRecord
+        {
+            FormId = formId,
+            EditorId = editorId,
+            ValueType = GameSettingType.Float,
+            FloatValue = value
+        };
+    }
 }

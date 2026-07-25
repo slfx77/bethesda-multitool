@@ -31,14 +31,15 @@ internal sealed class RuntimeClassReader(RuntimeMemoryContext context)
             return null;
         }
 
-        // TESAttributes is declared with size 0 in the PDB (opaque); the field is at
-        // attrOff but the 4-byte vtable precedes the actual UCHAR[7] data, so attribute
-        // bytes start at attrOff + 4.
+        // cAttribute points directly at the TESAttributes UCHAR[7] array — it is a plain byte array
+        // with no vtable. Reading at attrOff + 4 skipped the first four attribute weights and pulled
+        // the tail from the adjacent CLASS_DATA (verified against dump bytes: the 7-byte read at +4
+        // returned attr[4..6] followed by CLASS_DATA's TagSkill1).
         var attrOff = view.Offset("cAttribute", "TESAttributes");
         byte[] attributeWeights = new byte[7];
-        if (attrOff is { } ao && ao + 4 + 7 <= view.Buffer.Length)
+        if (attrOff is { } ao && ao + 7 <= view.Buffer.Length)
         {
-            Array.Copy(view.Buffer, ao + 4, attributeWeights, 0, 7);
+            Array.Copy(view.Buffer, ao, attributeWeights, 0, 7);
         }
 
         // CLASS_DATA (28 bytes): 4 tag-skill int32s, classFlags uint32, barterFlags uint32,

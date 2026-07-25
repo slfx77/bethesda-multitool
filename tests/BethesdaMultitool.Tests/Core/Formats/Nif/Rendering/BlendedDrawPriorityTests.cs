@@ -29,7 +29,7 @@ public sealed class BlendedDrawPriorityTests
     {
         byte[] drawable = [0, 0, 0];
 
-        var plan = BlendedDrawPriority.PlanNearestBackToFront(drawable, capacity: 0);
+        var plan = BlendedDrawPriority.PlanNearestBackToFront(drawable, 0);
 
         Assert.Equal(drawable.Length, plan.FirstSelected);
         Assert.Equal(0, plan.SelectedCount);

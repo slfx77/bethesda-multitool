@@ -67,6 +67,17 @@ public sealed partial class WorldView3DControl
         ((uint)Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.CascadeCount * 3u + 1u) *
         GpuRingBuffer12.CbAlignment; // three CBs per cascade + worst-case initial alignment pad
 
+    // Water draws after terrain + references, which in a whole-map / streaming frame fill the ring and
+    // self-truncate. Protect the water pass's worst-case CB footprint — one per-frame uniforms CB plus,
+    // on FNV, a noise-prepass CB and a uniforms CB for every visible WATR material batch — so a dense
+    // frame can never starve it and drop the surface for a frame (the flicker seen crossing into new
+    // water cells). Stacked ON TOP of the shadow reservation at frame start and handed back to the pass
+    // immediately before it draws. Sized for up to WaterPassMaxReservedBatches distinct visible WATR
+    // materials; beyond that the pass reverts to the ordinary soft-skip, exactly like the reference pass.
+    private const uint WaterPassMaxReservedBatches = 64;
+    private const uint WaterPassRingReservationBytes =
+        WaterPassMaxReservedBatches * 4u * GpuRingBuffer12.CbAlignment; // per batch: noise CB + uniforms CB + pad
+
     // Re-render policy state (see RecordSunShadowPass): the last rendered pose key + content
     // version, the content throttle counter, and the animated-mode transition latch for logging.
     private SunShadowMath.ShadowKey _shadowPoseKey;
@@ -821,6 +832,13 @@ public sealed partial class WorldView3DControl
             _references?.DisarmShadowCapture();
         }
 
+        // Reserve the water pass's ring budget NOW — stacked on top of any shadow reservation — so the
+        // terrain + reference draws (which fill the ring in dense/streaming frames and self-truncate)
+        // cannot consume the constants the water pass needs later. Handed back to water immediately
+        // before it draws (below). Best-effort: a too-small env ring override just reverts to soft-skip.
+        var waterRingReserved = _showWater && _water is not null &&
+                                _ringBuffer12!.TryReserveTail(WaterPassRingReservationBytes);
+
         // Resolve + upload the shared atmosphere CB (b3) once per frame, bound for the whole scene.
         // Terrain/reference/water read it for directional + ambient lighting; the sky/fog flags drive
         // those shader paths and are each on by default. Bound once — the renderers only set their
@@ -996,11 +1014,24 @@ public sealed partial class WorldView3DControl
                 surface.SampleCount);
             if (waterUsesDepth)
             {
-                cmd.OMSetRenderTargets(sceneRtv); // drop the DSV; keep the scene color RTV
+                // Depth stays bound as a READ-ONLY DSV while it is simultaneously the water
+                // shader's SRV: the depth-sample PSOs keep the hardware GreaterEqual test, whose
+                // per-sample rejection antialiases water edges at MSAA'd mesh silhouettes (the
+                // old shader-side clip was pixel-rate and left bright fringes).
+                cmd.OMSetRenderTargets(sceneRtv, surface.ReadOnlyDepthStencilView);
                 cmd.ResourceBarrierTransition(depthRes!,
                     Vortice.Direct3D12.ResourceStates.DepthWrite,
                     sampledDepthState);
                 waterDepthSampled = true;
+            }
+
+            // Hand the water pass its protected ring budget now that every earlier consumer (terrain,
+            // references, the below-water transparency partition) has finished allocating. The shadow
+            // reservation, stacked beneath this one, stays protected for the frame-end replay.
+            if (waterRingReserved)
+            {
+                _ringBuffer12!.ReleaseTailReservation(WaterPassRingReservationBytes);
+                waterRingReserved = false;
             }
 
             visibleWater = _showWater
@@ -1087,18 +1118,15 @@ public sealed partial class WorldView3DControl
                 Vortice.Direct3D12.ResourceStates.DepthWrite);
             cmd.OMSetRenderTargets(sceneRtv, sceneDsv);
         }
-        // Navmesh overlay — translucent and depth-disabled so authored NAVM remains visible even
-        // where it sits slightly below rendered ground. Editor selection/grid guides draw later.
-        var visibleNavMesh = _showNavMesh ? _navMesh?.Render(viewProjAbsolute, cylinder) ?? 0 : 0;
+        // Cell-grid wireframe stays in the HDR scene pass: unlike the depth-disabled diagnostics it
+        // deliberately depth-TESTS against the scene so terrain occludes the grid walls ("part of
+        // the 3D scene, not painted over it") — the post-resolve LDR target has no scene depth.
+        // The navmesh overlay and selection outline move to the LDR block after ResolveTo below.
         segmentStarted = StartProfileTimestamp();
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WireframeStart);
         var visibleWireframe = _showWireframe ? _cellGrid?.Render(viewProjAbsolute, cylinder) ?? 0 : 0;
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WireframeEnd);
         var wireframeMs = ElapsedMilliseconds(segmentStarted);
-
-        // Selection outline, drawn last + depth-disabled so it stays visible on top of everything
-        // (no-op when nothing is selected).
-        _selectionHighlight?.Render(viewProjAbsolute);
 
         // Sun-shadow depth pass — recorded LAST (nothing after it draws to the screen targets, so
         // the shadow DSV/viewport need no restore). Replays this frame's captured reference batches
@@ -1116,6 +1144,61 @@ public sealed partial class WorldView3DControl
         }
 
         segmentStarted = StartProfileTimestamp();
+        // Tonemap the HDR scene color into the back buffer (resolving MSAA first when active). The
+        // back buffer deliberately stays in RENDER_TARGET for LDR editor diagnostics: overlays like
+        // the navmesh, selection outline, and collision cages must not feed eye adaptation or bloom
+        // (nor be tonemapped/eye-adapted themselves — a debug overlay's brightness must not track
+        // scene exposure). Collision additionally draws camera-relative because its large absolute
+        // coordinates wobbled against camera-relative reference geometry in the HDR frame.
+        surface.ResolveTo(cmd, backBuffer);
+
+        var wantsSelectionOverlay = _selectionHighlight is not null;
+        var visibleNavMesh = 0;
+        if ((_showNavMesh && _navMesh is not null) || (_showCollision && _collisionDebug is not null) ||
+            wantsSelectionOverlay)
+        {
+            cmd.OMSetRenderTargets(backRtv);
+            cmd.RSSetViewport(new Vortice.Mathematics.Viewport(
+                0, 0, surface.Width, surface.Height, 0f, 1f));
+            cmd.RSSetScissorRect((int)surface.Width, (int)surface.Height);
+            // GpuTonemapPass12 binds its own fullscreen root signature + descriptor heap. Restore
+            // the scene root before the overlay renderers bind their b0 constant buffers.
+            cmd.SetDescriptorHeaps(1, new[] { _cbvSrvUavHeap12.Heap });
+            cmd.SetGraphicsRootSignature(_rootSignature12!.RootSignature);
+
+            // Navmesh overlay — translucent and depth-disabled so authored NAVM remains visible
+            // even where it sits slightly below rendered ground.
+            if (_showNavMesh)
+            {
+                visibleNavMesh = _navMesh?.Render(viewProjAbsolute, cylinder, ldrTarget: true) ?? 0;
+            }
+
+            if (_showCollision && _collisionDebug is not null)
+            {
+                _collisionDebug.Render(
+                    viewProjScene, cylinder, surface.Width, surface.Height,
+                    sceneRenderOrigin, ldrTarget: true);
+            }
+
+            // Export framing preview (Export tab + "Show framing"): the captured world AABB + view
+            // gizmo, in absolute world coords so it uses the absolute view-proj (like navmesh/selection)
+            // — no camera-relative origin math for a static box.
+            if (ExportFramingVisible && _exportFraming is not null)
+            {
+                EnsureExportFramingLines();
+                if (_exportFramingLines is { Length: >= 2 } framing)
+                {
+                    _exportFraming.Render(
+                        viewProjAbsolute, framing, ExportFramingColor,
+                        surface.Width, surface.Height, ldrTarget: true);
+                }
+            }
+
+            // Selection outline, drawn last + depth-disabled so it stays visible on top of
+            // everything (no-op when nothing is selected).
+            _selectionHighlight?.Render(viewProjAbsolute, ldrTarget: true);
+        }
+
         var totalCells = _terrain?.CellCount ?? _cellGrid?.CellCount ?? 0;
         // In interior mode the single loaded cell has no LAND, so the terrain and (off-by-default)
         // wireframe passes both report 0 drawn — even though the camera sits inside that exact cell.
@@ -1125,27 +1208,6 @@ public sealed partial class WorldView3DControl
             : Math.Max(visibleTerrain, visibleWireframe);
         UpdateHud(visible, totalCells, visibleWater, visibleReferences, visibleNavMesh);
         var hudMs = ElapsedMilliseconds(segmentStarted);
-
-        segmentStarted = StartProfileTimestamp();
-        // Tonemap the HDR scene color into the back buffer (resolving MSAA first when active). The
-        // back buffer deliberately stays in RENDER_TARGET for LDR editor diagnostics: collision cages
-        // must not feed eye adaptation or bloom, and drawing their large absolute coordinates in the
-        // HDR scene frame made them wobble against camera-relative reference geometry.
-        surface.ResolveTo(cmd, backBuffer);
-
-        if (_showCollision && _collisionDebug is not null)
-        {
-            cmd.OMSetRenderTargets(backRtv);
-            cmd.RSSetViewport(new Vortice.Mathematics.Viewport(
-                0, 0, surface.Width, surface.Height, 0f, 1f));
-            cmd.RSSetScissorRect((int)surface.Width, (int)surface.Height);
-            // GpuTonemapPass12 binds its own fullscreen root signature + descriptor heap. Restore
-            // the scene root before the line renderer binds its b0 constant buffer.
-            cmd.SetDescriptorHeaps(1, new[] { _cbvSrvUavHeap12.Heap });
-            cmd.SetGraphicsRootSignature(_rootSignature12!.RootSignature);
-            _collisionDebug.Render(
-                viewProjScene, cylinder, sceneRenderOrigin, ldrTarget: true);
-        }
 
         GpuSwapChainSurface12.FinishBackBuffer(cmd, backBuffer);
 

@@ -38,9 +38,9 @@ public class BugfixEncoderTests
             Weight = 0.5f,
             Value = 100u,
             Flags = 0x02u,
-            AddictionFormId = 0xABCD,
+            WithdrawalEffectFormId = 0xABCD,
             AddictionChance = 0.25f,
-            WithdrawalEffectFormId = 0x1234
+            ConsumeSoundFormId = 0x1234
         };
 
         var encoded = AlchEncoder.EncodeNew(alch);

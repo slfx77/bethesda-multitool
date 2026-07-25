@@ -356,7 +356,9 @@ float4 FnvWater003LocalFallback(
         clip(-1.0);
         return float4(0.0, 0.0, 0.0, 0.0);
     }
+#if !WATER_HARDWARE_OCCLUSION
     clip(column + asfloat(uDepthParams.w));
+#endif
     float noiseFade = saturate((8192.0 - distXY) / 4096.0);
     float3 n3 = perturbation * depthT;
     n3.z += 1.0;
@@ -617,12 +619,14 @@ float4 main(PSInput input) : SV_Target
     // FNV depthT = water-column thickness from the scene depth map, normalized over DepthFalloff.
     // When the host hands us the scene depth SRV (uDepthParams.x != 0xFFFFFFFF) we reproduce that
     // exactly: linearize the sampled scene depth and this water fragment's own depth, take the
-    // view-space gap, and normalize by DepthFalloffStart/End (uSurface1.yz). Where opaque geometry
-    // is NEARER than the water surface the fragment is occluded -> discard (no DSV is bound in this
-    // PSO, so occlusion is done here). Falls back to a view-angle proxy when no depth SRV is set.
+    // view-space gap, and normalize by DepthFalloffStart/End (uSurface1.yz). Occlusion against
+    // nearer opaque geometry: WATER_HARDWARE_OCCLUSION compiles rely on the read-only DSV's
+    // per-sample GreaterEqual test (antialiased silhouettes); legacy compiles discard here at
+    // pixel rate. Falls back to a view-angle proxy when no depth SRV is set.
     uint depthIndex = uDepthParams.x;
     float depthT;
-    float column = 0.0; // raw water column in world units (only meaningful when depth is sampled)
+    float column = 0.0;    // raw view-space depth gap in world units (only meaningful when sampled)
+    float waterDist = 0.0; // linearized view distance to the water surface (vertical-column conversion)
     if (depthIndex == 0xFFFFFFFFu)
     {
         depthT = saturate(dot(float3(0, 0, 1), V));
@@ -634,13 +638,17 @@ float4 main(PSInput input) : SV_Target
         uint depthSampleCount = max((uint)uRenderOrigin.w, 1u);
         float sceneNdc = LoadSceneDepth(depthIndex, (int2)input.Position.xy, depthSampleCount);
         float sceneDist = LinearizeDepth(sceneNdc, near, far);
-        float waterDist = LinearizeDepth(input.Position.z, near, far);
+        waterDist = LinearizeDepth(input.Position.z, near, far);
         column = sceneDist - waterDist;           // >0: water over a floor; <0: geometry occludes
+#if !WATER_HARDWARE_OCCLUSION
         // 3D-2 tie-break: bias the occlusion test toward KEEPING the water (uDepthParams.w world units) so
         // a shoreline where water and terrain are ~coplanar (column ≈ 0 ± sub-ULP depth noise) resolves to
         // water instead of flickering. The bias is tiny vs DepthFalloff, so genuinely occluded water
-        // (column far negative) is still discarded.
+        // (column far negative) is still discarded. Hardware-occlusion compiles skip this: the pixel-rate
+        // binary clip aliases at MSAA'd mesh silhouettes, while the read-only DSV's GreaterEqual test
+        // rejects per sample (and covers the same coplanar tie-break in hardware).
         clip(column + asfloat(uDepthParams.w));    // discard water hidden behind opaque geometry
+#endif
         float start = uSurface1.y;                 // DepthFalloffStart
         float end = uSurface1.z;                   // DepthFalloffEnd
         depthT = saturate((column - start) / max(end - start, 1e-3));
@@ -1011,7 +1019,9 @@ float4 main(PSInput input) : SV_Target
     // detail substantially. A missing/empty TNAM skips this term, matching retail DefaultWater.
     if (uNormalIndices.y != 0xFFFFFFFFu && uLegacySurface1.z != 0.0)
     {
-        float2 detailUv = input.vWorldPos.xy * fMacro + uLegacySurface0.zw * t + N.xy * 0.1;
+        // TES4 detail tiles finer than the 2048-unit surface tile by ini [Water]
+        // fTileTextureDivisor = 4.75 (2048/4.75 ≈ 431 wu per repeat — ini-inferred).
+        float2 detailUv = input.vWorldPos.xy * (fMacro * 4.75) + uLegacySurface0.zw * t + N.xy * 0.1;
         float3 detail = gWaterTextures[NonUniformResourceIndex(uNormalIndices.y)]
             .Sample(gWaterSampler, detailUv).rgb;
         color = lerp(color, detail, oblivionLinearDistanceAtten * uLegacySurface1.z);
@@ -1029,29 +1039,51 @@ float4 main(PSInput input) : SV_Target
     //   s         = saturate(1 − (depth − 0.2)/0.35)
     //   alpha     = alphaBase · (1 − s³)            — 0 below 0.2 column, cubic shore fade to 0.55,
     //                                                 then ≈floored fresnel (largely opaque + reflective)
-    // The engine's DepthMap is a dedicated 0..1 water-depth target; the WATR fog distances canNOT
-    // normalize it (DefaultWater's fog Near = −8192 would put the SHORELINE at depthT ≈ 0.89), so
-    // the alpha depth uses the raw column over a fixed range — 512 world units puts the engine's
-    // 0.2..0.55 fade band at ~100..280 units of water, calibrated against in-game shorelines.
-    // Without a scene-depth SRV there is no column (the N·V proxy is unrelated and zero at grazing
-    // angles, which would erase the surface) — fall back to deep-water behavior (aDepth = 1).
-    float aDepth = (depthIndex == 0xFFFFFFFFu) ? 1.0 : saturate(column / 512.0);
+    // The engine's DepthMap is a dedicated 0..1 water-depth target normalized over the ini
+    // [Water] uDepthRange = 125 world units (Oblivion_default.ini, adjacent to bUseWaterDepth=1 —
+    // INI-derived; the depth-pass generator itself is undecompiled). `column` is a VIEW-SPACE depth
+    // gap along the pixel ray, which exaggerates vertical water depth ~2-3× at typical pitches (the
+    // old hand-calibrated /512 was silently compensating for that, and left genuinely shallow urban
+    // water — IC canals are ≤ 362 units deep — permanently inside the shore-fade band, i.e. mostly
+    // transparent). Convert to a VERTICAL column first (world z varies linearly with view depth
+    // along a ray), then normalize by uDepthRange so the 0.2..0.55 shore band spans a fixed
+    // 25..69 world units of water at every view angle. Without a scene-depth SRV there is no column
+    // (the N·V proxy is unrelated and zero at grazing angles, which would erase the surface) —
+    // fall back to deep-water behavior (aDepth = 1).
+    float verticalColumn = column * abs(input.vWorldPos.z - uCamPosTime.z) / max(waterDist, 1e-3);
+    float aDepth = (depthIndex == 0xFFFFFFFFu) ? 1.0 : saturate(verticalColumn / 125.0);
     float alphaBase = lerp(0.25, alphaFresnel, aDepth);
     float shoreS = saturate(1.0 - (aDepth - 0.2) * 2.857143);
     float alpha = alphaBase * (1.0 - shoreS * shoreS * shoreS);
 #else
-    // WATER000 outputs the interpolated vertex alpha. Cell/NIF water vertices are authored opaque,
-    // so the canonical RT-free path writes 1 rather than an invented Fresnel coverage ramp.
-    float alpha = 1.0;
+    // Refraction stand-in via destination blend: retail WATER001 composites the water body over
+    // the REFRACTED scene (transmitted = lerp(refracted, litBody, depth weight), recovered in the
+    // FNV_WATER001 branch above). The RT-free path has no refraction snapshot, but the destination
+    // already holds the rendered scene — exactly what the refraction RT samples, minus distortion —
+    // so blending by the same depth weight reproduces the transmitted term: the bed shows through
+    // shallow water and fades out by DepthFalloff, while grazing angles stay reflective-opaque via
+    // the fresnel term. Without a scene-depth SRV there is no water column (ortho/export paths):
+    // keep the previous opaque output rather than inventing a coverage ramp from the N·V proxy.
+    // The 0.15 floor keeps a visible surface film at the waterline (the engine's shallow tint
+    // never reaches fully invisible).
+    float alpha = (depthIndex == 0xFFFFFFFFu)
+        ? 1.0
+        : max(max(saturate(depthT), fresneled), 0.15);
 #endif
 #if OBLIVION_WATER
-    // Oblivion WATER000 uses the WATR DATA fog range, not FNV's depth-falloff fields. FogColor is
-    // the active scene fog color; with fog disabled there is no valid engine fog source to apply.
-    if (uFogColorFogEnabled.w > 0.5 && uLegacySurface1.y > uLegacySurface1.x)
+    // Oblivion WATER000 surface fog: the engine's payload filler (FUN_007dcbd0, decompiled in
+    // tools/GhidraProject/oblivion_water_fog_source_decompiled.txt) fills c9 FogParam AND the fog
+    // color from ONE struct — the SCENE fog property (color @+0x20, near @+0x2c, far @+0x30):
+    //     FogParam.x = far;  FogParam.y = far − near;  visibility = saturate((far − d) / (far − near))
+    // The WATR DATA fog range is the UNDERWATER range (never read by the per-frame WATR filler;
+    // DefaultWater authors FogNear = −8192, which fog-washed the whole surface when used here —
+    // "water looks like fog"). Keep the linear engine formula on the scene distances; do NOT use
+    // ApplyFog (its powered Skyrim curve + far-color lerp is not the recovered TES4 composite).
+    if (uFogColorFogEnabled.w > 0.5 && uAtmosphereParams.z > uAtmosphereParams.y)
     {
         float viewDist = length(input.vWorldPos - uCamPosTime.xyz);
-        float visibility = saturate((uLegacySurface1.y - viewDist) /
-                                    max(uLegacySurface1.y - uLegacySurface1.x, 1.0));
+        float visibility = saturate((uAtmosphereParams.z - viewDist) /
+                                    max(uAtmosphereParams.z - uAtmosphereParams.y, 1.0));
         color = lerp(uFogColorFogEnabled.rgb, color, visibility);
     }
     return float4(color, alpha);

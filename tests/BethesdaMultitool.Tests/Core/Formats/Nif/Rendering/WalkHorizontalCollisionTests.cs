@@ -93,7 +93,7 @@ public sealed class WalkHorizontalCollisionTests
     [Fact]
     public void Resolve_WallBelowStepHeight_DoesNotBlockGroundOwnedStep()
     {
-        var lowWall = BuildVerticalWall(topZ: 40f);
+        var lowWall = BuildVerticalWall(40f);
         var requested = new Vector2(200f, 0f);
 
         var allowed = WalkHorizontalCollision.Resolve(
@@ -225,6 +225,60 @@ public sealed class WalkHorizontalCollisionTests
         Assert.Equal(CollisionMeshSource.AuthoredHavok, collision.Source);
     }
 
+    [Fact]
+    public void Resolve_YawRotatedPlacedBox_DoesNotWallItsUnrotatedGhostFootprint()
+    {
+        // A long thin cold-OBND piece (sidewalk median: 40 x 768, tall enough to wall) rotated 90°.
+        // Its TRUE footprint lies along world X (y ∈ [-20, 20]); the pre-rotation-fix box walled the
+        // unrotated footprint (x ∈ [-20, 20], y ∈ [-384, 384]) — a phantom wall across the road.
+        var median = WalkCollisionInstance.FromPlacedBounds(
+            new Vector3(-20f, -384f, 0f),
+            new Vector3(20f, 384f, 200f),
+            Matrix4x4.CreateRotationZ(MathF.PI / 2f));
+
+        var requested = new Vector2(200f, 0f);
+        var allowed = WalkHorizontalCollision.Resolve(
+            new Vector2(-100f, 200f), requested, BodyMinZ, BodyMaxZ, Radius, [median]);
+
+        // Walking parallel to the true box, 180 units clear of it: unobstructed.
+        Assert.Equal(requested.X, allowed.X, 3);
+        Assert.Equal(requested.Y, allowed.Y, 3);
+    }
+
+    [Fact]
+    public void Resolve_YawRotatedPlacedBox_StillWallsItsTrueFootprint()
+    {
+        var median = WalkCollisionInstance.FromPlacedBounds(
+            new Vector3(-20f, -384f, 0f),
+            new Vector3(20f, 384f, 200f),
+            Matrix4x4.CreateRotationZ(MathF.PI / 2f));
+
+        var allowed = WalkHorizontalCollision.Resolve(
+            new Vector2(200f, -100f), new Vector2(0f, 200f), BodyMinZ, BodyMaxZ, Radius, [median]);
+
+        // Approaching the true footprint edge (y = -20) head-on: stopped at capsule contact.
+        var finalY = -100f + allowed.Y;
+        Assert.InRange(finalY, -44.1f, -43.9f);
+    }
+
+    [Fact]
+    public void Resolve_PlacedBoxBelowStepHeight_IsNeverAWall()
+    {
+        // A curb-height piece (top 40 < bodyMinZ 48) stays step/ground-sampler territory even when
+        // cold — the broadphase Z gate must keep excluding placed boxes, exactly like mesh faces.
+        var curb = WalkCollisionInstance.FromPlacedBounds(
+            new Vector3(-20f, -384f, 0f),
+            new Vector3(20f, 384f, 40f),
+            Matrix4x4.Identity);
+
+        var requested = new Vector2(200f, 0f);
+        var allowed = WalkHorizontalCollision.Resolve(
+            new Vector2(-100f, 0f), requested, BodyMinZ, BodyMaxZ, Radius, [curb]);
+
+        Assert.Equal(requested.X, allowed.X, 3);
+        Assert.Equal(requested.Y, allowed.Y, 3);
+    }
+
     private static WalkCollisionInstance BuildVerticalWall(float topZ = 200f)
     {
         var positions = new[]
@@ -232,7 +286,7 @@ public sealed class WalkHorizontalCollisionTests
             new Vector3(0f, -500f, 0f),
             new Vector3(0f, 500f, 0f),
             new Vector3(0f, 500f, topZ),
-            new Vector3(0f, -500f, topZ),
+            new Vector3(0f, -500f, topZ)
         };
         var mesh = new CollisionMesh(positions, [0, 1, 2, 0, 2, 3]);
         return WalkCollisionInstance.FromMesh(mesh, Matrix4x4.Identity);
@@ -245,7 +299,7 @@ public sealed class WalkHorizontalCollisionTests
             new Vector3(-500f, -500f, z),
             new Vector3(500f, -500f, z),
             new Vector3(500f, 500f, z),
-            new Vector3(-500f, 500f, z),
+            new Vector3(-500f, 500f, z)
         };
         var mesh = new CollisionMesh(positions, [0, 1, 2, 0, 2, 3]);
         return WalkCollisionInstance.FromMesh(mesh, Matrix4x4.Identity);
@@ -259,7 +313,7 @@ public sealed class WalkHorizontalCollisionTests
                 "Fallout - Meshes.bsa"),
             Path.GetFullPath(Path.Combine("Sample", "Full_Builds", "Fallout New Vegas (PC Final)",
                 "Data", "Fallout - Meshes.bsa")),
-            @"E:\SteamLibrary\SteamApps\common\Fallout New Vegas\Data\Fallout - Meshes.bsa",
+            @"E:\SteamLibrary\SteamApps\common\Fallout New Vegas\Data\Fallout - Meshes.bsa"
         };
 
         return candidates.FirstOrDefault(File.Exists);

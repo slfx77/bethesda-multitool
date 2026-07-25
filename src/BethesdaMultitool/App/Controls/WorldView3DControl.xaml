@@ -27,24 +27,9 @@
                 Click="InteriorsButton_Click"
                 ToolTipService.ToolTip="Browse interior cells" />
       </StackPanel>
-      <!-- Control bar — navigation/actions only. The former Lighting / Layers / Visibility /
-           Projection dropdowns live in WorldView3DSettingsPanel (the host's right-panel Settings
-           tab), constructed + wired by this control (SettingsPanel / WireSettingsPanel). -->
-      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
-                  VerticalAlignment="Center" HorizontalAlignment="Right">
-
-        <!-- Export: render the active exterior worldspace to PNG(s) via the projection/direction/scale
-             chosen in MapExport3DDialog. -->
-        <Button x:Name="ExportButton" Click="ExportButton_Click"
-                AutomationProperties.Name="Export 3D worldspace"
-                ToolTipService.ToolTip="Export the worldspace as a 3D projection (PNG)">
-          <StackPanel Orientation="Horizontal" Spacing="6">
-            <FontIcon Glyph="&#xEDE1;" FontSize="14" />
-            <TextBlock Text="Export" />
-          </StackPanel>
-        </Button>
-
-      </StackPanel>
+      <!-- The former toolbar controls (Lighting / Layers / Visibility / Projection dropdowns and the
+           Export button) all live in the host's right-panel tabs now: Settings = WorldView3DSettingsPanel
+           and Export = WorldView3DExportPanel, both constructed + wired by this control. -->
     </Grid>
 
     <!-- 3D viewport — SwapChainPanel + status overlay + HUD. -->

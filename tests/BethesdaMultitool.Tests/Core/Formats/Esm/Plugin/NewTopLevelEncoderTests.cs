@@ -191,6 +191,74 @@ public class NewTopLevelEncoderTests
     }
 
     [Fact]
+    public void AlchEncoder_EncodeNew_EmitsCapturedSubrecordsInCanonicalOrder()
+    {
+        var alch = new ConsumableRecord
+        {
+            FormId = 0x800,
+            EditorId = "AddictiveChem",
+            Weight = 0.1f,
+            ScriptFormId = 0x1111,
+            PickupSoundFormId = 0x2222,
+            DropSoundFormId = 0x3333,
+            EquipmentType = EquipmentType.Chems,
+            Effects =
+            [
+                new EnchantmentEffect
+                {
+                    EffectFormId = 0x4444,
+                    Conditions = [new DialogueCondition { Type = 0, FunctionIndex = 79, Parameter1 = 0x5555 }]
+                }
+            ]
+        };
+
+        var encoded = AlchEncoder.EncodeNew(alch);
+        var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
+
+        Assert.Contains("SCRI", sigs);
+        Assert.Contains("YNAM", sigs);
+        Assert.Contains("ZNAM", sigs);
+        Assert.Contains("ETYP", sigs);
+        Assert.Contains("CTDA", sigs);
+        // xEdit order: SCRI/YNAM/ZNAM/ETYP precede DATA; each effect's CTDA follows its EFIT.
+        Assert.True(sigs.IndexOf("SCRI") < sigs.IndexOf("DATA"));
+        Assert.True(sigs.IndexOf("ETYP") < sigs.IndexOf("DATA"));
+        Assert.True(sigs.IndexOf("EFIT") < sigs.IndexOf("CTDA"));
+        var etyp = Assert.Single(encoded.Subrecords, s => s.Signature == "ETYP");
+        Assert.Equal((int)EquipmentType.Chems, BinaryPrimitives.ReadInt32LittleEndian(etyp.Bytes));
+    }
+
+    [Fact]
+    public void AmmoEncoder_EncodeNew_EmitsCapturedSubrecordsInCanonicalOrder()
+    {
+        var ammo = new AmmoRecord
+        {
+            FormId = 0x800,
+            EditorId = "NewAmmo",
+            Speed = 5000f,
+            ScriptFormId = 0x1111,
+            PickupSoundFormId = 0x2222,
+            DropSoundFormId = 0x3333,
+            ShortName = "5mm",
+            Abbreviation = "5",
+            AmmoEffectFormIds = [0x6666]
+        };
+
+        var encoded = AmmoEncoder.EncodeNew(ammo);
+        var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
+
+        Assert.Contains("SCRI", sigs);
+        Assert.Contains("ONAM", sigs);
+        Assert.Contains("QNAM", sigs);
+        Assert.Contains("RCIL", sigs);
+        // SCRI/YNAM/ZNAM precede DATA; ONAM/QNAM/RCIL follow it.
+        Assert.True(sigs.IndexOf("SCRI") < sigs.IndexOf("DATA"));
+        Assert.True(sigs.IndexOf("DATA") < sigs.IndexOf("ONAM"));
+        Assert.True(sigs.IndexOf("ONAM") < sigs.IndexOf("QNAM"));
+        Assert.True(sigs.IndexOf("QNAM") < sigs.IndexOf("RCIL"));
+    }
+
+    [Fact]
     public void DebrEncoder_EncodeNew_Variants_PreservesDataFields()
     {
         var debr = new DebrisRecord

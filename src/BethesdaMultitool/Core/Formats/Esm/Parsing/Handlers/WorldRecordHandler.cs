@@ -296,9 +296,22 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                     worldspaceFormId = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
                     break;
                 case "RCLR" when sub.DataLength >= 3:
-                    r = data[sub.DataOffset];
-                    g = data[sub.DataOffset + 1];
-                    b = data[sub.DataOffset + 2];
+                    // RCLR is a 4-byte color (R,G,B,unused). Xbox stores it as a byte-reversed uint32
+                    // (the conversion schema registers it Simple4Byte/UInt32, whole-dword swap), so on
+                    // big-endian the RGBA bytes are reversed and a raw [0][1][2] read yields (unused,B,G).
+                    if (record.IsBigEndian && sub.DataLength >= 4)
+                    {
+                        r = data[sub.DataOffset + 3];
+                        g = data[sub.DataOffset + 2];
+                        b = data[sub.DataOffset + 1];
+                    }
+                    else
+                    {
+                        r = data[sub.DataOffset];
+                        g = data[sub.DataOffset + 1];
+                        b = data[sub.DataOffset + 2];
+                    }
+
                     break;
                 case "RPLI" when sub.DataLength >= 4:
                     currentAreaEdgeFalloff =
@@ -323,7 +336,11 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                         dataBlocks.Add(new RegionDataBlock(currentType, currentFlags, currentPayload));
                     }
                     currentType = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
-                    currentFlags = BinaryUtils.ReadUInt32(data, sub.DataOffset + 4, record.IsBigEndian);
+                    // RDAT header after Type is Override(u8) + Priority(u8) + Padding(2) (xEdit /
+                    // conversion schema SubrecordCellAndMiscSchemas). Those are single/unused bytes
+                    // stored in-place — identical on Xbox and PC — so read the group little-endian on
+                    // both; a big-endian read on Xbox scrambled the two flag bytes into the high word.
+                    currentFlags = BinaryUtils.ReadUInt32LE(data, sub.DataOffset + 4);
                     currentPayload = [];
                     break;
                 default:

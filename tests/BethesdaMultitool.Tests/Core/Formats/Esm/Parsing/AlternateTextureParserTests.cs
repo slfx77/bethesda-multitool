@@ -46,7 +46,7 @@ public sealed class AlternateTextureParserTests
 
     [Theory]
     [InlineData(false)] // PC little-endian
-    [InlineData(true)]  // Xbox 360 big-endian
+    [InlineData(true)] // Xbox 360 big-endian
     public void Parse_DecodesTheAtomicWranglerBillboardEntry(bool bigEndian)
     {
         var mods = BuildMods(bigEndian, ("BB04:13", 0x0016A885u, 0));
@@ -73,7 +73,7 @@ public sealed class AlternateTextureParserTests
             0x00, 0x00, 0x00, 0x00
         ];
 
-        var entry = Assert.Single(AlternateTextureParser.Parse(mods, isBigEndian: false));
+        var entry = Assert.Single(AlternateTextureParser.Parse(mods, false));
         Assert.Equal("BB04:13", entry.ShapeName);
         Assert.Equal(0x0016A885u, entry.TextureSetFormId);
         Assert.Equal(0, entry.Index);
@@ -86,7 +86,7 @@ public sealed class AlternateTextureParserTests
             ("BB04:13", 0x0016A885u, 0),
             ("Sign:02", 0x00ABCDEFu, 3));
 
-        var entries = AlternateTextureParser.Parse(mods, isBigEndian: false);
+        var entries = AlternateTextureParser.Parse(mods, false);
 
         Assert.Equal(2, entries.Count);
         Assert.Equal("BB04:13", entries[0].ShapeName);
@@ -101,7 +101,7 @@ public sealed class AlternateTextureParserTests
     [InlineData(2)] // just a partial count field
     public void Parse_TooShort_ReturnsEmpty(int length)
     {
-        Assert.Empty(AlternateTextureParser.Parse(new byte[length], isBigEndian: false));
+        Assert.Empty(AlternateTextureParser.Parse(new byte[length], false));
     }
 
     [Fact]
@@ -111,7 +111,7 @@ public sealed class AlternateTextureParserTests
         var full = BuildMods(false, ("BB04:13", 0x0016A885u, 0), ("Cut", 0x11u, 1));
         var truncated = full[..(full.Length - 5)];
 
-        var entries = AlternateTextureParser.Parse(truncated, isBigEndian: false);
+        var entries = AlternateTextureParser.Parse(truncated, false);
 
         // First entry survives; the truncated tail is dropped rather than throwing.
         var entry = Assert.Single(entries);
@@ -129,6 +129,6 @@ public sealed class AlternateTextureParserTests
             0x41, 0x42
         ];
 
-        Assert.Empty(AlternateTextureParser.Parse(mods, isBigEndian: false));
+        Assert.Empty(AlternateTextureParser.Parse(mods, false));
     }
 }

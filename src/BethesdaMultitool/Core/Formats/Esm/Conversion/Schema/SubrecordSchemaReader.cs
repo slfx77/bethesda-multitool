@@ -70,7 +70,7 @@ public static class SubrecordSchemaReader
             SubrecordFieldType.UInt32 => data.Length >= 4 ? BinaryUtils.ReadUInt32(data, 0, bigEndian) : null,
             SubrecordFieldType.Int32 => data.Length >= 4 ? BinaryUtils.ReadInt32(data, 0, bigEndian) : null,
             SubrecordFieldType.Int32LittleEndian => data.Length >= 4 ? BinaryUtils.ReadInt32LE(data) : null,
-            SubrecordFieldType.UInt32WordSwapped => ReadUInt32WordSwapped(data),
+            SubrecordFieldType.UInt32WordSwapped => ReadUInt32WordSwapped(data, bigEndian),
             SubrecordFieldType.Float => data.Length >= 4 ? BinaryUtils.ReadFloat(data, 0, bigEndian) : null,
             SubrecordFieldType.FormId => data.Length >= 4 ? BinaryUtils.ReadUInt32(data, 0, bigEndian) : null,
             SubrecordFieldType.FormIdLittleEndian => data.Length >= 4 ? BinaryUtils.ReadUInt32LE(data) : null,
@@ -184,17 +184,27 @@ public static class SubrecordSchemaReader
 
     #region Private Readers
 
-    private static uint? ReadUInt32WordSwapped(ReadOnlySpan<byte> data)
+    private static uint? ReadUInt32WordSwapped(ReadOnlySpan<byte> data, bool bigEndian)
     {
         if (data.Length < 4)
         {
             return null;
         }
 
-        // Xbox stores as two BE uint16 words in LE order
-        var highWord = BinaryPrimitives.ReadUInt16BigEndian(data);
-        var lowWord = BinaryPrimitives.ReadUInt16BigEndian(data[2..]);
-        return ((uint)highWord << 16) | lowWord;
+        // Unlike the *LittleEndian field types (identical bytes on both platforms), this field's bytes
+        // genuinely DIFFER between Xbox and PC — the converter transforms it ([b0 b1 b2 b3] ->
+        // [b1 b0 b3 b2]). So the read must be platform-specific: a PC plugin stores it as a normal
+        // little-endian uint32, while an Xbox 360 plugin stores it as two big-endian uint16 words in
+        // little-endian word order (word at offset 0 is the LOW half, word at offset 2 is the HIGH
+        // half). Applying the word-swap on both platforms would corrupt the PC read.
+        if (!bigEndian)
+        {
+            return BinaryUtils.ReadUInt32LE(data);
+        }
+
+        var wordAt0 = BinaryPrimitives.ReadUInt16BigEndian(data);
+        var wordAt2 = BinaryPrimitives.ReadUInt16BigEndian(data[2..]);
+        return ((uint)wordAt2 << 16) | wordAt0;
     }
 
     private static (float x, float y, float z)? ReadVec3(ReadOnlySpan<byte> data, bool bigEndian)

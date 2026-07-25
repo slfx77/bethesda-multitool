@@ -6,7 +6,6 @@ using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Games;
-using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 using static BethesdaMultitool.Tests.Helpers.EsmTestRecordBuilder;
 
@@ -42,12 +41,12 @@ public sealed class RegionAreaParsingTests
             new EsmRecordScanResult
             {
                 Game = BethesdaGame.FalloutNewVegas,
-                MainRecords = [record],
+                MainRecords = [record]
             },
-            formIdCorrelations: null,
-            accessor: new ByteArrayMemoryAccessor(bytes),
-            fileSize: bytes.Length,
-            minidumpInfo: null);
+            null,
+            new ByteArrayMemoryAccessor(bytes),
+            bytes.Length,
+            null);
 
         var region = Assert.Single(new WorldRecordHandler(context).ParseRegions());
 
@@ -59,7 +58,7 @@ public sealed class RegionAreaParsingTests
                 new RegionPoint(10f, 20f),
                 new RegionPoint(30f, 20f),
                 new RegionPoint(30f, 40f),
-                new RegionPoint(10f, 40f),
+                new RegionPoint(10f, 40f)
             ],
             area.Points);
         Assert.Equal(
@@ -75,7 +74,7 @@ public sealed class RegionAreaParsingTests
     {
         var malformed = new byte[25];
 
-        var points = WorldRecordHandler.DecodeRegionPoints(malformed, isBigEndian: false);
+        var points = WorldRecordHandler.DecodeRegionPoints(malformed, false);
 
         Assert.Empty(points);
     }
@@ -86,7 +85,7 @@ public sealed class RegionAreaParsingTests
         for (var i = 0; i < points.Length; i++)
         {
             WriteSingle(bytes.AsSpan(i * 8), points[i].X, bigEndian);
-            WriteSingle(bytes.AsSpan((i * 8) + 4), points[i].Y, bigEndian);
+            WriteSingle(bytes.AsSpan(i * 8 + 4), points[i].Y, bigEndian);
         }
 
         return bytes;

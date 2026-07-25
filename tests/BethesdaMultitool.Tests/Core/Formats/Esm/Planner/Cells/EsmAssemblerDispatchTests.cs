@@ -1,11 +1,13 @@
 using System.Collections.Immutable;
+using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
@@ -56,18 +58,16 @@ public sealed class EsmAssemblerDispatchTests
         var cellFormId = 0x000ABCDEu;
         var (master, context) = MakeInteriorCellMaster(cellFormId);
 
-        var placed = new BethesdaMultitool.Core.Formats.Esm.Models.World.PlacedReference
+        var placed = new PlacedReference
         {
             FormId = 0x01000801,
             BaseFormId = 0x0000001F, // Engine-reserved (RoomMarker) — survives base validation.
             RecordType = "REFR",
             IsPersistent = true
         };
-        var childSubs = BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World
-            .RefrEncoder.EncodeNewPlacedReference(placed);
-        var childBytes = BethesdaMultitool.Core.Formats.Esm.Plugin.Output
-            .PluginRecordByteBuilder.BuildNewRecordBytes(
-                "REFR", placed.FormId, 0x400u, childSubs.Subrecords); // persistent-bucket flag
+        var childSubs = RefrEncoder.EncodeNewPlacedReference(placed);
+        var childBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
+            "REFR", placed.FormId, 0x400u, childSubs.Subrecords); // persistent-bucket flag
 
         var legacyBundle = new CellOverrideBundle
         {

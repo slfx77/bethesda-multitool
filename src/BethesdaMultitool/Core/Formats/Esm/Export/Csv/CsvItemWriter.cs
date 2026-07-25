@@ -186,7 +186,7 @@ internal static class CsvItemWriter
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,Value,Weight,AddictionFormID,AddictionName,AddictionDisplayName,AddictionChance,ModelPath,Endianness,Offset,EffectFormID,EffectName,EffectDisplayName");
+            "RowType,FormID,EditorID,Name,Value,Weight,WithdrawalEffectFormID,WithdrawalEffectName,WithdrawalEffectDisplayName,AddictionChance,ModelPath,Endianness,Offset,EffectFormID,EffectName,EffectDisplayName");
 
         foreach (var c in consumables.OrderBy(c => c.EditorId ?? ""))
         {
@@ -197,9 +197,9 @@ internal static class CsvItemWriter
                 Fmt.CsvEscape(c.FullName),
                 c.Value.ToString(),
                 c.Weight.ToString("F2"),
-                Fmt.FIdN(c.AddictionFormId),
-                resolver.ResolveCsv(c.AddictionFormId ?? 0),
-                resolver.ResolveDisplayNameCsv(c.AddictionFormId ?? 0),
+                Fmt.FIdN(c.WithdrawalEffectFormId),
+                resolver.ResolveCsv(c.WithdrawalEffectFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(c.WithdrawalEffectFormId ?? 0),
                 c.AddictionChance.ToString("F2"),
                 Fmt.CsvEscape(c.ModelPath),
                 Fmt.Endian(c.IsBigEndian),

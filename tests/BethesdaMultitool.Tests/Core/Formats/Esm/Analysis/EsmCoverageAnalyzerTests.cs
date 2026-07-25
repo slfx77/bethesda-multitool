@@ -1,7 +1,6 @@
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
 
@@ -146,15 +145,15 @@ public sealed class EsmCoverageAnalyzerTests
                 Record("SCPT", 0x01000100,
                     ScriptHeader(compiledSize: 4),
                     Sub("SCDA", 0x1D, 0x00, 0x00, 0x00),
-                    StringSub("SCTX", "scn HeaderOnly", terminate: true)),
+                    StringSub("SCTX", "scn HeaderOnly", true)),
                 Record("INFO", 0x01000200,
                     ScriptHeader(),
-                    StringSub("SCTX", "Begin GameMode\nEnd", terminate: true),
+                    StringSub("SCTX", "Begin GameMode\nEnd", true),
                     Sub("NEXT"),
                     ScriptHeader(compiledSize: 4),
                     Sub("SCDA", 0x1D, 0x00, 0x00, 0x00)),
                 Record("SCPT", 0x01000300,
-                    StringSub("SCTX", "Begin GameMode\nEnd", terminate: true))
+                    StringSub("SCTX", "Begin GameMode\nEnd", true))
             ]);
 
         // The existing invariant remains one row per SCDA, including the SCDA whose
@@ -209,11 +208,11 @@ public sealed class EsmCoverageAnalyzerTests
             "synthetic.esm",
             [
                 Record("SCPT", 0x01000100,
-                    ScriptHeader(variableCount: 1, compiledSize: (uint)bytecode.Length),
+                    ScriptHeader(1, compiledSize: (uint)bytecode.Length),
                     Sub("SCDA", bytecode),
-                    StringSub("SCTX", source, terminate: true),
+                    StringSub("SCTX", source, true),
                     ScriptLocal(7, false),
-                    StringSub("SCVR", "myVar", terminate: true))
+                    StringSub("SCVR", "myVar", true))
             ]);
 
         var row = Assert.Single(result.ScriptSource);
@@ -244,10 +243,10 @@ public sealed class EsmCoverageAnalyzerTests
             "synthetic.esm",
             [
                 Record("SCPT", 0x01000100,
-                    ScriptHeader(variableCount: 1),
-                    StringSub("SCTX", source, terminate: false),
+                    ScriptHeader(1),
+                    StringSub("SCTX", source, false),
                     ScriptLocal(7, true),
-                    StringSub("SCVR", "retailCount", terminate: true))
+                    StringSub("SCVR", "retailCount", true))
             ]);
 
         var row = Assert.Single(result.ScriptSource);
@@ -268,7 +267,7 @@ public sealed class EsmCoverageAnalyzerTests
             "synthetic.esm",
             [
                 Record("SCPT", 0x01000100,
-                    StringSub("SCTX", source, terminate: true))
+                    StringSub("SCTX", source, true))
             ]);
 
         var row = Assert.Single(result.ScriptSource);
@@ -290,13 +289,13 @@ public sealed class EsmCoverageAnalyzerTests
             "Fallout_Debug-v132.esm",
             [
                 Record("SCPT", 0x0100358F,
-                    ScriptHeader(variableCount: 2, compiledSize: (uint)bytecode.Length),
+                    ScriptHeader(2, compiledSize: (uint)bytecode.Length),
                     Sub("SCDA", bytecode),
-                    StringSub("SCTX", source, terminate: true),
+                    StringSub("SCTX", source, true),
                     ScriptLocal(1, false),
-                    StringSub("SCVR", firstVariable, terminate: true),
+                    StringSub("SCVR", firstVariable, true),
                     ScriptLocal(2, false),
-                    StringSub("SCVR", secondVariable, terminate: true))
+                    StringSub("SCVR", secondVariable, true))
             ]);
 
         var row = Assert.Single(result.ScriptSource);
@@ -319,7 +318,7 @@ public sealed class EsmCoverageAnalyzerTests
                 Record("SCPT", 0x01000100,
                     ScriptHeader(compiledSize: (uint)bytecode.Length),
                     Sub("SCDA", bytecode),
-                    StringSub("SCTX", staleSource, terminate: true))
+                    StringSub("SCTX", staleSource, true))
             ]);
 
         var row = Assert.Single(result.ScriptSource);
@@ -363,7 +362,7 @@ public sealed class EsmCoverageAnalyzerTests
             "synthetic.esm",
             [
                 Record("INFO", 0x01000100,
-                    ScriptHeader(variableCount: 1, compiledSize: 4),
+                    ScriptHeader(1, compiledSize: 4),
                     Sub("SCDA", 0xFF, 0xFF, 0x00, 0x00))
             ]);
         var row = Assert.Single(result.ScriptBytecode);
@@ -747,7 +746,7 @@ public sealed class EsmCoverageAnalyzerTests
             0x1D, 0x00, 0x00, 0x00, // ScriptName
             0x10, 0x00, 0x08, 0x00, // Begin, 8-byte payload
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x11, 0x00, 0x00, 0x00  // End
+            0x11, 0x00, 0x00, 0x00 // End
         ];
     }
 

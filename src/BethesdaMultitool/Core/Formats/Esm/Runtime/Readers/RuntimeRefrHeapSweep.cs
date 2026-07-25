@@ -71,7 +71,15 @@ internal static class RuntimeRefrHeapSweep
         var info = context.MinidumpInfo;
         var accessor = context.Accessor;
 
-        var shift = ProbeShift(accessor, info, masterFormIds, existing);
+        // Reuse the field shift the main REFR reader already chose from its own build probe, rather than
+        // running a second independent shift probe here. TESObjectREFR's layout is a compile-time
+        // property of the one module in the dump, so both REFR read paths (the form-table reader and
+        // this heap sweep) must use the SAME shift — an independent re-probe could disagree on an
+        // outlier dump, leaving one population read 4 bytes misaligned. ProbeShift remains only as a
+        // fallback for the degenerate case where no runtime reader was constructed (fileSize == 0).
+        var shift = context.RuntimeReader is { } reader
+            ? RuntimeBuildOffsets.GetRefrFieldShift(reader.IsEarlyBuild)
+            : ProbeShift(accessor, info, masterFormIds, existing);
 
         var addedFids = new HashSet<uint>();
         var added = 0;

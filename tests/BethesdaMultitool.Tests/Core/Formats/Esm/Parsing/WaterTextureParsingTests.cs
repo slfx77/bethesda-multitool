@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Records;
@@ -108,12 +109,14 @@ public sealed class WaterTextureParsingTests
 
         Assert.Equal("textures\\water\\normal01.dds", water.NoiseTexture);
         Assert.Equal(
-            ["textures\\water\\normal01.dds", "textures\\water\\normal02.dds",
-                "textures\\water\\normal03.dds"],
+            [
+                "textures\\water\\normal01.dds", "textures\\water\\normal02.dds",
+                "textures\\water\\normal03.dds"
+            ],
             water.NormalTextures);
     }
 
-    private static BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterRecord ParseWater(
+    private static WaterRecord ParseWater(
         BethesdaGame game,
         bool bigEndian,
         params (string Signature, string Value)[] subrecords)
@@ -129,10 +132,10 @@ public sealed class WaterTextureParsingTests
         var scan = new EsmRecordScanResult { Game = game, MainRecords = [record] };
         var context = new RecordParserContext(
             scan,
-            formIdCorrelations: null,
-            accessor: new ByteArrayMemoryAccessor(file),
-            fileSize: file.Length,
-            minidumpInfo: null);
+            null,
+            new ByteArrayMemoryAccessor(file),
+            file.Length,
+            null);
 
         return Assert.Single(new MiscEnvironmentHandler(context).ParseWater());
     }
@@ -151,6 +154,7 @@ public sealed class WaterTextureParsingTests
             {
                 Array.Reverse(signatureBytes);
             }
+
             var valueBytes = Encoding.ASCII.GetBytes(value + '\0');
             result.AddRange(signatureBytes);
             var length = new byte[2];
@@ -162,6 +166,7 @@ public sealed class WaterTextureParsingTests
             {
                 BinaryPrimitives.WriteUInt16LittleEndian(length, (ushort)valueBytes.Length);
             }
+
             result.Add(length[0]);
             result.Add(length[1]);
             result.AddRange(valueBytes);

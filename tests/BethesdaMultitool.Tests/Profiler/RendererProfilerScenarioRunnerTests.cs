@@ -27,8 +27,10 @@ public sealed class RendererProfilerScenarioRunnerTests
             ["prepare", "step:t-000", "step:t-010"],
             host.Calls);
         Assert.Equal(
-            ["start", "step-start:t-000", "step-complete:t-000", "step-start:t-010",
-                "step-complete:t-010", "complete"],
+            [
+                "start", "step-start:t-000", "step-complete:t-000", "step-start:t-010",
+                "step-complete:t-010", "complete"
+            ],
             events.LifecycleEvents);
     }
 
@@ -46,7 +48,7 @@ public sealed class RendererProfilerScenarioRunnerTests
                 if (index != 0) return;
                 firstStarted.SetResult();
                 await releaseFirst.Task;
-            },
+            }
         };
         var events = new FakeEvents();
         var output = TemporaryDirectory();
@@ -65,7 +67,7 @@ public sealed class RendererProfilerScenarioRunnerTests
         }
         finally
         {
-            if (Directory.Exists(output)) Directory.Delete(output, recursive: true);
+            if (Directory.Exists(output)) Directory.Delete(output, true);
         }
     }
 
@@ -78,8 +80,8 @@ public sealed class RendererProfilerScenarioRunnerTests
         {
             Transform = result => result with
             {
-                Snapshot = result.Snapshot with { WaterDraws = 0 },
-            },
+                Snapshot = result.Snapshot with { WaterDraws = 0 }
+            }
         };
         var events = new FakeEvents();
 
@@ -148,9 +150,9 @@ public sealed class RendererProfilerScenarioRunnerTests
                 Snapshot = result.Snapshot with
                 {
                     SceneSampleCount = sceneSampleCount,
-                    WaterTechnique = expectedTechnique,
-                },
-            },
+                    WaterTechnique = expectedTechnique
+                }
+            }
         };
 
         var result = await RunInTemporaryDirectory(plan!, host, new FakeEvents());
@@ -195,9 +197,9 @@ public sealed class RendererProfilerScenarioRunnerTests
                 Snapshot = result.Snapshot with
                 {
                     WaterTechnique = "FnvWater003RtFree-scene-depth-msaa4x",
-                    WaterFallbackReason = "mixed-visible-water-types",
-                },
-            },
+                    WaterFallbackReason = "mixed-visible-water-types"
+                }
+            }
         };
 
         var result = await RunInTemporaryDirectory(plan!, host, new FakeEvents());
@@ -285,11 +287,11 @@ public sealed class RendererProfilerScenarioRunnerTests
                     [
                         result.ImageRegions!.Single(static region => region.RegionId == "moon-window") with
                         {
-                            SignalPixelCount = 100,
-                        },
-                    ],
+                            SignalPixelCount = 100
+                        }
+                    ]
                 }
-                : result,
+                : result
         };
 
         var result = await RunInTemporaryDirectory(plan!, host, new FakeEvents());
@@ -466,9 +468,9 @@ public sealed class RendererProfilerScenarioRunnerTests
                 Snapshot = result.Snapshot with
                 {
                     FnvSls1013Draws = 1,
-                    FnvSls1013Instances = 1,
-                },
-            },
+                    FnvSls1013Instances = 1
+                }
+            }
         };
 
         var result = await RunInTemporaryDirectory(plan!, host, new FakeEvents());
@@ -489,9 +491,9 @@ public sealed class RendererProfilerScenarioRunnerTests
             {
                 Snapshot = result.Snapshot with
                 {
-                    PlacedLightCount = 3,
-                },
-            },
+                    PlacedLightCount = 3
+                }
+            }
         };
 
         var result = await RunInTemporaryDirectory(plan!, host, new FakeEvents());
@@ -561,9 +563,9 @@ public sealed class RendererProfilerScenarioRunnerTests
             Transform = result => result.Step.Id == "bloom-on"
                 ? result with
                 {
-                    Snapshot = result.Snapshot with { SunLightDirection = Vector3.UnitZ },
+                    Snapshot = result.Snapshot with { SunLightDirection = Vector3.UnitZ }
                 }
-                : result,
+                : result
         };
 
         var result = await RunInTemporaryDirectory(plan!, host, new FakeEvents());
@@ -586,10 +588,10 @@ public sealed class RendererProfilerScenarioRunnerTests
                     DifferenceFromPrevious = result.DifferenceFromPrevious! with
                     {
                         MeanAbsoluteLuminanceDelta = 0.20,
-                        AbsoluteLuminanceDeltaP99 = 200,
-                    },
+                        AbsoluteLuminanceDeltaP99 = 200
+                    }
                 }
-                : result,
+                : result
         };
 
         var result = await RunInTemporaryDirectory(plan!, host, new FakeEvents());
@@ -611,10 +613,10 @@ public sealed class RendererProfilerScenarioRunnerTests
                 {
                     DifferenceFromPrevious = result.DifferenceFromPrevious! with
                     {
-                        ChangedPixelCount = 20,
-                    },
+                        ChangedPixelCount = 20
+                    }
                 }
-                : result,
+                : result
         };
 
         var result = await RunInTemporaryDirectory(plan!, host, new FakeEvents());
@@ -636,12 +638,14 @@ public sealed class RendererProfilerScenarioRunnerTests
         }
         finally
         {
-            if (Directory.Exists(output)) Directory.Delete(output, recursive: true);
+            if (Directory.Exists(output)) Directory.Delete(output, true);
         }
     }
 
-    private static string TemporaryDirectory() =>
-        Path.Combine(Path.GetTempPath(), $"renderer-scenario-tests-{Guid.NewGuid():N}");
+    private static string TemporaryDirectory()
+    {
+        return Path.Combine(Path.GetTempPath(), $"renderer-scenario-tests-{Guid.NewGuid():N}");
+    }
 
     private sealed class FakeHost : IRendererProfilerScenarioHost
     {
@@ -689,7 +693,7 @@ public sealed class RendererProfilerScenarioRunnerTests
                 "sunrise" => 0.2f,
                 "noon" => 0.9f,
                 "sunset" => 0.1f,
-                _ => 0.5f,
+                _ => 0.5f
             };
             var sunDirection = UnitWithZ(sunZ);
             var velocity = new Vector2(0.004f, -0.002f);
@@ -698,7 +702,7 @@ public sealed class RendererProfilerScenarioRunnerTests
                 new RendererProfilerCloudLayerSnapshot(
                     0,
                     velocity,
-                    WeatherCloudTransitionResolver.OffsetAtTime(velocity, step.AnimationTimeSeconds)),
+                    WeatherCloudTransitionResolver.OffsetAtTime(velocity, step.AnimationTimeSeconds))
             };
             var isHistoryScenario = plan.Name == RendererProfilerScenarioCatalog.FnvAdaptationHistory;
             var isWeatherImageSpaceScenario =
@@ -739,13 +743,14 @@ public sealed class RendererProfilerScenarioRunnerTests
                     ? "history-key"
                     : "history-key,target-resource,target-size,target-format";
             }
+
             var climateTiming = new AtmosphereState.ClimateTiming(6f, 8f, 18f, 20f);
             var atmosphericColorBand = AtmosphereState.SelectWeatherBandBlend(
                 step.GameHour,
                 climateTiming,
                 plan.ExpectedGame,
-                hasModernTransitions: false,
-                hasAuthoredHighNoon: true);
+                false,
+                true);
             IReadOnlyList<RendererProfilerWeatherImageSpaceContributionSnapshot> weatherContributions = [];
             var tonemap = new RendererProfilerTonemapSnapshot(
                 0.6f, 0.7768509f, 0.6247225f, 0.2386268f, 0.33f);
@@ -756,7 +761,7 @@ public sealed class RendererProfilerScenarioRunnerTests
                     weatherContributions =
                     [
                         new RendererProfilerWeatherImageSpaceContributionSnapshot(
-                            "Day", 0x00164BA6, "NVJacobstownIS", 1f, 0f),
+                            "Day", 0x00164BA6, "NVJacobstownIS", 1f, 0f)
                     ];
                     tonemap = new RendererProfilerTonemapSnapshot(
                         7.4f, 0.6848657f, 0.5938973f, 0.3221909f, 0.33f);
@@ -768,7 +773,7 @@ public sealed class RendererProfilerScenarioRunnerTests
                         new RendererProfilerWeatherImageSpaceContributionSnapshot(
                             "Day", 0x00164BA6, "NVJacobstownIS", 0.5f, 0f),
                         new RendererProfilerWeatherImageSpaceContributionSnapshot(
-                            "HighNoon", 0x000CEE18, "NVWastelandIS", 0.5f, 0f),
+                            "HighNoon", 0x000CEE18, "NVWastelandIS", 0.5f, 0f)
                     ];
                     tonemap = new RendererProfilerTonemapSnapshot(
                         4.4f, 0.7768509f, 0.6247225f, 0.2386268f, 0.33f);
@@ -811,24 +816,23 @@ public sealed class RendererProfilerScenarioRunnerTests
                 waterTechnique,
                 waterFallbackReason,
                 sceneSampleCount,
-                FnvSls1009Draws: 0,
-                FnvSls1009Instances: 0,
-                FnvSls1013Draws: 0,
-                FnvSls1013Instances: 0,
-                PlacedLightCount: 0,
-                FnvClassicBasicLightingEnabled: false,
-                FnvClassicBasicFallbackDraws: 0,
-                FnvClassicBasicFallbackInstances: 0,
-                FnvClassicBasicFallbackReason: null,
-                FnvActiveAdtBaseDraws: isActiveAdtScenario ? 1 : 0,
-                FnvActiveAdtBaseInstances: isActiveAdtScenario ? 3 : 0,
-                FnvActiveAdtBaseVertexColorDraws: isActiveAdtScenario ? 1 : 0,
-                FnvActiveAdtBaseVertexColorInstances: isActiveAdtScenario ? 2 : 0,
-                FnvActiveAdtBaseEnabled: isActiveAdtScenario,
-                FnvActiveAdtBaseFallbackDraws: isActiveAdtScenario ? 2 : 0,
-                FnvActiveAdtBaseFallbackInstances: isActiveAdtScenario ? 3 : 0,
-                FnvActiveAdtBaseFallbackReason:
-                    isActiveAdtScenario ? "outside-active-adt-base-subset" : null);
+                0,
+                0,
+                0,
+                0,
+                0,
+                false,
+                0,
+                0,
+                null,
+                isActiveAdtScenario ? 1 : 0,
+                isActiveAdtScenario ? 3 : 0,
+                isActiveAdtScenario ? 1 : 0,
+                isActiveAdtScenario ? 2 : 0,
+                isActiveAdtScenario,
+                isActiveAdtScenario ? 2 : 0,
+                isActiveAdtScenario ? 3 : 0,
+                isActiveAdtScenario ? "outside-active-adt-base-subset" : null);
             var statistics = new RendererProfilerScenarioImageStatistics(
                 10,
                 10,
@@ -896,23 +900,24 @@ public sealed class RendererProfilerScenarioRunnerTests
             IReadOnlyList<RendererProfilerScenarioImageRegionStatistics>? imageRegions = plan.Name switch
             {
                 RendererProfilerScenarioCatalog.FnvWaterNightMatrix =>
-                    [
-                        new RendererProfilerScenarioImageRegionStatistics(
-                            "water-band",
-                            1,
-                            3,
-                            8,
-                            1,
-                            8,
-                            step.Id == "night" ? (byte)8 : (byte)20,
-                            step.Id == "night" ? (byte)14 : (byte)28,
-                            step.Id == "night" ? (byte)9 : (byte)12,
-                            step.Id == "night" ? (byte)12 : (byte)24,
-                            step.Id == "night" ? 12d / 255d : 24d / 255d,
-                            48,
-                            step.Id == "night" ? 2 : 4),
-                    ],
-                RendererProfilerScenarioCatalog.FnvCelestial when step.Id.StartsWith("night-", StringComparison.Ordinal) =>
+                [
+                    new RendererProfilerScenarioImageRegionStatistics(
+                        "water-band",
+                        1,
+                        3,
+                        8,
+                        1,
+                        8,
+                        step.Id == "night" ? (byte)8 : (byte)20,
+                        step.Id == "night" ? (byte)14 : (byte)28,
+                        step.Id == "night" ? (byte)9 : (byte)12,
+                        step.Id == "night" ? (byte)12 : (byte)24,
+                        step.Id == "night" ? 12d / 255d : 24d / 255d,
+                        48,
+                        step.Id == "night" ? 2 : 4)
+                ],
+                RendererProfilerScenarioCatalog.FnvCelestial when step.Id.StartsWith("night-", StringComparison.Ordinal)
+                    =>
                     [
                         new RendererProfilerScenarioImageRegionStatistics(
                             "moon-window",
@@ -932,27 +937,27 @@ public sealed class RendererProfilerScenarioRunnerTests
                                 0 => 80,
                                 1 => 40,
                                 4 => 0,
-                                _ => 20,
-                            }),
+                                _ => 20
+                            })
                     ],
                 RendererProfilerScenarioCatalog.FnvActiveAdtBase =>
-                    [
-                        new RendererProfilerScenarioImageRegionStatistics(
-                            "active-adt-facade",
-                            2,
-                            2,
-                            6,
-                            6,
-                            36,
-                            90,
-                            90,
-                            90,
-                            90,
-                            90d / 255d,
-                            48,
-                            30),
-                    ],
-                _ => null,
+                [
+                    new RendererProfilerScenarioImageRegionStatistics(
+                        "active-adt-facade",
+                        2,
+                        2,
+                        6,
+                        6,
+                        36,
+                        90,
+                        90,
+                        90,
+                        90,
+                        90d / 255d,
+                        48,
+                        30)
+                ],
+                _ => null
             };
             var hashCharacter = "0123456789ABCDEF"[stepIndex % 16];
             return new RendererProfilerScenarioStepResult(
@@ -973,31 +978,41 @@ public sealed class RendererProfilerScenarioRunnerTests
                 imageRegions);
         }
 
-        private static Vector3 UnitWithZ(float z) =>
-            Vector3.Normalize(new Vector3(MathF.Sqrt(MathF.Max(0f, 1f - z * z)), 0f, z));
+        private static Vector3 UnitWithZ(float z)
+        {
+            return Vector3.Normalize(new Vector3(MathF.Sqrt(MathF.Max(0f, 1f - z * z)), 0f, z));
+        }
     }
 
     private sealed class FakeEvents : IRendererProfilerScenarioEventSink
     {
         internal List<string> LifecycleEvents { get; } = [];
 
-        public void ScenarioStarted(RendererProfilerScenarioPlan plan, string outputDirectory) =>
+        public void ScenarioStarted(RendererProfilerScenarioPlan plan, string outputDirectory)
+        {
             LifecycleEvents.Add("start");
+        }
 
-        public void StepStarted(RendererProfilerScenarioStep step, int stepIndex, long elapsedMilliseconds) =>
+        public void StepStarted(RendererProfilerScenarioStep step, int stepIndex, long elapsedMilliseconds)
+        {
             LifecycleEvents.Add("step-start:" + step.Id);
+        }
 
         public void StepCompleted(
             RendererProfilerScenarioStepResult result,
             int stepIndex,
-            long elapsedMilliseconds) =>
+            long elapsedMilliseconds)
+        {
             LifecycleEvents.Add("step-complete:" + result.Step.Id);
+        }
 
         public void AssertionCompleted(RendererProfilerScenarioAssertion assertion, long elapsedMilliseconds)
         {
         }
 
-        public void ScenarioCompleted(RendererProfilerScenarioRunResult result, long elapsedMilliseconds) =>
+        public void ScenarioCompleted(RendererProfilerScenarioRunResult result, long elapsedMilliseconds)
+        {
             LifecycleEvents.Add("complete");
+        }
     }
 }

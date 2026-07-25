@@ -1,5 +1,4 @@
 using System.Text;
-using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using Xunit;

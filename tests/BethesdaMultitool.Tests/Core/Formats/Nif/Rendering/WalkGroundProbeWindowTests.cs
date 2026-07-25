@@ -13,10 +13,10 @@ public sealed class WalkGroundProbeWindowTests
     public void FromEye_AnchorsStepAndRayOriginToFeet()
     {
         var probe = WalkGroundProbeWindow.FromEye(
-            eyeZ: 212f,
-            eyeHeight: 112f,
-            stepHeight: 48f,
-            rayOriginSlack: 8f);
+            212f,
+            112f,
+            48f,
+            8f);
 
         Assert.Equal(100f, probe.FeetZ);
         Assert.Equal(148f, probe.HighestStepZ);

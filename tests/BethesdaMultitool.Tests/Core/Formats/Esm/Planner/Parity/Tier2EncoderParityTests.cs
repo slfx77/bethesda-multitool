@@ -1,8 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Magic;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using Xunit;
 

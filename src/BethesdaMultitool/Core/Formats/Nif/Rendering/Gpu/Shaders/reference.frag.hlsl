@@ -578,7 +578,51 @@ float4 main(PSInput input) : SV_Target
         }
     }
 
+#if ALPHA_TO_COVERAGE
+    // Grass-cutout A2C variant (only ever paired with an AlphaToCoverageEnable + MSAA PSO):
+    // GREATER/GEQUAL cutouts trade the binary discard for a screen-space-sharpened coverage
+    // gradient written to SV_Target.a — the hardware dithers it across the MSAA samples, so the
+    // blade silhouette antialiases. Every other comparison function keeps the plain discard so a
+    // mixed batch can never mis-render. The branch condition is per-draw (nointerpolation), so
+    // the fwidth below is quad-uniform-safe (no divergent helper lanes).
+    // KNOWN LIMITATION (GrassWasteland02 "floating shard", characterized 2026-07-23): GW02 is a
+    // dense-bush crossed-quad card whose blade-TOP triangles map to OPAQUE texels of the shared
+    // atlas (GrassWastelandComp01.dds bush cell) and render solid at the FINEST mip (an in-shader
+    // viz proved coverage=1 at LOD~0, high raw alpha — NOT a coarse-mip average). The solid tops
+    // face the camera only when looking DOWN at the grass; eye-level view cuts out correctly. It is
+    // NOT a coverage-formula bug (proportional + LOD-gated fades both tried and rejected — they wash
+    // near grass and the tops report low LOD). Reproduces identically on PC-Final assets. The
+    // dark tint of the tops (unexplained: lighting on up-facing normals vs a dark texel) is the open
+    // question; do not re-tune coverage here without that + a retail-engine reference.
+    float a2cCoverage = 1.0;
+    bool a2cActive = false;
+    int a2cFn = (int)round(input.vAlphaState.y);
+    if (input.vAlphaState.y >= 0.0 && (a2cFn == 4 || a2cFn == 6))
+    {
+        // Same Castaño mip alpha-coverage compensation (and load-bearing 0.25 floor) as the SPT
+        // leaf path above — grass mips decay alpha with distance identically. Grass never enters
+        // the leaf branch (vTextureState.y == 0), so this cannot double-apply.
+        float a2cLod = CalculateMaterialTextureLod(
+            input.vTexIndices.x, materialUv, input.vTextureState.z);
+        float a2cAlpha = testAlpha;
+        if (a2cAlpha > 0.25)
+        {
+            a2cAlpha = saturate(a2cAlpha * (1.0 + a2cLod * 0.25));
+        }
+        // Sharpen the authored threshold into a ~1px gradient (fwidth BEFORE any discard so the
+        // derivative's helper lanes are still live).
+        a2cCoverage = saturate(
+            (a2cAlpha - input.vAlphaState.x) / max(fwidth(a2cAlpha), 1e-4) + 0.5);
+        a2cActive = true;
+        if (a2cCoverage <= 0.0) discard;
+    }
+    else if (!PassAlphaTest(testAlpha, input.vAlphaState.x, input.vAlphaState.y))
+    {
+        discard;
+    }
+#else
     if (!PassAlphaTest(testAlpha, input.vAlphaState.x, input.vAlphaState.y)) discard;
+#endif
 
     float3 normal = normalize(input.vWorldNormal);
     if (input.vRenderState.x > 0.5 && !input.IsFrontFace)
@@ -890,6 +934,14 @@ float4 main(PSInput input) : SV_Target
         : input.vAlphaState.w > 0.5
             ? saturate(sampleAlpha * input.vAlphaState.z)
             : 1.0;
+#if ALPHA_TO_COVERAGE
+    if (a2cActive)
+    {
+        // SV_Target.a is the coverage mask under AlphaToCoverageEnable — the ROP dithers it
+        // across the MSAA samples (this PSO never alpha-blends, so alpha carries no other duty).
+        outAlpha = a2cCoverage;
+    }
+#endif
     float3 outputRgb = ApplyFog(lit, input.vWorldPos, input.vEnvMap.w);
     if (abs(input.vSoftParticle.w) > 0.0)
     {

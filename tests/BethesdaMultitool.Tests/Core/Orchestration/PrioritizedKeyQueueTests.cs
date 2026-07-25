@@ -49,7 +49,7 @@ public sealed class PrioritizedKeyQueueTests
         queue.Enqueue("other", 10f);
         Assert.True(queue.TryDequeue(out var first));
         // The promoted entry carries the spelling passed at promote time — equal under the comparer.
-        Assert.Equal("key", first, ignoreCase: true);
+        Assert.Equal("key", first, true);
         Assert.True(queue.TryDequeue(out var second));
         Assert.Equal("other", second);
         // The superseded 50f entry is a stale duplicate — it must not dequeue "Key" a second time.
@@ -74,7 +74,7 @@ public sealed class PrioritizedKeyQueueTests
     {
         var queue = new PrioritizedKeyQueue<string>();
         queue.Enqueue("k", 50f);
-        queue.Enqueue("k", 1f);           // promote — leaves a stale 50f heap entry behind
+        queue.Enqueue("k", 1f); // promote — leaves a stale 50f heap entry behind
         Assert.True(queue.TryDequeue(out _)); // consumes the live 1f entry
 
         // Fresh membership generation for the same key; the leftover 50f entry must be skipped

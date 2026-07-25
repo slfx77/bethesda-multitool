@@ -24,7 +24,7 @@ public sealed class ArchiveHandleRegistryTests : IDisposable
     {
         try
         {
-            Directory.Delete(_root, recursive: true);
+            Directory.Delete(_root, true);
         }
         catch (IOException)
         {
@@ -34,7 +34,7 @@ public sealed class ArchiveHandleRegistryTests : IDisposable
 
     private static byte[] PayloadFor(int index)
     {
-        var payload = new byte[64 + (index % 512)];
+        var payload = new byte[64 + index % 512];
         for (var i = 0; i < payload.Length; i++)
         {
             payload[i] = (byte)((index * 31 + i * 7) & 0xFF);
@@ -45,7 +45,7 @@ public sealed class ArchiveHandleRegistryTests : IDisposable
 
     private string WriteBsa(string fileName, params (string Path, byte[] Data)[] files)
     {
-        using var writer = new BsaWriter(compressFiles: false, embedFileNames: false);
+        using var writer = new BsaWriter(false, embedFileNames: false);
         foreach (var (path, data) in files)
         {
             writer.AddFile(path, data);

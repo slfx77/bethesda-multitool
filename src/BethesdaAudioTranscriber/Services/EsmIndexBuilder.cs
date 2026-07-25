@@ -1,7 +1,6 @@
+using BethesdaAudioTranscriber.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaAudioTranscriber.Models;
 
 namespace BethesdaAudioTranscriber.Services;
 
@@ -126,6 +125,4 @@ public static class EsmIndexBuilder
             $"Indexed {infoCount} INFOs, {npcCount} NPCs, {questCount} quests, {dialCount} topics, {vtypCount} voice types");
         return index;
     }
-
 }
-

@@ -42,7 +42,7 @@ public class MoonSkyTests
     {
         // A per-moon day offset shifts the phase so Masser and Secunda aren't locked together.
         Assert.Equal(0, MoonSky.PhaseIndex(0, MoonSky.MorrowindPhaseLengthDays));
-        Assert.Equal(1, MoonSky.PhaseIndex(0, MoonSky.MorrowindPhaseLengthDays, phaseOffsetDays: 3));
+        Assert.Equal(1, MoonSky.PhaseIndex(0, MoonSky.MorrowindPhaseLengthDays, 3));
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public class MoonSkyTests
     public void ComputeMoonDirection_ReturnsUnitVector()
     {
         var dir = MoonSky.ComputeMoonDirection(
-            new MoonSky.MoonOrbit(24f, 0.3f, 60f, 80f, 20f), gameHour: 7f, day: 4f);
+            new MoonSky.MoonOrbit(24f, 0.3f, 60f, 80f, 20f), 7f, 4f);
         Assert.Equal(1f, dir.Length(), 3);
     }
 
@@ -73,10 +73,10 @@ public class MoonSkyTests
         // PhaseOffsetTurns 0 → the orbital angle is 0 at hour 0 (culmination): elevation peaks (z high).
         // Half a period later the moon is the same angle past π → below the horizon (z < 0).
         var orbit = new MoonSky.MoonOrbit(
-            PeriodHours: 24f, PhaseOffsetTurns: 0f, MaxAltitudeDeg: 70f, PeakAzimuthDeg: 0f, AzSwingDeg: 0f);
+            24f, 0f, 70f, 0f, 0f);
 
-        var culmination = MoonSky.ComputeMoonDirection(orbit, gameHour: 0f, day: 0f);
-        var halfLater = MoonSky.ComputeMoonDirection(orbit, gameHour: 12f, day: 0f);
+        var culmination = MoonSky.ComputeMoonDirection(orbit, 0f, 0f);
+        var halfLater = MoonSky.ComputeMoonDirection(orbit, 12f, 0f);
 
         Assert.True(culmination.Z > 0.9f, $"expected high moon at culmination, got z={culmination.Z}");
         Assert.True(halfLater.Z < -0.9f, $"expected moon below horizon, got z={halfLater.Z}");
@@ -88,8 +88,8 @@ public class MoonSkyTests
         // The headline fix: Masser and Secunda must NOT share a path. At the same instant their two profile
         // orbits give clearly different sky directions.
         var moon = SkyMoonProfile.ForGame(BethesdaGame.Morrowind);
-        var masser = MoonSky.ComputeMoonDirection(moon.PrimaryOrbit, gameHour: 1f, day: 2f);
-        var secunda = MoonSky.ComputeMoonDirection(moon.SecondaryOrbit, gameHour: 1f, day: 2f);
+        var masser = MoonSky.ComputeMoonDirection(moon.PrimaryOrbit, 1f, 2f);
+        var secunda = MoonSky.ComputeMoonDirection(moon.SecondaryOrbit, 1f, 2f);
 
         Assert.True(Vector3.Distance(masser, secunda) > 0.1f,
             $"the two moons share an arc: masser={masser} secunda={secunda}");
@@ -101,8 +101,8 @@ public class MoonSkyTests
         // A period ≠ 24h means the same hour on consecutive days is a different point on the orbit, so the
         // day slider visibly drifts the arc (the decompiled accumulating-angle behaviour).
         var orbit = new MoonSky.MoonOrbit(24.6f, 0f, 60f, 90f, 25f);
-        var day0 = MoonSky.ComputeMoonDirection(orbit, gameHour: 0f, day: 0f);
-        var day1 = MoonSky.ComputeMoonDirection(orbit, gameHour: 0f, day: 1f);
+        var day0 = MoonSky.ComputeMoonDirection(orbit, 0f, 0f);
+        var day1 = MoonSky.ComputeMoonDirection(orbit, 0f, 1f);
 
         Assert.True(Vector3.Distance(day0, day1) > 0.01f, "day did not drift the moon position");
     }
@@ -113,11 +113,11 @@ public class MoonSkyTests
         var moon = SkyMoonProfile.ForGame(BethesdaGame.Morrowind);
 
         Assert.True(moon.HasPerPhaseTextures);
-        Assert.Equal(@"textures\tx_masser_new.dds", moon.PhaseTexturePath(secondary: false, 0));
-        Assert.Equal(@"textures\tx_masser_full.dds", moon.PhaseTexturePath(secondary: false, 4));
-        Assert.Equal(@"textures\tx_secunda_full.dds", moon.PhaseTexturePath(secondary: true, 4));
+        Assert.Equal(@"textures\tx_masser_new.dds", moon.PhaseTexturePath(false, 0));
+        Assert.Equal(@"textures\tx_masser_full.dds", moon.PhaseTexturePath(false, 4));
+        Assert.Equal(@"textures\tx_secunda_full.dds", moon.PhaseTexturePath(true, 4));
         // Out-of-range phase clamps to the last token (one_wan) rather than throwing.
-        Assert.Equal(@"textures\tx_masser_one_wan.dds", moon.PhaseTexturePath(secondary: false, 99));
+        Assert.Equal(@"textures\tx_masser_one_wan.dds", moon.PhaseTexturePath(false, 99));
     }
 
     [Fact]
@@ -131,9 +131,9 @@ public class MoonSkyTests
         var moon = SkyMoonProfile.ForGame(BethesdaGame.FalloutNewVegas);
 
         Assert.True(moon.HasPerPhaseTextures);
-        Assert.Equal(@"textures\sky\masser_full.dds", moon.PhaseTexturePath(secondary: false, 0));
-        Assert.Equal(@"textures\sky\masser_new.dds", moon.PhaseTexturePath(secondary: false, 4));
-        Assert.Equal(@"textures\sky\masser_three_wax.dds", moon.PhaseTexturePath(secondary: false, 7));
+        Assert.Equal(@"textures\sky\masser_full.dds", moon.PhaseTexturePath(false, 0));
+        Assert.Equal(@"textures\sky\masser_new.dds", moon.PhaseTexturePath(false, 4));
+        Assert.Equal(@"textures\sky\masser_three_wax.dds", moon.PhaseTexturePath(false, 7));
         Assert.Equal(4, moon.HiddenPhaseIndex);
         Assert.Equal(24f, moon.PrimaryOrbit.PeriodHours); // speed 0.25 x 60 deg/h = exact daily orbit
         Assert.Equal(55f, moon.PrimaryOrbit.MaxAltitudeDeg); // 90 - 35 deg engine inclination
@@ -150,11 +150,11 @@ public class MoonSkyTests
         // Moon::Update initializes the arm angle to 90 degrees. These values are expanded independently
         // from the recovered X(-angle) * Z(inclination) matrices and local +Y arm.
         VectorAssert.Equal(new Vector3(sin35, 0f, cos35),
-            MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, gameHour: 0f, day: 0f), 1e-5f);
+            MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, 0f, 0f), 1e-5f);
         VectorAssert.Equal(new Vector3(sin35, -cos35, 0f),
-            MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, gameHour: 6f, day: 0f), 1e-5f);
+            MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, 6f, 0f), 1e-5f);
         VectorAssert.Equal(new Vector3(sin35, cos35, 0f),
-            MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, gameHour: 18f, day: 0f), 1e-5f);
+            MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, 18f, 0f), 1e-5f);
     }
 
     [Theory]
@@ -220,13 +220,13 @@ public class MoonSkyTests
         const float cos50 = 0.64278761f;
 
         VectorAssert.Equal(new Vector3(sin35, 0f, cos35),
-            profile.Direction(secondary: false, gameHour: 0f, day: 0f, climate: timing), 1e-5f);
+            profile.Direction(false, 0f, 0f, timing), 1e-5f);
         VectorAssert.Equal(new Vector3(sin35, -cos35, 0f),
-            profile.Direction(secondary: false, gameHour: 6f, day: 0f, climate: timing), 1e-5f);
+            profile.Direction(false, 6f, 0f, timing), 1e-5f);
 
         // Secunda advances 18 degrees/hour, so five hours advances the initialized 90-degree arm to 180.
         VectorAssert.Equal(new Vector3(sin50, -cos50, 0f),
-            profile.Direction(secondary: true, gameHour: 5f, day: 0f, climate: timing), 1e-5f);
+            profile.Direction(true, 5f, 0f, timing), 1e-5f);
 
         // Masser is exactly daily; Secunda's 20-hour period advances 72 degrees between midnights.
         VectorAssert.Equal(profile.Direction(false, 0f, 0f, timing),
@@ -248,7 +248,7 @@ public class MoonSkyTests
 
         // An override is consumed as authored: angle=90 at midnight lies outside a narrow 100/95 window.
         Assert.Equal(0f, profile.RotatedArmDiscFade(
-            false, 0f, 0f, speedOverride: 0.25f, fadeStartOverride: 100f, fadeEndOverride: 95f), 6);
+            false, 0f, 0f, 0.25f, 100f, 95f), 6);
     }
 
     [Fact]
@@ -271,7 +271,7 @@ public class MoonSkyTests
         // 90 + 3h * .5 * 60 = 180 degrees. A 30-degree inclination then produces this hard-coded
         // X(-180)*Z(+30) column-vector result; expected values do not call the production helper.
         var direction = profile.Direction(false, 3f, 0f, AtmosphereState.ClimateTiming.Default,
-            rotatedArmSpeedOverride: 0.5f, rotatedArmInclinationOverride: 30f);
+            0.5f, 30f);
         VectorAssert.Equal(new Vector3(0.5f, -0.8660254f, 0f), direction, 1e-5f);
     }
 
@@ -280,10 +280,10 @@ public class MoonSkyTests
     {
         var profile = SkyMoonProfile.ForGame(BethesdaGame.Fallout4);
         var timing = new AtmosphereState.ClimateTiming(5f, 7f, 17f, 19f, 3);
-        var direction = profile.Direction(secondary: false, gameHour: 6f, day: 0f, climate: timing);
+        var direction = profile.Direction(false, 6f, 0f, timing);
 
         // dayStart = sunrise midpoint - 1h = 5h; at 6h x is inside the recovered day-leg.
-        var x = 1f - ((6f - 5f) / 14f * 2f);
+        var x = 1f - (6f - 5f) / 14f * 2f;
         var expected = Vector3.Normalize(new Vector3(x * 400f, 25f, 400f - MathF.Abs(x * 400f)));
         VectorAssert.Equal(expected, direction, 1e-5f);
     }

@@ -5,8 +5,8 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
 /// <summary>
-/// Independent CPU vectors for recovered FO3/FNV SLS material math. Production uses HLSL; these
-/// fixtures are intentionally written from the disassembled shader equations instead of calling it.
+///     Independent CPU vectors for recovered FO3/FNV SLS material math. Production uses HLSL; these
+///     fixtures are intentionally written from the disassembled shader equations instead of calling it.
 /// </summary>
 public sealed class RecoveredClassicMaterialShaderReferenceTests
 {
@@ -35,62 +35,62 @@ public sealed class RecoveredClassicMaterialShaderReferenceTests
     public void Lighting30NoGlow_HdrFoldsScaledEmissionIntoAmbientBeforeAlbedo()
     {
         var output = RecoveredNoGlow(
-            albedo: new Vector3(0.25f, 0.5f, 0.75f),
-            ambient: new Vector3(0.1f, 0.2f, 0.3f),
-            direct: new Vector3(0.4f, 0.5f, 0.6f),
-            rawEmission: new Vector3(0.2f, 0.4f, 0.6f),
-            hdr: true,
-            imagespaceEmissiveMult: 1.5f,
-            materialEmitMult: 2f);
+            new Vector3(0.25f, 0.5f, 0.75f),
+            new Vector3(0.1f, 0.2f, 0.3f),
+            new Vector3(0.4f, 0.5f, 0.6f),
+            new Vector3(0.2f, 0.4f, 0.6f),
+            true,
+            1.5f,
+            2f);
 
-        VectorAssert.Equal(new Vector3(0.275f, 0.95f, 2.025f), output, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.275f, 0.95f, 2.025f), output);
     }
 
     [Fact]
     public void Lighting30NoGlow_NonHdrIgnoresBothMultipliersAndClampsAmbientSum()
     {
         var output = RecoveredNoGlow(
-            albedo: new Vector3(0.25f, 0.5f, 0.75f),
-            ambient: new Vector3(0.4f, 0.2f, 0.3f),
-            direct: new Vector3(0.4f, 0.5f, 0.6f),
-            rawEmission: new Vector3(0.8f, 0.4f, 0.6f),
-            hdr: false,
-            imagespaceEmissiveMult: 9f,
-            materialEmitMult: 7f);
+            new Vector3(0.25f, 0.5f, 0.75f),
+            new Vector3(0.4f, 0.2f, 0.3f),
+            new Vector3(0.4f, 0.5f, 0.6f),
+            new Vector3(0.8f, 0.4f, 0.6f),
+            false,
+            9f,
+            7f);
 
-        VectorAssert.Equal(new Vector3(0.35f, 0.55f, 1.125f), output, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.35f, 0.55f, 1.125f), output);
     }
 
     [Fact]
     public void Sls2004Glow_HdrMultipliesScaledEmissionByGlowBeforeAlbedo()
     {
         var output = RecoveredGlow(
-            albedo: new Vector3(0.25f, 0.5f, 0.75f),
-            ambient: new Vector3(0.1f, 0.2f, 0.3f),
-            direct: new Vector3(0.4f, 0.5f, 0.6f),
-            rawEmission: new Vector3(0.2f, 0.4f, 0.6f),
-            glowMap: new Vector3(0.5f, 0.25f, 1f),
-            hdr: true,
-            imagespaceEmissiveMult: 1.5f,
-            materialEmitMult: 2f);
+            new Vector3(0.25f, 0.5f, 0.75f),
+            new Vector3(0.1f, 0.2f, 0.3f),
+            new Vector3(0.4f, 0.5f, 0.6f),
+            new Vector3(0.2f, 0.4f, 0.6f),
+            new Vector3(0.5f, 0.25f, 1f),
+            true,
+            1.5f,
+            2f);
 
-        VectorAssert.Equal(new Vector3(0.2f, 0.5f, 2.025f), output, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.2f, 0.5f, 2.025f), output);
     }
 
     [Fact]
     public void Sls2004Glow_NonHdrClampsRawEmissionAndIgnoresBothMultipliers()
     {
         var output = RecoveredGlow(
-            albedo: new Vector3(0.25f, 0.5f, 0.75f),
-            ambient: new Vector3(0.1f, 0.2f, 0.3f),
-            direct: new Vector3(0.4f, 0.5f, 0.6f),
-            rawEmission: new Vector3(1.4f, 0.4f, 1.2f),
-            glowMap: new Vector3(0.5f, 0.25f, 1f),
-            hdr: false,
-            imagespaceEmissiveMult: 9f,
-            materialEmitMult: 7f);
+            new Vector3(0.25f, 0.5f, 0.75f),
+            new Vector3(0.1f, 0.2f, 0.3f),
+            new Vector3(0.4f, 0.5f, 0.6f),
+            new Vector3(1.4f, 0.4f, 1.2f),
+            new Vector3(0.5f, 0.25f, 1f),
+            false,
+            9f,
+            7f);
 
-        VectorAssert.Equal(new Vector3(0.25f, 0.4f, 1.425f), output, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.25f, 0.4f, 1.425f), output);
     }
 
     [Fact]
@@ -98,11 +98,11 @@ public sealed class RecoveredClassicMaterialShaderReferenceTests
     {
         var noGlow = RecoveredNoGlow(
             Vector3.Zero, new Vector3(0.1f), new Vector3(0.2f), new Vector3(4f),
-            hdr: true, imagespaceEmissiveMult: 3f, materialEmitMult: 2f);
+            true, 3f, 2f);
         var glow = RecoveredGlow(
             Vector3.Zero, new Vector3(0.1f), new Vector3(0.2f), new Vector3(4f),
             Vector3.One,
-            hdr: true, imagespaceEmissiveMult: 3f, materialEmitMult: 2f);
+            true, 3f, 2f);
 
         Assert.Equal(Vector3.Zero, noGlow);
         Assert.Equal(Vector3.Zero, glow);

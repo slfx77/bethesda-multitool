@@ -34,10 +34,10 @@ internal sealed class RendererProfilerScenarioRunner
         {
             return CompleteFailure(
                 "scenario.unique-step-ids",
-                expected: "case-insensitively unique step IDs",
-                actual: duplicateStep.Key,
-                details: "Scenario execution was rejected before renderer state changed.",
-                reason: "scenario-invalid-plan");
+                "case-insensitively unique step IDs",
+                duplicateStep.Key,
+                "Scenario execution was rejected before renderer state changed.",
+                "scenario-invalid-plan");
         }
 
         var results = new List<RendererProfilerScenarioStepResult>(plan.Steps.Count);

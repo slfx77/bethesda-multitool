@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
@@ -114,9 +115,9 @@ public sealed class CreaEncoderAcbsFlagPolicyTests
         var masterAcbs = new byte[24];
         BinaryPrimitives.WriteUInt32LittleEndian(masterAcbs.AsSpan(0, 4), 0x00000018u);
         BinaryPrimitives.WriteUInt16LittleEndian(masterAcbs.AsSpan(22, 2), 0x015F);
-        var master = new BethesdaMultitool.Core.Formats.Esm.Parsing.ParsedMainRecord
+        var master = new ParsedMainRecord
         {
-            Header = new BethesdaMultitool.Core.Formats.Esm.Parsing.MainRecordHeader
+            Header = new MainRecordHeader
             {
                 Signature = "NPC_", DataSize = 0, Flags = 0, FormId = 0x0012795D,
                 Timestamp = 0, VcsInfo = 0, Version = 15

@@ -1,11 +1,11 @@
-using BethesdaMultitool;
-using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core;
 using System.Globalization;
+using BethesdaMultitool;
+using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Diagnostics;
 using Windows.Graphics;
 using Windows.UI;
-using Microsoft.UI.Windowing;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -22,8 +22,8 @@ internal sealed class MainWindow : Window, IDisposable
     private readonly WorldMapControl _worldMap;
     private readonly WorldView3DControl? _worldView3D;
     private bool _disposed;
-    private bool _started;
     private DispatcherQueueTimer? _providerReadyTimer;
+    private bool _started;
     private DispatcherQueueTimer? _timedExitTimer;
 
     public MainWindow(Map2DProfilerOptions options)
@@ -252,7 +252,7 @@ internal sealed class MainWindow : Window, IDisposable
         if (string.IsNullOrWhiteSpace(artifactOutputPath))
         {
             var profileDirectory = Path.GetDirectoryName(_options.ProfileOutputPath)
-                ?? AppContext.BaseDirectory;
+                                   ?? AppContext.BaseDirectory;
             var profileName = Path.GetFileNameWithoutExtension(_options.ProfileOutputPath);
             var scenarioName = _options.ScenarioName.Replace(Path.DirectorySeparatorChar, '_')
                 .Replace(Path.AltDirectorySeparatorChar, '_');

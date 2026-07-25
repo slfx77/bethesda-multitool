@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.FileFormat;
-using BethesdaMultitool.Core;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Parsers;

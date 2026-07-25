@@ -14,7 +14,7 @@ public sealed class WeatherCloudMotionTests
         var weather = new WeatherRecord
         {
             CloudSpeedsX = [0.75f],
-            CloudSpeedsY = [-0.5f],
+            CloudSpeedsY = [-0.5f]
         };
         var layer = new WeatherCloudLayer { SourceIndex = 0, SpeedU = 0f, SpeedV = 0f };
 
@@ -27,19 +27,19 @@ public sealed class WeatherCloudMotionTests
         var weather = new WeatherRecord
         {
             CloudSpeedsX = [1f],
-            CloudSpeedsY = [1f],
+            CloudSpeedsY = [1f]
         };
         var layer = new WeatherCloudLayer
         {
             SourceIndex = 15,
             SpeedU = 15f / 127f,
-            SpeedV = -13f / 127f,
+            SpeedV = -13f / 127f
         };
 
         var resolved = WeatherCloudMotion.Resolve(weather, layer, 15);
 
-        Assert.Equal((15f / 127f) * 0.01f, resolved.X, 7);
-        Assert.Equal((-13f / 127f) * 0.01f, resolved.Y, 7);
+        Assert.Equal(15f / 127f * 0.01f, resolved.X, 7);
+        Assert.Equal(-13f / 127f * 0.01f, resolved.Y, 7);
     }
 
     [Fact]
@@ -50,8 +50,8 @@ public sealed class WeatherCloudMotionTests
             CloudLayers =
             [
                 new WeatherCloudLayer { SourceIndex = 0, SpeedU = 1f, SpeedV = 1f },
-                new WeatherCloudLayer { SourceIndex = 19, SpeedU = 0.25f, SpeedV = -0.5f },
-            ],
+                new WeatherCloudLayer { SourceIndex = 19, SpeedU = 0.25f, SpeedV = -0.5f }
+            ]
         };
 
         var layer = weather.FindCloudLayerBySourceIndex(19);
@@ -68,7 +68,7 @@ public sealed class WeatherCloudMotionTests
         var layer = new WeatherCloudLayer
         {
             SourceIndex = 15,
-            Texture = @"textures\sky\clouds.dds",
+            Texture = @"textures\sky\clouds.dds"
         };
 
         Assert.Equal(Vector2.Zero, WeatherCloudMotion.Resolve(new WeatherRecord(), layer, 15));
@@ -80,10 +80,10 @@ public sealed class WeatherCloudMotionTests
         var weather = new WeatherRecord
         {
             CloudSpeedsX = [0f, 0.5f],
-            CloudSpeedsY = [0f, -0.25f],
+            CloudSpeedsY = [0f, -0.25f]
         };
 
-        var resolved = WeatherCloudMotion.Resolve(weather, semanticLayer: null, sourceLayerIndex: 1);
+        var resolved = WeatherCloudMotion.Resolve(weather, null, 1);
 
         Assert.Equal(0.005f, resolved.X, 6);
         Assert.Equal(-0.0025f, resolved.Y, 6);
@@ -105,13 +105,13 @@ public sealed class WeatherCloudMotionTests
                 new WeatherCloudLayer
                 {
                     SourceIndex = 0,
-                    SpeedU = 51f / 255f,
-                },
-            ],
+                    SpeedU = 51f / 255f
+                }
+            ]
         };
 
         var resolved = WeatherCloudMotion.Resolve(
-            weather, weather.CloudLayers[0], sourceLayerIndex: 0, game: game);
+            weather, weather.CloudLayers[0], 0, game);
 
         Assert.Equal(0.004f, resolved.X, 7);
         Assert.Equal(0f, resolved.Y);
@@ -128,16 +128,16 @@ public sealed class WeatherCloudMotionTests
                 new WeatherCloudLayer
                 {
                     SourceIndex = 3,
-                    Texture = @"sky\clouds.dds",
-                },
-            ],
+                    Texture = @"sky\clouds.dds"
+                }
+            ]
         };
 
         var resolved = WeatherCloudMotion.Resolve(
             weather,
             weather.CloudLayers[0],
-            sourceLayerIndex: 3,
-            game: BethesdaGame.FalloutNewVegas);
+            3,
+            BethesdaGame.FalloutNewVegas);
 
         // Retail PC TESWeather::GetCloudSpeed initializes its byte accumulator to 0x33 when
         // the weather has no ONAM array: (51 / 255) * fWeatherCloudSpeedMax(.1) * full wind.
@@ -157,16 +157,16 @@ public sealed class WeatherCloudMotionTests
                 new WeatherCloudLayer
                 {
                     SourceIndex = 3,
-                    Texture = @"sky\clouds.dds",
-                },
-            ],
+                    Texture = @"sky\clouds.dds"
+                }
+            ]
         };
 
         var resolved = WeatherCloudMotion.Resolve(
             weather,
             weather.CloudLayers[0],
-            sourceLayerIndex: 3,
-            game: BethesdaGame.FalloutNewVegas);
+            3,
+            BethesdaGame.FalloutNewVegas);
 
         // Retail bounds handling selects ONAM[0] when count > 0 and index >= count.
         Assert.Equal(0.04f, resolved.X, 7);

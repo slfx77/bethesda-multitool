@@ -19,6 +19,7 @@ public sealed class SpeedTreeWindRigTests
         {
             rig.Tick(strength, i * (1f / 30f));
         }
+
         return rig;
     }
 
@@ -133,8 +134,8 @@ public sealed class SpeedTreeWindRigTests
     {
         // fLeafRockTimeScale 2.0 (FNV) vs 1.0 with 0.85-influence sway modulation (Oblivion):
         // FNV's rock phase must accumulate meaningfully faster at equal strength.
-        var fnv = TickedRig(SpeedTreeWindProfile.FalloutNewVegas, 0.15f, frames: 900);
-        var oblivion = TickedRig(SpeedTreeWindProfile.Oblivion, 0.15f, frames: 900);
+        var fnv = TickedRig(SpeedTreeWindProfile.FalloutNewVegas, 0.15f, 900);
+        var oblivion = TickedRig(SpeedTreeWindProfile.Oblivion, 0.15f, 900);
         Assert.True(fnv.RockPhase > oblivion.RockPhase * 1.3f,
             $"FNV {fnv.RockPhase} vs Oblivion {oblivion.RockPhase}");
     }
@@ -145,7 +146,7 @@ public sealed class SpeedTreeWindRigTests
     public void ResetAndReplayConstantWind_IsIndependentOfPriorLiveHistory(float captureTime)
     {
         const float strength = 50f / 255f;
-        var dirty = TickedRig(SpeedTreeWindProfile.FalloutNewVegas, 0.8f, frames: 900);
+        var dirty = TickedRig(SpeedTreeWindProfile.FalloutNewVegas, 0.8f, 900);
         dirty.Tick(0.05f, 45f);
         dirty.ResetAndReplayConstantWind(strength, captureTime);
 

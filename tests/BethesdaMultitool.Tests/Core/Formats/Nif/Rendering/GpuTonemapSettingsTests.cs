@@ -1,6 +1,7 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Games;
 using Xunit;
 
@@ -26,13 +27,17 @@ public sealed class GpuTonemapSettingsTests
             TargetLum = 0.5f,
             UpperLumClamp = 2f,
             BrightScale = 0f,
-            BrightClamp = 0.2f,
+            BrightClamp = 0.2f
         };
 
         var s = GpuTonemapSettings.ForOblivionWeather(hdr);
         Assert.Equal(0.25f, s.EyeAdaptSpeed);
-        Assert.Equal(0f, s.BlurPasses);     // authored zero is data, not a missing-value sentinel
-        Assert.Equal(0f, s.BrightScale);
+        Assert.Equal(0.5f, s.TargetLum);
+        Assert.Equal(0.2f, s.BrightClamp);
+        // Sky::UpdateHDRValues substitutes engine defaults for authored <= 0 fields — even on
+        // active weathers. An authored 0 never reaches the shader.
+        Assert.Equal(GpuTonemapSettings.EngineTes4Defaults.BlurPasses, s.BlurPasses);
+        Assert.Equal(GpuTonemapSettings.EngineTes4Defaults.BrightScale, s.BrightScale);
         Assert.Equal(1f, s.Saturation);
         Assert.Equal(1f, s.Contrast);
         Assert.Equal(1f, s.Brightness);
@@ -40,19 +45,36 @@ public sealed class GpuTonemapSettingsTests
     }
 
     [Fact]
-    public void OblivionWeatherFactory_AllZeroPlaceholderKeepsSafeNeutralDefaults()
+    public void OblivionWeatherFactory_AllZeroPlaceholderFallsOutToEngineDefaults()
     {
-        // Retail DefaultWeather (0x0000015E) has a required but wholly zero HNAM. Treating its
-        // TargetLum as active makes the recovered HDR operator multiply the scene by zero.
+        // Retail DefaultWeather (0x0000015E) has a required but wholly zero HNAM. Per-field
+        // substitution handles it with no special case: every field takes the engine default.
         var s = GpuTonemapSettings.ForOblivionWeather(new WeatherHdr());
 
-        Assert.Equal(GpuTonemapSettings.EngineExteriorDefaults.TargetLum, s.TargetLum);
-        Assert.Equal(GpuTonemapSettings.EngineExteriorDefaults.UpperLumClamp, s.UpperLumClamp);
-        Assert.Equal(GpuTonemapSettings.EngineExteriorDefaults.EmissiveMult, s.EmissiveMult);
+        Assert.Equal(GpuTonemapSettings.EngineTes4Defaults, s);
+    }
+
+    [Fact]
+    public void EngineTes4Defaults_MatchRecoveredBlurShaderHdrSettings()
+    {
+        // Sky::UpdateHDRValues field mapping + Oblivion_default.ini [BlurShaderHDR]
+        // (tools/GhidraProject/tes4_hdr_engine_defaults_decompiled.txt).
+        var s = GpuTonemapSettings.EngineTes4Defaults;
+
+        Assert.Equal(GpuTonemapMode.EngineFo3Fnv, s.Mode);
+        Assert.True(s.BloomEnabled);
+        Assert.Equal(0.7f, s.EyeAdaptSpeed); // fEyeAdaptSpeed
+        Assert.Equal(4f, s.BlurRadius); // fBlurRadius (FNV widened to 8)
+        Assert.Equal(2f, s.BlurPasses); // iNumBlurpasses
+        Assert.Equal(1f, s.EmissiveMult); // fEmissiveHDRMult
+        Assert.Equal(1.2f, s.TargetLum); // fTargetLUM
+        Assert.Equal(1f, s.UpperLumClamp); // fUpperLUMClamp
+        Assert.Equal(1.5f, s.BrightScale); // fBrightScale
+        Assert.Equal(0.35f, s.BrightClamp); // fBrightClamp
+        // Neutral cinematic — TES4 has no IMGS grade; FNV's tint must not leak in.
         Assert.Equal(1f, s.Saturation);
-        Assert.Equal(1f, s.Contrast);
-        Assert.Equal(1f, s.Brightness);
         Assert.Equal(0f, s.TintAmount);
+        Assert.Equal(1f, s.SunlightScale);
     }
 
     [Fact]
@@ -62,7 +84,7 @@ public sealed class GpuTonemapSettingsTests
         const float previous = 0.2f;
         const float current = 1.0f;
         const float k = 0.25f;
-        var adapted = ((1f - k) * previous) + (k * current);
+        var adapted = (1f - k) * previous + k * current;
         Assert.Equal(0.4f, adapted, 6);
     }
 
@@ -74,7 +96,7 @@ public sealed class GpuTonemapSettingsTests
         const float brightness = 0.9f;
         const float contrast = 1.2f;
         const float pivot = 0.125f;
-        var output = contrast * ((brightness * color) - pivot) + pivot;
+        var output = contrast * (brightness * color - pivot) + pivot;
         Assert.Equal(0.623f, output, 6);
     }
 
@@ -98,7 +120,7 @@ public sealed class GpuTonemapSettingsTests
             Flags = ImageSpaceCinematicFlags.All,
             Saturation = 0.875f,
             Contrast = 1.02f,
-            Brightness = 0f,
+            Brightness = 0f
         };
 
         var resolved = GpuTonemapSettings.ResolveCinematicFlags(exterior.CinematicFlags, cnam);
@@ -113,7 +135,7 @@ public sealed class GpuTonemapSettingsTests
         var explicitMask = new ImageSpaceCinematic
         {
             HasExplicitFlags = true,
-            Flags = ImageSpaceCinematicFlags.Brightness,
+            Flags = ImageSpaceCinematicFlags.Brightness
         };
 
         Assert.Equal(
@@ -174,11 +196,11 @@ public sealed class GpuTonemapSettingsTests
         var settings = GpuTonemapSettings.ModernNeutralDefaults(ImageSpaceModernFamily.Fallout4) with
         {
             Mode = GpuTonemapMode.GammaAces,
-            SunlightScale = 2.5f,
+            SunlightScale = 2.5f
         };
 
         Assert.Equal(2.5f, GpuTonemapSettings.ResolveSceneSunlightScale(
-            settings, BethesdaGame.Fallout4, hdrActive: true, isInterior: true));
+            settings, BethesdaGame.Fallout4, true, true));
     }
 
     [Fact]
@@ -188,32 +210,32 @@ public sealed class GpuTonemapSettingsTests
         {
             Mode = GpuTonemapMode.GammaAces,
             SunlightScale = 2.7f,
-            SkyScale = 0.235f,
+            SkyScale = 0.235f
         };
         var expectedSun = MathF.Pow(2.7f, 1f / 2.2f);
         var expectedSky = MathF.Pow(0.235f, 1f / 2.2f);
 
         Assert.Equal(expectedSun, GpuTonemapSettings.ResolveSceneSunlightScale(
-            gamma, BethesdaGame.Skyrim, hdrActive: true, isInterior: false), 6);
+            gamma, BethesdaGame.Skyrim, true, false), 6);
         Assert.Equal(expectedSky, GpuTonemapSettings.ResolveSceneSkyScale(
-            gamma, BethesdaGame.Skyrim, hdrActive: true, isInterior: false), 6);
+            gamma, BethesdaGame.Skyrim, true, false), 6);
 
         var legacyClamp = gamma with { Mode = GpuTonemapMode.LegacyClamp };
         Assert.Equal(expectedSun, GpuTonemapSettings.ResolveSceneSunlightScale(
-            legacyClamp, BethesdaGame.Skyrim, hdrActive: true, isInterior: false), 6);
+            legacyClamp, BethesdaGame.Skyrim, true, false), 6);
         Assert.Equal(expectedSky, GpuTonemapSettings.ResolveSceneSkyScale(
-            legacyClamp, BethesdaGame.Skyrim, hdrActive: true, isInterior: false), 6);
+            legacyClamp, BethesdaGame.Skyrim, true, false), 6);
 
         var modern = gamma with { Mode = GpuTonemapMode.CreationModern };
         Assert.Equal(2.7f, GpuTonemapSettings.ResolveSceneSunlightScale(
-            modern, BethesdaGame.Skyrim, hdrActive: true, isInterior: false));
+            modern, BethesdaGame.Skyrim, true, false));
         Assert.Equal(0.235f, GpuTonemapSettings.ResolveSceneSkyScale(
-            modern, BethesdaGame.Skyrim, hdrActive: true, isInterior: false));
+            modern, BethesdaGame.Skyrim, true, false));
 
         Assert.Equal(1f, GpuTonemapSettings.ResolveSceneSunlightScale(
-            gamma, BethesdaGame.Skyrim, hdrActive: false, isInterior: false));
+            gamma, BethesdaGame.Skyrim, false, false));
         Assert.Equal(1f, GpuTonemapSettings.ResolveSceneSkyScale(
-            gamma, BethesdaGame.Skyrim, hdrActive: false, isInterior: false));
+            gamma, BethesdaGame.Skyrim, false, false));
     }
 
     [Fact]
@@ -228,8 +250,8 @@ public sealed class GpuTonemapSettingsTests
     public void ResolveEmissiveMult_PreservesAuthoredZero()
     {
         Assert.Equal(0f, GpuTonemapSettings.ResolveEmissiveMult(
-            familyDefault: 1.2f, authoredValue: 0f, hdrEnabled: true,
-            imagespaceModifiersEnabled: true));
+            1.2f, 0f, true,
+            true));
     }
 
     [Theory]
@@ -240,7 +262,7 @@ public sealed class GpuTonemapSettingsTests
         bool hdrEnabled, bool imagespaceModifiersEnabled)
     {
         Assert.Equal(1f, GpuTonemapSettings.ResolveEmissiveMult(
-            familyDefault: 1.2f, authoredValue: 4f, hdrEnabled,
+            1.2f, 4f, hdrEnabled,
             imagespaceModifiersEnabled));
     }
 
@@ -248,8 +270,8 @@ public sealed class GpuTonemapSettingsTests
     public void ResolveEmissiveMult_MissingAuthoredValueUsesFamilyDefault()
     {
         Assert.Equal(1.2f, GpuTonemapSettings.ResolveEmissiveMult(
-            familyDefault: 1.2f, authoredValue: null, hdrEnabled: true,
-            imagespaceModifiersEnabled: true));
+            1.2f, null, true,
+            true));
     }
 
     [Fact]
@@ -398,13 +420,13 @@ public sealed class GpuTonemapSettingsTests
             Saturation = 1f,
             Brightness = 1f,
             Contrast = 1f,
-            TintAmount = 0f,
+            TintAmount = 0f
         };
 
         // Independent semantic oracle: clamp(middleGray / adaptedLuma, min, max).
         Assert.Equal(0.5f, ModernImageSpaceReference.ResolveExposure(1f, settings), 6);
         Assert.Equal(2f, ModernImageSpaceReference.ResolveExposure(0.01f, settings), 6);
-        var output = ModernImageSpaceReference.Apply(new(0.1f, 0.2f, 0.3f), 0.125f, settings);
+        var output = ModernImageSpaceReference.Apply(new Vector3(0.1f, 0.2f, 0.3f), 0.125f, settings);
         Assert.Equal(0.2f, output.X, 6);
         Assert.Equal(0.4f, output.Y, 6);
         Assert.Equal(0.6f, output.Z, 6);

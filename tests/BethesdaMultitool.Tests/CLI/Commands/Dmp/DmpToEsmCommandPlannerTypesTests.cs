@@ -25,7 +25,7 @@ public sealed class DmpToEsmCommandPlannerTypesTests
             "--diag-keep-master-formid", "0x0012795D",
             "--diag-keep-master-formid", "0x000000C8",
             "--diag-retain-master-subrecords", "0x00127956:AIDT,SNAM",
-            "--diag-retain-master-subrecords", "0x00127956:DATA,DNAM",
+            "--diag-retain-master-subrecords", "0x00127956:DATA,DNAM"
         ]);
 
         Assert.Empty(parse.Errors);

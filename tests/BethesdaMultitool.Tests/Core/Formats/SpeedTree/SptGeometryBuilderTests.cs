@@ -208,36 +208,41 @@ public class SptGeometryBuilderTests
         // CIdvBranch::Compute (all three binaries): with the 13000 section enabled, branches at
         // level >= frondLevel still GENERATE (same RNG; their leaves persist in the pools) but are
         // destroyed instead of linked — no bark tube, no LOD ranking. Bethesda never renders fronds.
-        SptModel MakeModel(SptFrond? frond) => new()
+        SptModel MakeModel(SptFrond? frond)
         {
-            General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
-            Branches =
-            [
-                MakeBranch(1f, 0.02f, 2.6f, 3, 1),
-                MakeBranch(0.5f, 0.01f, 2.6f, 3, 1) with { Float6011 = 1f },
-                MakeLeafyBranch(),
-                new SptBranch()
-            ],
-            Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner1 = new Vector3(0.01f) }],
-            LeafTable = new SptLeafTable { Float3007 = 0.5f, UInt3008 = 0 },
-            Frond = frond
-        };
+            return new SptModel
+            {
+                General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
+                Branches =
+                [
+                    MakeBranch(1f, 0.02f, 2.6f, 3, 1),
+                    MakeBranch(0.5f, 0.01f, 2.6f, 3, 1) with { Float6011 = 1f },
+                    MakeLeafyBranch(),
+                    new SptBranch()
+                ],
+                Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner1 = new Vector3(0.01f) }],
+                LeafTable = new SptLeafTable { Float3007 = 0.5f, UInt3008 = 0 },
+                Frond = frond
+            };
+        }
 
         var ungated = SptGeometryBuilder.Build(MakeModel(null), 1, BillboardOptions());
-        var gated = SptGeometryBuilder.Build(MakeModel(new SptFrond { Enabled = true, Level = 1 }), 1, BillboardOptions());
-        var disabled = SptGeometryBuilder.Build(MakeModel(new SptFrond { Enabled = false, Level = 1 }), 1, BillboardOptions());
+        var gated = SptGeometryBuilder.Build(MakeModel(new SptFrond { Enabled = true, Level = 1 }), 1,
+            BillboardOptions());
+        var disabled = SptGeometryBuilder.Build(MakeModel(new SptFrond { Enabled = false, Level = 1 }), 1,
+            BillboardOptions());
 
         var ungatedBark = ungated.Submeshes.Single(s => s.ShapeName == "spt:bark").Positions.Length;
         var gatedBark = gated.Submeshes.Single(s => s.ShapeName == "spt:bark").Positions.Length;
-        Assert.Equal(RingVertexCount(3) * 2 * 3, gatedBark);            // trunk tube only (2 rings × 3+1 verts × xyz)
+        Assert.Equal(RingVertexCount(3) * 2 * 3, gatedBark); // trunk tube only (2 rings × 3+1 verts × xyz)
         Assert.True(gatedBark < ungatedBark, "frond gate removed no bark");
-        Assert.Equal(CountLeafQuads(ungated), CountLeafQuads(gated));   // accepted leaves persist
+        Assert.Equal(CountLeafQuads(ungated), CountLeafQuads(gated)); // accepted leaves persist
         Assert.Equal(ungatedBark,
             disabled.Submeshes.Single(s => s.ShapeName == "spt:bark").Positions.Length); // disabled = no gate
     }
 
     [Theory]
-    [InlineData(0f, 0f, 0.002f)]     // zero slot-2 flex → rigid under the matrices (WastelandShrub01 case)
+    [InlineData(0f, 0f, 0.002f)] // zero slot-2 flex → rigid under the matrices (WastelandShrub01 case)
     [InlineData(0.3f, 0.05f, 0.31f)] // real flex → positive weight bounded by t·slot2·slot3 ≈ 0.3
     public void Build_WindWeights_ScaleWithSlot2Slot3Flex(float slot2Flex, float minMaxWeight, float maxWeightCap)
     {
@@ -248,7 +253,7 @@ public class SptGeometryBuilderTests
         var leafy = MakeLeafyBranch();
         var slots = (SptBezierSpline?[])leafy.Splines;
         slots[2] = new SptBezierSpline { Header = new Vector3(slot2Flex, slot2Flex, 0f) }; // constant flex
-        slots[3] = new SptBezierSpline { Header = new Vector3(0f, 1f, 0f) };               // ramps 0→1 with t
+        slots[3] = new SptBezierSpline { Header = new Vector3(0f, 1f, 0f) }; // ramps 0→1 with t
         var model = new SptModel
         {
             General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
@@ -374,7 +379,11 @@ public class SptGeometryBuilderTests
         var center = new Vector3(0f, 0f, 2f);
         var offset = new Vector3(0f, 1f, 0f);
         var corner = center + offset;
-        static Vector3 RotateX90(Vector3 p) => new(p.X, -p.Z, p.Y);
+
+        static Vector3 RotateX90(Vector3 p)
+        {
+            return new Vector3(p.X, -p.Z, p.Y);
+        }
 
         var recovered = Vector3.Lerp(corner, RotateX90(corner), 0.5f);
         var centerOnly = Vector3.Lerp(center, RotateX90(center), 0.5f) + offset;
@@ -580,27 +589,27 @@ public class SptGeometryBuilderTests
             new Vector2(0.25f, 0.1f),
             new Vector2(0.75f, 0.1f));
         var model = MakeSingleLevelLeafModel(
-            leafFrequency: 1f,
-            leafTextureCoords: [uv, uv],
-            corner0: new Vector3(0.5f, 0.5f, 0f),
-            corner1: new Vector3(0.1f, 0.2f, 0f)) with
-        {
-            Leaves =
-            [
-                new SptLeaf
-                {
-                    Material = @"C:\x\OakFoliage.dds",
-                    Corner0 = new Vector3(0.5f, 0.5f, 0f),
-                    Corner1 = new Vector3(0.1f, 0.2f, 0f)
-                },
-                new SptLeaf
-                {
-                    Material = @"C:\x\OakBlossom.dds",
-                    Corner0 = new Vector3(0.5f, 0.5f, 0f),
-                    Corner1 = new Vector3(0.1f, 0.2f, 0f)
-                }
-            ]
-        };
+                leafFrequency: 1f,
+                leafTextureCoords: [uv, uv],
+                corner0: new Vector3(0.5f, 0.5f, 0f),
+                corner1: new Vector3(0.1f, 0.2f, 0f)) with
+            {
+                Leaves =
+                [
+                    new SptLeaf
+                    {
+                        Material = @"C:\x\OakFoliage.dds",
+                        Corner0 = new Vector3(0.5f, 0.5f, 0f),
+                        Corner1 = new Vector3(0.1f, 0.2f, 0f)
+                    },
+                    new SptLeaf
+                    {
+                        Material = @"C:\x\OakBlossom.dds",
+                        Corner0 = new Vector3(0.5f, 0.5f, 0f),
+                        Corner1 = new Vector3(0.1f, 0.2f, 0f)
+                    }
+                ]
+            };
 
         var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
@@ -632,13 +641,14 @@ public class SptGeometryBuilderTests
         // that constant blend has no engine counterpart).
         var normal = ReadVector3(result.Submeshes.Single(s => s.ShapeName == "spt:leaves").Normals!, 0);
         Assert.InRange(normal.Length(), 0.99f, 1.01f);
-        Assert.True(normal.Z > 0f, $"outward-from-origin normal on a vertical branch should point up-hemisphere, was {normal}");
+        Assert.True(normal.Z > 0f,
+            $"outward-from-origin normal on a vertical branch should point up-hemisphere, was {normal}");
     }
 
     [Fact]
     public void Build_BlossomGate_ReplacesLeafBudInsteadOfAddingSecondPopulation()
     {
-        var model = MakeLeafBlossomGateModel(blossomProbability: 1f);
+        var model = MakeLeafBlossomGateModel(1f);
 
         var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
@@ -650,7 +660,7 @@ public class SptGeometryBuilderTests
     [Fact]
     public void Build_BlossomGate_ProbabilityZeroUsesLeafPool()
     {
-        var model = MakeLeafBlossomGateModel(blossomProbability: 0f);
+        var model = MakeLeafBlossomGateModel(0f);
 
         var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
@@ -713,7 +723,7 @@ public class SptGeometryBuilderTests
         // stays visually bounded across seeds.
         foreach (var seed in new uint[] { 1, 7, 1234, 99999 })
         {
-            var result = SptGeometryBuilder.Build(MakeVerticalNoisyTrunkModel(12f, rings: 25), seed, BillboardOptions());
+            var result = SptGeometryBuilder.Build(MakeVerticalNoisyTrunkModel(12f, 25), seed, BillboardOptions());
             var bark = result.Submeshes.Single(s => s.ShapeName == "spt:bark");
             var (tipXy, height) = TrunkTipOffset(bark);
             Assert.True(tipXy < height * 0.30f,
@@ -726,7 +736,7 @@ public class SptGeometryBuilderTests
     {
         // A noisy trunk must still end measurably off the axis — per-ring character is real geometry,
         // not smoothed away.
-        var result = SptGeometryBuilder.Build(MakeVerticalNoisyTrunkModel(12f, rings: 25), 7, BillboardOptions());
+        var result = SptGeometryBuilder.Build(MakeVerticalNoisyTrunkModel(12f, 25), 7, BillboardOptions());
         var bark = result.Submeshes.Single(s => s.ShapeName == "spt:bark");
         var (tipXy, height) = TrunkTipOffset(bark);
         Assert.True(tipXy > height * 0.005f,
@@ -742,9 +752,9 @@ public class SptGeometryBuilderTests
         // spawn height (the pre-derivation port bent the opposite way - the sprawl defect).
         var branch = MakeBranch(1f, 0.02f, 0f, 4, 24);
         var slots = (SptBezierSpline?[])branch.Splines;
-        slots[1] = new SptBezierSpline { Header = new Vector3(1f, 1f, 0f) };  // bend gain 1
-        slots[7] = new SptBezierSpline { Header = new Vector3(0f, 0f, 0f) };  // horizontal spawn
-        slots[8] = new SptBezierSpline { Header = new Vector3(1f, 1f, 0f) };  // s8 = 1 -> roll = -1
+        slots[1] = new SptBezierSpline { Header = new Vector3(1f, 1f, 0f) }; // bend gain 1
+        slots[7] = new SptBezierSpline { Header = new Vector3(0f, 0f, 0f) }; // horizontal spawn
+        slots[8] = new SptBezierSpline { Header = new Vector3(1f, 1f, 0f) }; // s8 = 1 -> roll = -1
         var model = new SptModel
         {
             General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
@@ -770,8 +780,10 @@ public class SptGeometryBuilderTests
             $"limb dove below its spawn plane (minZ {baseZ:0.##} vs radial reach {maxRadial:0.##})");
     }
 
-    /// <summary>A childless VERTICAL trunk (slot 7 = −90° declination, like real trees) whose slot-0
-    /// noise ramps to ±<paramref name="noiseVarianceDeg" /> along the stem.</summary>
+    /// <summary>
+    ///     A childless VERTICAL trunk (slot 7 = −90° declination, like real trees) whose slot-0
+    ///     noise ramps to ±<paramref name="noiseVarianceDeg" /> along the stem.
+    /// </summary>
     private static SptModel MakeVerticalNoisyTrunkModel(float noiseVarianceDeg, uint rings)
     {
         var branch = MakeBranch(1f, 0.02f, 0f, 4, rings - 1);
@@ -941,8 +953,10 @@ public class SptGeometryBuilderTests
         return new Vector3(values[i], values[i + 1], values[i + 2]);
     }
 
-    /// <summary>Asserts a leaf-card bitangent's x/y (the card corner offset); z carries the recovered
-    /// integer phase slot plus authored dimmer fraction and is checked separately.</summary>
+    /// <summary>
+    ///     Asserts a leaf-card bitangent's x/y (the card corner offset); z carries the recovered
+    ///     integer phase slot plus authored dimmer fraction and is checked separately.
+    /// </summary>
     private static void AssertOffsetXy(float[] values, int vertex, float x, float y)
     {
         var i = vertex * 3;

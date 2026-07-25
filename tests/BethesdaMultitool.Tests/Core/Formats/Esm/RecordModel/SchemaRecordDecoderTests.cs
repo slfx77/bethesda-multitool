@@ -1,3 +1,4 @@
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Generated;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema;
@@ -14,47 +15,55 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 /// </summary>
 public class SchemaRecordDecoderTests
 {
-    private static RecordDef BuildNpcSchema() => new("NPC_",
-    [
-        new FieldDef(PrimType.ZString) { Signature = "EDID", Name = "Editor ID" },
-        new FieldDef(PrimType.ZString) { Signature = "FULL", Name = "Name" },
-        new StructDef(
+    private static RecordDef BuildNpcSchema()
+    {
+        return new RecordDef("NPC_",
         [
-            new FieldDef(PrimType.U32)
-            {
-                Name = "Flags",
-                InlineFlags = new FlagsDef(null, [new FlagMember(0, "Female"), new FlagMember(1, "Essential")])
-            },
-            new FieldDef(PrimType.U16) { Name = "Fatigue" }
-        ]) { Signature = "ACBS", Name = "Configuration" },
-        new ArrayDef(
+            new FieldDef(PrimType.ZString) { Signature = "EDID", Name = "Editor ID" },
+            new FieldDef(PrimType.ZString) { Signature = "FULL", Name = "Name" },
             new StructDef(
             [
-                new FormIdDef { Name = "Faction" },
-                new FieldDef(PrimType.S8) { Name = "Rank" },
-                // Trailing member present only in later games — must consume 0 bytes here.
-                new RawMemberDef("IsFO4Plus") { Name = "Unused (FO4+)" }
-            ]) { Signature = "SNAM", Name = "Faction" }
-        ) { Name = "Factions", Count = 0 },
-        // Two declared bytes; the test feeds only one to prove the trailing field is reported absent.
-        new StructDef(
-        [
-            new FieldDef(PrimType.U8) { Name = "Aggression" },
-            new FieldDef(PrimType.U8) { Name = "Confidence" }
-        ]) { Signature = "DATA", Name = "AI Data" }
-    ]);
+                new FieldDef(PrimType.U32)
+                {
+                    Name = "Flags",
+                    InlineFlags = new FlagsDef(null, [new FlagMember(0, "Female"), new FlagMember(1, "Essential")])
+                },
+                new FieldDef(PrimType.U16) { Name = "Fatigue" }
+            ]) { Signature = "ACBS", Name = "Configuration" },
+            new ArrayDef(
+                new StructDef(
+                [
+                    new FormIdDef { Name = "Faction" },
+                    new FieldDef(PrimType.S8) { Name = "Rank" },
+                    // Trailing member present only in later games — must consume 0 bytes here.
+                    new RawMemberDef("IsFO4Plus") { Name = "Unused (FO4+)" }
+                ]) { Signature = "SNAM", Name = "Faction" }
+            ) { Name = "Factions", Count = 0 },
+            // Two declared bytes; the test feeds only one to prove the trailing field is reported absent.
+            new StructDef(
+            [
+                new FieldDef(PrimType.U8) { Name = "Aggression" },
+                new FieldDef(PrimType.U8) { Name = "Confidence" }
+            ]) { Signature = "DATA", Name = "AI Data" }
+        ]);
+    }
 
-    private static byte[] Le(uint v) => [(byte)v, (byte)(v >> 8), (byte)(v >> 16), (byte)(v >> 24)];
+    private static byte[] Le(uint v)
+    {
+        return [(byte)v, (byte)(v >> 8), (byte)(v >> 16), (byte)(v >> 24)];
+    }
 
     private static byte[] Zstr(string s)
     {
         var bytes = new byte[s.Length + 1];
-        System.Text.Encoding.ASCII.GetBytes(s).CopyTo(bytes, 0);
+        Encoding.ASCII.GetBytes(s).CopyTo(bytes, 0);
         return bytes;
     }
 
-    private static DecodedNode? Find(IReadOnlyList<DecodedNode> nodes, string label) =>
-        nodes.FirstOrDefault(n => n.Label == label);
+    private static DecodedNode? Find(IReadOnlyList<DecodedNode> nodes, string label)
+    {
+        return nodes.FirstOrDefault(n => n.Label == label);
+    }
 
     [Fact]
     public void Decodes_Strings_And_Flag_Labels()
@@ -171,7 +180,10 @@ public class SchemaRecordDecoderTests
         Assert.Contains("TestFaction", faction.Value);
     }
 
-    private static byte[] U16(ushort v) => [(byte)v, (byte)(v >> 8)];
+    private static byte[] U16(ushort v)
+    {
+        return [(byte)v, (byte)(v >> 8)];
+    }
 
     [Fact]
     public void Decodes_Array_With_Signature_On_The_Array_Not_The_Element()

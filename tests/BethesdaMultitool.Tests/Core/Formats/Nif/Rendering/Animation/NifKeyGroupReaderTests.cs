@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using Xunit;
 
@@ -21,14 +22,14 @@ public class NifKeyGroupReaderTests
         var bytes = new List<byte>();
         AppendUInt(bytes, 2); // num keys
         AppendUInt(bytes, 1); // LINEAR
-        AppendFloats(bytes, 0f, 1f, 0f, 0f, 0f);      // t=0, quat w=1 (identity)
-        AppendFloats(bytes, 1f, 0f, 0f, 0f, 1f);      // t=1, quat (w=0, z=1)
+        AppendFloats(bytes, 0f, 1f, 0f, 0f, 0f); // t=0, quat w=1 (identity)
+        AppendFloats(bytes, 1f, 0f, 0f, 0f, 1f); // t=1, quat (w=0, z=1)
         AppendUInt(bytes, Sentinel);
         var data = bytes.ToArray();
         var pos = 0;
 
         Assert.True(NifKeyGroupReader.TryReadQuatKeys(
-            data, ref pos, data.Length, be: false, Morrowind, out var interp, out var keys));
+            data, ref pos, data.Length, false, Morrowind, out var interp, out var keys));
 
         Assert.Equal(NifKeyInterpolation.Linear, interp);
         Assert.Equal(2, keys.Length);
@@ -53,7 +54,7 @@ public class NifKeyGroupReaderTests
         var pos = 0;
 
         Assert.True(NifKeyGroupReader.TryReadQuatKeys(
-            data, ref pos, data.Length, be: false, Morrowind, out var interp, out var keys));
+            data, ref pos, data.Length, false, Morrowind, out var interp, out var keys));
 
         Assert.Equal(NifKeyInterpolation.Quadratic, interp);
         Assert.Equal(2, keys.Length);
@@ -74,7 +75,7 @@ public class NifKeyGroupReaderTests
         var pos = 0;
 
         Assert.True(NifKeyGroupReader.TryReadQuatKeys(
-            data, ref pos, data.Length, be: false, Morrowind, out var interp, out var keys));
+            data, ref pos, data.Length, false, Morrowind, out var interp, out var keys));
 
         Assert.Equal(NifKeyInterpolation.Tbc, interp);
         Assert.Equal(2, keys.Length);
@@ -105,7 +106,7 @@ public class NifKeyGroupReaderTests
         var pos = 0;
 
         Assert.True(NifKeyGroupReader.TryReadQuatKeys(
-            data, ref pos, data.Length, be: false, Morrowind, out var interp, out var keys));
+            data, ref pos, data.Length, false, Morrowind, out var interp, out var keys));
 
         Assert.Equal(NifKeyInterpolation.XyzEuler, interp);
         Assert.Empty(keys);
@@ -129,16 +130,16 @@ public class NifKeyGroupReaderTests
         var pos = 0;
 
         Assert.True(NifKeyGroupReader.TryReadVector3Keys(
-            data, ref pos, data.Length, be: false, out _, out var keys));
+            data, ref pos, data.Length, false, out _, out var keys));
 
         Assert.Equal(2, keys.Length);
-        Assert.Equal(new System.Numerics.Vector3(1f, 2f, 3f), keys[0].Value);
-        Assert.Equal(new System.Numerics.Vector3(4f, 5f, 6f), keys[1].Value);
+        Assert.Equal(new Vector3(1f, 2f, 3f), keys[0].Value);
+        Assert.Equal(new Vector3(4f, 5f, 6f), keys[1].Value);
         Assert.Equal(Sentinel, ReadUInt(data, pos));
     }
 
     [Theory]
-    [InlineData(1u, 8)]  // LINEAR: time + float
+    [InlineData(1u, 8)] // LINEAR: time + float
     [InlineData(2u, 16)] // QUADRATIC: time + value + forward + backward
     [InlineData(3u, 20)] // TBC: time + value + t/b/c
     public void FloatKeys_StridesMatchNifXml(uint keyType, int expectedStride)
@@ -153,7 +154,7 @@ public class NifKeyGroupReaderTests
         var pos = 0;
 
         Assert.True(NifKeyGroupReader.TryReadFloatKeys(
-            data, ref pos, data.Length, be: false, out _, out var keys));
+            data, ref pos, data.Length, false, out _, out var keys));
 
         Assert.Equal(2, keys.Length);
         Assert.Equal(0f, keys[0].Value);
@@ -171,7 +172,7 @@ public class NifKeyGroupReaderTests
         var pos = 0;
 
         Assert.True(NifKeyGroupReader.TryReadFloatKeys(
-            data, ref pos, data.Length, be: false, out _, out var keys));
+            data, ref pos, data.Length, false, out _, out var keys));
 
         Assert.Empty(keys);
         Assert.Equal(Sentinel, ReadUInt(data, pos));
@@ -181,14 +182,14 @@ public class NifKeyGroupReaderTests
     public void TruncatedKeys_ReturnFalse()
     {
         var bytes = new List<byte>();
-        AppendUInt(bytes, 5);  // claims 5 keys
-        AppendUInt(bytes, 1);  // LINEAR
+        AppendUInt(bytes, 5); // claims 5 keys
+        AppendUInt(bytes, 1); // LINEAR
         AppendFloats(bytes, 0f, 1f); // only one key present
         var data = bytes.ToArray();
         var pos = 0;
 
         Assert.False(NifKeyGroupReader.TryReadFloatKeys(
-            data, ref pos, data.Length, be: false, out _, out _));
+            data, ref pos, data.Length, false, out _, out _));
     }
 
     // ---- byte builders ------------------------------------------------------------------------
@@ -224,6 +225,8 @@ public class NifKeyGroupReaderTests
         bytes.AddRange(b.ToArray());
     }
 
-    private static uint ReadUInt(byte[] data, int pos) =>
-        BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+    private static uint ReadUInt(byte[] data, int pos)
+    {
+        return BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+    }
 }

@@ -59,10 +59,10 @@ public sealed class DdsGpuTexturePayloadParserTests
     }
 
     [Theory]
-    [InlineData(71u, "BC1", 8)]  // BC1_UNORM
-    [InlineData(72u, "BC1", 8)]  // BC1_UNORM_SRGB
+    [InlineData(71u, "BC1", 8)] // BC1_UNORM
+    [InlineData(72u, "BC1", 8)] // BC1_UNORM_SRGB
     [InlineData(77u, "BC3", 16)] // BC3_UNORM
-    [InlineData(80u, "BC4", 8)]  // BC4_UNORM
+    [InlineData(80u, "BC4", 8)] // BC4_UNORM
     [InlineData(83u, "BC5", 16)] // BC5_UNORM
     [InlineData(98u, "BC7", 16)] // BC7_UNORM
     [InlineData(99u, "BC7", 16)] // BC7_UNORM_SRGB
@@ -81,8 +81,8 @@ public sealed class DdsGpuTexturePayloadParserTests
     }
 
     [Theory]
-    [InlineData(87u)]  // B8G8R8A8_UNORM — no BCn payload mapping
-    [InlineData(95u)]  // BC6H_UF16 — unsupported
+    [InlineData(87u)] // B8G8R8A8_UNORM — no BCn payload mapping
+    [InlineData(95u)] // BC6H_UF16 — unsupported
     public void Parse_Dx10UnsupportedFormat_ReturnsNullForFallbackDecoder(uint dxgiFormat)
     {
         var ddsData = CreateDx10Dds(8, 8, dxgiFormat, 1, 16);
@@ -94,7 +94,7 @@ public sealed class DdsGpuTexturePayloadParserTests
     public void Parse_Dx10Cubemap_ReturnsSixFacePayload()
     {
         // DX10 cube: miscFlag 0x4, arraySize 1, six face-major mip chains in the payload.
-        var ddsData = CreateDx10Dds(8, 8, 98u, 2, 16, miscFlag: 0x4, faces: 6);
+        var ddsData = CreateDx10Dds(8, 8, 98u, 2, 16, 0x4, 6);
 
         var payload = DdsGpuTexturePayloadParser.Parse(ddsData);
 
@@ -113,7 +113,7 @@ public sealed class DdsGpuTexturePayloadParserTests
     {
         // Only one face's worth of data behind a cube header — a partial cube would desync the
         // face-major subresource layout, so the parser must reject rather than upload it.
-        var ddsData = CreateDx10Dds(8, 8, 98u, 1, 16, miscFlag: 0x4);
+        var ddsData = CreateDx10Dds(8, 8, 98u, 1, 16, 0x4);
 
         Assert.Null(DdsGpuTexturePayloadParser.Parse(ddsData));
     }
@@ -133,18 +133,18 @@ public sealed class DdsGpuTexturePayloadParserTests
         WriteUInt32(data, 12, height);
         WriteUInt32(data, 16, width);
         WriteUInt32(data, 28, mips);
-        WriteUInt32(data, 76, 32);          // ddspf size
-        WriteUInt32(data, 80, 0x41);        // DDPF_RGB | DDPF_ALPHAPIXELS
-        WriteUInt32(data, 88, 32);          // bit count
-        WriteUInt32(data, 92, 0x00FF0000);  // R mask (BGRA memory order)
-        WriteUInt32(data, 96, 0x0000FF00);  // G mask
+        WriteUInt32(data, 76, 32); // ddspf size
+        WriteUInt32(data, 80, 0x41); // DDPF_RGB | DDPF_ALPHAPIXELS
+        WriteUInt32(data, 88, 32); // bit count
+        WriteUInt32(data, 92, 0x00FF0000); // R mask (BGRA memory order)
+        WriteUInt32(data, 96, 0x0000FF00); // G mask
         WriteUInt32(data, 100, 0x000000FF); // B mask
         WriteUInt32(data, 104, 0xFF000000); // A mask
         WriteUInt32(data, 108, 0x0040FE08); // caps: TEXTURE|MIPMAP|COMPLEX + folded cube/face bits
-        WriteUInt32(data, 112, 0);          // caps2 cleared (BA2 v7 layout)
+        WriteUInt32(data, 112, 0); // caps2 cleared (BA2 v7 layout)
         for (var i = 128; i < data.Length; i += 4)
         {
-            data[i] = 0x10;     // B
+            data[i] = 0x10; // B
             data[i + 1] = 0x20; // G
             data[i + 2] = 0x30; // R
             data[i + 3] = 0x40; // A

@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;

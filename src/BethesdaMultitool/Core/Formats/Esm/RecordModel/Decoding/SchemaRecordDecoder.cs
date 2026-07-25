@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema;
 using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 using BethesdaMultitool.Core.Games;
@@ -37,7 +38,7 @@ public static class SchemaRecordDecoder
         ArgumentNullException.ThrowIfNull(schema);
         ArgumentNullException.ThrowIfNull(subrecords);
 
-        var ctx = new DecodeContext(bigEndian, resolveName, game);
+        var ctx = new DecodeContext(bigEndian, resolveName, game, schema.Signature);
 
         // Map each entry-point signature to the top-level member that consumes it. Arrays map via their
         // element's signature(s); a plain signed member maps directly.
@@ -248,11 +249,20 @@ public static class SchemaRecordDecoder
     private static DecodedNode DecodeSignedMember(MemberDef member, string sig, byte[] data, DecodeContext ctx)
     {
         var label = member.Name is { Length: > 0 } name ? name : sig;
+
+        // For a big-endian (Xbox 360) record, ask the conversion schema — the single source of Xbox
+        // fixed-LE truth — which byte offsets in THIS subrecord are stored little-endian even on Xbox, so
+        // the reads below can skip the byte-swap for exactly those fields. Null (the common case) means no
+        // override; on a PC/LE record we never even ask, so the decode is byte-identical to before.
+        var leMap = ctx.BigEndian
+            ? SubrecordSchemaRegistry.GetFixedLeLayout(sig, ctx.RecordSignature, data.Length)
+            : null;
+
         switch (member)
         {
             case FieldDef field:
             {
-                var (value, raw, formId) = DecodeScalar(field, data, 0, data.Length, ctx, out _);
+                var (value, raw, formId) = DecodeScalar(field, data, 0, data.Length, ctx, leMap, out _);
                 return new DecodedNode
                 {
                     Label = label, Value = value, RawValue = raw, FormId = formId, Signature = sig
@@ -260,13 +270,13 @@ public static class SchemaRecordDecoder
             }
             case FormIdDef:
             {
-                var (value, raw, formId) = DecodeFormId(data, 0, data.Length, ctx);
+                var (value, raw, formId) = DecodeFormId(data, 0, data.Length, ctx, leMap);
                 return new DecodedNode { Label = label, Value = value, RawValue = raw, FormId = formId, Signature = sig };
             }
             case StructDef structDef:
             {
                 var children = new List<DecodedNode>();
-                DecodeStructInto(structDef, data, 0, data.Length, ctx, children);
+                DecodeStructInto(structDef, data, 0, data.Length, ctx, leMap, children);
                 return new DecodedNode { Label = label, Children = children, Signature = sig };
             }
             case EmptyDef:
@@ -282,7 +292,8 @@ public static class SchemaRecordDecoder
     ///     version differences). Returns the offset reached.
     /// </summary>
     private static int DecodeStructInto(
-        StructDef structDef, byte[] data, int offset, int limit, DecodeContext ctx, List<DecodedNode> output)
+        StructDef structDef, byte[] data, int offset, int limit, DecodeContext ctx,
+        IReadOnlyDictionary<int, LeFieldKind>? leMap, List<DecodedNode> output)
     {
         foreach (var member in structDef.Members)
         {
@@ -295,7 +306,7 @@ public static class SchemaRecordDecoder
             {
                 case FieldDef field:
                 {
-                    var (value, raw, formId) = DecodeScalar(field, data, offset, limit, ctx, out var size);
+                    var (value, raw, formId) = DecodeScalar(field, data, offset, limit, ctx, leMap, out var size);
                     if (size < 0)
                     {
                         // Variable/undecodable inline field — preserve the remainder verbatim and stop.
@@ -317,7 +328,7 @@ public static class SchemaRecordDecoder
                         return offset;
                     }
 
-                    var (value, raw, formId) = DecodeFormId(data, offset, limit, ctx);
+                    var (value, raw, formId) = DecodeFormId(data, offset, limit, ctx, leMap);
                     output.Add(new DecodedNode { Label = formIdDef.Name ?? "FormID", Value = value, RawValue = raw, FormId = formId });
                     offset += 4;
                     break;
@@ -328,7 +339,7 @@ public static class SchemaRecordDecoder
                 case StructDef nested:
                 {
                     var children = new List<DecodedNode>();
-                    var reached = DecodeStructInto(nested, data, offset, limit, ctx, children);
+                    var reached = DecodeStructInto(nested, data, offset, limit, ctx, leMap, children);
                     output.Add(new DecodedNode { Label = nested.Name ?? "Struct", Children = children });
                     offset = reached;
                     break;
@@ -338,7 +349,7 @@ public static class SchemaRecordDecoder
                     var children = new List<DecodedNode>();
                     for (var n = 0; n < inlineArray.Count && offset < limit; n++)
                     {
-                        offset = DecodeInlineElement(inlineArray.Element, data, offset, limit, ctx, n, children);
+                        offset = DecodeInlineElement(inlineArray.Element, data, offset, limit, ctx, leMap, n, children);
                     }
 
                     output.Add(new DecodedNode
@@ -347,7 +358,7 @@ public static class SchemaRecordDecoder
                     });
                     break;
                 }
-                case UnionDef union when TryDecodeConditionUnion(union, data, offset, limit, ctx, output, out var conditionNode):
+                case UnionDef union when TryDecodeConditionUnion(union, data, offset, limit, ctx, leMap, output, out var conditionNode):
                 {
                     // CTDA deciders resolved from the ALREADY-DECODED siblings: the Function index
                     // picks each Parameter's numeric-vs-FormID interpretation via the game's
@@ -362,7 +373,7 @@ public static class SchemaRecordDecoder
                     // An inline value union (e.g. CTDA Comparison Value / Parameter #1) — every variant is the
                     // same width, so the struct stays aligned whichever one the data is. Without a game
                     // (or for non-condition unions), decode the first variant as a representative.
-                    output.Add(DecodeInlineUnion(union, data, offset, limit, ctx));
+                    output.Add(DecodeInlineUnion(union, data, offset, limit, ctx, leMap));
                     offset += usize;
                     break;
                 }
@@ -379,13 +390,14 @@ public static class SchemaRecordDecoder
     }
 
     private static int DecodeInlineElement(
-        MemberDef element, byte[] data, int offset, int limit, DecodeContext ctx, int index, List<DecodedNode> output)
+        MemberDef element, byte[] data, int offset, int limit, DecodeContext ctx,
+        IReadOnlyDictionary<int, LeFieldKind>? leMap, int index, List<DecodedNode> output)
     {
         switch (element)
         {
             case FieldDef field:
             {
-                var (value, raw, formId) = DecodeScalar(field, data, offset, limit, ctx, out var size);
+                var (value, raw, formId) = DecodeScalar(field, data, offset, limit, ctx, leMap, out var size);
                 if (size < 0)
                 {
                     return limit;
@@ -404,14 +416,14 @@ public static class SchemaRecordDecoder
                     return limit;
                 }
 
-                var (value, raw, formId) = DecodeFormId(data, offset, limit, ctx);
+                var (value, raw, formId) = DecodeFormId(data, offset, limit, ctx, leMap);
                 output.Add(new DecodedNode { Label = $"Item [{index}]", Value = value, RawValue = raw, FormId = formId });
                 return offset + 4;
             }
             case StructDef structDef:
             {
                 var children = new List<DecodedNode>();
-                var reached = DecodeStructInto(structDef, data, offset, limit, ctx, children);
+                var reached = DecodeStructInto(structDef, data, offset, limit, ctx, leMap, children);
                 output.Add(new DecodedNode { Label = $"{structDef.Name ?? "Item"} [{index}]", Children = children });
                 return reached;
             }
@@ -421,14 +433,18 @@ public static class SchemaRecordDecoder
     }
 
     private static (string? Value, object? Raw, uint? FormId) DecodeFormId(
-        byte[] data, int offset, int limit, DecodeContext ctx)
+        byte[] data, int offset, int limit, DecodeContext ctx,
+        IReadOnlyDictionary<int, LeFieldKind>? leMap = null)
     {
         if (limit - offset < 4)
         {
             return (null, null, null);
         }
 
-        var value = ctx.BigEndian
+        // A FormID marked fixed-LE by the conversion schema is stored little-endian even on Xbox — read it
+        // little-endian regardless of ctx.BigEndian. leMap is only populated on big-endian records.
+        var forceLe = leMap is not null && leMap.TryGetValue(offset, out var kind) && kind == LeFieldKind.LittleEndian;
+        var value = ctx.BigEndian && !forceLe
             ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset, 4))
             : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, 4));
 
@@ -449,7 +465,8 @@ public static class SchemaRecordDecoder
     ///     first variant (an unmodeled 4-byte value, e.g. a TESConditionItem parameter) is surfaced as a u32
     ///     so the value stays visible rather than rendering as "&lt;4 bytes&gt;".
     /// </summary>
-    private static DecodedNode DecodeInlineUnion(UnionDef union, byte[] data, int offset, int limit, DecodeContext ctx)
+    private static DecodedNode DecodeInlineUnion(UnionDef union, byte[] data, int offset, int limit, DecodeContext ctx,
+        IReadOnlyDictionary<int, LeFieldKind>? leMap)
     {
         var label = union.Name ?? "Value";
         var repr = union.Variants[0];
@@ -462,12 +479,12 @@ public static class SchemaRecordDecoder
         {
             case FormIdDef:
             {
-                var (value, raw, fid) = DecodeFormId(data, offset, limit, ctx);
+                var (value, raw, fid) = DecodeFormId(data, offset, limit, ctx, leMap);
                 return new DecodedNode { Label = label, Value = value, RawValue = raw, FormId = fid };
             }
             case FieldDef field:
             {
-                var (value, raw, fid) = DecodeScalar(field, data, offset, limit, ctx, out _);
+                var (value, raw, fid) = DecodeScalar(field, data, offset, limit, ctx, leMap, out _);
                 return new DecodedNode { Label = label, Value = value, RawValue = raw, FormId = fid };
             }
             default:
@@ -486,7 +503,7 @@ public static class SchemaRecordDecoder
     /// </summary>
     private static bool TryDecodeConditionUnion(
         UnionDef union, byte[] data, int offset, int limit, DecodeContext ctx,
-        List<DecodedNode> siblings, out DecodedNode node)
+        IReadOnlyDictionary<int, LeFieldKind>? leMap, List<DecodedNode> siblings, out DecodedNode node)
     {
         node = null!;
         if (ctx.ConditionTable is not { } table || limit - offset < 4)
@@ -506,7 +523,7 @@ public static class SchemaRecordDecoder
 
                 if ((typeRaw & 0x04) != 0)
                 {
-                    var (value, raw, fid) = DecodeFormId(data, offset, limit, ctx);
+                    var (value, raw, fid) = DecodeFormId(data, offset, limit, ctx, leMap);
                     node = new DecodedNode { Label = label, Value = value, RawValue = raw, FormId = fid };
                 }
                 else
@@ -536,7 +553,7 @@ public static class SchemaRecordDecoder
                 var functionIndex = (ushort)functionRaw;
                 if (table.ClassifyParam(functionIndex, paramIndex) == ConditionParamKind.FormId)
                 {
-                    var (value, raw, fid) = DecodeFormId(data, offset, limit, ctx);
+                    var (value, raw, fid) = DecodeFormId(data, offset, limit, ctx, leMap);
                     node = new DecodedNode { Label = label, Value = value, RawValue = raw, FormId = fid };
                 }
                 else
@@ -653,10 +670,38 @@ public static class SchemaRecordDecoder
 
     private static readonly (string?, object?, uint?) NoValue = (null, null, null);
 
+    /// <summary>
+    ///     Reads a u32 honoring a conversion-schema fixed-LE override at this offset: <c>WordSwapped</c>
+    ///     reconstructs the middle-endian value (two big-endian u16 words in LE order,
+    ///     <c>(BE16@o+2 &lt;&lt; 16) | BE16@o</c>, matching <c>SubrecordSchemaReader.ReadUInt32WordSwapped</c>);
+    ///     <c>LittleEndian</c> forces a plain LE read; otherwise the context's endianness applies.
+    /// </summary>
+    private static uint ReadU32Overridden(byte[] data, int offset, DecodeContext ctx, LeFieldKind? le) => le switch
+    {
+        LeFieldKind.WordSwapped =>
+            ((uint)BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset + 2, 2)) << 16)
+            | BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset, 2)),
+        LeFieldKind.LittleEndian => BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, 4)),
+        _ => ctx.ReadU32(data, offset)
+    };
+
+    /// <summary>Signed counterpart of <see cref="ReadU32Overridden" /> (Int32LittleEndian fields).</summary>
+    private static int ReadS32Overridden(byte[] data, int offset, DecodeContext ctx, LeFieldKind? le) => le switch
+    {
+        LeFieldKind.LittleEndian => BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset, 4)),
+        LeFieldKind.WordSwapped => unchecked((int)ReadU32Overridden(data, offset, ctx, LeFieldKind.WordSwapped)),
+        _ => ctx.ReadS32(data, offset)
+    };
+
     private static (string? Value, object? Raw, uint? FormId) DecodeScalar(
-        FieldDef field, byte[] data, int offset, int limit, DecodeContext ctx, out int size)
+        FieldDef field, byte[] data, int offset, int limit, DecodeContext ctx,
+        IReadOnlyDictionary<int, LeFieldKind>? leMap, out int size)
     {
         var available = limit - offset;
+
+        // A fixed-LE override for the field starting at this offset (word-swap or plain little-endian even
+        // on Xbox). Null in the overwhelmingly common case — then the reads below use ctx's endianness.
+        var le = leMap is not null && leMap.TryGetValue(offset, out var kind) ? (LeFieldKind?)kind : null;
 
         switch (field.Type)
         {
@@ -665,21 +710,29 @@ public static class SchemaRecordDecoder
             case PrimType.S8:
                 return Fits(1, available, out size) ? Integer(field, (sbyte)data[offset]) : NoValue;
             case PrimType.U16:
-                return Fits(2, available, out size) ? Integer(field, ctx.ReadU16(data, offset)) : NoValue;
+                return Fits(2, available, out size)
+                    ? Integer(field, le == LeFieldKind.LittleEndian
+                        ? BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(offset, 2))
+                        : ctx.ReadU16(data, offset))
+                    : NoValue;
             case PrimType.S16:
-                return Fits(2, available, out size) ? Integer(field, ctx.ReadS16(data, offset)) : NoValue;
+                return Fits(2, available, out size)
+                    ? Integer(field, le == LeFieldKind.LittleEndian
+                        ? BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(offset, 2))
+                        : ctx.ReadS16(data, offset))
+                    : NoValue;
             case PrimType.U24:
                 return Fits(3, available, out size) ? Integer(field, ctx.ReadU24(data, offset)) : NoValue;
             case PrimType.U32:
-                return Fits(4, available, out size) ? Integer(field, ctx.ReadU32(data, offset)) : NoValue;
+                return Fits(4, available, out size) ? Integer(field, ReadU32Overridden(data, offset, ctx, le)) : NoValue;
             case PrimType.S32:
-                return Fits(4, available, out size) ? Integer(field, ctx.ReadS32(data, offset)) : NoValue;
+                return Fits(4, available, out size) ? Integer(field, ReadS32Overridden(data, offset, ctx, le)) : NoValue;
             case PrimType.U64:
                 return Fits(8, available, out size) ? Integer(field, (long)ctx.ReadU64(data, offset)) : NoValue;
             case PrimType.S64:
                 return Fits(8, available, out size) ? Integer(field, ctx.ReadS64(data, offset)) : NoValue;
             case PrimType.FormId:
-                return Fits(4, available, out size) ? DecodeFormId(data, offset, limit, ctx) : NoValue;
+                return Fits(4, available, out size) ? DecodeFormId(data, offset, limit, ctx, leMap) : NoValue;
             case PrimType.Float:
                 return Fits(4, available, out size) ? Scalar(ctx.ReadFloat(data, offset)) : NoValue;
             case PrimType.Double:
@@ -781,13 +834,18 @@ public static class SchemaRecordDecoder
     }
 
     /// <summary>Endian-aware primitive reads, captured once so the scalar switch stays terse.</summary>
-    private sealed class DecodeContext(bool bigEndian, FormIdNameResolver? resolveName, BethesdaGame game)
+    private sealed class DecodeContext(
+        bool bigEndian, FormIdNameResolver? resolveName, BethesdaGame game, string recordSignature)
     {
         private ConditionFunctionTable? _conditionTable;
 
         public bool BigEndian { get; } = bigEndian;
         public FormIdNameResolver? ResolveName { get; } = resolveName;
         public BethesdaGame Game { get; } = game;
+
+        /// <summary>The top-level record signature (e.g. "WEAP", "RGDL"), used to resolve the conversion
+        /// schema's per-subrecord fixed-LE layout for big-endian records.</summary>
+        public string RecordSignature { get; } = recordSignature;
 
         /// <summary>The game's condition-function table, or null when the game is unknown
         /// (unknown → the historical Variants[0] union decode stays in effect).</summary>

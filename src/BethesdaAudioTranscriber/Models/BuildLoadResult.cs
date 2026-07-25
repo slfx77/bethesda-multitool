@@ -1,5 +1,5 @@
 using BethesdaMultitool.Core.Formats.Bsa.Index;
-using BethesdaMultitool.Core.Formats.Bsa;
+
 namespace BethesdaAudioTranscriber.Models;
 
 /// <summary>

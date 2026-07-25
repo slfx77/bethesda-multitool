@@ -38,6 +38,24 @@ public record AmmoRecord
     /// <summary>Weight (from DAT2 subrecord).</summary>
     public float Weight { get; init; }
 
+    /// <summary>Script FormID (SCRI subrecord).</summary>
+    public uint? ScriptFormId { get; init; }
+
+    /// <summary>Pickup sound FormID (YNAM subrecord — SOUN).</summary>
+    public uint? PickupSoundFormId { get; init; }
+
+    /// <summary>Drop sound FormID (ZNAM subrecord — SOUN).</summary>
+    public uint? DropSoundFormId { get; init; }
+
+    /// <summary>Short name shown in the HUD ammo counter (ONAM subrecord).</summary>
+    public string? ShortName { get; init; }
+
+    /// <summary>Abbreviation / casing name (QNAM subrecord).</summary>
+    public string? Abbreviation { get; init; }
+
+    /// <summary>Ammo effect FormIDs (RCIL subrecords — AMEF references).</summary>
+    public List<uint> AmmoEffectFormIds { get; init; } = [];
+
     /// <summary>Model file path (MODL subrecord) — the ammo's world model.</summary>
     public string? ModelPath { get; init; }
 

@@ -9,7 +9,7 @@ public sealed class TallGrassRenderTelemetryTests
     [Fact]
     public void WorldRenderStats_SnapshotAndResetPreserveTallGrassTelemetryContract()
     {
-        var stats = new global::BethesdaMultitool.WorldRenderStats
+        var stats = new WorldRenderStats
         {
             ReferenceTallGrassWindSupported = true,
             ReferenceTallGrassAnimationsEnabled = true,
@@ -28,7 +28,7 @@ public sealed class TallGrassRenderTelemetryTests
             ReferenceTallGrassWaveMultiplierMaximum = 15f,
             ReferenceTallGrassWaveMultiplierDistinctCount = 3,
             ReferenceTallGrassTemporalPhaseRadiansMinimum = MathF.PI / 3f,
-            ReferenceTallGrassTemporalPhaseRadiansMaximum = MathF.PI / 2f,
+            ReferenceTallGrassTemporalPhaseRadiansMaximum = MathF.PI / 2f
         };
 
         var snapshot = stats.Snapshot();
@@ -136,7 +136,7 @@ public sealed class TallGrassRenderTelemetryTests
                      "normalizedStrength", "magnitudeWorldUnits",
                      "instancedDraws", "instancedInstances", "directDraws", "directInstances",
                      "shadowDraws", "shadowInstances", "waveMultiplierMin", "waveMultiplierMax",
-                     "waveMultiplierDistinctCount", "temporalPhaseRadiansMin", "temporalPhaseRadiansMax",
+                     "waveMultiplierDistinctCount", "temporalPhaseRadiansMin", "temporalPhaseRadiansMax"
                  })
         {
             Assert.Contains($"[\"{key}\"]", capture, StringComparison.Ordinal);

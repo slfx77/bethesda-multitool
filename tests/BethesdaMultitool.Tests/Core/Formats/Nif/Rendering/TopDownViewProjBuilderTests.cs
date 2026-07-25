@@ -74,7 +74,7 @@ public sealed class TopDownViewProjBuilderTests
         // Interior top-down ceiling clip (2D-4): with the cut at world Z = 200, geometry ABOVE it is
         // pushed in front of the near plane (reversed-Z NDC z > 1 → clipped), removing the roof, while
         // geometry below stays in the visible [0,1] depth range so the floor plan shows.
-        var vp = TopDownViewProjBuilder.BuildViewProj(0f, 1000f, 0f, 1000f, clipWorldZMax: 200f);
+        var vp = TopDownViewProjBuilder.BuildViewProj(0f, 1000f, 0f, 1000f, 200f);
         var below = Clip3(vp, 500f, 500f, 100f); // under the cut → visible
         var above = Clip3(vp, 500f, 500f, 400f); // above the cut → clipped
 
@@ -82,8 +82,10 @@ public sealed class TopDownViewProjBuilderTests
         Assert.True(above.Z / above.W > 1f,
             "geometry above the ceiling clip must fall in front of the near plane (NDC z > 1)");
 
-        static Vector4 Clip3(Matrix4x4 vp, float x, float y, float z) =>
-            Vector4.Transform(new Vector4(x, y, z, 1f), vp);
+        static Vector4 Clip3(Matrix4x4 vp, float x, float y, float z)
+        {
+            return Vector4.Transform(new Vector4(x, y, z, 1f), vp);
+        }
     }
 
     [Fact]
@@ -92,7 +94,7 @@ public sealed class TopDownViewProjBuilderTests
         // The optional clip param defaults to null → identical to the exterior overload (no behavior
         // change for the worldspace overlay; the clip is interior-only).
         var noArg = TopDownViewProjBuilder.BuildViewProj(0f, 1000f, 0f, 1000f);
-        var nullClip = TopDownViewProjBuilder.BuildViewProj(0f, 1000f, 0f, 1000f, clipWorldZMax: null);
+        var nullClip = TopDownViewProjBuilder.BuildViewProj(0f, 1000f, 0f, 1000f, null);
         Assert.Equal(noArg, nullClip);
     }
 

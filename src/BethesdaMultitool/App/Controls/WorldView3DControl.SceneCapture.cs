@@ -436,6 +436,13 @@ public sealed partial class WorldView3DControl
                     _references?.DisarmShadowCapture();
                 }
 
+                // Protect the water pass's ring budget (stacked on any shadow reservation) so a dense
+                // whole-map capture cannot let the reference draws starve water and drop the surface from
+                // the exported image — the capture analogue of the live-frame flicker. Handed back to
+                // water immediately before it draws (below).
+                var captureWaterRingReserved = _showWater && _water is not null &&
+                                               _ringBuffer12!.TryReserveTail(WaterPassRingReservationBytes);
+
                 // Live-frame atmosphere (perspective defaults: fog + lighting on, no ortho overrides).
                 BindAtmosphereConstants(
                     cmd, recorder.FrameIndex, cameraRelative: false, lightVisibility: cylinder,
@@ -506,11 +513,22 @@ public sealed partial class WorldView3DControl
 
                 if (captureWaterUsesDepth)
                 {
-                    target.BindColorOnly(cmd); // depth leaves the OM while it is a shader resource
+                    // Read-only DSV + depth-as-SRV, mirroring the live path: the water
+                    // depth-sample PSOs keep the hardware GreaterEqual test for antialiased
+                    // silhouettes while the shader samples the same depth for the fade.
+                    target.BindColorReadOnlyDepth(cmd);
                     cmd.ResourceBarrierTransition(target.DepthResource,
                         Vortice.Direct3D12.ResourceStates.DepthWrite,
                         sampledDepthState);
                     captureDepthSampled = true;
+                }
+
+                // Hand water its protected ring budget now that terrain, references, and the below-water
+                // partition have finished allocating; the shadow reservation stays protected beneath it.
+                if (captureWaterRingReserved)
+                {
+                    _ringBuffer12!.ReleaseTailReservation(WaterPassRingReservationBytes);
+                    captureWaterRingReserved = false;
                 }
 
                 if (_showWater && _water is not null && _references is not null)
@@ -695,7 +713,16 @@ public sealed partial class WorldView3DControl
         return await Task.Run(() =>
         {
             WaitForFrameFence(frameFence, fenceValue);
-            return target.ReadbackToBytes(); // BGRA (B8G8R8A8_UNorm)
+            var bgra = target.ReadbackToBytes(); // BGRA (B8G8R8A8_UNorm)
+            // A perspective screenshot is an OPAQUE display image. The tonemap resolve passes the HDR
+            // scene color's alpha straight through (tonemap.frag.hlsl returns float4(rgb, hdr.a)), and
+            // grass alpha-to-coverage leaves FRACTIONAL coverage in that alpha channel — so without this
+            // the readback PNG gets transparent holes around grass (invisible in the opaque-swapchain
+            // live view, but real in the file). The RGB is already the resolved/composited scene, so
+            // force the alpha fully opaque. The tiled export keeps its own transparent-background alpha
+            // for map compositing — that is a separate readback path (Export3D.cs), unaffected.
+            for (var i = 3; i < bgra.Length; i += 4) bgra[i] = 255;
+            return bgra;
         });
     }
 
@@ -1728,9 +1755,14 @@ public sealed partial class WorldView3DControl
         {
             weatherImageSpaceUnavailableReason = "HDR is disabled; weather image-space bands were not applied";
         }
-        else if (!_imagespaceModifiersEnabled)
+        else if (_imagespaceMode == ImagespaceSelectionMode.None)
         {
             weatherImageSpaceUnavailableReason = "image-space modifiers are disabled";
+        }
+        else if (_imagespaceMode == ImagespaceSelectionMode.Explicit)
+        {
+            weatherImageSpaceUnavailableReason =
+                "an explicit imagespace selection is active; weather image-space bands are suppressed";
         }
         else if (interior is not null && !behavesLikeExterior)
         {

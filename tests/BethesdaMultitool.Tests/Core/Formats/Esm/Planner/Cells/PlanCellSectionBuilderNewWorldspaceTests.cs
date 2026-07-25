@@ -1,7 +1,8 @@
+using System.Buffers.Binary;
 using System.Collections.Immutable;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
@@ -95,7 +96,7 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
         var cellOffset = FindRecord(bytes, "CELL", persistentCellId);
         Assert.True(cellOffset >= 0, "The persistent CELL anchor was not emitted.");
         Assert.Equal(0x00000400u,
-            System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(cellOffset + 8, 4)));
+            BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(cellOffset + 8, 4)));
     }
 
     [Fact]
@@ -226,11 +227,11 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
 
     private static int FindRecord(byte[] bytes, string signature, uint formId)
     {
-        var signatureBytes = System.Text.Encoding.ASCII.GetBytes(signature);
+        var signatureBytes = Encoding.ASCII.GetBytes(signature);
         for (var i = 0; i <= bytes.Length - 24; i++)
         {
             if (!bytes.AsSpan(i, 4).SequenceEqual(signatureBytes)
-                || System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(i + 12, 4)) != formId)
+                || BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(i + 12, 4)) != formId)
             {
                 continue;
             }

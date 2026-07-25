@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
@@ -42,7 +41,7 @@ public sealed class DialogueTopicIdentityClassifierTests
         var first = PrototypeInfo(sharedInfo, dial, Speaker);
         var conflicting = PrototypeInfo(sharedInfo, dial, otherSpeaker) with
         {
-            QuestFormId = otherQuest,
+            QuestFormId = otherQuest
         };
 
         var identity = Assert.Single(Classify(
@@ -73,7 +72,7 @@ public sealed class DialogueTopicIdentityClassifierTests
             FormId = sharedInfo,
             TopicFormId = dial,
             QuestFormId = Quest,
-            SpeakerFormId = Speaker,
+            SpeakerFormId = Speaker
         };
 
         var identity = Assert.Single(Classify(
@@ -102,7 +101,7 @@ public sealed class DialogueTopicIdentityClassifierTests
             TopicFormId = dial,
             RawParentTopicFormIds = [wrongRawParent],
             QuestFormId = Quest,
-            SpeakerFormId = Speaker,
+            SpeakerFormId = Speaker
         };
 
         var identities = Classify(
@@ -154,7 +153,7 @@ public sealed class DialogueTopicIdentityClassifierTests
             FormId = sharedInfo,
             TopicFormId = prototypeDial,
             QuestFormId = Quest,
-            SpeakerFormId = Speaker,
+            SpeakerFormId = Speaker
         };
 
         var identity = Assert.Single(Classify(
@@ -180,8 +179,10 @@ public sealed class DialogueTopicIdentityClassifierTests
 
         var identity = Assert.Single(Classify(
             [PrototypeTopic(prototypeDial)],
-            [PrototypeInfo(retailInfoA, prototypeDial, Speaker),
-             PrototypeInfo(retailInfoB, prototypeDial, Speaker)],
+            [
+                PrototypeInfo(retailInfoA, prototypeDial, Speaker),
+                PrototypeInfo(retailInfoB, prototypeDial, Speaker)
+            ],
             master, retailDialA, retailInfoA, retailDialB, retailInfoB, Quest, Speaker));
 
         Assert.Equal(DialogueTopicIdentityKind.Ambiguous, identity.Kind);
@@ -203,8 +204,10 @@ public sealed class DialogueTopicIdentityClassifierTests
 
         var identities = Classify(
             [PrototypeTopic(prototypeDialA), PrototypeTopic(prototypeDialB)],
-            [PrototypeInfo(retailInfoA, prototypeDialA, Speaker),
-             PrototypeInfo(retailInfoB, prototypeDialB, Speaker)],
+            [
+                PrototypeInfo(retailInfoA, prototypeDialA, Speaker),
+                PrototypeInfo(retailInfoB, prototypeDialB, Speaker)
+            ],
             master, retailDial, retailInfoA, retailInfoB, Quest, Speaker);
 
         Assert.All(identities, identity =>
@@ -234,7 +237,7 @@ public sealed class DialogueTopicIdentityClassifierTests
         {
             FormId = prototypeDial,
             QuestFormId = prototypeQuest,
-            TopicType = prototypeType,
+            TopicType = prototypeType
         };
 
         var identity = Assert.Single(Classify(
@@ -256,7 +259,7 @@ public sealed class DialogueTopicIdentityClassifierTests
             Info(sharedInfo, Speaker));
         var info = PrototypeInfo(sharedInfo, prototypeDial, Speaker) with
         {
-            RawParentTopicFormIds = [prototypeDial, prototypeDial + 1],
+            RawParentTopicFormIds = [prototypeDial, prototypeDial + 1]
         };
 
         var identities = Classify(
@@ -305,7 +308,7 @@ public sealed class DialogueTopicIdentityClassifierTests
         {
             QuestFormId = otherQuest,
             TopicType = 1,
-            SpeakerFormId = otherSpeaker,
+            SpeakerFormId = otherSpeaker
         };
 
         var identity = Assert.Single(Classify(
@@ -334,7 +337,7 @@ public sealed class DialogueTopicIdentityClassifierTests
         var missing = PrototypeTopic(prototypeDial) with
         {
             QuestFormId = null,
-            SpeakerFormId = null,
+            SpeakerFormId = null
         };
 
         var identity = Assert.Single(Classify(
@@ -436,8 +439,8 @@ public sealed class DialogueTopicIdentityClassifierTests
             PrototypeInfo(sharedInfo, prototypeDial, otherSpeaker) with
             {
                 TopicFormId = otherRuntimeTopic,
-                QuestFormId = otherQuest,
-            },
+                QuestFormId = otherQuest
+            }
         };
 
         Assert.Equal(1, DialogueCombinePlanner.DeduplicateInPlace(infos));
@@ -477,8 +480,8 @@ public sealed class DialogueTopicIdentityClassifierTests
             new()
             {
                 FormId = sharedInfo,
-                RawParentTopicFormIds = [prototypeDial],
-            },
+                RawParentTopicFormIds = [prototypeDial]
+            }
         };
 
         Assert.Equal(1, DialogueCombinePlanner.DeduplicateInPlace(infos));
@@ -514,7 +517,7 @@ public sealed class DialogueTopicIdentityClassifierTests
         var first = PrototypeInfo(sharedInfo, prototypeDial, Speaker);
         var conflicting = PrototypeInfo(sharedInfo, prototypeDial, otherSpeaker) with
         {
-            QuestFormId = otherQuest,
+            QuestFormId = otherQuest
         };
 
         var identity = Assert.Single(Classify(
@@ -541,8 +544,10 @@ public sealed class DialogueTopicIdentityClassifierTests
             Info(sharedInfo, Speaker));
 
         var identities = Classify(
-            [new DialogTopicRecord { FormId = retailDial, QuestFormId = Quest, TopicType = 0 },
-             PrototypeTopic(prototypeDial)],
+            [
+                new DialogTopicRecord { FormId = retailDial, QuestFormId = Quest, TopicType = 0 },
+                PrototypeTopic(prototypeDial)
+            ],
             [PrototypeInfo(sharedInfo, prototypeDial, Speaker)],
             master,
             retailDial, sharedInfo, Quest, Speaker);
@@ -574,7 +579,8 @@ public sealed class DialogueTopicIdentityClassifierTests
         Assert.Equal(DialogueTopicIdentityKind.Ambiguous, identity.Kind);
         Assert.Equal(retailDial, identity.MasterDialFormId);
         Assert.True(identity.IsOrphanRawParentClaim);
-        Assert.Contains(identity.Conflicts, conflict => conflict.Contains("Missing captured DIAL", StringComparison.Ordinal));
+        Assert.Contains(identity.Conflicts,
+            conflict => conflict.Contains("Missing captured DIAL", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -602,31 +608,41 @@ public sealed class DialogueTopicIdentityClassifierTests
         IReadOnlyList<DialogTopicRecord> topics,
         IReadOnlyList<DialogueRecord> infos,
         MasterDialogueIndex master,
-        params uint[] masterFormIds) =>
-        DialogueTopicIdentityClassifier.Classify(
+        params uint[] masterFormIds)
+    {
+        return DialogueTopicIdentityClassifier.Classify(
             topics,
             infos,
             new NewVsOverrideClassifier(masterFormIds),
             master);
+    }
 
-    private static DialogTopicRecord PrototypeTopic(uint formId) => new()
+    private static DialogTopicRecord PrototypeTopic(uint formId)
     {
-        FormId = formId,
-        QuestFormId = Quest,
-        TopicType = 0,
-    };
+        return new DialogTopicRecord
+        {
+            FormId = formId,
+            QuestFormId = Quest,
+            TopicType = 0
+        };
+    }
 
-    private static DialogueRecord PrototypeInfo(uint formId, uint topic, uint speaker) => new()
+    private static DialogueRecord PrototypeInfo(uint formId, uint topic, uint speaker)
     {
-        FormId = formId,
-        TopicFormId = topic,
-        RawParentTopicFormIds = [topic],
-        QuestFormId = Quest,
-        SpeakerFormId = speaker,
-    };
+        return new DialogueRecord
+        {
+            FormId = formId,
+            TopicFormId = topic,
+            RawParentTopicFormIds = [topic],
+            QuestFormId = Quest,
+            SpeakerFormId = speaker
+        };
+    }
 
-    private static MasterDialogueIndex MasterIndex(params ParsedMainRecord[] records) =>
-        MasterDialogueIndex.BuildFromRecordOrder(records);
+    private static MasterDialogueIndex MasterIndex(params ParsedMainRecord[] records)
+    {
+        return MasterDialogueIndex.BuildFromRecordOrder(records);
+    }
 
     private static ParsedMainRecord Dial(
         uint formId,
@@ -639,7 +655,7 @@ public sealed class DialogueTopicIdentityClassifierTests
         {
             TextSubrecord("EDID", editorId),
             FormSubrecord("QSTI", quest),
-            new() { Signature = "DATA", Data = [topicType, 0] },
+            new() { Signature = "DATA", Data = [topicType, 0] }
         };
         if (topicSpeaker != 0)
         {
@@ -649,27 +665,33 @@ public sealed class DialogueTopicIdentityClassifierTests
         return Record("DIAL", formId, [..subrecords]);
     }
 
-    private static ParsedMainRecord Info(uint formId, uint speaker) => Record(
-        "INFO", formId, FormSubrecord("ANAM", speaker));
+    private static ParsedMainRecord Info(uint formId, uint speaker)
+    {
+        return Record(
+            "INFO", formId, FormSubrecord("ANAM", speaker));
+    }
 
     private static ParsedMainRecord Record(
         string signature,
         uint formId,
-        params ParsedSubrecord[] subrecords) => new()
+        params ParsedSubrecord[] subrecords)
     {
-        Header = new MainRecordHeader
+        return new ParsedMainRecord
         {
-            Signature = signature,
-            DataSize = 0,
-            Flags = 0,
-            FormId = formId,
-            Timestamp = 0,
-            VcsInfo = 0,
-            Version = 15,
-        },
-        Offset = formId,
-        Subrecords = [..subrecords],
-    };
+            Header = new MainRecordHeader
+            {
+                Signature = signature,
+                DataSize = 0,
+                Flags = 0,
+                FormId = formId,
+                Timestamp = 0,
+                VcsInfo = 0,
+                Version = 15
+            },
+            Offset = formId,
+            Subrecords = [..subrecords]
+        };
+    }
 
     private static ParsedSubrecord FormSubrecord(string signature, uint formId)
     {
@@ -678,9 +700,12 @@ public sealed class DialogueTopicIdentityClassifierTests
         return new ParsedSubrecord { Signature = signature, Data = data };
     }
 
-    private static ParsedSubrecord TextSubrecord(string signature, string value) => new()
+    private static ParsedSubrecord TextSubrecord(string signature, string value)
     {
-        Signature = signature,
-        Data = Encoding.Latin1.GetBytes(value + '\0'),
-    };
+        return new ParsedSubrecord
+        {
+            Signature = signature,
+            Data = Encoding.Latin1.GetBytes(value + '\0')
+        };
+    }
 }

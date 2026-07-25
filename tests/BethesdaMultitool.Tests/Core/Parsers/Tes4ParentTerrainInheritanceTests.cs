@@ -1,8 +1,8 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Games;
 using Xunit;
 using static BethesdaMultitool.Tests.Helpers.EsmTestRecordBuilder;
@@ -11,31 +11,42 @@ namespace BethesdaMultitool.Tests.Core.Parsers;
 
 /// <summary>
 ///     TES4 city child worldspaces render the PARENT worldspace's terrain wherever the child cell
-///     has no usable LAND (user-verified in-game A/B at AnvilWorld (-45,-8), 2026-07-21). Two parts
-///     mirror that: (1) VTEX-only pre-release relic LANDs (29 exist in retail Oblivion.esm, all in
-///     city worlds; uncompressed, legacy texture grid, no BTXT/ATXT/VTXT) are skipped at attach
-///     time; (2) child-worldspace cells without a heightmap borrow the WNAM ancestor's same-grid
-///     terrain by reference after linkage.
+///     has no usable LAND (user-verified in-game A/B at AnvilWorld (-45,-8), 2026-07-21; proven at
+///     ICMarketDistrict by flora planted ~500 units above the relic sculpt, 2026-07-22). Two parts
+///     mirror that: (1) pre-release relic LANDs — UNCOMPRESSED with no BTXT/ATXT/VTXT layers; 579
+///     exist in retail Oblivion.esm (29 carrying the legacy VTEX grid + 550 bare VHGT sculpts), all
+///     in Tamriel-parented child worlds — are skipped at attach time (retail's 9,338 COMPRESSED
+///     layer-less ocean/plane LANDs are genuine and must attach); (2) child-worldspace cells without
+///     a heightmap borrow the WNAM ancestor's same-grid terrain by reference after linkage.
 /// </summary>
 public class Tes4ParentTerrainInheritanceTests
 {
-    private static LandHeightmap Heightmap(float baseHeight) => new()
+    private const uint CompressedFlag = 0x00040000;
+
+    private static LandHeightmap Heightmap(float baseHeight)
     {
-        HeightOffset = baseHeight,
-        HeightDeltas = new sbyte[1089],
-    };
+        return new LandHeightmap
+        {
+            HeightOffset = baseHeight,
+            HeightDeltas = new sbyte[1089]
+        };
+    }
 
     private static ExtractedLandRecord Land(
-        uint formId, uint parentCell, float baseHeight, int vtex, int btxt, int atxt, int vtxt) => new()
+        uint formId, uint parentCell, float baseHeight, int vtex, int btxt, int atxt, int vtxt,
+        uint flags = 0)
     {
-        Header = new DetectedMainRecord("LAND", 100, 0, formId, 0, false),
-        ParentCellFormId = parentCell,
-        Heightmap = Heightmap(baseHeight),
-        VtexCount = vtex,
-        BtxtCount = btxt,
-        AtxtCount = atxt,
-        VtxtCount = vtxt,
-    };
+        return new ExtractedLandRecord
+        {
+            Header = new DetectedMainRecord("LAND", 100, flags, formId, 0, false),
+            ParentCellFormId = parentCell,
+            Heightmap = Heightmap(baseHeight),
+            VtexCount = vtex,
+            BtxtCount = btxt,
+            AtxtCount = atxt,
+            VtxtCount = vtxt
+        };
+    }
 
     private static EsmRecordScanResult ScanResult(BethesdaGame game, params ExtractedLandRecord[] lands)
     {
@@ -51,13 +62,44 @@ public class Tes4ParentTerrainInheritanceTests
         var normalCell = new CellRecord { FormId = 0x200, GridX = -46, GridY = -8 };
         var cells = new List<CellRecord> { relicCell, normalCell };
         var scan = ScanResult(BethesdaGame.Oblivion,
-            Land(0x1000, 0x100, 31f, vtex: 64, btxt: 0, atxt: 0, vtxt: 0), // the relic signature
-            Land(0x1001, 0x200, 29f, vtex: 0, btxt: 4, atxt: 9, vtxt: 9));
+            Land(0x1000, 0x100, 31f, 64, 0, 0, 0), // the relic signature
+            Land(0x1001, 0x200, 29f, 0, 4, 9, 9));
 
         CellRecordHandler.AttachTerrainDataFromLandRecords(cells, scan);
 
         Assert.Null(cells[0].Heightmap);
         Assert.Equal(29f, cells[1].Heightmap?.HeightOffset);
+    }
+
+    [Fact]
+    public void AttachTerrainData_Tes4UntexturedUncompressedRelicIsSkipped()
+    {
+        // The 550-strong relic species: uncompressed, NO layers, no VTEX either (bare VHGT sculpt —
+        // e.g. ICMarketDistrict 0x0001BEEF at base 381, ~500 units below the district's flora).
+        var relicCell = new CellRecord { FormId = 0x100, GridX = 8, GridY = 16 };
+        var cells = new List<CellRecord> { relicCell };
+        var scan = ScanResult(BethesdaGame.Oblivion,
+            Land(0x1000, 0x100, 381f, 0, 0, 0, 0));
+
+        CellRecordHandler.AttachTerrainDataFromLandRecords(cells, scan);
+
+        Assert.Null(cells[0].Heightmap); // left for the parent-terrain inheritance pass
+    }
+
+    [Fact]
+    public void AttachTerrainData_Tes4CompressedLayerLessLandStillAttaches()
+    {
+        // The critical protection: retail carries 9,338 COMPRESSED layer-less LANDs (Tamriel/SEWorld
+        // ocean + plane cells on the engine-default texture) — genuine terrain that must attach.
+        // Guards the !IsCompressed condition against a future "simplification" to layer-absence.
+        var cell = new CellRecord { FormId = 0x100, GridX = 0, GridY = 0 };
+        var cells = new List<CellRecord> { cell };
+        var scan = ScanResult(BethesdaGame.Oblivion,
+            Land(0x1000, 0x100, 7f, 0, 0, 0, 0, CompressedFlag));
+
+        CellRecordHandler.AttachTerrainDataFromLandRecords(cells, scan);
+
+        Assert.Equal(7f, cells[0].Heightmap?.HeightOffset);
     }
 
     [Fact]
@@ -67,11 +109,41 @@ public class Tes4ParentTerrainInheritanceTests
         var cell = new CellRecord { FormId = 0x100, GridX = 0, GridY = 0 };
         var cells = new List<CellRecord> { cell };
         var scan = ScanResult(BethesdaGame.FalloutNewVegas,
-            Land(0x1000, 0x100, 12f, vtex: 64, btxt: 0, atxt: 0, vtxt: 0));
+            Land(0x1000, 0x100, 12f, 64, 0, 0, 0));
 
         CellRecordHandler.AttachTerrainDataFromLandRecords(cells, scan);
 
         Assert.Equal(12f, cells[0].Heightmap?.HeightOffset);
+    }
+
+    [Fact]
+    public void AttachTerrainData_UnknownGameNeverDropsLands()
+    {
+        // The relic gate is destructive — it must require an AFFIRMATIVELY-Oblivion scan.
+        // Unknown-game synthetic/DMP-carve fixtures own uncompressed layer-less LANDs legitimately.
+        var cell = new CellRecord { FormId = 0x100, GridX = 0, GridY = 0 };
+        var cells = new List<CellRecord> { cell };
+        var scan = ScanResult(BethesdaGame.Unknown,
+            Land(0x1000, 0x100, 3f, 0, 0, 0, 0));
+
+        CellRecordHandler.AttachTerrainDataFromLandRecords(cells, scan);
+
+        Assert.Equal(3f, cells[0].Heightmap?.HeightOffset);
+    }
+
+    [Fact]
+    public void AttachTerrainData_Fo3FamilyKeepsUncompressedLayerLessLands()
+    {
+        // DMP-carved partial FNV LANDs are decompressed in memory and often layer-less; the TES4
+        // relic gate must never reach them.
+        var cell = new CellRecord { FormId = 0x100, GridX = 0, GridY = 0 };
+        var cells = new List<CellRecord> { cell };
+        var scan = ScanResult(BethesdaGame.FalloutNewVegas,
+            Land(0x1000, 0x100, 5f, 0, 0, 0, 0));
+
+        CellRecordHandler.AttachTerrainDataFromLandRecords(cells, scan);
+
+        Assert.Equal(5f, cells[0].Heightmap?.HeightOffset);
     }
 
     [Fact]
@@ -82,12 +154,12 @@ public class Tes4ParentTerrainInheritanceTests
         var parentCell = new CellRecord
         {
             FormId = 0x10, GridX = -45, GridY = -8, Heightmap = parentHeightmap,
-            LandVisualData = parentVisuals,
+            LandVisualData = parentVisuals
         };
         var childCell = new CellRecord { FormId = 0x20, GridX = -45, GridY = -8 };
         var untouchedChild = new CellRecord
         {
-            FormId = 0x21, GridX = -46, GridY = -8, Heightmap = Heightmap(31f),
+            FormId = 0x21, GridX = -46, GridY = -8, Heightmap = Heightmap(31f)
         };
         var worldspaces = new List<WorldspaceRecord>
         {
@@ -95,8 +167,8 @@ public class Tes4ParentTerrainInheritanceTests
             new()
             {
                 FormId = 0x1C31A, ParentWorldspaceFormId = 0x3C,
-                Cells = [childCell, untouchedChild],
-            },
+                Cells = [childCell, untouchedChild]
+            }
         };
 
         CellLinkageHandler.InheritTerrainFromParentWorldspaces(worldspaces, BethesdaGame.Oblivion);
@@ -121,13 +193,13 @@ public class Tes4ParentTerrainInheritanceTests
             new()
             {
                 FormId = 0xA, ParentWorldspaceFormId = 0xB,
-                Cells = [new CellRecord { FormId = 0x40, GridX = 2, GridY = 2 }],
+                Cells = [new CellRecord { FormId = 0x40, GridX = 2, GridY = 2 }]
             },
             new()
             {
                 FormId = 0xB, ParentWorldspaceFormId = 0xA,
-                Cells = [new CellRecord { FormId = 0x41, GridX = 2, GridY = 2 }],
-            },
+                Cells = [new CellRecord { FormId = 0x41, GridX = 2, GridY = 2 }]
+            }
         };
 
         CellLinkageHandler.InheritTerrainFromParentWorldspaces(worldspaces, BethesdaGame.Oblivion);
@@ -143,7 +215,7 @@ public class Tes4ParentTerrainInheritanceTests
         var worldspaces = new List<WorldspaceRecord>
         {
             new() { FormId = 0x1, Cells = [parentCell] },
-            new() { FormId = 0x2, ParentWorldspaceFormId = 0x1, Cells = [childCell] },
+            new() { FormId = 0x2, ParentWorldspaceFormId = 0x1, Cells = [childCell] }
         };
 
         CellLinkageHandler.InheritTerrainFromParentWorldspaces(worldspaces, BethesdaGame.FalloutNewVegas);

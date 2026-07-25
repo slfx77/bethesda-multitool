@@ -67,7 +67,7 @@ internal static class RendererProfilerScenarioAssertions
                     new
                     {
                         Hdr = requestedPostProcess.HdrEnabled,
-                        Bloom = requestedPostProcess.HdrEnabled && requestedPostProcess.BloomEnabled,
+                        Bloom = requestedPostProcess.HdrEnabled && requestedPostProcess.BloomEnabled
                     },
                     applied is null
                         ? null
@@ -91,12 +91,14 @@ internal static class RendererProfilerScenarioAssertions
                 {
                     result.ImageStatistics.LuminanceP95,
                     result.ImageStatistics.LuminanceP99,
-                    result.ImageStatistics.MaximumLuminance,
+                    result.ImageStatistics.MaximumLuminance
                 });
 
-            void StepAdd(string id, bool passed, object? expected, object? actual) =>
+            void StepAdd(string id, bool passed, object? expected, object? actual)
+            {
                 Add(id, passed, i, step.Id, expected, actual,
                     $"Structural capture check for scenario step '{step.Id}'.");
+            }
         }
 
         switch (plan.Name)
@@ -139,9 +141,11 @@ internal static class RendererProfilerScenarioAssertions
             string? stepId = null,
             object? expected = null,
             object? actual = null,
-            string details = "") =>
+            string details = "")
+        {
             assertions.Add(new RendererProfilerScenarioAssertion(
                 id, passed, stepIndex, stepId, expected, actual, details));
+        }
     }
 
     private static void EvaluateWaterNight(
@@ -247,7 +251,7 @@ internal static class RendererProfilerScenarioAssertions
             var result = results[i];
             var snapshot = result.Snapshot;
             var expectedTechnique =
-                $"FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-" +
+                "FnvWater001Reconstructed-opaque-snapshot-main-scene-depth-approx-" +
                 SceneDepthRoute(snapshot.SceneSampleCount);
             var expectedPlacedNifTechnique =
                 expectedTechnique +
@@ -304,8 +308,10 @@ internal static class RendererProfilerScenarioAssertions
         }
     }
 
-    private static string SceneDepthRoute(int sampleCount) =>
-        sampleCount > 1 ? $"msaa{sampleCount}x" : "1x";
+    private static string SceneDepthRoute(int sampleCount)
+    {
+        return sampleCount > 1 ? $"msaa{sampleCount}x" : "1x";
+    }
 
     private static void EvaluateCloudMotion(
         IReadOnlyList<RendererProfilerScenarioStepResult> results,
@@ -398,7 +404,7 @@ internal static class RendererProfilerScenarioAssertions
                 {
                     sunrise.Snapshot.SunBillboardDirection.Z,
                     noon.Snapshot.SunBillboardDirection.Z,
-                    sunset.Snapshot.SunBillboardDirection.Z,
+                    sunset.Snapshot.SunBillboardDirection.Z
                 },
                 "The recovered FNV triangle path reaches its daily high point near noon.");
         }
@@ -423,7 +429,7 @@ internal static class RendererProfilerScenarioAssertions
                     Phase = group.Key,
                     Signal = group.First().ImageRegions?
                         .FirstOrDefault(static region => region.RegionId == "moon-window")?
-                        .SignalPixelCount,
+                        .SignalPixelCount
                 })
                 .ToArray();
             var allPhaseSignalsPresent = phaseSignals.All(static value => value.Signal.HasValue);
@@ -501,7 +507,7 @@ internal static class RendererProfilerScenarioAssertions
             {
                 Enabled = snapshot.FnvActiveAdtBaseEnabled,
                 Draws = snapshot.FnvActiveAdtBaseDraws,
-                Instances = snapshot.FnvActiveAdtBaseInstances,
+                Instances = snapshot.FnvActiveAdtBaseInstances
             },
             "The visible fixture must submit the recovered active ID193/BSSM_ADT/SLS2000 route.");
         add("fnv-active-adt.vertex-color-route-submitted",
@@ -516,7 +522,7 @@ internal static class RendererProfilerScenarioAssertions
                 Draws = snapshot.FnvActiveAdtBaseVertexColorDraws,
                 Instances = snapshot.FnvActiveAdtBaseVertexColorInstances,
                 ActiveDraws = snapshot.FnvActiveAdtBaseDraws,
-                ActiveInstances = snapshot.FnvActiveAdtBaseInstances,
+                ActiveInstances = snapshot.FnvActiveAdtBaseInstances
             },
             "The pinned opaque block 21 must exercise SLS2000 Toggles.x vertex-RGB modulation.");
         add("fnv-active-adt.mixed-subset-fallback-bounded",
@@ -529,7 +535,7 @@ internal static class RendererProfilerScenarioAssertions
             {
                 snapshot.FnvActiveAdtBaseFallbackDraws,
                 snapshot.FnvActiveAdtBaseFallbackInstances,
-                snapshot.FnvActiveAdtBaseFallbackReason,
+                snapshot.FnvActiveAdtBaseFallbackReason
             },
             "The mixed fixture includes classified alpha-tested neighbors; they must remain on the combined fallback while opaque type-1 geometry submits ID193.");
         add("fnv-active-adt.legacy-routes-dormant",
@@ -543,7 +549,7 @@ internal static class RendererProfilerScenarioAssertions
                 snapshot.FnvSls1009Draws,
                 snapshot.FnvSls1009Instances,
                 snapshot.FnvSls1013Draws,
-                snapshot.FnvSls1013Instances,
+                snapshot.FnvSls1013Instances
             },
             "No shipped-tier parity claim may be inferred from the dormant SLS1009/SLS1013 bytecode oracle.");
 
@@ -557,7 +563,7 @@ internal static class RendererProfilerScenarioAssertions
                 FogEnabled: false,
                 ShadowsEnabled: false,
                 EffectiveHdrEnabled: false,
-                EffectiveBloomEnabled: false,
+                EffectiveBloomEnabled: false
             },
             0, result.Step.Id,
             "HDR/Bloom/imagespace/fog/shadows disabled",
@@ -596,7 +602,7 @@ internal static class RendererProfilerScenarioAssertions
                 OffWeather = bloomOff.Snapshot.WeatherEditorId,
                 OnWeather = bloomOn.Snapshot.WeatherEditorId,
                 OffHour = bloomOff.Snapshot.GameHour,
-                OnHour = bloomOn.Snapshot.GameHour,
+                OnHour = bloomOn.Snapshot.GameHour
             },
             "The A/B must reuse one authored scene state; Bloom is the only intended difference.");
 
@@ -678,7 +684,7 @@ internal static class RendererProfilerScenarioAssertions
                 ChangedPixelFraction = $"<= {maximumChangedPixelFraction:0.###}",
                 MeanAbsoluteLuminanceDelta = $"<= {maximumMeanAbsoluteContribution:0.###}",
                 BrightPixelFraction = $"<= {maximumBrightPixelFraction:0.###}",
-                AbsoluteLuminanceDeltaP99 = $"<= {maximumP99Delta}",
+                AbsoluteLuminanceDeltaP99 = $"<= {maximumP99Delta}"
             },
             BloomMetrics(bloomOff, bloomOn, difference),
             "The centered sign occupies a small part of this fixed frame; bloom must not wash the scene " +
@@ -687,29 +693,32 @@ internal static class RendererProfilerScenarioAssertions
         static object BloomMetrics(
             RendererProfilerScenarioStepResult off,
             RendererProfilerScenarioStepResult on,
-            RendererProfilerScenarioImageDifferenceStatistics delta) => new
+            RendererProfilerScenarioImageDifferenceStatistics delta)
         {
-            delta.ChangedPixelCount,
-            delta.BrightenedPixelCount,
-            delta.DarkenedPixelCount,
-            delta.MeanSignedLuminanceDelta,
-            delta.MeanAbsoluteLuminanceDelta,
-            delta.AbsoluteLuminanceDeltaP95,
-            delta.AbsoluteLuminanceDeltaP99,
-            delta.MaximumAbsoluteLuminanceDelta,
-            ChangedPixelFraction = on.ImageStatistics.PixelByteCount <= 0
-                ? 1d
-                : delta.ChangedPixelCount / (on.ImageStatistics.PixelByteCount / 4d),
-            BloomOffBrightPixelCount = off.ImageStatistics.BrightPixelCount,
-            BloomOnBrightPixelCount = on.ImageStatistics.BrightPixelCount,
-            BloomOnBrightPixelFraction = on.ImageStatistics.PixelByteCount <= 0
-                ? 1d
-                : on.ImageStatistics.BrightPixelCount / (on.ImageStatistics.PixelByteCount / 4d),
-            BloomOffBrightPixelMean = off.ImageStatistics.BrightPixelMeanLuminance,
-            BloomOnBrightPixelMean = on.ImageStatistics.BrightPixelMeanLuminance,
-            BloomOffP99 = off.ImageStatistics.LuminanceP99,
-            BloomOnP99 = on.ImageStatistics.LuminanceP99,
-        };
+            return new
+            {
+                delta.ChangedPixelCount,
+                delta.BrightenedPixelCount,
+                delta.DarkenedPixelCount,
+                delta.MeanSignedLuminanceDelta,
+                delta.MeanAbsoluteLuminanceDelta,
+                delta.AbsoluteLuminanceDeltaP95,
+                delta.AbsoluteLuminanceDeltaP99,
+                delta.MaximumAbsoluteLuminanceDelta,
+                ChangedPixelFraction = on.ImageStatistics.PixelByteCount <= 0
+                    ? 1d
+                    : delta.ChangedPixelCount / (on.ImageStatistics.PixelByteCount / 4d),
+                BloomOffBrightPixelCount = off.ImageStatistics.BrightPixelCount,
+                BloomOnBrightPixelCount = on.ImageStatistics.BrightPixelCount,
+                BloomOnBrightPixelFraction = on.ImageStatistics.PixelByteCount <= 0
+                    ? 1d
+                    : on.ImageStatistics.BrightPixelCount / (on.ImageStatistics.PixelByteCount / 4d),
+                BloomOffBrightPixelMean = off.ImageStatistics.BrightPixelMeanLuminance,
+                BloomOnBrightPixelMean = on.ImageStatistics.BrightPixelMeanLuminance,
+                BloomOffP99 = off.ImageStatistics.LuminanceP99,
+                BloomOnP99 = on.ImageStatistics.LuminanceP99
+            };
+        }
     }
 
     private static void EvaluateSunlightDimmer(
@@ -734,13 +743,13 @@ internal static class RendererProfilerScenarioAssertions
             {
                 Enabled = enabled.CameraPose,
                 ImagespaceOff = imagespaceOff.CameraPose,
-                HdrOff = hdrOff.CameraPose,
+                HdrOff = hdrOff.CameraPose
             },
             "Only the declared post-process gates may change across this retail Wasteland matrix.");
 
-        AddScaleAssertion(enabled, stepIndex: 0, expectedResolved: 1.21f, expectedScene: 1.21f);
-        AddScaleAssertion(imagespaceOff, stepIndex: 1, expectedResolved: 1f, expectedScene: 1f);
-        AddScaleAssertion(hdrOff, stepIndex: 2, expectedResolved: 1.3f, expectedScene: 1f);
+        AddScaleAssertion(enabled, 0, 1.21f, 1.21f);
+        AddScaleAssertion(imagespaceOff, 1, 1f, 1f);
+        AddScaleAssertion(hdrOff, 2, 1.3f, 1f);
 
         void AddScaleAssertion(
             RendererProfilerScenarioStepResult result,
@@ -762,7 +771,7 @@ internal static class RendererProfilerScenarioAssertions
                         Resolved = settings.ResolvedSunlightScale,
                         Scene = settings.SceneSunlightScale,
                         settings.BaseImageSpaceEditorId,
-                        settings.BaseImageSpaceSource,
+                        settings.BaseImageSpaceSource
                     },
                 "Retail NVDefaultExterior and NVWastelandIS resolve scene SunlightDimmer only for exterior HDR.");
         }
@@ -790,7 +799,7 @@ internal static class RendererProfilerScenarioAssertions
             new
             {
                 West = west.AppliedPostProcessSettings?.BaseImageSpaceSource,
-                East = east.AppliedPostProcessSettings?.BaseImageSpaceSource,
+                East = east.AppliedPostProcessSettings?.BaseImageSpaceSource
             },
             "The retail one-unit boundary crossing must exercise WRLD INAM then CELL XCIM selection.");
 
@@ -818,7 +827,7 @@ internal static class RendererProfilerScenarioAssertions
             new
             {
                 Reset = cleared.Snapshot.TonemapHistoryReset,
-                Reason = cleared.Snapshot.TonemapHistoryResetReason,
+                Reason = cleared.Snapshot.TonemapHistoryResetReason
             },
             "With a stable target and adaptive mode, explicit clear must be the sole reset reason.");
     }
@@ -835,31 +844,28 @@ internal static class RendererProfilerScenarioAssertions
             return;
         }
 
-        AssertStep(morning, 0, expectedTargetLum: 4.4f,
-            expectedTint: (0.7768509f, 0.6247225f, 0.2386268f, 0.33f),
-            expectedSunlightScale: 1.155f,
-            expectedAtmosphericColorBand: ("Day", "HighNoon", 0.5f),
-            expectedContributions:
+        AssertStep(morning, 0, 4.4f,
+            (0.7768509f, 0.6247225f, 0.2386268f, 0.33f),
+            1.155f,
+            ("Day", "HighNoon", 0.5f),
             [
                 ("Day", 0x00164BA6u, "NVJacobstownIS", 0.5f),
-                ("HighNoon", 0x000CEE18u, "NVWastelandIS", 0.5f),
+                ("HighNoon", 0x000CEE18u, "NVWastelandIS", 0.5f)
             ]);
-        AssertStep(noon, 1, expectedTargetLum: 7.4f,
-            expectedTint: (0.6848657f, 0.5938973f, 0.3221909f, 0.33f),
-            expectedSunlightScale: 1.1f,
-            expectedAtmosphericColorBand: ("Day", "HighNoon", 1f),
-            expectedContributions:
+        AssertStep(noon, 1, 7.4f,
+            (0.6848657f, 0.5938973f, 0.3221909f, 0.33f),
+            1.1f,
+            ("Day", "HighNoon", 1f),
             [
-                ("Day", 0x00164BA6u, "NVJacobstownIS", 1f),
+                ("Day", 0x00164BA6u, "NVJacobstownIS", 1f)
             ]);
-        AssertStep(afternoon, 2, expectedTargetLum: 4.4f,
-            expectedTint: (0.7768509f, 0.6247225f, 0.2386268f, 0.33f),
-            expectedSunlightScale: 1.155f,
-            expectedAtmosphericColorBand: ("HighNoon", "Day", 0.5f),
-            expectedContributions:
+        AssertStep(afternoon, 2, 4.4f,
+            (0.7768509f, 0.6247225f, 0.2386268f, 0.33f),
+            1.155f,
+            ("HighNoon", "Day", 0.5f),
             [
                 ("Day", 0x00164BA6u, "NVJacobstownIS", 0.5f),
-                ("HighNoon", 0x000CEE18u, "NVWastelandIS", 0.5f),
+                ("HighNoon", 0x000CEE18u, "NVWastelandIS", 0.5f)
             ]);
 
         void AssertStep(
@@ -908,7 +914,7 @@ internal static class RendererProfilerScenarioAssertions
                     : new
                     {
                         EditorId = postProcess.BaseImageSpaceEditorId,
-                        Source = postProcess.BaseImageSpaceSource,
+                        Source = postProcess.BaseImageSpaceSource
                     },
                 "WastelandNV INAM must provide the base grade for the forced weather fixture.");
 
@@ -940,12 +946,12 @@ internal static class RendererProfilerScenarioAssertions
                 new
                 {
                     TargetLum = expectedTargetLum,
-                    Tint = new[] { expectedTint.R, expectedTint.G, expectedTint.B, expectedTint.Amount },
+                    Tint = new[] { expectedTint.R, expectedTint.G, expectedTint.B, expectedTint.Amount }
                 },
                 new
                 {
                     tonemap.TargetLum,
-                    Tint = new[] { tonemap.TintR, tonemap.TintG, tonemap.TintB, tonemap.TintAmount },
+                    Tint = new[] { tonemap.TintR, tonemap.TintG, tonemap.TintB, tonemap.TintAmount }
                 },
                 "Weather tint is accumulated as raw weighted RGBA, then premultiplied once as a manager aggregate.");
 
@@ -960,7 +966,7 @@ internal static class RendererProfilerScenarioAssertions
                     : new
                     {
                         Resolved = postProcess.ResolvedSunlightScale,
-                        Scene = postProcess.SceneSunlightScale,
+                        Scene = postProcess.SceneSunlightScale
                     },
                 "The same adapter weights must reach the recovered exterior-HDR SunlightDimmer consumer.");
         }
@@ -1014,21 +1020,36 @@ internal static class RendererProfilerScenarioAssertions
         return true;
     }
 
-    private static bool SameCamera(RendererProfilerCameraPose left, RendererProfilerCameraPose right) =>
-        Vector3.Distance(left.Position, right.Position) <= FloatTolerance &&
-        Near(left.Pitch, right.Pitch) && Near(left.Yaw, right.Yaw) &&
-        Near(left.RenderDistance, right.RenderDistance);
+    private static bool SameCamera(RendererProfilerCameraPose left, RendererProfilerCameraPose right)
+    {
+        return Vector3.Distance(left.Position, right.Position) <= FloatTolerance &&
+               Near(left.Pitch, right.Pitch) && Near(left.Yaw, right.Yaw) &&
+               Near(left.RenderDistance, right.RenderDistance);
+    }
 
-    private static bool Near(float left, float right) => MathF.Abs(left - right) <= FloatTolerance;
+    private static bool Near(float left, float right)
+    {
+        return MathF.Abs(left - right) <= FloatTolerance;
+    }
 
-    private static float DegreesToRadians(float degrees) => degrees * (MathF.PI / 180f);
+    private static float DegreesToRadians(float degrees)
+    {
+        return degrees * (MathF.PI / 180f);
+    }
 
-    private static float RadiansToDegrees(float radians) => radians * (180f / MathF.PI);
+    private static float RadiansToDegrees(float radians)
+    {
+        return radians * (180f / MathF.PI);
+    }
 
-    private static bool IsUnit(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z) &&
-        MathF.Abs(value.Length() - 1f) <= 0.001f;
+    private static bool IsUnit(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z) &&
+               MathF.Abs(value.Length() - 1f) <= 0.001f;
+    }
 
-    private static bool IsSha256(string value) =>
-        value.Length == 64 && value.All(static c => char.IsAsciiHexDigit(c));
+    private static bool IsSha256(string value)
+    {
+        return value.Length == 64 && value.All(static c => char.IsAsciiHexDigit(c));
+    }
 }

@@ -232,6 +232,19 @@ public sealed partial class WorldView3DControl
         SetRenderDistance(pose.RenderDistance);
     }
 
+    /// <summary>Profiler hook: the live perspective vertical FOV in degrees, so the P-key pose can copy
+    /// it and a headless <c>--capture-frame</c> reproduces the SAME zoom/framing. Without this a capture
+    /// always renders at the 60° default and a non-default live FOV looked like a different angle.</summary>
+    internal float Profiler_CameraFovDegrees => _camera.FovYRadians * (180f / MathF.PI);
+
+    /// <summary>Profiler hook: apply <c>--capture-fov</c>. Clamped to the same [30,110]° range the live
+    /// FOV slider enforces so a replayed pose can never exceed what the viewer itself allows.</summary>
+    internal void Profiler_SetCameraFov(float degrees)
+    {
+        var clamped = Math.Clamp(degrees, MinFovDegrees, MaxFovDegrees);
+        _camera.FovYRadians = clamped * (MathF.PI / 180f);
+    }
+
     internal void Profiler_ClearInputState()
     {
         _controller.ClearKeys();

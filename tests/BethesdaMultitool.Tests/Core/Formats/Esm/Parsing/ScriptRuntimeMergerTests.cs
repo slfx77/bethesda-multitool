@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
@@ -56,7 +57,7 @@ public sealed class ScriptRuntimeMergerTests
         var runtimeScripts = new RuntimeScriptData[]
         {
             new() { FormId = 0x00123452, SourceText = acceptedSource },
-            new() { FormId = 0x00123453, SourceText = rejectedSource },
+            new() { FormId = 0x00123453, SourceText = rejectedSource }
         };
         var standaloneScripts = new ScriptRecord[]
         {
@@ -66,7 +67,7 @@ public sealed class ScriptRuntimeMergerTests
                 SourceText = acceptedSource,
                 SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject,
                 SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                CompiledData = [0x00, 0x1D, 0x00, 0x00]
             },
             new()
             {
@@ -74,8 +75,8 @@ public sealed class ScriptRuntimeMergerTests
                 SourceText = null,
                 SourceTextOrigin = ScriptSourceTextOrigin.None,
                 SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Rejected,
-                CompiledData = [0x00, 0x1D, 0x00, 0x00],
-            },
+                CompiledData = [0x00, 0x1D, 0x00, 0x00]
+            }
         };
 
         var statuses = ScriptRuntimeMerger.ApplySourceCorrespondenceStatuses(
@@ -100,7 +101,7 @@ public sealed class ScriptRuntimeMergerTests
             SourceText = source,
             SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject,
             SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.AcceptedSourceOnly,
-            CompiledData = null,
+            CompiledData = null
         };
 
         var status = Assert.Single(ScriptRuntimeMerger.ApplySourceCorrespondenceStatuses(
@@ -121,7 +122,7 @@ public sealed class ScriptRuntimeMergerTests
             FormId = formId,
             SourceText = source,
             CompiledData = [0x00, 0x1D, 0x00, 0x00],
-            DataSize = 4,
+            DataSize = 4
         };
         var conflicting = first with { CompiledData = [0x00, 0x1C, 0x00, 0x00] };
         var standalone = new ScriptRecord
@@ -130,7 +131,7 @@ public sealed class ScriptRuntimeMergerTests
             SourceText = source,
             SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject,
             SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-            CompiledData = first.CompiledData,
+            CompiledData = first.CompiledData
         };
 
         var statuses = ScriptRuntimeMerger.ApplySourceCorrespondenceStatuses(
@@ -224,7 +225,7 @@ public sealed class ScriptRuntimeMergerTests
         var scda = Assert.Single(encoded.Subrecords, static subrecord => subrecord.Signature == "SCDA");
         Assert.Equal(new byte[] { 0x1D, 0x00, 0x00, 0x00 }, scda.Bytes);
         var sctx = Assert.Single(encoded.Subrecords, static subrecord => subrecord.Signature == "SCTX");
-        Assert.StartsWith(runtime.SourceText, System.Text.Encoding.Latin1.GetString(sctx.Bytes),
+        Assert.StartsWith(runtime.SourceText, Encoding.Latin1.GetString(sctx.Bytes),
             StringComparison.Ordinal);
         var slsd = Assert.Single(encoded.Subrecords, static subrecord => subrecord.Signature == "SLSD");
         Assert.Equal(22u, BinaryPrimitives.ReadUInt32LittleEndian(slsd.Bytes.AsSpan(0, 4)));
@@ -340,7 +341,7 @@ public sealed class ScriptRuntimeMergerTests
     [Fact]
     public void CreateScriptFromRuntimeData_RejectsScdaWithMissingLocalOperand()
     {
-        var compiledData = BuildBigEndianLocalSet(variableIndex: 7, integer: true);
+        var compiledData = BuildBigEndianLocalSet(7, true);
         var runtime = new RuntimeScriptData
         {
             FormId = 0x00123469,
@@ -359,7 +360,7 @@ public sealed class ScriptRuntimeMergerTests
     [Fact]
     public void CreateScriptFromRuntimeData_AcceptsScdaWithExactLocalOperand()
     {
-        var compiledData = BuildBigEndianLocalSet(variableIndex: 7, integer: true);
+        var compiledData = BuildBigEndianLocalSet(7, true);
         var runtime = new RuntimeScriptData
         {
             FormId = 0x0012346A,
@@ -384,7 +385,7 @@ public sealed class ScriptRuntimeMergerTests
     [Fact]
     public void CreateScriptFromRuntimeData_RejectsLocalMarkerStorageMismatch()
     {
-        var compiledData = BuildBigEndianLocalSet(variableIndex: 7, integer: true);
+        var compiledData = BuildBigEndianLocalSet(7, true);
         var runtime = new RuntimeScriptData
         {
             FormId = 0x0012346D,
@@ -405,7 +406,7 @@ public sealed class ScriptRuntimeMergerTests
     [Fact]
     public void CreateScriptFromRuntimeData_RejectsMarkerlessScriptVariableParameterWithoutSlsd()
     {
-        var compiledData = BuildBigEndianScriptVariableParameter(variableIndex: 7);
+        var compiledData = BuildBigEndianScriptVariableParameter(7);
         var runtime = new RuntimeScriptData
         {
             FormId = 0x00123470,
@@ -424,7 +425,7 @@ public sealed class ScriptRuntimeMergerTests
     [Fact]
     public void CreateScriptFromRuntimeData_AcceptsMarkerlessScriptVariableParameterWithExactSlsd()
     {
-        var compiledData = BuildBigEndianScriptVariableParameter(variableIndex: 7);
+        var compiledData = BuildBigEndianScriptVariableParameter(7);
         var runtime = new RuntimeScriptData
         {
             FormId = 0x00123472,
@@ -445,7 +446,7 @@ public sealed class ScriptRuntimeMergerTests
     [Fact]
     public void CreateScriptFromRuntimeData_RejectsUnconsumedFunctionPayloadAsOpaque()
     {
-        var compiledData = BuildBigEndianScriptVariableParameter(variableIndex: 7, trailingOpaqueBytes: 2);
+        var compiledData = BuildBigEndianScriptVariableParameter(7, 2);
         var runtime = new RuntimeScriptData
         {
             FormId = 0x00123473,
@@ -538,7 +539,7 @@ public sealed class ScriptRuntimeMergerTests
             CompiledSize = 4,
             IsBigEndian = true
         };
-        var compiledData = BuildBigEndianLocalSet(variableIndex: 7, integer: true);
+        var compiledData = BuildBigEndianLocalSet(7, true);
         var runtime = new RuntimeScriptData
         {
             FormId = existing.FormId,
@@ -692,7 +693,7 @@ public sealed class ScriptRuntimeMergerTests
         Assert.Equal(runtime.SourceText, enriched.SourceText);
         Assert.Equal(ScriptSourceTextOrigin.RuntimeSameObject, enriched.SourceTextOrigin);
         var sctx = Assert.Single(encoded.Subrecords, subrecord => subrecord.Signature == "SCTX");
-        Assert.Equal(runtime.SourceText, System.Text.Encoding.Latin1.GetString(sctx.Bytes).TrimEnd('\0'));
+        Assert.Equal(runtime.SourceText, Encoding.Latin1.GetString(sctx.Bytes).TrimEnd('\0'));
     }
 
     [Fact]

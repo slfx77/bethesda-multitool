@@ -13,19 +13,27 @@ public class GameDetectorTests
 {
     [Fact]
     public void DetectFromBytes_Tes3Magic_ReturnsMorrowind()
-        => Assert.Equal(BethesdaGame.Morrowind, GameDetector.DetectFromBytes(BuildTes3Header()).Game);
+    {
+        Assert.Equal(BethesdaGame.Morrowind, GameDetector.DetectFromBytes(BuildTes3Header()).Game);
+    }
 
     [Fact]
     public void DetectFromBytes_OblivionTwentyByteHeader_ReturnsOblivion()
-        => Assert.Equal(BethesdaGame.Oblivion, GameDetector.DetectFromBytes(BuildOblivionHeader()).Game);
+    {
+        Assert.Equal(BethesdaGame.Oblivion, GameDetector.DetectFromBytes(BuildOblivionHeader()).Game);
+    }
 
     [Fact]
     public void DetectFromBytes_Fallout76Version_ReturnsFallout76()
-        => Assert.Equal(BethesdaGame.Fallout76, GameDetector.DetectFromBytes(BuildTes4Header24(263.0f)).Game);
+    {
+        Assert.Equal(BethesdaGame.Fallout76, GameDetector.DetectFromBytes(BuildTes4Header24(263.0f)).Game);
+    }
 
     [Fact]
     public void DetectFromBytes_NewVegasVersion_ReturnsNewVegas()
-        => Assert.Equal(BethesdaGame.FalloutNewVegas, GameDetector.DetectFromBytes(BuildTes4Header24(1.34f)).Game);
+    {
+        Assert.Equal(BethesdaGame.FalloutNewVegas, GameDetector.DetectFromBytes(BuildTes4Header24(1.34f)).Game);
+    }
 
     [Fact]
     public void DetectFromFile_FilenameRefinesOverAmbiguousVersion()
@@ -64,7 +72,9 @@ public class GameDetectorTests
 
     [Fact]
     public void DetectFromFile_MissingPath_ReturnsUnknown()
-        => Assert.Equal(BethesdaGame.Unknown, GameDetector.DetectFromFile("does-not-exist.esm").Game);
+    {
+        Assert.Equal(BethesdaGame.Unknown, GameDetector.DetectFromFile("does-not-exist.esm").Game);
+    }
 
     private static byte[] BuildTes3Header()
     {

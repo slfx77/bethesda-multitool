@@ -28,7 +28,7 @@ internal static class ImageSpaceModifierTestFactory
         {
             AnimatableFlag = 1,
             Duration = 2.5f,
-            RawPayload = payload,
+            RawPayload = payload
         };
         var dnam = ImadEncoder.EncodeDnam(data);
         if (isBigEndian)
@@ -49,7 +49,7 @@ internal static class ImageSpaceModifierTestFactory
         var subrecords = new List<ImageSpaceModifierRawSubrecord>
         {
             new("EDID", Encoding.UTF8.GetBytes("HVSimISFX\0")),
-            new("DNAM", dnam),
+            new("DNAM", dnam)
         };
         foreach (var layout in ImageSpaceModifierCaptureValidator.FrameTableLayouts)
         {
@@ -88,7 +88,7 @@ internal static class ImageSpaceModifierTestFactory
             IntroSoundFormId = introSound,
             OutroSoundFormId = outroSound,
             OrderedSubrecords = subrecords,
-            IsBigEndian = isBigEndian,
+            IsBigEndian = isBigEndian
         };
     }
 

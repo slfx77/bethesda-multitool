@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -37,7 +38,12 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     public GpuGeometryArena12(GpuDevice12 gpu, long blockSize = DefaultBlockSize)
     {
         _gpu = gpu;
-        _allocator = new GeometryArenaAllocator(blockSize, RegionAlignment);
+        _allocator = new GeometryArenaAllocator(blockSize, RegionAlignment)
+        {
+            // FALLOUT_VIEWER_GEOMETRY_VALIDATE: double-free / overlap throws at the offending
+            // call site and QueryLiveness can distinguish freed from recycled ranges.
+            StrictValidation = GeometryArenaDiagnostics.Enabled,
+        };
     }
 
     /// <summary>Arena blocks currently committed.</summary>
@@ -74,7 +80,8 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     ///     into one sub-allocation and copies both into the mapped block. The returned GPU virtual
     ///     addresses are bound directly as vertex / index buffer views.
     /// </summary>
-    public GeometryAllocation12 Upload(ReadOnlySpan<byte> vertexBytes, ReadOnlySpan<byte> indexBytes)
+    public GeometryAllocation12 Upload(
+        ReadOnlySpan<byte> vertexBytes, ReadOnlySpan<byte> indexBytes, string? debugTag = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (vertexBytes.Length == 0)
@@ -93,13 +100,15 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
             indexBytes.CopyTo(new Span<byte>(cpuBase + alignedVertexBytes, indexBytes.Length));
         }
 
+        EmitAudit("alloc", allocation, debugTag);
         var gpuBase = _blockResources[allocation.BlockIndex].GPUVirtualAddress + (ulong)allocation.Offset;
         return new GeometryAllocation12(
             allocation,
             vertexBufferLocation: gpuBase,
             indexBufferLocation: gpuBase + (ulong)alignedVertexBytes,
             vertexBytes: (uint)vertexBytes.Length,
-            indexBytes: (uint)indexBytes.Length);
+            indexBytes: (uint)indexBytes.Length,
+            debugTag: debugTag);
     }
 
     /// <summary>Returns an allocation's range to the free-list. No-op after <see cref="Dispose" />.</summary>
@@ -110,6 +119,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
             return;
         }
 
+        EmitAudit("free", allocation.Allocation, allocation.DebugTag);
         _allocator.Free(allocation.Allocation);
     }
 
@@ -118,7 +128,64 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     ///     <see cref="GpuDeletionQueue12" /> so the range is reclaimed only after in-flight draws
     ///     referencing it have drained.
     /// </summary>
-    public IDisposable DeferredFreeHandle(GeometryAllocation12 allocation) => new FreeHandle(this, allocation);
+    public IDisposable DeferredFreeHandle(GeometryAllocation12 allocation)
+    {
+        // Creation moment == eviction moment: logged separately from the eventual "free" so the
+        // audit trail shows how long the deletion queue held the range.
+        EmitAudit("free-enqueue", allocation.Allocation, allocation.DebugTag);
+        return new FreeHandle(this, allocation);
+    }
+
+    /// <summary>Liveness of <paramref name="allocation" />'s range under strict tracking
+    /// (<see cref="ArenaLiveness.Untracked" /> when FALLOUT_VIEWER_GEOMETRY_VALIDATE is off).</summary>
+    public ArenaLiveness QueryLiveness(in GeometryAllocation12 allocation) =>
+        _disposed ? ArenaLiveness.Untracked : _allocator.QueryLiveness(allocation.Allocation);
+
+    /// <summary>
+    ///     Hashes the mapped arena bytes that a view over <paramref name="gpuAddress" /> /
+    ///     <paramref name="sizeInBytes" /> would make the GPU read — possible only because arena
+    ///     blocks are persistently-mapped UPLOAD heap. False when the address does not fall inside
+    ///     the allocation's block (a stale view whose range left the arena entirely).
+    /// </summary>
+    public bool TryHashRange(
+        in GeometryAllocation12 allocation, ulong gpuAddress, uint sizeInBytes, out ulong fnv1a64)
+    {
+        fnv1a64 = 0;
+        var blockIndex = allocation.Allocation.BlockIndex;
+        if (_disposed || (uint)blockIndex >= (uint)_blockResources.Count)
+        {
+            return false;
+        }
+
+        var blockBase = _blockResources[blockIndex].GPUVirtualAddress;
+        var blockSize = (ulong)_allocator.BlockSizeOf(blockIndex);
+        if (gpuAddress < blockBase || gpuAddress - blockBase + sizeInBytes > blockSize)
+        {
+            return false;
+        }
+
+        var cpu = (byte*)_blockPointers[blockIndex] + (long)(gpuAddress - blockBase);
+        fnv1a64 = GeometryArenaDiagnostics.Fnv1a64(new ReadOnlySpan<byte>(cpu, (int)sizeInBytes));
+        return true;
+    }
+
+    private static void EmitAudit(string op, in ArenaAllocation allocation, string? tag)
+    {
+        if (!GeometryArenaDiagnostics.AuditEnabled || !RendererProfilerTrace.IsEnabled)
+        {
+            return;
+        }
+
+        RendererProfilerTrace.Event("geometry-arena", new Dictionary<string, object?>
+        {
+            ["op"] = op,
+            ["allocId"] = allocation.AllocationId,
+            ["block"] = allocation.BlockIndex,
+            ["offset"] = allocation.Offset,
+            ["alignedSize"] = allocation.AlignedSize,
+            ["tag"] = tag,
+        });
+    }
 
     public void Dispose()
     {
@@ -166,7 +233,20 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
 
     private sealed class FreeHandle(GpuGeometryArena12 arena, GeometryAllocation12 allocation) : IDisposable
     {
-        public void Dispose() => arena.Free(allocation);
+        private bool _freed;
+
+        public void Dispose()
+        {
+            // Idempotence guard: the deletion queue disposes each entry once, but a double-Dispose
+            // from any future path must not become a silent double-free of the arena range.
+            if (_freed)
+            {
+                return;
+            }
+
+            _freed = true;
+            arena.Free(allocation);
+        }
     }
 }
 
@@ -174,7 +254,8 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
 ///     A geometry sub-allocation. <see cref="VertexBufferLocation" /> / <see cref="IndexBufferLocation" />
 ///     are GPU virtual addresses bound directly as <see cref="VertexBufferView" /> /
 ///     <see cref="IndexBufferView" /> base locations; <see cref="Allocation" /> carries the range
-///     back to <see cref="GpuGeometryArena12.Free" />.
+///     back to <see cref="GpuGeometryArena12.Free" />. <see cref="DebugTag" /> names the owning mesh
+///     in diagnostics (model path) and costs one reference copy.
 /// </summary>
 internal readonly struct GeometryAllocation12
 {
@@ -183,13 +264,15 @@ internal readonly struct GeometryAllocation12
         ulong vertexBufferLocation,
         ulong indexBufferLocation,
         uint vertexBytes,
-        uint indexBytes)
+        uint indexBytes,
+        string? debugTag = null)
     {
         Allocation = allocation;
         VertexBufferLocation = vertexBufferLocation;
         IndexBufferLocation = indexBufferLocation;
         VertexBytes = vertexBytes;
         IndexBytes = indexBytes;
+        DebugTag = debugTag;
     }
 
     internal ArenaAllocation Allocation { get; }
@@ -201,4 +284,6 @@ internal readonly struct GeometryAllocation12
     public uint VertexBytes { get; }
 
     public uint IndexBytes { get; }
+
+    public string? DebugTag { get; }
 }

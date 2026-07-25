@@ -65,23 +65,29 @@ public sealed class PackagePlanSanitizerTests
             diagnostic.Message.Contains("resolves to CELL", StringComparison.Ordinal));
     }
 
-    private static PackageRecord MakePack(PackageTarget target) => new()
+    private static PackageRecord MakePack(PackageTarget target)
     {
-        FormId = PackFormId,
-        EditorId = "TestPackage",
-        Data = new PackageData(),
-        Target = target,
-    };
+        return new PackageRecord
+        {
+            FormId = PackFormId,
+            EditorId = "TestPackage",
+            Data = new PackageData(),
+            Target = target
+        };
+    }
 
-    private static RecordPlan MakePlan(string type, uint formId, object model) => new()
+    private static RecordPlan MakePlan(string type, uint formId, object model)
     {
-        Type = type,
-        Disposition = RecordDisposition.New,
-        FormId = formId,
-        SourceFormId = formId,
-        Model = model,
-        References = ImmutableArray<ResolvedRef>.Empty,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "package integrity" },
-    };
+        return new RecordPlan
+        {
+            Type = type,
+            Disposition = RecordDisposition.New,
+            FormId = formId,
+            SourceFormId = formId,
+            Model = model,
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "package integrity" }
+        };
+    }
 }

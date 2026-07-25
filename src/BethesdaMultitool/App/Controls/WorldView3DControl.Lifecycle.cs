@@ -302,6 +302,8 @@ public sealed partial class WorldView3DControl
         _navMesh = null;
         _collisionDebug?.Dispose();
         _collisionDebug = null;
+        _exportFraming?.Dispose();
+        _exportFraming = null;
         _water?.Dispose();
         _water = null;
         _skyGeometry?.Dispose();

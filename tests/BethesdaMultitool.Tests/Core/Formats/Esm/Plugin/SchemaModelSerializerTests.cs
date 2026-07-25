@@ -17,25 +17,25 @@ public class SchemaModelSerializerTests
     [Fact]
     public void Serialize_WalksSchemaFieldsAndWritesLittleEndianBytes()
     {
-        // ALCH/ENIT — 20 bytes: UInt32 Value + Bytes Flags(4) + FormId Addiction + Float
-        // AddictionChance + FormId UseSoundOrWithdrawalEffect.
+        // ALCH/ENIT — 20 bytes: UInt32 Value + Bytes Flags(4) + FormId WithdrawalEffect + Float
+        // AddictionChance + FormId ConsumeSound.
         var alch = new ConsumableRecord
         {
             FormId = 1,
             Value = 250u,
             Flags = 0x00000002u,
-            AddictionFormId = 0x000FAB42u,
+            WithdrawalEffectFormId = 0x000FAB42u,
             AddictionChance = 0.25f,
-            WithdrawalEffectFormId = 0x000FAB99u
+            ConsumeSoundFormId = 0x000FAB99u
         };
 
         var extractors = new Dictionary<string, Func<ConsumableRecord, object?>>(StringComparer.Ordinal)
         {
             ["Value"] = m => m.Value,
             ["Flags"] = m => BitConverter.GetBytes(m.Flags),
-            ["Addiction"] = m => m.AddictionFormId ?? 0u,
+            ["WithdrawalEffect"] = m => m.WithdrawalEffectFormId ?? 0u,
             ["AddictionChance"] = m => m.AddictionChance,
-            ["UseSoundOrWithdrawalEffect"] = m => m.WithdrawalEffectFormId ?? 0u
+            ["ConsumeSound"] = m => m.ConsumeSoundFormId ?? 0u
         };
 
         var bytes = SchemaModelSerializer.Serialize("ENIT", "ALCH", 20, alch, extractors);
@@ -51,7 +51,7 @@ public class SchemaModelSerializerTests
     [Fact]
     public void Serialize_MissingExtractorsZeroFill()
     {
-        // ALCH/ENIT, but the extractor map omits AddictionFormId / WithdrawalEffectFormId.
+        // ALCH/ENIT, but the extractor map omits WithdrawalEffectFormId / ConsumeSoundFormId.
         // Missing fields should zero-fill — matches SchemaDictionarySerializer's dict-payload behavior.
         var alch = new ConsumableRecord { FormId = 1, Value = 99u, AddictionChance = 1.5f };
 
@@ -67,10 +67,10 @@ public class SchemaModelSerializerTests
         Assert.Equal(99u, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0, 4)));
         // Flags (bytes 4-7) — omitted → zero-filled.
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4, 4)));
-        // Addiction (8-11) — omitted → zero-filled.
+        // WithdrawalEffect (8-11) — omitted → zero-filled.
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4)));
         Assert.Equal(1.5f, BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(12, 4)));
-        // UseSoundOrWithdrawalEffect (16-19) — omitted → zero-filled.
+        // ConsumeSound (16-19) — omitted → zero-filled.
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(16, 4)));
     }
 

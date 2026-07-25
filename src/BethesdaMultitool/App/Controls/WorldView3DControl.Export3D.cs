@@ -8,7 +8,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 namespace BethesdaMultitool;
 
 /// <summary>
-///     Offscreen render path for the dedicated 3D export (the toolbar "Export" button → MapExport3DDialog
+///     Offscreen render path for the dedicated 3D export (the right-panel Export tab → WorldView3DExportPanel
 ///     → <c>OnExportButtonClick</c>). Renders one tile of an orthographic / isometric /
 ///     trimetric projection of the active worldspace into a reused <see cref="GpuOffscreenSceneTarget12" />
 ///     and reads it back to BGRA. Unlike the 2D map's top-down overlay (<see cref="ITopDownSceneRenderer" />,
@@ -97,6 +97,7 @@ public sealed partial class WorldView3DControl
         bool isComplete;
         bool isFullySettled;
         var prevShowDisabled = _references!.ShowInitiallyDisabled;
+        var prevShowGrass = _references.ShowGrass;
         var prevRefThrottled = _references.StreamingThrottled;
         var prevTerrainThrottled = _terrain!.StreamingThrottled;
         // BindAtmosphereConstants reads the live _show* lighting/fog/sky gates; override them with the
@@ -108,6 +109,7 @@ public sealed partial class WorldView3DControl
         try
         {
             _references.ShowInitiallyDisabled = opts.ShowDisabled;
+            _references.ShowGrass = opts.ShowGrass;
             _references.ShowMarkers = opts.ShowMarkers;
             _references.SetHiddenCategories(opts.HiddenCategories);
             _references.StreamingThrottled = false;
@@ -129,6 +131,15 @@ public sealed partial class WorldView3DControl
                 cmd.SetDescriptorHeaps(1, new[] { _cbvSrvUavHeap12.Heap });
                 cmd.SetGraphicsRootSignature(_rootSignature12!.RootSignature);
 
+                // Match the live frame and the scene-capture path: light the scene AND resolve the
+                // HDR→SDR readback with the SAME engine imagespace tonemap. Without this the export
+                // target keeps its GammaAcesDefaults operator (GpuOffscreenSceneTarget12 ctor) while
+                // BindAtmosphereConstants lights the scene at engine-HDR scale, so the exported PNG
+                // comes out washed out. AdaptFactor=1 = a deterministic offscreen exposure sample (no
+                // temporal eye-adaptation), the same contract the scene-capture readback uses.
+                var tonemap = ResolveTonemapSettings() with { AdaptFactor = 1f };
+                target.TonemapSettings = tonemap;
+
                 // Absolute matrices (no camera-relative origin); the ortho eye as the shading camera so
                 // specular reads parallel. enableFog is forced OFF to match the live projection view: the
                 // shader measures fog as distance from the camera, and the ortho eye sits 1,000,000 units
@@ -138,7 +149,7 @@ public sealed partial class WorldView3DControl
                 BindAtmosphereConstants(
                     cmd, recorder.FrameIndex, enableFog: false, enableLighting: true,
                     cameraRelative: false, shadingCameraPosOverride: shadingEye, enableShadows: false,
-                    lightVisibility: cylinder);
+                    lightVisibility: cylinder, tonemapOverride: tonemap);
 
                 target.Bind(cmd);
 
@@ -172,7 +183,9 @@ public sealed partial class WorldView3DControl
                     _references.RenderBlendedDeferred();
                 }
                 if (opts.ShowNavMesh) _navMesh?.Render(viewProj, cylinder);
-                if (opts.ShowCollision) _collisionDebug?.Render(viewProj, cylinder);
+                // Analytic line width is in render-target pixels: a supersampled export draws
+                // proportionally finer lines and the final downsample restores the on-screen weight.
+                if (opts.ShowCollision) _collisionDebug?.Render(viewProj, cylinder, ssWidth, ssHeight);
                 if (opts.ShowGrid) _cellGrid?.Render(viewProj, cylinder);
 
                 target.RecordReadback(cmd);
@@ -206,6 +219,7 @@ public sealed partial class WorldView3DControl
         finally
         {
             _references.ShowInitiallyDisabled = prevShowDisabled;
+            _references.ShowGrass = prevShowGrass;
             _references.ShowMarkers = prevShowMarkers;
             _references.SetHiddenCategories(_hiddenCategories);
             _references.StreamingThrottled = prevRefThrottled;
@@ -240,6 +254,7 @@ public sealed partial class WorldView3DControl
 internal sealed record Export3DOptions(
     bool ShowTerrain,
     bool ShowReferences,
+    bool ShowGrass,
     bool ShowWater,
     bool ShowNavMesh,
     bool ShowCollision,

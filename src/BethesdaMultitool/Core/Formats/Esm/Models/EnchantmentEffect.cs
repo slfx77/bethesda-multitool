@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Models;
 
 /// <summary>One magic effect on an enchantment or spell, parsed from its EFID/EFIT subrecords.</summary>
@@ -20,4 +22,8 @@ public record EnchantmentEffect
 
     /// <summary>Actor value index from EFIT (-1 if not applicable).</summary>
     public int ActorValue { get; init; }
+
+    /// <summary>Per-effect conditions (CTDA subrecords following this effect's EFID/EFIT). Empty for
+    ///     unconditioned effects and for ENCH/SPEL (whose encoders do not emit effect conditions).</summary>
+    public List<DialogueCondition> Conditions { get; init; } = [];
 }

@@ -37,6 +37,7 @@ internal sealed class SelectionHighlightRenderer12 : IDisposable
     private readonly GpuCommandRecorder12 _recorder;
     private readonly GpuRingBuffer12 _ringBuffer;
     private readonly ID3D12PipelineState _pso;
+    private readonly ID3D12PipelineState _ldrPso;
     private readonly Vector3[] _verts = new Vector3[BoxVertexCount];
     private bool _hasSelection;
     private bool _disposed;
@@ -112,6 +113,16 @@ internal sealed class SelectionHighlightRenderer12 : IDisposable
             SampleMask = uint.MaxValue,
         };
         _pso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+
+        // LDR flavor for the post-tonemap back buffer (CollisionDebugRenderer12 pattern): the
+        // outline is a debug overlay and must not be eye-adapted/bloomed with the HDR scene.
+        rasterizer.MultisampleEnable = false;
+        rasterizer.AntialiasedLineEnable = true;
+        psoDesc.RasterizerState = rasterizer;
+        psoDesc.RenderTargetFormats = new[] { Gpu.D3D12.GpuSceneFormats.LdrOutput };
+        psoDesc.DepthStencilFormat = Format.Unknown;
+        psoDesc.SampleDescription = new SampleDescription(1, 0);
+        _ldrPso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
     }
 
     public void ClearSelection() => _hasSelection = false;
@@ -138,7 +149,9 @@ internal sealed class SelectionHighlightRenderer12 : IDisposable
         _hasSelection = true;
     }
 
-    public void Render(Matrix4x4 viewProj)
+    public void Render(Matrix4x4 viewProj) => Render(viewProj, ldrTarget: false);
+
+    public void Render(Matrix4x4 viewProj, bool ldrTarget)
     {
         if (_disposed || !_hasSelection) return;
 
@@ -165,7 +178,7 @@ internal sealed class SelectionHighlightRenderer12 : IDisposable
         };
         unsafe { *(HighlightUniforms*)cbAlloc.CpuPtr = uniforms; }
 
-        cmd.SetPipelineState(_pso);
+        cmd.SetPipelineState(ldrTarget ? _ldrPso : _pso);
         cmd.IASetPrimitiveTopology(PrimitiveTopology.LineList);
         cmd.IASetVertexBuffers(0, new VertexBufferView
         {
@@ -182,6 +195,7 @@ internal sealed class SelectionHighlightRenderer12 : IDisposable
         if (_disposed) return;
         _disposed = true;
         _pso.Dispose();
+        _ldrPso.Dispose();
     }
 
     private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)

@@ -69,6 +69,8 @@ public sealed class NpcFaceAssetCollectorTests
         Assert.Empty(result.PackPathRenames);
     }
 
-    private static ActorBaseSubrecord Stats(uint flags) =>
-        new(flags, 0, 0, 1, 0, 0, 100, 0, 0, 0, 0, false);
+    private static ActorBaseSubrecord Stats(uint flags)
+    {
+        return new ActorBaseSubrecord(flags, 0, 0, 1, 0, 0, 100, 0, 0, 0, 0, false);
+    }
 }

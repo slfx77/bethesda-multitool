@@ -156,13 +156,22 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 "ReferenceMeshLru",
                 ResourceCategory.GpuResident,
                 maxEntries: capacity,
-                onEvicted: (_, node) =>
+                onEvicted: (key, node) =>
                 {
                     node.Mesh?.Dispose();
                     // Any eviction invalidates frozen (reused) reference batches: their instance
                     // lists key on CachedSubmesh12 objects whose GPU buffers just entered the
                     // deletion queue. The renderer compares this against its build snapshot.
                     EvictionGeneration++;
+                    if (GeometryArenaDiagnostics.AuditEnabled && node.Mesh is not null)
+                    {
+                        RendererProfilerTrace.Event("geometry-arena", new Dictionary<string, object?>
+                        {
+                            ["op"] = "evict",
+                            ["tag"] = key,
+                            ["evictionGeneration"] = EvictionGeneration,
+                        });
+                    }
                 },
                 comparer: StringComparer.OrdinalIgnoreCase)
             .RegisterWith(ResourceRegistry.Instance, "reference-meshes");
@@ -258,8 +267,21 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             return;
         }
 
+        if (GeometryArenaDiagnostics.AuditEnabled && capacity < _meshLru.Count)
+        {
+            RendererProfilerTrace.Event("geometry-arena", new Dictionary<string, object?>
+            {
+                ["op"] = "set-capacity",
+                ["newCapacity"] = capacity,
+                ["residentCount"] = _meshLru.Count,
+            });
+        }
+
         _meshLru.SetMaxEntries(capacity);
     }
+
+    /// <summary>The geometry arena, exposed for draw-time liveness/byte-hash validation only.</summary>
+    internal GpuGeometryArena12 GeometryArenaForDiagnostics => _geometryArena;
 
     public int MaxDecodeStartsPerFrame { get; init; } = DefaultMaxDecodeStartsPerFrame;
     public int MaxConcurrentDecodeTasks { get; init; } = DefaultMaxConcurrentDecodeTasks;
@@ -879,7 +901,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             // flagged). VBV/IBV bind directly against the arena block's GPU virtual address.
             geometry = _geometryArena.Upload(
                 System.Runtime.InteropServices.MemoryMarshal.AsBytes<GpuMeshUploader.GpuVertex>(vertices),
-                System.Runtime.InteropServices.MemoryMarshal.AsBytes<ushort>(indices));
+                System.Runtime.InteropServices.MemoryMarshal.AsBytes<ushort>(indices),
+                debugTag: modelPath);
         }
         catch (Exception ex)
         {
@@ -1063,6 +1086,21 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 var vertexByteSize = CheckedByteSize(sub.Vertices.Length, vertexStride);
                 var indexByteOffset = CheckedByteSize(indexStarts[i], sizeof(ushort));
                 var indexByteSize = CheckedByteSize(sub.Indices.Length, sizeof(ushort));
+                if (GeometryArenaDiagnostics.Enabled &&
+                    MeshPackingValidator12.ValidateSubmeshWindow(
+                        i, sub.Vertices.Length, sub.Indices,
+                        vertexByteOffset, vertexByteSize, indexByteOffset, indexByteSize,
+                        vertexStride, geometry.VertexBytes, geometry.IndexBytes) is { } packingViolation)
+                {
+                    Log.Error("ReferenceMeshCache12: PACKING VIOLATION '{0}': {1}", modelPath, packingViolation);
+                    RendererProfilerTrace.Event("geometry-violation", new Dictionary<string, object?>
+                    {
+                        ["kind"] = "packing",
+                        ["path"] = modelPath,
+                        ["detail"] = packingViolation,
+                    });
+                }
+
                 submeshes.Add(new CachedSubmesh12
                 {
                     VertexBufferView = new VertexBufferView
@@ -1147,6 +1185,18 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     Skin = sub.Skin,
                     RestPoseVertices = sub.Skin is not null ? sub.Vertices : null
                 });
+                if (GeometryArenaDiagnostics.ValidateLevel >= 2)
+                {
+                    // Content stamps of the exact packed windows this submesh's views cover, so the
+                    // draw-time validator can prove whether the GPU-visible bytes were overwritten.
+                    var added = submeshes[^1];
+                    added.DebugVertexHash = GeometryArenaDiagnostics.Fnv1a64(
+                        System.Runtime.InteropServices.MemoryMarshal.AsBytes(
+                            vertices.AsSpan(vertexStarts[i], sub.Vertices.Length)));
+                    added.DebugIndexHash = GeometryArenaDiagnostics.Fnv1a64(
+                        System.Runtime.InteropServices.MemoryMarshal.AsBytes(
+                            indices.AsSpan(indexStarts[i], sub.Indices.Length)));
+                }
             }
             catch (Exception ex)
             {
@@ -1167,8 +1217,13 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             aabbMin, aabbMax,
             (IReadOnlyList<NifWaterGeometry>?)waterPlanesLocal ?? Array.Empty<NifWaterGeometry>())
         {
-            Animation = decoded.Animation
+            Animation = decoded.Animation,
+            SourcePath = modelPath
         };
+        foreach (var uploaded in submeshes)
+        {
+            uploaded.OwnerMesh = cached;
+        }
         if (started != 0)
         {
             RendererProfilerTrace.Event("resource-event", new Dictionary<string, object?>

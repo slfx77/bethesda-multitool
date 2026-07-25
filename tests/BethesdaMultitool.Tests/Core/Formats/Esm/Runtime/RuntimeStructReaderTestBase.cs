@@ -22,8 +22,8 @@ public abstract class RuntimeStructReaderTestBase : IDisposable
     protected const uint HeapBaseVa = 0x40000000;
 
     private MemoryMappedViewAccessor? _accessor;
-    private MemoryMappedFile? _mmf;
     private bool _disposed;
+    private MemoryMappedFile? _mmf;
 
     public void Dispose()
     {

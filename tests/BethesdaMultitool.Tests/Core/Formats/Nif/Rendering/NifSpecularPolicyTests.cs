@@ -11,7 +11,7 @@ public sealed class NifSpecularPolicyTests
     [Fact]
     public void ClassicPpLighting_UsesAuthoredFlagAndNormalMaskPath_NotBlackMaterialTint()
     {
-        var submesh = ClassicSubmesh(shaderFlags: 1u, specularColor: (0f, 0f, 0f));
+        var submesh = ClassicSubmesh(1u, (0f, 0f, 0f));
 
         Assert.True(NifSpecularPolicy.IsEnabled(submesh));
     }
@@ -19,7 +19,7 @@ public sealed class NifSpecularPolicyTests
     [Fact]
     public void ClassicPpLighting_KeepsSpecularBitClearShapeDisabled()
     {
-        var submesh = ClassicSubmesh(shaderFlags: 0u, specularColor: (1f, 1f, 1f));
+        var submesh = ClassicSubmesh(0u, (1f, 1f, 1f));
 
         Assert.False(NifSpecularPolicy.IsEnabled(submesh));
     }
@@ -27,9 +27,9 @@ public sealed class NifSpecularPolicyTests
     [Fact]
     public void ClassicPpLighting_RequiresConsumableNormalTbnAndPositiveGloss()
     {
-        Assert.False(NifSpecularPolicy.IsEnabled(ClassicSubmesh(shaderFlags: 1u, withNormalPath: false)));
-        Assert.False(NifSpecularPolicy.IsEnabled(ClassicSubmesh(shaderFlags: 1u, withTangents: false)));
-        Assert.False(NifSpecularPolicy.IsEnabled(ClassicSubmesh(shaderFlags: 1u, glossiness: 0f)));
+        Assert.False(NifSpecularPolicy.IsEnabled(ClassicSubmesh(1u, withNormalPath: false)));
+        Assert.False(NifSpecularPolicy.IsEnabled(ClassicSubmesh(1u, withTangents: false)));
+        Assert.False(NifSpecularPolicy.IsEnabled(ClassicSubmesh(1u, glossiness: 0f)));
     }
 
     [Fact]
@@ -85,8 +85,9 @@ public sealed class NifSpecularPolicyTests
         (float R, float G, float B)? specularColor = null,
         float glossiness = 10f,
         bool withNormalPath = true,
-        bool withTangents = true) =>
-        new()
+        bool withTangents = true)
+    {
+        return new RenderableSubmesh
         {
             Positions = [0f, 0f, 0f],
             Triangles = [],
@@ -99,9 +100,10 @@ public sealed class NifSpecularPolicyTests
             ShaderMetadata = new NifShaderTextureMetadata
             {
                 PropertyType = "BSShaderPPLightingProperty",
-                ShaderFlags = shaderFlags,
-            },
+                ShaderFlags = shaderFlags
+            }
         };
+    }
 
     private static NifRenderableModel? LoadRetailModel(string path)
     {
@@ -134,7 +136,7 @@ public sealed class NifSpecularPolicyTests
                 "Fallout - Meshes.bsa"),
             Path.GetFullPath(Path.Combine("Sample", "Full_Builds", "Fallout New Vegas (PC Final)",
                 "Data", "Fallout - Meshes.bsa")),
-            @"E:\SteamLibrary\SteamApps\common\Fallout New Vegas\Data\Fallout - Meshes.bsa",
+            @"E:\SteamLibrary\SteamApps\common\Fallout New Vegas\Data\Fallout - Meshes.bsa"
         };
 
         return candidates.FirstOrDefault(File.Exists);

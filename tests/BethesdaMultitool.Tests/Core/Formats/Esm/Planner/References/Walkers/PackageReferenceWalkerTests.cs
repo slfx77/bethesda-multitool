@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Planner.References;
 using BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers;
 using Xunit;
 
@@ -187,7 +188,7 @@ public sealed class PackageReferenceWalkerTests
     }
 
     private static void AssertReference(
-        BethesdaMultitool.Core.Formats.Esm.Planner.References.RawReference reference,
+        RawReference reference,
         string fieldPath,
         uint formId)
     {

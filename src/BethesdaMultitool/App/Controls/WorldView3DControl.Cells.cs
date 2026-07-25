@@ -48,6 +48,7 @@ public sealed partial class WorldView3DControl
             }
             ApplyStressSceneBookmarkIfRequested();
             RefreshAtmosphereForCurrentWorldspace();
+            RefreshExportBounds(); // the export tab's bounds/output-size follow the active worldspace
             selectionCompleted = true;
         }
         finally
@@ -167,6 +168,30 @@ public sealed partial class WorldView3DControl
             if (index is uint idx)
             {
                 frames.Add(idx);
+            }
+        }
+
+        // Retail Oblivion ships NO water00-31.dds — the engine GENERATES its 32-frame surface
+        // animation at runtime from ini [Water] settings (uSurfaceFrameCount=32, uSurfaceFPS=12,
+        // uSurfaceTextureSize=128). With zero disk/BSA frames the surface stayed on the static
+        // procedural ripple ("water isn't animated"). Synthesize the seamless loop instead and
+        // feed it through the same plumbing; disk frames (mod replacers) still win when present.
+        // Morrowind (Diffuse role) always resolves its BSA-shipped frames above and never gets here.
+        if (frames.Count == 0 &&
+            _data.Game == BethesdaMultitool.Core.Games.BethesdaGame.Oblivion &&
+            frameRole == LegacySurfaceFrameRole.GlobalNormal)
+        {
+            var synthesized = BethesdaMultitool.Core.Formats.Nif.Rendering.Camera
+                .OblivionWaterSurfaceSynthesizer.GenerateFrames();
+            for (var i = 0; i < synthesized.Length; i++)
+            {
+                frames.Add(_textureResolver12.GetOrCreateSyntheticBindlessIndex(
+                    $"synthetic:oblivion-water-surface:{i:D2}",
+                    BethesdaMultitool.Core.Formats.Nif.Rendering.Camera
+                        .OblivionWaterSurfaceSynthesizer.TextureSize,
+                    BethesdaMultitool.Core.Formats.Nif.Rendering.Camera
+                        .OblivionWaterSurfaceSynthesizer.TextureSize,
+                    synthesized[i]));
             }
         }
 

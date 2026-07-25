@@ -25,6 +25,10 @@ internal sealed class GpuDeletionQueue12 : ITrackableResource, IDisposable
     private uint _currentFrame;
     private bool _disposed;
 
+    /// <summary>The tick counter, exposed so geometry diagnostics can correlate free timing with
+    /// the fence-synced frame clock.</summary>
+    public uint CurrentFrame => _currentFrame;
+
     public GpuDeletionQueue12(int framesToHold)
     {
         if (framesToHold <= 0)

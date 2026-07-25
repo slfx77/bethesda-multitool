@@ -22,16 +22,16 @@ public sealed class RecoveredSkyShaderReferenceTests
         var expected = new Vector3(expectedR, expectedG, expectedB);
         var actual = SkyBlendWeights.Evaluate(new Vector3(r, g, b), Horizon, Lower, Upper);
 
-        VectorAssert.Equal(expected, actual, 1e-6f);
+        VectorAssert.Equal(expected, actual);
     }
 
     [Fact]
     public void MixedWeightsUseRecoveredThreeTermMultiplyAddOrder()
     {
         var weights = new Vector3(0.25f, 0.5f, 0.125f);
-        var expected = (Horizon * 0.25f) + (Lower * 0.5f) + (Upper * 0.125f);
+        var expected = Horizon * 0.25f + Lower * 0.5f + Upper * 0.125f;
 
-        VectorAssert.Equal(expected, SkyBlendWeights.Evaluate(weights, Horizon, Lower, Upper), 1e-6f);
+        VectorAssert.Equal(expected, SkyBlendWeights.Evaluate(weights, Horizon, Lower, Upper));
     }
 
     [Fact]
@@ -39,9 +39,9 @@ public sealed class RecoveredSkyShaderReferenceTests
     {
         var tint = new Vector3(0.7f, 0.8f, 0.9f);
 
-        VectorAssert.Equal(tint, SkyBlendWeights.Evaluate(Vector3.UnitX, tint, Vector3.Zero, Vector3.Zero), 1e-6f);
+        VectorAssert.Equal(tint, SkyBlendWeights.Evaluate(Vector3.UnitX, tint, Vector3.Zero, Vector3.Zero));
         VectorAssert.Equal(Vector3.Zero,
-            SkyBlendWeights.Evaluate(Vector3.UnitY, tint, Vector3.Zero, Vector3.Zero), 1e-6f);
+            SkyBlendWeights.Evaluate(Vector3.UnitY, tint, Vector3.Zero, Vector3.Zero));
     }
 
     [Fact]
@@ -50,6 +50,6 @@ public sealed class RecoveredSkyShaderReferenceTests
         var weighted = new Vector3(0.1f, 0.2f, 0.3f);
         var expected = new Vector3(0.5f, 0.25f, 0.2f);
 
-        VectorAssert.Equal(expected, SkyBlendWeights.CompositeAtmosphere(weighted, Horizon, 0.5f), 1e-6f);
+        VectorAssert.Equal(expected, SkyBlendWeights.CompositeAtmosphere(weighted, Horizon, 0.5f));
     }
 }

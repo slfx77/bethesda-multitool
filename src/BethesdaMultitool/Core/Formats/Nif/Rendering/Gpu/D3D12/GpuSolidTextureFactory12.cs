@@ -25,10 +25,25 @@ internal sealed unsafe class GpuSolidTextureFactory12
         _heap = heap;
     }
 
-    internal GpuTextureCache12.Entry CreateSolid(byte r, byte g, byte b, byte a)
+    internal GpuTextureCache12.Entry CreateSolid(byte r, byte g, byte b, byte a) =>
+        CreateFromRgba(1, 1, [r, g, b, a]);
+
+    /// <summary>
+    ///     Uploads a raw RGBA8 pixel block as a frame-independent pinned texture entry (row-pitch
+    ///     aware). Same one-shot direct-queue path as the 1×1 solids; used for the handful of
+    ///     synthesized textures (e.g. the Oblivion water-surface animation frames the engine
+    ///     generates at runtime and retail never ships on disk).
+    /// </summary>
+    internal GpuTextureCache12.Entry CreateFromRgba(int width, int height, byte[] rgba)
     {
+        if (rgba.Length < width * height * 4)
+        {
+            throw new ArgumentException(
+                $"RGBA payload too small: {rgba.Length} bytes for {width}x{height}.", nameof(rgba));
+        }
+
         var desc = ResourceDescription.Texture2D(
-            Format.R8G8B8A8_UNorm, 1, 1,
+            Format.R8G8B8A8_UNorm, (uint)width, (uint)height,
             arraySize: 1, mipLevels: 1,
             sampleCount: 1, sampleQuality: 0,
             ResourceFlags.None);
@@ -62,11 +77,19 @@ internal sealed unsafe class GpuSolidTextureFactory12
             staging.Map(0, &cpuPtr).CheckError();
             try
             {
-                var p = (byte*)cpuPtr + (long)footprints[0].Offset;
-                p[0] = r;
-                p[1] = g;
-                p[2] = b;
-                p[3] = a;
+                var rowPitch = (int)footprints[0].Footprint.RowPitch;
+                var sourceRowBytes = width * 4;
+                fixed (byte* src = rgba)
+                {
+                    for (var row = 0; row < height; row++)
+                    {
+                        Buffer.MemoryCopy(
+                            src + (long)row * sourceRowBytes,
+                            (byte*)cpuPtr + (long)footprints[0].Offset + (long)row * rowPitch,
+                            rowPitch,
+                            sourceRowBytes);
+                    }
+                }
             }
             finally
             {
@@ -105,7 +128,7 @@ internal sealed unsafe class GpuSolidTextureFactory12
                 GpuTexturePayloadFormat.Rgba8,
                 GpuNormalDecodeMode.None,
                 isResident: true,
-                cacheKey: null); // shared fallback singleton — pinned, never refcounted/evicted.
+                cacheKey: null); // pinned singleton (fallbacks + synthesized frames) — never evicted.
             texture = null;
             return entry;
         }
@@ -149,8 +172,8 @@ internal sealed unsafe class GpuSolidTextureFactory12
     ///     recorder list: that list is closed outside BeginFrame/EndFrame, and recording into a closed
     ///     list is undefined behavior. A self-contained allocator/list/fence is frame-independent, and
     ///     <see cref="ID3D12CommandQueue" /> submit + signal are free-threaded, so this is safe from any
-    ///     thread at any time. Called at most twice per cache (once per fallback), so the per-call
-    ///     allocation + blocking wait is negligible.
+    ///     thread at any time. Called rarely (the fallback singletons plus one-time synthesized-frame
+    ///     uploads at load), so the per-call allocation + blocking wait is negligible.
     /// </summary>
     private void ExecuteOneShotDirect(Action<ID3D12GraphicsCommandList> record)
     {

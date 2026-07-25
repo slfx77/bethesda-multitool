@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Formats.Esm.Enums;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 
 /// <summary>
@@ -26,17 +28,29 @@ public record ConsumableRecord
     /// <summary>ENIT flags (No Auto-Calc, Food Item, Medicine).</summary>
     public uint Flags { get; init; }
 
-    /// <summary>Addiction FormID (if addictive).</summary>
-    public uint? AddictionFormId { get; init; }
+    /// <summary>Withdrawal-effect FormID (SPEL) — ENIT bytes 8-11.</summary>
+    public uint? WithdrawalEffectFormId { get; init; }
 
-    /// <summary>Addiction chance (0.0-1.0).</summary>
+    /// <summary>Addiction chance (0.0-1.0) — ENIT bytes 12-15.</summary>
     public float AddictionChance { get; init; }
 
-    /// <summary>Use sound or withdrawal effect FormID (ENIT bytes 16-19).</summary>
-    public uint? WithdrawalEffectFormId { get; init; }
+    /// <summary>Consume sound FormID (SOUN) — ENIT bytes 16-19.</summary>
+    public uint? ConsumeSoundFormId { get; init; }
 
     /// <summary>Effects with magnitude, area, duration (EFID + EFIT subrecords).</summary>
     public List<EnchantmentEffect> Effects { get; init; } = [];
+
+    /// <summary>Script FormID (SCRI subrecord).</summary>
+    public uint? ScriptFormId { get; init; }
+
+    /// <summary>Pickup sound FormID (YNAM subrecord — SOUN).</summary>
+    public uint? PickupSoundFormId { get; init; }
+
+    /// <summary>Drop sound FormID (ZNAM subrecord — SOUN).</summary>
+    public uint? DropSoundFormId { get; init; }
+
+    /// <summary>Equipment type (ETYP subrecord — int32 enum).</summary>
+    public EquipmentType EquipmentType { get; init; } = EquipmentType.None;
 
     /// <summary>Model file path (MODL subrecord).</summary>
     public string? ModelPath { get; init; }

@@ -1,5 +1,4 @@
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Conversion.Indexing;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using Xunit;
@@ -112,16 +111,16 @@ public class EsmInfoMergerTests
     {
         var subs = new List<AnalyzerSubrecordInfo>
         {
-            Sub("DATA"), Sub("QSTI"),       // header
-            Sub("NAM3"),                     // nam3
-            Sub("CTDA"), Sub("CTDT"),       // conditions
-            Sub("TCLT"), Sub("TCLF"),       // choices
-            Sub("SCHR"), Sub("SCDA"),       // scripts
-            Sub("PNAM"),                     // dropped
-            Sub("NAME"),                     // pre-response
-            Sub("TCFU"),                     // pre-scripts
+            Sub("DATA"), Sub("QSTI"), // header
+            Sub("NAM3"), // nam3
+            Sub("CTDA"), Sub("CTDT"), // conditions
+            Sub("TCLT"), Sub("TCLF"), // choices
+            Sub("SCHR"), Sub("SCDA"), // scripts
+            Sub("PNAM"), // dropped
+            Sub("NAME"), // pre-response
+            Sub("TCFU"), // pre-scripts
             Sub("RNAM"), Sub("ANAM"), Sub("KNAM"), Sub("DNAM"),
-            Sub("ZZZZ")                      // other tail
+            Sub("ZZZZ") // other tail
         };
 
         var buckets = EsmInfoMerger.BucketBaseSubrecords(subs);

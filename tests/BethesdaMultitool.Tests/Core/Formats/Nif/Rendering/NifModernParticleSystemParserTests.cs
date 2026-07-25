@@ -15,6 +15,7 @@ public sealed class NifModernParticleSystemParserTests
 {
     private const string SkyrimFixture =
         @"TestOutput\particle_modern\skyrim\meshes\effects\fxdustbursttiny.nif";
+
     private const string Fallout4Fixture =
         @"TestOutput\particle_modern\fo4\Meshes\Effects\MPSSmokeDustDrift.nif";
 
@@ -23,7 +24,7 @@ public sealed class NifModernParticleSystemParserTests
     [InlineData(true)]
     public void Parse_SkyrimNiGeometryLayout_RetainsOrderedChainInBothByteOrders(bool bigEndian)
     {
-        var (data, nif) = BuildFixture(83, bigEndian, capacity: 30);
+        var (data, nif) = BuildFixture(83, bigEndian, 30);
 
         var definition = Assert.IsType<ParticleSystemDefinition>(
             NifParticleSystemParser.Parse(data, nif, 0));
@@ -43,7 +44,7 @@ public sealed class NifModernParticleSystemParserTests
     [InlineData(true)]
     public void Parse_Fallout4BsGeometryLayout_RetainsOrderedChainInBothByteOrders(bool bigEndian)
     {
-        var (data, nif) = BuildFixture(130, bigEndian, capacity: 90);
+        var (data, nif) = BuildFixture(130, bigEndian, 90);
 
         var definition = Assert.IsType<ParticleSystemDefinition>(
             NifParticleSystemParser.Parse(data, nif, 0));
@@ -120,12 +121,14 @@ public sealed class NifModernParticleSystemParserTests
         Assert.Equal(8f, emitter.Height, 4);
     }
 
-    private static ParticleSystemDefinition[] ParseSystems(byte[] data, NifInfo nif) =>
-        nif.Blocks.Select((block, index) => (block, index))
+    private static ParticleSystemDefinition[] ParseSystems(byte[] data, NifInfo nif)
+    {
+        return nif.Blocks.Select((block, index) => (block, index))
             .Where(item => NifParticleSystemParser.IsParticleSystem(item.block.TypeName))
             .Select(item => NifParticleSystemParser.Parse(data, nif, item.index))
             .OfType<ParticleSystemDefinition>()
             .ToArray();
+    }
 
     private static (byte[] Data, NifInfo Nif) Load(string path)
     {
@@ -143,7 +146,7 @@ public sealed class NifModernParticleSystemParserTests
             ("NiPSysCylinderEmitter", BuildCylinderEmitter(bigEndian)),
             ("BSPSysScaleModifier", BuildModifierBase(bigEndian)),
             ("BSEffectShaderProperty", []),
-            ("NiAlphaProperty", []),
+            ("NiAlphaProperty", [])
         };
 
         var nif = new NifInfo
@@ -152,7 +155,7 @@ public sealed class NifModernParticleSystemParserTests
             UserVersion = 12,
             BsVersion = bsVersion,
             IsBigEndian = bigEndian,
-            BlockCount = blocks.Length,
+            BlockCount = blocks.Length
         };
         using var stream = new MemoryStream();
         for (var index = 0; index < blocks.Length; index++)
@@ -164,7 +167,7 @@ public sealed class NifModernParticleSystemParserTests
                 Index = index,
                 TypeName = blocks[index].Type,
                 DataOffset = offset,
-                Size = blocks[index].Payload.Length,
+                Size = blocks[index].Payload.Length
             });
         }
 
@@ -260,7 +263,10 @@ public sealed class NifModernParticleSystemParserTests
         stream.WriteByte(0);
     }
 
-    private static void WriteZeros(Stream stream, int count) => stream.Write(new byte[count]);
+    private static void WriteZeros(Stream stream, int count)
+    {
+        stream.Write(new byte[count]);
+    }
 
     private static void WriteI32(Stream stream, int value, bool be)
     {
@@ -316,6 +322,8 @@ public sealed class NifModernParticleSystemParserTests
         stream.Write(bytes);
     }
 
-    private static void WriteF32(Span<byte> bytes, float value, bool be) =>
+    private static void WriteF32(Span<byte> bytes, float value, bool be)
+    {
         WriteI32(bytes, BitConverter.SingleToInt32Bits(value), be);
+    }
 }

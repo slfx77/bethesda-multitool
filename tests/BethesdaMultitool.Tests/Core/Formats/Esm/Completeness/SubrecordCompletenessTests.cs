@@ -59,7 +59,8 @@ public class SubrecordCompletenessTests
 
         var detail = string.Join(
             Environment.NewLine,
-            gaps.Take(40).Select(g => $"  {g.RecordType}/{g.Subrecord} len={g.DataLength} x{g.Count} [{g.Classification}]"));
+            gaps.Take(40).Select(g =>
+                $"  {g.RecordType}/{g.Subrecord} len={g.DataLength} x{g.Count} [{g.Classification}]"));
 
         Assert.True(gaps.Count <= FnvRawGapBaseline,
             $"FNV unmodeled subrecord shapes = {gaps.Count} (baseline {FnvRawGapBaseline}).{Environment.NewLine}" +
@@ -82,7 +83,8 @@ public class SubrecordCompletenessTests
 
         var detail = string.Join(
             Environment.NewLine,
-            gaps.Take(60).Select(g => $"  {g.RecordType}/{g.Subrecord} len={g.DataLength} x{g.Count} [{g.Classification}]"));
+            gaps.Take(60).Select(g =>
+                $"  {g.RecordType}/{g.Subrecord} len={g.DataLength} x{g.Count} [{g.Classification}]"));
 
         Assert.True(gaps.Count <= SkyrimRawGapBaseline,
             $"Skyrim unmodeled subrecord shapes = {gaps.Count} (baseline {SkyrimRawGapBaseline}).{Environment.NewLine}" +

@@ -1,4 +1,3 @@
-using System;
 using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
@@ -51,7 +50,7 @@ public class WeatherColorParsingTests
 
     private static void WriteRgba(byte[] target, int offset, WeatherRgba value, bool bigEndian)
     {
-        var raw = (uint)value.R |
+        var raw = value.R |
                   ((uint)value.G << 8) |
                   ((uint)value.B << 16) |
                   ((uint)value.A << 24);
@@ -101,12 +100,12 @@ public class WeatherColorParsingTests
         var classicOldLayout = new ImageSpaceCinematic
         {
             HasExplicitFlags = true,
-            Flags = MiscEnvironmentHandler.ReadImageSpaceCinematicFlags(classic132),
+            Flags = MiscEnvironmentHandler.ReadImageSpaceCinematicFlags(classic132)
         };
         var newLayout = new ImageSpaceCinematic
         {
             HasExplicitFlags = true,
-            Flags = MiscEnvironmentHandler.ReadImageSpaceCinematicFlags(newLayoutBytes),
+            Flags = MiscEnvironmentHandler.ReadImageSpaceCinematicFlags(newLayoutBytes)
         };
         var modernCnam = new ImageSpaceCinematic { HasExplicitFlags = false };
 
@@ -132,6 +131,7 @@ public class WeatherColorParsingTests
         int length, bool bigEndian)
     {
         var data = new byte[length];
+
         void WriteFloat(int offset, float value)
         {
             if (bigEndian)
@@ -202,10 +202,10 @@ public class WeatherColorParsingTests
         var data = new byte[16];
         for (var band = 0; band < 4; band++)
         {
-            var rgba = new byte[]
+            var rgba = new[]
             {
                 (byte)(1 + band * 3), (byte)(2 + band * 3), (byte)(3 + band * 3),
-                (byte)(0x40 + band),
+                (byte)(0x40 + band)
             };
             if (bigEndian) Array.Reverse(rgba);
             rgba.CopyTo(data, band * 4);
@@ -231,7 +231,7 @@ public class WeatherColorParsingTests
         for (var d = 0; d < 6; d++)
         {
             WriteRgba(data, d * 4, new WeatherRgba(
-                (byte)((d + 1) * 6),  // R: 6..36  → mean 21
+                (byte)((d + 1) * 6), // R: 6..36  → mean 21
                 (byte)((d + 1) * 12), // G: 12..72 → mean 42
                 (byte)((d + 1) * 18), // B: 18..108 → mean 63
                 0xFF), bigEndian);
@@ -256,7 +256,7 @@ public class WeatherColorParsingTests
             new WeatherRgba(9, 10, 11, 12),
             new WeatherRgba(13, 14, 15, 16),
             new WeatherRgba(17, 18, 19, 20),
-            new WeatherRgba(21, 22, 23, 24),
+            new WeatherRgba(21, 22, 23, 24)
         };
         var expectedSpecular = new WeatherRgba(101, 102, 103, 104);
         const float expectedFresnel = 3.25f;
@@ -349,13 +349,14 @@ public class WeatherColorParsingTests
     // so the stride is taken as given rather than derived from NAM0's length.
 
     [Theory]
-    [InlineData(BethesdaGame.Fallout4, 131, 32)]   // FO4 retail: 8 bands
-    [InlineData(BethesdaGame.Fallout4, 110, 16)]   // FO4 pre-111: 4 bands
+    [InlineData(BethesdaGame.Fallout4, 131, 32)] // FO4 retail: 8 bands
+    [InlineData(BethesdaGame.Fallout4, 110, 16)] // FO4 pre-111: 4 bands
     [InlineData(BethesdaGame.Fallout76, 120, 32)]
     [InlineData(BethesdaGame.Starfield, 150, 32)]
-    [InlineData(BethesdaGame.Skyrim, 43, 16)]      // Skyrim never widens — 4 bands regardless of version
+    [InlineData(BethesdaGame.Skyrim, 43, 16)] // Skyrim never widens — 4 bands regardless of version
     [InlineData(BethesdaGame.Skyrim, 200, 16)]
-    public void ModernWeatherStride_WidensOnlyForFo4PlusAtVersion111(BethesdaGame game, int formVersion, int expectedStride)
+    public void ModernWeatherStride_WidensOnlyForFo4PlusAtVersion111(BethesdaGame game, int formVersion,
+        int expectedStride)
     {
         Assert.Equal(expectedStride, MiscEnvironmentHandler.ModernWeatherStride(game, formVersion));
     }
@@ -423,8 +424,8 @@ public class WeatherColorParsingTests
 
         var sunGlareDay = new WeatherRgba(11, 22, 33, 44);
         var moonGlareNight = new WeatherRgba(55, 66, 77, 88);
-        WriteRgba(data, ((int)WeatherColorType.SunGlare * 32) + 4, sunGlareDay, bigEndian);
-        WriteRgba(data, ((int)WeatherColorType.MoonGlare * 32) + 12, moonGlareNight, bigEndian);
+        WriteRgba(data, (int)WeatherColorType.SunGlare * 32 + 4, sunGlareDay, bigEndian);
+        WriteRgba(data, (int)WeatherColorType.MoonGlare * 32 + 12, moonGlareNight, bigEndian);
 
         var colors = MiscEnvironmentHandler.ReadWeatherColorsModern(data, bigEndian, 32);
 
@@ -448,7 +449,7 @@ public class WeatherColorParsingTests
         {
             for (var b = 0; b < floatsPerLayer; b++)
             {
-                WriteSingle(data, ((L * floatsPerLayer) + b) * 4, (L * 10) + b + 1, bigEndian);
+                WriteSingle(data, (L * floatsPerLayer + b) * 4, L * 10 + b + 1, bigEndian);
             }
         }
 
@@ -456,12 +457,13 @@ public class WeatherColorParsingTests
     }
 
     [Theory]
-    [InlineData(BethesdaGame.Fallout4, 131, 32)]   // FO4 retail: 8 floats
-    [InlineData(BethesdaGame.Fallout4, 110, 16)]   // FO4 pre-111: 4 floats
+    [InlineData(BethesdaGame.Fallout4, 131, 32)] // FO4 retail: 8 floats
+    [InlineData(BethesdaGame.Fallout4, 110, 16)] // FO4 pre-111: 4 floats
     [InlineData(BethesdaGame.Fallout76, 120, 32)]
     [InlineData(BethesdaGame.Starfield, 150, 32)]
-    [InlineData(BethesdaGame.Skyrim, 43, 16)]      // Skyrim never widens
-    public void ModernCloudAlphaStride_WidensOnlyForFo4PlusAtVersion111(BethesdaGame game, int formVersion, int expectedStride)
+    [InlineData(BethesdaGame.Skyrim, 43, 16)] // Skyrim never widens
+    public void ModernCloudAlphaStride_WidensOnlyForFo4PlusAtVersion111(BethesdaGame game, int formVersion,
+        int expectedStride)
     {
         Assert.Equal(expectedStride, MiscEnvironmentHandler.ModernCloudAlphaStride(game, formVersion));
     }

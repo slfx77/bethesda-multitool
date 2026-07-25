@@ -13,7 +13,7 @@ public class NifSchemaConverterVersionTests
     [Theory]
     [InlineData("20.2.0.7", 0x14020007u)] // FO3/FNV/Skyrim
     [InlineData("20.0.0.5", 0x14000005u)] // Oblivion
-    [InlineData("4.0.0.2", 0x04000002u)]  // Morrowind
+    [InlineData("4.0.0.2", 0x04000002u)] // Morrowind
     [InlineData("4.2.2.0", 0x04020200u)]
     [InlineData("0.0.0.0", 0x00000000u)]
     [InlineData("255.255.255.255", 0xFFFFFFFFu)]

@@ -39,6 +39,16 @@ internal sealed class CachedNifMesh12 : IDisposable
 
     public IReadOnlyList<CachedSubmesh12> Submeshes { get; }
 
+    /// <summary>Model path this mesh was uploaded for — names the mesh in geometry diagnostics.</summary>
+    public string? SourcePath { get; init; }
+
+    /// <summary>True once eviction disposed this mesh: its arena range is queued for reuse and any
+    /// batch still holding one of its submeshes must not be drawn.</summary>
+    public bool IsDisposed => _disposed;
+
+    /// <summary>The mesh's arena sub-allocation, exposed for draw-time liveness validation.</summary>
+    internal GeometryAllocation12 Geometry => _geometry;
+
     /// <summary>
     ///     Keyframe animation rig (bone tree + tracks + clip window) for animated statics (Morrowind
     ///     banners), carried CPU-side for the per-frame mesh skinner; null for the common static

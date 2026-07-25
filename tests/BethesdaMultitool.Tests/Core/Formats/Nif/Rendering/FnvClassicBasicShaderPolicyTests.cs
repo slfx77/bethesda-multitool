@@ -16,15 +16,15 @@ public sealed class FnvClassicBasicShaderPolicyTests
             FnvClassicBasicShaderPolicy.Resolve(ClassicNif(), Submesh()));
         Assert.Equal(
             FnvClassicBasicShaderMode.Sls1013VertexColor,
-            FnvClassicBasicShaderPolicy.Resolve(ClassicNif(), Submesh(withVertexColors: true)));
+            FnvClassicBasicShaderPolicy.Resolve(ClassicNif(), Submesh(true)));
     }
 
     [Theory]
-    [InlineData(1u << 0)]  // specular
-    [InlineData(1u << 1)]  // skinned pass flag
-    [InlineData(1u << 2)]  // low detail
-    [InlineData(1u << 5)]  // forced single pass
-    [InlineData(1u << 7)]  // environment map
+    [InlineData(1u << 0)] // specular
+    [InlineData(1u << 1)] // skinned pass flag
+    [InlineData(1u << 2)] // low detail
+    [InlineData(1u << 5)] // forced single pass
+    [InlineData(1u << 7)] // environment map
     [InlineData(1u << 10)] // FaceGen
     [InlineData(1u << 11)] // parallax
     [InlineData(1u << 15)] // refraction
@@ -143,22 +143,25 @@ public sealed class FnvClassicBasicShaderPolicyTests
         var ambient = new Vector3(0.2f, 0.3f, 0.4f);
         var light = new Vector3(0.8f, 0.6f, 0.4f);
         var shade = FnvClassicBasicShaderPolicy.EvaluateShade(ambient, -0.25f, light);
-        VectorAssert.Equal(new Vector3(0f, 0.15f, 0.3f), shade, 1e-6f);
+        VectorAssert.Equal(new Vector3(0f, 0.15f, 0.3f), shade);
 
         var baseMap = new Vector3(0.5f, 0.25f, 0.75f);
         var baseLit = FnvClassicBasicShaderPolicy.Composite(
             FnvClassicBasicShaderMode.Sls1009,
             baseMap, shade, new Vector3(0.9f));
-        VectorAssert.Equal(new Vector3(0f, 0.0375f, 0.225f), baseLit, 1e-6f);
+        VectorAssert.Equal(new Vector3(0f, 0.0375f, 0.225f), baseLit);
 
         var vertex = new Vector3(0.8f, 0.4f, 0.2f);
         var vertexComposite = FnvClassicBasicShaderPolicy.Composite(
             FnvClassicBasicShaderMode.Sls1013VertexColor,
             baseMap, shade, vertex);
-        VectorAssert.Equal(Vector3.Multiply(baseLit, vertex), vertexComposite, 1e-6f);
+        VectorAssert.Equal(Vector3.Multiply(baseLit, vertex), vertexComposite);
     }
 
-    private static NifInfo ClassicNif() => new() { BsVersion = 34 };
+    private static NifInfo ClassicNif()
+    {
+        return new NifInfo { BsVersion = 34 };
+    }
 
     private static RenderableSubmesh Submesh(
         bool withVertexColors = false,
@@ -197,6 +200,7 @@ public sealed class FnvClassicBasicShaderPolicyTests
                 ? new[] { 1f, 0f, 0f, tangent2.X, tangent2.Y, tangent2.Z }
                 : new[] { 1f, 0f, 0f };
         }
+
         var bitangents = withSecondVertex
             ? new[] { 0f, 1f, 0f, bitangent2.X, bitangent2.Y, bitangent2.Z }
             : new[] { 0f, 1f, 0f };

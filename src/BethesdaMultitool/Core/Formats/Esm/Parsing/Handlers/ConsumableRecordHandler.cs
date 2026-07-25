@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Utils;
@@ -66,6 +67,12 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
         byte clipRounds = 0;
         uint? projectileFormId = null;
         float weight = 0;
+        uint? scriptFormId = null;
+        uint? pickupSoundFormId = null;
+        uint? dropSoundFormId = null;
+        string? shortName = null;
+        string? abbreviation = null;
+        var ammoEffectFormIds = new List<uint>();
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -94,6 +101,15 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
                     break;
+                case "SCRI" when sub.DataLength >= 4:
+                    scriptFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "YNAM" when sub.DataLength >= 4:
+                    pickupSoundFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "ZNAM" when sub.DataLength >= 4:
+                    dropSoundFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
                 case "DATA" when sub.DataLength >= 13:
                 {
                     if (SubrecordSchemaView.TryRead("DATA", "AMMO", subData, record.IsBigEndian) is { } v)
@@ -111,6 +127,22 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
                                        ?? projectileFormId;
                     weight = TryReadAmmoWeightFromDat2(subData, record.IsBigEndian) ?? weight;
                     break;
+                case "ONAM":
+                    shortName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "QNAM":
+                    abbreviation = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "RCIL" when sub.DataLength >= 4:
+                {
+                    var ammoEffect = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    if (ammoEffect != 0)
+                    {
+                        ammoEffectFormIds.Add(ammoEffect);
+                    }
+
+                    break;
+                }
                 default:
                     NoteUnmodeledSubrecord("AMMO", sub.Signature, sub.DataLength);
                     break;
@@ -134,6 +166,12 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
             ProjectileFormId = projectileFormId,
             ProjectileFormIds = projectileFormId.HasValue ? [projectileFormId.Value] : [],
             Weight = weight,
+            ScriptFormId = scriptFormId != 0 ? scriptFormId : null,
+            PickupSoundFormId = pickupSoundFormId != 0 ? pickupSoundFormId : null,
+            DropSoundFormId = dropSoundFormId != 0 ? dropSoundFormId : null,
+            ShortName = shortName,
+            Abbreviation = abbreviation,
+            AmmoEffectFormIds = ammoEffectFormIds,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -361,9 +399,13 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
         float weight = 0;
         uint value = 0;
         uint flags = 0;
-        uint? addictionFormId = null;
-        float addictionChance = 0;
         uint? withdrawalEffectFormId = null;
+        float addictionChance = 0;
+        uint? consumeSoundFormId = null;
+        uint? scriptFormId = null;
+        uint? pickupSoundFormId = null;
+        uint? dropSoundFormId = null;
+        var equipmentType = EquipmentType.None;
         var effects = new List<EnchantmentEffect>();
         uint currentEffectId = 0;
 
@@ -373,6 +415,34 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
 
             switch (sub.Signature)
             {
+                case "SCRI" when sub.DataLength >= 4:
+                    scriptFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "YNAM" when sub.DataLength >= 4:
+                    pickupSoundFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "ZNAM" when sub.DataLength >= 4:
+                    dropSoundFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "ETYP" when sub.DataLength == 4:
+                {
+                    var etypValue = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData);
+                    if (etypValue is >= -1 and <= 13)
+                    {
+                        equipmentType = (EquipmentType)etypValue;
+                    }
+
+                    break;
+                }
+                case "CTDA" when sub.DataLength >= 20 && effects.Count > 0:
+                    // ALCH effect conditions follow their EFID/EFIT; attach to the current effect.
+                    effects[^1] = effects[^1] with
+                    {
+                        Conditions = [.. effects[^1].Conditions, CtdaParser.Decode(subData, record.IsBigEndian)]
+                    };
+                    break;
                 case "EDID":
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
@@ -408,25 +478,29 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
                     if (SubrecordSchemaView.TryRead("ENIT", "ALCH", subData, record.IsBigEndian) is { } v)
                     {
                         value = v.UInt32("Value");
-                        addictionFormId = v.UInt32("Addiction");
+                        // ENIT+8 is the Withdrawal-Effect (SPEL) FormID, not an addiction FormID
+                        // (xEdit: Value, Flags, Withdrawal-Effect, Addiction-Chance, Consume-Sound).
+                        withdrawalEffectFormId = v.UInt32("WithdrawalEffect");
                         addictionChance = v.Float("AddictionChance");
                     }
 
-                    // Flags are at bytes 4-7 (schema declares Bytes(4); we want uint32).
+                    // Flags = itU8 at byte 4 + Unused(3) (xEdit ENIT layout; conversion schema models
+                    // it as Bytes(4)). These are single/unused bytes stored in-place — identical bytes
+                    // on Xbox and PC — so read the group little-endian on both platforms (the flag value
+                    // is the low byte). Reading it big-endian on Xbox pushed the flag byte into bits
+                    // 24-31 and zeroed the flags.
                     if (sub.DataLength >= 8)
                     {
-                        flags = record.IsBigEndian
-                            ? BinaryPrimitives.ReadUInt32BigEndian(subData[4..])
-                            : BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
+                        flags = BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
                     }
 
-                    // WithdrawalEffect/UseSound at bytes 16-19
+                    // Consume-Sound (SOUN) FormID at bytes 16-19.
                     if (sub.DataLength >= 20)
                     {
-                        var weFormId = RecordParserContext.ReadFormId(subData[16..], record.IsBigEndian);
-                        if (weFormId != 0)
+                        var consumeSound = RecordParserContext.ReadFormId(subData[16..], record.IsBigEndian);
+                        if (consumeSound != 0)
                         {
-                            withdrawalEffectFormId = weFormId;
+                            consumeSoundFormId = consumeSound;
                         }
                     }
 
@@ -478,10 +552,14 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
             Weight = weight,
             Value = value,
             Flags = flags,
-            AddictionFormId = addictionFormId != 0 ? addictionFormId : null,
+            WithdrawalEffectFormId = withdrawalEffectFormId != 0 ? withdrawalEffectFormId : null,
             AddictionChance = addictionChance,
-            WithdrawalEffectFormId = withdrawalEffectFormId,
+            ConsumeSoundFormId = consumeSoundFormId,
             Effects = effects,
+            ScriptFormId = scriptFormId != 0 ? scriptFormId : null,
+            PickupSoundFormId = pickupSoundFormId != 0 ? pickupSoundFormId : null,
+            DropSoundFormId = dropSoundFormId != 0 ? dropSoundFormId : null,
+            EquipmentType = equipmentType,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

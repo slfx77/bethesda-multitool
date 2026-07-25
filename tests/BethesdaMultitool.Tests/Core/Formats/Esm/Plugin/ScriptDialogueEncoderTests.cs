@@ -7,8 +7,9 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.AI;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
+using BethesdaMultitool.Core.Utils;
 using Xunit;
+using ParsedSubrecord = BethesdaMultitool.Core.Formats.Esm.Subrecords.ParsedSubrecord;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 
@@ -123,7 +124,7 @@ public class ScriptDialogueEncoderTests
         {
             FormId = 0x800,
             EditorId = "S",
-            SourceText = BethesdaMultitool.Core.Utils.EsmStringUtils.DecodeGameText(capturedSource)
+            SourceText = EsmStringUtils.DecodeGameText(capturedSource)
         };
 
         var encoded = ScptEncoder.EncodeNew(script);
@@ -517,9 +518,9 @@ public class ScriptDialogueEncoderTests
         var slsd = new byte[24];
         BinaryPrimitives.WriteUInt32LittleEndian(slsd, 7);
         slsd[16] = 1;
-        byte[] formId = new byte[4];
+        var formId = new byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(formId, 0x00001234);
-        byte[] variableId = new byte[4];
+        var variableId = new byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(variableId, 7);
         byte[] littleEndianScda = [0x1D, 0x00, 0x00, 0x00];
         var schr = new byte[20];
@@ -563,7 +564,7 @@ public class ScriptDialogueEncoderTests
             ("SCTX", Encoding.ASCII.GetBytes("second\0")));
 
         var scripts = DialogueResultScriptParser.ParseResultScriptsFromSubrecords(
-            data, data.Length, false, null, 0x01000001, _ => null, isDmpDerived: true);
+            data, data.Length, false, null, 0x01000001, _ => null, true);
 
         Assert.Equal(2, scripts.Count);
         Assert.Equal("first", scripts[0].SourceText);
@@ -584,7 +585,7 @@ public class ScriptDialogueEncoderTests
             ("SCDA", compiled));
 
         var scripts = DialogueResultScriptParser.ParseResultScriptsFromSubrecords(
-            data, data.Length, false, null, 0x01000002, _ => null, isDmpDerived: true);
+            data, data.Length, false, null, 0x01000002, _ => null, true);
 
         Assert.Equal(2, scripts.Count);
         Assert.Equal("orphan source", scripts[0].SourceText);
@@ -602,7 +603,7 @@ public class ScriptDialogueEncoderTests
             ("SCTX", Encoding.ASCII.GetBytes("second\0")));
 
         var script = Assert.Single(DialogueResultScriptParser.ParseResultScriptsFromSubrecords(
-            data, data.Length, false, null, 0x01000003, _ => null, isDmpDerived: true));
+            data, data.Length, false, null, 0x01000003, _ => null, true));
 
         Assert.True(script.IsIncompleteExecutableBundle);
         Assert.Equal("first", script.SourceText);

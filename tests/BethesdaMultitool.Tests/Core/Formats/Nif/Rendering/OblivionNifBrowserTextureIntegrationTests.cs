@@ -22,7 +22,7 @@ public class OblivionNifBrowserTextureIntegrationTests
     [
         @"meshes\architecture\chorrol\chorrolhousemiddle06interior.nif",
         @"meshes\architecture\chorrol\chorrollodhouse01.nif",
-        @"meshes\architecture\cathedral\cathedralstendarr01.nif",
+        @"meshes\architecture\cathedral\cathedralstendarr01.nif"
     ];
 
     private static string? ResolveOblivionDataDir()

@@ -269,11 +269,13 @@ internal static class NifGeometryExtractor
 
         // Drop rig-helper / physics-proxy geometry hung directly off skinning bones (e.g. the per-bone
         // boxes on FNV animated flags — clutter\flags\NV_NCR_Flag.NIF's TTail*/MTail*/Root boxes). The
-        // engine deforms the skinned mesh by these bones and never renders geometry parented to them; the
         // worldspace reference path bakes bind pose, so without this the untextured bone boxes render as
         // stray "physics" blocks beside the flag. Only the worldspace path opts in — the NPC/weapon paths
-        // legitimately attach geometry to bones. An UNSKINNED shape whose direct parent node is a skin
-        // bone is the proxy; the skinned mesh itself carries its own skin instance and is never dropped.
+        // legitimately attach geometry to bones. The proxy signature is an UNSKINNED, UNTEXTURED shape
+        // whose direct parent node is a skin bone. Texture presence is load-bearing: TES4 crowd/character
+        // meshes rig heads/forearms/hands as TEXTURED rigid shapes parented to Bip01 bones (only the
+        // torso is skinned — arenaspectator*01.nif), and dropping those decapitated the figure. The
+        // skinned mesh itself carries its own skin instance and is never dropped.
         if (dropBoneAttachedShapes && shapeSkinInstanceMap.Count > 0)
         {
             var boneNodes = NifSceneGraphWalker.CollectSkinBoneNodeIndices(data, nif, shapeSkinInstanceMap);
@@ -303,16 +305,36 @@ internal static class NifGeometryExtractor
 
                 var boneAttached = shapeDataMap.Keys
                     .Where(shapeIdx => !shapeSkinInstanceMap.ContainsKey(shapeIdx) &&
-                                       parentOf.TryGetValue(shapeIdx, out var parent) && boneNodes.Contains(parent))
+                                       parentOf.TryGetValue(shapeIdx, out var parent) && boneNodes.Contains(parent) &&
+                                       !HasTextureBearingProperty(nif, shapePropertyMap.GetValueOrDefault(shapeIdx)))
                     .ToList();
                 foreach (var idx in boneAttached)
                 {
-                    LogShapeDrop(data, nif, idx, "bone-attached proxy (unskinned shape parented to a skin bone)");
+                    LogShapeDrop(data, nif, idx,
+                        "bone-attached proxy (unskinned, untextured shape parented to a skin bone)");
                     shapeDataMap.Remove(idx);
                     shapePropertyMap.Remove(idx);
                     shapeSkinInstanceMap.Remove(idx);
                 }
             }
+        }
+
+        static bool HasTextureBearingProperty(NifInfo nif, List<int>? propertyRefs)
+        {
+            if (propertyRefs is null) return false;
+            foreach (var propertyRef in propertyRefs)
+            {
+                if (propertyRef < 0 || propertyRef >= nif.Blocks.Count) continue;
+                if (nif.Blocks[propertyRef].TypeName
+                    is "NiTexturingProperty" or "BSShaderPPLightingProperty"
+                    or "BSShaderNoLightingProperty" or "BSLightingShaderProperty"
+                    or "BSEffectShaderProperty")
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         // Compute world transforms by walking the scene graph from root.

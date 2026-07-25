@@ -15,10 +15,10 @@ public sealed class ScriptSpecialFunctionPayloadTests
         var bytecode = BuildFunctionBigEndian(
             0x1059,
             [
-                0x00, 0x01,             // ordinary parameter count
-                0x72, 0x00, 0x03,       // Message: r/ref-slot 3
-                0x00, 0x00,             // format-argument count
-                0x00, 0x00, 0x00, 0x01  // captured engine field
+                0x00, 0x01, // ordinary parameter count
+                0x72, 0x00, 0x03, // Message: r/ref-slot 3
+                0x00, 0x00, // format-argument count
+                0x00, 0x00, 0x00, 0x01 // captured engine field
             ]);
         uint[] references = [0x10, 0x20, 0x30];
 
@@ -245,26 +245,31 @@ public sealed class ScriptSpecialFunctionPayloadTests
     private static RuntimeScriptData CompleteRuntime(
         uint formId,
         byte[] bytecode,
-        List<(uint FormId, string? EditorId)> references) => new()
+        List<(uint FormId, string? EditorId)> references)
     {
-        FormId = formId,
-        EditorId = $"Special{formId}",
-        CompiledData = bytecode,
-        DataSize = (uint)bytecode.Length,
-        RefObjectCount = (uint)references.Count,
-        ReferencedObjects = references,
-        IsCompiled = true,
-        VariableMetadataComplete = true,
-        VariablesComplete = true,
-        ReferencedObjectsComplete = true
-    };
+        return new RuntimeScriptData
+        {
+            FormId = formId,
+            EditorId = $"Special{formId}",
+            CompiledData = bytecode,
+            DataSize = (uint)bytecode.Length,
+            RefObjectCount = (uint)references.Count,
+            ReferencedObjects = references,
+            IsCompiled = true,
+            VariableMetadataComplete = true,
+            VariablesComplete = true,
+            ReferencedObjectsComplete = true
+        };
+    }
 
     private static string DecompileBigEndian(
         byte[] bytecode,
         IReadOnlyList<ScriptVariableInfo> variables,
-        IReadOnlyList<uint> references) =>
-        new ScriptDecompiler([.. variables], [.. references], _ => null, isBigEndian: true)
+        IReadOnlyList<uint> references)
+    {
+        return new ScriptDecompiler([.. variables], [.. references], _ => null, true)
             .Decompile(bytecode);
+    }
 
     private static byte[] BuildFunctionBigEndian(ushort opcode, byte[] payload)
     {

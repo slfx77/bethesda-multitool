@@ -20,7 +20,7 @@ public sealed class SpeedTreeTreeRecordReaderTests
         var decoded = SubrecordSchemaView.Read("CNAM", "TREE", cnam, bigEndian).Raw;
 
         var result = SpeedTreeTreeRecordReader.ResolveDimming(
-            new Dictionary<string, object?> { ["CNAM"] = decoded }, decodedTree: null);
+            new Dictionary<string, object?> { ["CNAM"] = decoded }, null);
 
         Assert.Equal(new SpeedTreeDimming(0.25f, 0.5f, 2f, 3f), result);
     }
@@ -39,7 +39,7 @@ public sealed class SpeedTreeTreeRecordReaderTests
             }
         };
 
-        var result = SpeedTreeTreeRecordReader.ResolveDimming(fields, decodedTree: null);
+        var result = SpeedTreeTreeRecordReader.ResolveDimming(fields, null);
 
         Assert.Equal(new SpeedTreeDimming(0.25f, 0.5f, 2f, 3f), result);
     }
@@ -56,9 +56,9 @@ public sealed class SpeedTreeTreeRecordReaderTests
             }
         };
 
-        var result = SpeedTreeTreeRecordReader.ResolveDimming(fields, decodedTree: null);
+        var result = SpeedTreeTreeRecordReader.ResolveDimming(fields, null);
 
-        Assert.Equal(new SpeedTreeDimming(0.25f, 0.5f, 1f, 1f), result);
+        Assert.Equal(new SpeedTreeDimming(0.25f, 0.5f), result);
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public sealed class SpeedTreeTreeRecordReaderTests
             }
         };
 
-        var result = SpeedTreeTreeRecordReader.ResolveDimming(fields, decodedTree: null);
+        var result = SpeedTreeTreeRecordReader.ResolveDimming(fields, null);
 
         Assert.Equal(new SpeedTreeDimming(0f, 0f, 0f, 0f), result);
     }

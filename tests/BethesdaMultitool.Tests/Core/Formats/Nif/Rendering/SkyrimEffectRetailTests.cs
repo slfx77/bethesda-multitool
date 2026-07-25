@@ -10,14 +10,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class SkyrimEffectRetailTests
 {
+    private const string ArchivePath = @"E:\SteamLibrary\SteamApps\common\Skyrim\Data\Skyrim - Meshes.bsa";
+
+    private static readonly float[] ExpectedBlowingSnowMaterialAlphas = [0.6f, 0.4f, 0.4f, 0.6f];
+
     public SkyrimEffectRetailTests()
     {
         BucketBTestGuard.SkipUnlessEnabled();
     }
-
-    private const string ArchivePath = @"E:\SteamLibrary\SteamApps\common\Skyrim\Data\Skyrim - Meshes.bsa";
-
-    private static readonly float[] ExpectedBlowingSnowMaterialAlphas = [0.6f, 0.4f, 0.4f, 0.6f];
 
     [Fact]
     public void BlowingSnow_ComposesInlineEffectOpacityWithMaterialAlpha()
@@ -46,8 +46,10 @@ public sealed class SkyrimEffectRetailTests
         Assert.Equal(4, flameCards.Length);
         Assert.All(flameCards, static sub =>
             Assert.Equal(NifBillboardMode.AlwaysFaceCenter, sub.BillboardMode));
-        Assert.Contains(flameCards, static sub => sub.ShapeName?.StartsWith("L2_Flames", StringComparison.Ordinal) == true);
-        Assert.Contains(flameCards, static sub => sub.ShapeName?.StartsWith("Flames", StringComparison.Ordinal) == true);
+        Assert.Contains(flameCards,
+            static sub => sub.ShapeName?.StartsWith("L2_Flames", StringComparison.Ordinal) == true);
+        Assert.Contains(flameCards,
+            static sub => sub.ShapeName?.StartsWith("Flames", StringComparison.Ordinal) == true);
         Assert.Contains(flameCards, static sub => sub.ShapeName?.StartsWith("glow", StringComparison.Ordinal) == true);
     }
 

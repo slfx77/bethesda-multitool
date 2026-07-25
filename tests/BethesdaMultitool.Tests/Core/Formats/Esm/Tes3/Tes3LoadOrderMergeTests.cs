@@ -181,7 +181,10 @@ public class Tes3LoadOrderMergeTests
                 {
                     FormId = 0x10,
                     PlacedObjects =
-                        [new PlacedReference { FormId = 2, BaseFormId = 0x55, BaseEditorId = "x", ModelPath = @"own\keep.nif" }]
+                    [
+                        new PlacedReference
+                            { FormId = 2, BaseFormId = 0x55, BaseEditorId = "x", ModelPath = @"own\keep.nif" }
+                    ]
                 }
             ]
         };
@@ -248,7 +251,9 @@ public class Tes3LoadOrderMergeTests
             Worldspaces =
                 Tes3RecordParser.BuildWorldspaces([cell], WorldspaceRecord.Tes3SyntheticExteriorFormId),
             LandTextures =
-                [new LandscapeTextureRecord { FormId = ltexFormId, EditorId = editorId, TextureSetFormId = txstFormId }],
+            [
+                new LandscapeTextureRecord { FormId = ltexFormId, EditorId = editorId, TextureSetFormId = txstFormId }
+            ],
             TextureSets =
                 [new TextureSetRecord { FormId = txstFormId, EditorId = editorId, DiffuseTexture = diffuse }]
         };
@@ -265,13 +270,16 @@ public class Tes3LoadOrderMergeTests
         };
     }
 
-    private static CellRecord ExteriorCell(uint formId, int gridX, int gridY) => new()
+    private static CellRecord ExteriorCell(uint formId, int gridX, int gridY)
     {
-        FormId = formId,
-        GridX = gridX,
-        GridY = gridY,
-        Flags = 0x00,
-        WorldspaceFormId = WorldspaceRecord.Tes3SyntheticExteriorFormId,
-        CellWorldSize = 8192f
-    };
+        return new CellRecord
+        {
+            FormId = formId,
+            GridX = gridX,
+            GridY = gridY,
+            Flags = 0x00,
+            WorldspaceFormId = WorldspaceRecord.Tes3SyntheticExteriorFormId,
+            CellWorldSize = 8192f
+        };
+    }
 }

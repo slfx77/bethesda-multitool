@@ -25,7 +25,7 @@ public sealed class PlannedNpcPackageResolutionTests
         [
             Resolved("PKID[0]", liveMaster, liveMaster),
             Resolved("PKID[1]", captured, emitted),
-            Dropped("PKID[2]", dangling),
+            Dropped("PKID[2]", dangling)
         ]);
         var plan = MakePlan(record, [liveMaster, emitted],
             ImmutableDictionary<uint, uint>.Empty.Add(captured, emitted));
@@ -49,7 +49,7 @@ public sealed class PlannedNpcPackageResolutionTests
         var record = MakeRecord(npc, [Resolved("PKID[0]", notAPackage, notAPackage)]);
         var plan = MakePlan(record, [], ImmutableDictionary<uint, uint>.Empty) with
         {
-            EmittedFormIds = ImmutableHashSet.Create(notAPackage, npc.FormId),
+            EmittedFormIds = ImmutableHashSet.Create(notAPackage, npc.FormId)
         };
 
         var encoded = new PlannedNpcEncoder().Encode(npc, record, new PlanReferenceLookup(record, plan));
@@ -66,7 +66,7 @@ public sealed class PlannedNpcPackageResolutionTests
         var record = MakeRecord(npc,
         [
             Resolved("PKID[0]", wrongType, wrongType),
-            Dropped("PKID[1]", dangling),
+            Dropped("PKID[1]", dangling)
         ]);
 
         var diagnostics = EsmPlanner.BuildPackageReferenceDiagnostics([record], new HashSet<uint>());
@@ -75,7 +75,7 @@ public sealed class PlannedNpcPackageResolutionTests
 
         var plan = MakePlan(record, [], ImmutableDictionary<uint, uint>.Empty) with
         {
-            Diagnostics = diagnostics,
+            Diagnostics = diagnostics
         };
         var sink = new RecordingSink();
         PluginBuilder.ReportPlannerDiagnostics(plan, sink);
@@ -86,68 +86,95 @@ public sealed class PlannedNpcPackageResolutionTests
         Assert.Contains(sink.Events, evt => evt.Code == "references.drop.pkid-dangle");
     }
 
-    private static NpcRecord MakeNpc(uint[] packages) => new()
+    private static NpcRecord MakeNpc(uint[] packages)
     {
-        FormId = 0x010008E0,
-        EditorId = "PackageTestNpc",
-        FullName = "Package Test NPC",
-        Stats = new ActorBaseSubrecord(0, 0, 0, 1, 1, 1, 100, 0f, 0, 0, 0, false),
-        Packages = packages.ToList(),
-    };
+        return new NpcRecord
+        {
+            FormId = 0x010008E0,
+            EditorId = "PackageTestNpc",
+            FullName = "Package Test NPC",
+            Stats = new ActorBaseSubrecord(0, 0, 0, 1, 1, 1, 100, 0f, 0, 0, 0, false),
+            Packages = packages.ToList()
+        };
+    }
 
-    private static RecordPlan MakeRecord(NpcRecord npc, ImmutableArray<ResolvedRef> references) => new()
+    private static RecordPlan MakeRecord(NpcRecord npc, ImmutableArray<ResolvedRef> references)
     {
-        Type = "NPC_",
-        Disposition = RecordDisposition.New,
-        FormId = npc.FormId,
-        SourceFormId = npc.FormId,
-        Model = npc,
-        References = references,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "package sanitation" },
-    };
+        return new RecordPlan
+        {
+            Type = "NPC_",
+            Disposition = RecordDisposition.New,
+            FormId = npc.FormId,
+            SourceFormId = npc.FormId,
+            Model = npc,
+            References = references,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "package sanitation" }
+        };
+    }
 
     private static EmitPlan MakePlan(
         RecordPlan record,
         IEnumerable<uint> packages,
-        ImmutableDictionary<uint, uint> remap) => new()
+        ImmutableDictionary<uint, uint> remap)
     {
-        Records = [record],
-        SourceToEmittedFormId = remap,
-        EmittedFormIds = packages.Append(record.FormId).ToImmutableHashSet(),
-        ValidPackageFormIds = packages.ToImmutableHashSet(),
-        RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty.Add(record.FormId, 0),
-        Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-        Meta = new PlanMetadata
+        return new EmitPlan
         {
-            NextObjectId = 0x124,
-            PlannerCoverage = ImmutableHashSet.Create("NPC_"),
-        },
-    };
+            Records = [record],
+            SourceToEmittedFormId = remap,
+            EmittedFormIds = packages.Append(record.FormId).ToImmutableHashSet(),
+            ValidPackageFormIds = packages.ToImmutableHashSet(),
+            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty.Add(record.FormId, 0),
+            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
+            Meta = new PlanMetadata
+            {
+                NextObjectId = 0x124,
+                PlannerCoverage = ImmutableHashSet.Create("NPC_")
+            }
+        };
+    }
 
-    private static ResolvedRef Resolved(string path, uint source, uint target) => new()
+    private static ResolvedRef Resolved(string path, uint source, uint target)
     {
-        FieldPath = path,
-        OriginalFormId = source,
-        Action = ResolvedRefAction.Resolved,
-        FinalFormId = target,
-    };
+        return new ResolvedRef
+        {
+            FieldPath = path,
+            OriginalFormId = source,
+            Action = ResolvedRefAction.Resolved,
+            FinalFormId = target
+        };
+    }
 
-    private static ResolvedRef Dropped(string path, uint source) => new()
+    private static ResolvedRef Dropped(string path, uint source)
     {
-        FieldPath = path,
-        OriginalFormId = source,
-        Action = ResolvedRefAction.DropSubrecord,
-        Reason = "not a live PACK",
-    };
+        return new ResolvedRef
+        {
+            FieldPath = path,
+            OriginalFormId = source,
+            Action = ResolvedRefAction.DropSubrecord,
+            Reason = "not a live PACK"
+        };
+    }
 
     private sealed class RecordingSink : IConversionProgressSink
     {
         public List<ConversionProgressEvent> Events { get; } = [];
 
-        public void OnPhaseStart(string phase, int? totalItems) { }
-        public void OnEvent(ConversionProgressEvent evt) => Events.Add(evt);
-        public void OnPhaseEnd(string phase, ConversionPipelineStats partialStats) { }
-        public void OnComplete(ConversionPipelineStats stats) { }
+        public void OnPhaseStart(string phase, int? totalItems)
+        {
+        }
+
+        public void OnEvent(ConversionProgressEvent evt)
+        {
+            Events.Add(evt);
+        }
+
+        public void OnPhaseEnd(string phase, ConversionPipelineStats partialStats)
+        {
+        }
+
+        public void OnComplete(ConversionPipelineStats stats)
+        {
+        }
     }
 }

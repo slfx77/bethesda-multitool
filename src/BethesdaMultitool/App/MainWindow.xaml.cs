@@ -188,6 +188,15 @@ public sealed partial class MainWindow : Window
         Microsoft.UI.Xaml.Input.KeyboardAcceleratorInvokedEventArgs args)
     {
         args.Handled = true;
+        await ShowShortcutsDialogAsync();
+    }
+
+    // The title-bar "?" button — the discoverable twin of the F1 accelerator.
+    private async void HelpShortcuts_Click(object sender, RoutedEventArgs e) =>
+        await ShowShortcutsDialogAsync();
+
+    private async Task ShowShortcutsDialogAsync()
+    {
         var dialog = new KeyboardShortcutsDialog { XamlRoot = Content.XamlRoot };
         try
         {
@@ -197,7 +206,7 @@ public sealed partial class MainWindow : Window
         {
             // ContentDialog.ShowAsync can throw if another dialog is already open
             // (WinUI 3 enforces at most one ContentDialog per XamlRoot). Swallow so
-            // the F1 press doesn't crash the app — user can try again after closing.
+            // the request doesn't crash the app — user can try again after closing.
         }
     }
 

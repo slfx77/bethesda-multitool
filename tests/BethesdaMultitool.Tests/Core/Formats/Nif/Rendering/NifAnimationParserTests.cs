@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
-using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using Xunit;
 

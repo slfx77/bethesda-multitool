@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Records;
 
 /// <summary>
@@ -7,6 +9,14 @@ namespace BethesdaMultitool.Core.Formats.Esm.Records;
 /// </summary>
 internal static class RecordValidator
 {
+    /// <summary>
+    ///     Every subrecord signature the schema registry knows about, used to reject heap garbage that
+    ///     merely looks like a record header (see <see cref="HasPlausibleFirstSubrecord" />). Shared by the
+    ///     main dump scanner and the gap-recovery scanner so both apply exactly one plausibility gate.
+    /// </summary>
+    private static readonly IReadOnlySet<string> KnownSubrecordSignatures =
+        Conversion.Schema.SubrecordSchemaRegistry.GetAllSignatures();
+
     #region Detection Helpers
 
     /// <summary>
@@ -176,6 +186,47 @@ internal static class RecordValidator
     internal static bool IsPrintableAscii(byte b)
     {
         return b >= 0x20 && b < 0x7F;
+    }
+
+    /// <summary>
+    ///     True when the bytes immediately after a candidate record header begin with a recognized
+    ///     subrecord signature (or the XXXX extended-size marker). Compressed records carry a zlib
+    ///     payload rather than a plain signature, so they are accepted without the probe; a truncated
+    ///     tail with no room to read is likewise accepted (it cannot be disproven). Rejecting a header
+    ///     whose data does NOT start with a known subrecord filters heap garbage that satisfies the
+    ///     scalar header gates (signature/size/flags/FormID) but is not a real record.
+    /// </summary>
+    /// <param name="data">Buffer containing the candidate header.</param>
+    /// <param name="i">Offset of the record header within <paramref name="data" />.</param>
+    /// <param name="headerSize">Record header size (20 for Oblivion TES4, 24 for FO3/FNV/Skyrim+).</param>
+    /// <param name="dataLength">Length of valid bytes in <paramref name="data" /> (bounds guard).</param>
+    /// <param name="isBigEndian">True for Xbox 360 big-endian records (signature byte-reversed).</param>
+    /// <param name="flags">Record flags (the compressed flag exempts the record from the probe).</param>
+    internal static bool HasPlausibleFirstSubrecord(
+        byte[] data, int i, int headerSize, int dataLength, bool isBigEndian, uint flags)
+    {
+        const uint compressedFlag = 0x00040000;
+        if ((flags & compressedFlag) != 0)
+        {
+            return true;
+        }
+
+        var subOffset = i + headerSize;
+        if (subOffset + 4 > dataLength)
+        {
+            return true;
+        }
+
+        var sig = isBigEndian
+            ? new string([
+                (char)data[subOffset + 3], (char)data[subOffset + 2],
+                (char)data[subOffset + 1], (char)data[subOffset]
+            ])
+            : Encoding.ASCII.GetString(data, subOffset, 4);
+
+        // XXXX carries the true 4-byte size of an oversized following subrecord and can legitimately
+        // lead a record's data, so accept it alongside the registered signatures.
+        return sig == "XXXX" || KnownSubrecordSignatures.Contains(sig);
     }
 
     #endregion

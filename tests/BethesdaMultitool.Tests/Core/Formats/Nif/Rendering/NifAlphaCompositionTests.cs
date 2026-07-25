@@ -1,9 +1,9 @@
 using System.Numerics;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 using D12 = Vortice.Direct3D12;
@@ -85,15 +85,15 @@ public sealed class NifAlphaCompositionTests
     {
         var actual = NifTextureSampler.ResolveBlendFactor(
             mode,
-            srcAlpha: 0.3f,
-            dstAlpha: 0.7f,
-            srcR: 0.2f,
-            srcG: 0.4f,
-            srcB: 0.6f,
-            dstR: 0.1f,
-            dstG: 0.5f,
-            dstB: 0.9f,
-            channel: 1);
+            0.3f,
+            0.7f,
+            0.2f,
+            0.4f,
+            0.6f,
+            0.1f,
+            0.5f,
+            0.9f,
+            1);
 
         Assert.Equal(expected, actual, 6);
     }

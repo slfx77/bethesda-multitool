@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.Numerics;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Nif.Materials;
 using Xunit;
@@ -61,7 +63,7 @@ public class BgsmMaterialTests
         // priority over the NIF's inline NiAlphaProperty (which authors 128), so parsing them correctly
         // is what stops the leaf/wire cards from being over-eroded and backface-culled.
         var data = BuildBgsm(2, false, 63, "leaf_d.dds", "leaf_n.dds");
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(0x1C), 1f); // opacity
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(0x1C), 1f); // opacity
         data[0x20] = 0; // blend enable
         data[0x21] = 6; // source blend
         data[0x25] = 7; // destination blend
@@ -90,18 +92,18 @@ public class BgsmMaterialTests
     public void Parse_CommonHeader_PreservesUvTransformTilingAndHdrAlpha()
     {
         var data = BuildBgsm(2, false, 63, "tile_d.dds", "tile_n.dds");
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(8), 3u);
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(12), 0.25f);
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(16), -0.5f);
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(20), 2f);
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(24), 0.5f);
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(0x1C), 4f);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(8), 3u);
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(12), 0.25f);
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(16), -0.5f);
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(20), 2f);
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(24), 0.5f);
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(0x1C), 4f);
 
         var mat = Assert.IsType<BgsmMaterial>(BgsmMaterial.Parse(data));
         Assert.True(mat.TileU);
         Assert.True(mat.TileV);
-        Assert.Equal(new System.Numerics.Vector2(0.25f, -0.5f), mat.UvOffset);
-        Assert.Equal(new System.Numerics.Vector2(2f, 0.5f), mat.UvScale);
+        Assert.Equal(new Vector2(0.25f, -0.5f), mat.UvOffset);
+        Assert.Equal(new Vector2(2f, 0.5f), mat.UvScale);
         Assert.Equal(4f, mat.Alpha);
     }
 
@@ -135,16 +137,16 @@ public class BgsmMaterialTests
         using var ms = new MemoryStream();
         ms.Write(head);
         ms.Write(new byte[] { 0, 1, 1, 0, 0, 0 }); // bools: effect lighting ON, falloff ON
-        Span<byte> floats = stackalloc byte[36];    // base color (16) + falloff (16) + influence (4)
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[..4], 0.478f);
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[4..8], 0.478f);
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[8..12], 0.478f);
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[12..16], 2.5f);   // HDR scale
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[16..20], 0.98481f); // start angle
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[20..24], 0.17365f); // stop angle
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[24..28], 1f);       // start opacity
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[28..32], 0f);       // stop opacity
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[32..], 0.95f);      // influence
+        Span<byte> floats = stackalloc byte[36]; // base color (16) + falloff (16) + influence (4)
+        BinaryPrimitives.WriteSingleLittleEndian(floats[..4], 0.478f);
+        BinaryPrimitives.WriteSingleLittleEndian(floats[4..8], 0.478f);
+        BinaryPrimitives.WriteSingleLittleEndian(floats[8..12], 0.478f);
+        BinaryPrimitives.WriteSingleLittleEndian(floats[12..16], 2.5f); // HDR scale
+        BinaryPrimitives.WriteSingleLittleEndian(floats[16..20], 0.98481f); // start angle
+        BinaryPrimitives.WriteSingleLittleEndian(floats[20..24], 0.17365f); // stop angle
+        BinaryPrimitives.WriteSingleLittleEndian(floats[24..28], 1f); // start opacity
+        BinaryPrimitives.WriteSingleLittleEndian(floats[28..32], 0f); // stop opacity
+        BinaryPrimitives.WriteSingleLittleEndian(floats[32..], 0.95f); // influence
         ms.Write(floats);
 
         var mat = BgsmMaterial.Parse(ms.ToArray());
@@ -175,18 +177,18 @@ public class BgsmMaterialTests
             "metal_d.dds", "metal_n.dds", "metal_s.dds", "",
             "shared/cubemaps/mipblur_defaultoutside1.dds", "", "", "", "");
         head[57] = 1;
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(head.AsSpan(58), 1.5f);
+        BinaryPrimitives.WriteSingleLittleEndian(head.AsSpan(58), 1.5f);
 
         using var ms = new MemoryStream();
         ms.Write(head);
         ms.Write(new byte[15]); // FO4 enable-flag block between the path table and specular
-        ms.WriteByte(0);        // specular ENABLE off — env mapping must still survive
+        ms.WriteByte(0); // specular ENABLE off — env mapping must still survive
         Span<byte> floats = stackalloc byte[20]; // specular RGB + strength + smoothness
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[..4], 0.8f);
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[4..8], 0.9f);
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[8..12], 1.0f);
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[12..16], 2.0f); // raw strength
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[16..], 0.6f);   // smoothness
+        BinaryPrimitives.WriteSingleLittleEndian(floats[..4], 0.8f);
+        BinaryPrimitives.WriteSingleLittleEndian(floats[4..8], 0.9f);
+        BinaryPrimitives.WriteSingleLittleEndian(floats[8..12], 1.0f);
+        BinaryPrimitives.WriteSingleLittleEndian(floats[12..16], 2.0f); // raw strength
+        BinaryPrimitives.WriteSingleLittleEndian(floats[16..], 0.6f); // smoothness
         ms.Write(floats);
 
         var mat = BgsmMaterial.Parse(ms.ToArray());
@@ -209,14 +211,14 @@ public class BgsmMaterialTests
             2, false, 63,
             "metal_d.dds", "metal_n.dds", "metal_s.dds", "",
             "shared/cubemaps/mipblur_defaultoutside1.dds", "", "", "", "");
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(head.AsSpan(58), 1.5f);
+        BinaryPrimitives.WriteSingleLittleEndian(head.AsSpan(58), 1.5f);
 
         using var ms = new MemoryStream();
         ms.Write(head);
         ms.Write(new byte[15]);
         ms.WriteByte(1); // specular enabled
         Span<byte> floats = stackalloc byte[20];
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[12..16], 2.0f);
+        BinaryPrimitives.WriteSingleLittleEndian(floats[12..16], 2.0f);
         ms.Write(floats);
 
         var mat = BgsmMaterial.Parse(ms.ToArray());

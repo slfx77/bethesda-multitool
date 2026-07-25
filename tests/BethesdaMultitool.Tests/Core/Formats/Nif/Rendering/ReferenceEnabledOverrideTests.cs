@@ -22,7 +22,7 @@ public sealed class ReferenceEnabledOverrideTests
             FormId = parentFormId,
             BaseFormId = 0x0000003B,
             EditorId = "VHDBattleEffectsMarker",
-            IsInitiallyDisabled = true,
+            IsInitiallyDisabled = true
         };
         var effect = new PlacedReference
         {
@@ -34,19 +34,19 @@ public sealed class ReferenceEnabledOverrideTests
             Y = 30128.693f,
             Z = 4358.886f,
             EnableParentFormId = parentFormId,
-            EnableParentFlags = 0,
+            EnableParentFlags = 0
         };
         CellRecord[] cells =
-            [
-                new CellRecord
-                {
-                    FormId = 0x000DDD21,
-                    EditorId = "HooverDamExtMid",
-                    GridX = 18,
-                    GridY = 7,
-                    PlacedObjects = [parent, effect],
-                },
-            ];
+        [
+            new()
+            {
+                FormId = 0x000DDD21,
+                EditorId = "HooverDamExtMid",
+                GridX = 18,
+                GridY = 7,
+                PlacedObjects = [parent, effect]
+            }
+        ];
 
         var xespDisabledRefs = PlacedReferenceEnableStateResolver.ResolveXespDisabledRefs(cells);
         var store = new ReferenceEnabledOverrideStore();
@@ -61,22 +61,22 @@ public sealed class ReferenceEnabledOverrideTests
         Assert.Equal(effect.ModelPath, renderable.Value.ModelPath);
         Assert.False(store.IsVisible(
             effectFormId,
-            isAuthoredDisabled: xespDisabledRefs.Contains(effectFormId),
-            showInitiallyDisabled: false));
+            xespDisabledRefs.Contains(effectFormId),
+            false));
 
         store.Set(effectFormId, ReferenceEnabledOverride.On);
 
         Assert.True(store.IsVisible(
             effectFormId,
-            isAuthoredDisabled: xespDisabledRefs.Contains(effectFormId),
-            showInitiallyDisabled: false));
+            xespDisabledRefs.Contains(effectFormId),
+            false));
 
         store.Set(effectFormId, ReferenceEnabledOverride.Off);
 
         Assert.False(store.IsVisible(
             effectFormId,
-            isAuthoredDisabled: xespDisabledRefs.Contains(effectFormId),
-            showInitiallyDisabled: true));
+            xespDisabledRefs.Contains(effectFormId),
+            true));
     }
 
     [Fact]
@@ -85,9 +85,9 @@ public sealed class ReferenceEnabledOverrideTests
         var store = new ReferenceEnabledOverrideStore();
 
         Assert.Equal(ReferenceEnabledOverride.Authored, store.Get(0x10));
-        Assert.True(store.IsVisible(0x10, isAuthoredDisabled: false, showInitiallyDisabled: false));
-        Assert.False(store.IsVisible(0x10, isAuthoredDisabled: true, showInitiallyDisabled: false));
-        Assert.True(store.IsVisible(0x10, isAuthoredDisabled: true, showInitiallyDisabled: true));
+        Assert.True(store.IsVisible(0x10, false, false));
+        Assert.False(store.IsVisible(0x10, true, false));
+        Assert.True(store.IsVisible(0x10, true, true));
         Assert.Equal(0, store.Count);
     }
 
@@ -97,8 +97,8 @@ public sealed class ReferenceEnabledOverrideTests
         var store = new ReferenceEnabledOverrideStore();
         store.Set(0x10, ReferenceEnabledOverride.On);
 
-        Assert.True(store.IsVisible(0x10, isAuthoredDisabled: true, showInitiallyDisabled: false));
-        Assert.False(store.IsVisible(0x11, isAuthoredDisabled: true, showInitiallyDisabled: false));
+        Assert.True(store.IsVisible(0x10, true, false));
+        Assert.False(store.IsVisible(0x11, true, false));
         Assert.Equal(ReferenceEnabledOverride.Authored, store.Get(0x11));
     }
 
@@ -108,8 +108,8 @@ public sealed class ReferenceEnabledOverrideTests
         var store = new ReferenceEnabledOverrideStore();
         store.Set(0x10, ReferenceEnabledOverride.Off);
 
-        Assert.False(store.IsVisible(0x10, isAuthoredDisabled: false, showInitiallyDisabled: true));
-        Assert.False(store.IsVisible(0x10, isAuthoredDisabled: true, showInitiallyDisabled: true));
+        Assert.False(store.IsVisible(0x10, false, true));
+        Assert.False(store.IsVisible(0x10, true, true));
     }
 
     [Fact]
@@ -123,7 +123,7 @@ public sealed class ReferenceEnabledOverrideTests
         store.Set(0x10, ReferenceEnabledOverride.Authored);
 
         Assert.Equal(ReferenceEnabledOverride.Authored, store.Get(0x10));
-        Assert.False(store.IsVisible(0x10, isAuthoredDisabled: true, showInitiallyDisabled: false));
+        Assert.False(store.IsVisible(0x10, true, false));
         Assert.Equal(ReferenceEnabledOverride.Off, store.Get(0x11));
         Assert.Equal(1, store.Count);
         Assert.True(store.Version > versionBeforeReset);

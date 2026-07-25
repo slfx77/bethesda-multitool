@@ -107,12 +107,12 @@ public sealed class NavMeshByteRewriterTests
         var rewritten = NavMeshByteRewriter.Rewrite(
             [
                 new NavMeshSubrecord("DATA", data),
-                new NavMeshSubrecord("NVDP", nvdp),
+                new NavMeshSubrecord("NVDP", nvdp)
             ],
-            newCellFormId: 0x01000300,
-            navmFormIdRewrites: new Dictionary<uint, uint>(),
-            doorRefRewrites: new Dictionary<uint, uint> { [sourceDoor] = emittedDoor },
-            validDoorRefs: new HashSet<uint> { emittedDoor });
+            0x01000300,
+            new Dictionary<uint, uint>(),
+            new Dictionary<uint, uint> { [sourceDoor] = emittedDoor },
+            new HashSet<uint> { emittedDoor });
 
         var finalData = Assert.Single(rewritten, s => s.Signature == "DATA").Bytes;
         var finalNvdp = Assert.Single(rewritten, s => s.Signature == "NVDP").Bytes;
@@ -134,8 +134,8 @@ public sealed class NavMeshByteRewriterTests
 
         var result = NavMeshByteRewriter.RewriteAndFilterNvdpEntries(
             payload,
-            rewrites: null,
-            validDoorRefs: new HashSet<uint> { first, second });
+            null,
+            new HashSet<uint> { first, second });
 
         Assert.Equal(payload, result);
     }

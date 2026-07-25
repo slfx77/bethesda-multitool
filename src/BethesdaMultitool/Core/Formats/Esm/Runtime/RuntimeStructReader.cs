@@ -109,7 +109,7 @@ public sealed class RuntimeStructReader
         };
         _actors = new RuntimeActorReader(_context, npcLayoutProbe);
         _generic = new RuntimeGenericReader(_context, probeResults?.GenericTypeShifts);
-        _items = new RuntimeItemReader(_context, probeResults?.WeaponSoundLayout);
+        _items = new RuntimeItemReader(_context, probeResults?.WeaponSoundLayout, probeResults?.AmmoDataLayout);
         _dialogue = new RuntimeDialogueReader(_context);
         _effects = new RuntimeEffectReader(_context, probeResults?.EffectLayout);
         _scripts = new RuntimeScriptReader(_context);
@@ -220,7 +220,8 @@ public sealed class RuntimeStructReader
         IReadOnlyList<RuntimeEditorIdEntry>? landEntries = null)
     {
         var context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
-        var isEarlyBuild = RuntimeRefrReader.ProbeIsEarlyBuild(context, refrEntries);
+        var refrLayoutProbe = RuntimeRefrReader.ProbeRefrLayout(context, refrEntries);
+        var isEarlyBuild = refrLayoutProbe.Winner.Layout;
         var npcLayoutProbe = npcEntries is { Count: > 0 }
             ? RuntimeNpcLayoutProbe.Probe(context, npcEntries)
             : null;
@@ -248,6 +249,7 @@ public sealed class RuntimeStructReader
 
             probeResults = new RuntimeProbeResults
             {
+                RefrLayout = refrLayoutProbe,
                 NpcLayout = npcLayoutProbe,
                 WorldCellLayout = worldCellLayoutProbe,
                 RaceLayout = RuntimeRaceProbe.Probe(context, allEntries),
@@ -255,6 +257,7 @@ public sealed class RuntimeStructReader
                 WeaponSoundLayout = RuntimeWeaponSoundProbe.Probe(context, allEntries,
                     msg => Logger.Instance.Info(msg),
                     editorIdsByFormId),
+                AmmoDataLayout = RuntimeAmmoDataProbe.Probe(context, allEntries),
                 GenericTypeShifts = RuntimeGenericReader.ProbeAllTypeShifts(context, allEntries),
                 // Surface the dict on the context (via the reader constructor) so specialized
                 // readers can resolve candidate Script* pointers to their EditorIds. The
@@ -269,6 +272,7 @@ public sealed class RuntimeStructReader
         {
             probeResults = new RuntimeProbeResults
             {
+                RefrLayout = refrLayoutProbe,
                 NpcLayout = npcLayoutProbe,
                 WorldCellLayout = worldCellLayoutProbe
             };

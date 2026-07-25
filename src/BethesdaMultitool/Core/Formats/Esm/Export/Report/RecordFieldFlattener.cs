@@ -280,8 +280,9 @@ internal static class RecordFieldFlattener
         {
             ["Value"] = c.Value.ToString(),
             ["Weight"] = c.Weight.ToString("F2"),
-            ["Addiction"] = ResolveRef(c.AddictionFormId, resolver),
+            ["WithdrawalEffect"] = ResolveRef(c.WithdrawalEffectFormId, resolver),
             ["AddictionChance"] = c.AddictionChance.ToString("F2"),
+            ["ConsumeSound"] = ResolveRef(c.ConsumeSoundFormId, resolver),
             ["ModelPath"] = c.ModelPath ?? ""
         };
 

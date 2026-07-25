@@ -22,7 +22,7 @@ public class ConditionDecodeTests
         Assert.SkipUnless(File.Exists(esm), $"Not found: {esm}");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm, cancellationToken: TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
 
         // A condition node has the signature CTDA and the structural members; collect them across every
         // record type that carries conditions (INFO, QUST, ...).

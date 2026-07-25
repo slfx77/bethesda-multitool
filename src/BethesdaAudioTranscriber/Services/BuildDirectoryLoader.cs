@@ -1,6 +1,5 @@
-using BethesdaMultitool.Core.Formats.Bsa.Index;
-using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaAudioTranscriber.Models;
+using BethesdaMultitool.Core.Formats.Bsa.Index;
 
 namespace BethesdaAudioTranscriber.Services;
 

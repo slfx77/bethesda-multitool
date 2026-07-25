@@ -7,7 +7,6 @@ using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
@@ -53,7 +52,7 @@ public sealed class ScriptVariableAugmentationTests
                     ScriptVariableDeclarationKind.Float),
                 new ScriptVariableAugmentation(
                     ScriptFormId, new ScriptVariableInfo(11, "ProtoReference", 0),
-                    ScriptVariableDeclarationKind.Reference),
+                    ScriptVariableDeclarationKind.Reference)
             ]);
 
         var plannedScript = Assert.Single(plan.Records);
@@ -126,9 +125,11 @@ public sealed class ScriptVariableAugmentationTests
         var error = Assert.Throws<InvalidOperationException>(() =>
             ScriptVariableAugmentationPlanner.Apply(
                 MakePlan(master),
-                [new ScriptVariableAugmentation(
-                    ScriptFormId, new ScriptVariableInfo(6, "ProtoFlag", 1),
-                    ScriptVariableDeclarationKind.Short)]));
+                [
+                    new ScriptVariableAugmentation(
+                        ScriptFormId, new ScriptVariableInfo(6, "ProtoFlag", 1),
+                        ScriptVariableDeclarationKind.Short)
+                ]));
 
         Assert.Contains("non-fresh index 6", error.Message, StringComparison.Ordinal);
         Assert.Contains("highest master index is 7", error.Message, StringComparison.Ordinal);
@@ -144,9 +145,11 @@ public sealed class ScriptVariableAugmentationTests
 
         var plan = ScriptVariableAugmentationPlanner.Apply(
             MakePlan(master),
-            [new ScriptVariableAugmentation(
-                ScriptFormId, new ScriptVariableInfo(1, "ProtoFlag", 1),
-                ScriptVariableDeclarationKind.Short)]);
+            [
+                new ScriptVariableAugmentation(
+                    ScriptFormId, new ScriptVariableInfo(1, "ProtoFlag", 1),
+                    ScriptVariableDeclarationKind.Short)
+            ]);
         var grup = new PlanWriter(PlannedEncoders.BuildRegistry(), new RecordingSink()).BuildGrupForType(
             "SCPT", plan, new PluginBuildOptions { CompressRecords = false });
         var tes4 = PluginRecordByteBuilder.BuildNewRecordBytes("TES4", 0, 0, []);
@@ -170,10 +173,12 @@ public sealed class ScriptVariableAugmentationTests
 
         var plan = ScriptVariableAugmentationPlanner.Apply(
             MakePlan(master),
-            [new ScriptVariableAugmentation(
-                ScriptFormId,
-                new ScriptVariableInfo(1, "ProtoFlag", 1),
-                ScriptVariableDeclarationKind.Integer)]);
+            [
+                new ScriptVariableAugmentation(
+                    ScriptFormId,
+                    new ScriptVariableInfo(1, "ProtoFlag", 1),
+                    ScriptVariableDeclarationKind.Integer)
+            ]);
         var grup = new PlanWriter(PlannedEncoders.BuildRegistry(), new RecordingSink()).BuildGrupForType(
             "SCPT", plan, new PluginBuildOptions { CompressRecords = false });
         var tes4 = PluginRecordByteBuilder.BuildNewRecordBytes("TES4", 0, 0, []);
@@ -199,7 +204,7 @@ public sealed class ScriptVariableAugmentationTests
             (byte)'\n', (byte)';', (byte)' ', 0x93, (byte)'q', (byte)'u', (byte)'o', (byte)'t',
             (byte)'e', 0x94, (byte)'\n', (byte)'B', (byte)'e', (byte)'g', (byte)'i', (byte)'n',
             (byte)' ', (byte)'G', (byte)'a', (byte)'m', (byte)'e', (byte)'M', (byte)'o', (byte)'d',
-            (byte)'e', (byte)'\n', (byte)'E', (byte)'n', (byte)'d', 0,
+            (byte)'e', (byte)'\n', (byte)'E', (byte)'n', (byte)'d', 0
         };
         var master = MakeMaster(
             Sub("EDID", StringBytes("RetailScript")),
@@ -208,9 +213,11 @@ public sealed class ScriptVariableAugmentationTests
 
         var plan = ScriptVariableAugmentationPlanner.Apply(
             MakePlan(master),
-            [new ScriptVariableAugmentation(
-                ScriptFormId, new ScriptVariableInfo(1, "ProtoFlag", 1),
-                ScriptVariableDeclarationKind.Short)]);
+            [
+                new ScriptVariableAugmentation(
+                    ScriptFormId, new ScriptVariableInfo(1, "ProtoFlag", 1),
+                    ScriptVariableDeclarationKind.Short)
+            ]);
 
         var grup = new PlanWriter(PlannedEncoders.BuildRegistry(), new RecordingSink()).BuildGrupForType(
             "SCPT", plan, new PluginBuildOptions { CompressRecords = false });
@@ -241,10 +248,12 @@ public sealed class ScriptVariableAugmentationTests
             Sub("SCTX", StringBytes("scn RetailScript\nBegin GameMode\nEnd")));
         var plan = ScriptVariableAugmentationPlanner.Apply(
             MakePlan(master),
-            [new ScriptVariableAugmentation(
-                ScriptFormId,
-                new ScriptVariableInfo(1, "ProtoFlag", 1),
-                declarationKind)]);
+            [
+                new ScriptVariableAugmentation(
+                    ScriptFormId,
+                    new ScriptVariableInfo(1, "ProtoFlag", 1),
+                    declarationKind)
+            ]);
 
         var grup = new PlanWriter(PlannedEncoders.BuildRegistry(), new RecordingSink()).BuildGrupForType(
             "SCPT", plan, new PluginBuildOptions { CompressRecords = false });
@@ -277,10 +286,12 @@ public sealed class ScriptVariableAugmentationTests
 
         var plan = ScriptVariableAugmentationPlanner.Apply(
             MakePlan(master),
-            [new ScriptVariableAugmentation(
-                ScriptFormId,
-                new ScriptVariableInfo(1, "ProtoFlag", serializedType),
-                declarationKind)]);
+            [
+                new ScriptVariableAugmentation(
+                    ScriptFormId,
+                    new ScriptVariableInfo(1, "ProtoFlag", serializedType),
+                    declarationKind)
+            ]);
         var grup = new PlanWriter(PlannedEncoders.BuildRegistry(), new RecordingSink()).BuildGrupForType(
             "SCPT", plan, new PluginBuildOptions { CompressRecords = false });
         var tes4 = PluginRecordByteBuilder.BuildNewRecordBytes("TES4", 0, 0, []);
@@ -321,7 +332,7 @@ public sealed class ScriptVariableAugmentationTests
                 new ScriptVariableAugmentation(
                     ScriptFormId,
                     new ScriptVariableInfo(2, "OpaqueValue", 0),
-                    ScriptVariableDeclarationKind.FloatOrReference),
+                    ScriptVariableDeclarationKind.FloatOrReference)
             ]);
 
         var sink = new RecordingSink();
@@ -360,7 +371,7 @@ public sealed class ScriptVariableAugmentationTests
             Master = master,
             References = ImmutableArray<ResolvedRef>.Empty,
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "master-only" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "master-only" }
         };
         return new EmitPlan
         {
@@ -373,41 +384,62 @@ public sealed class ScriptVariableAugmentationTests
             Meta = new PlanMetadata
             {
                 NextObjectId = 0x800,
-                PlannerCoverage = ImmutableHashSet.Create("SCPT"),
-            },
+                PlannerCoverage = ImmutableHashSet.Create("SCPT")
+            }
         };
     }
 
-    private static ParsedMainRecord MakeMaster(params ParsedSubrecord[] subrecords) => new()
+    private static ParsedMainRecord MakeMaster(params ParsedSubrecord[] subrecords)
     {
-        Header = new MainRecordHeader
+        return new ParsedMainRecord
         {
-            Signature = "SCPT",
-            DataSize = 0,
-            Flags = 0,
-            FormId = ScriptFormId,
-            Timestamp = 0,
-            VcsInfo = 15,
-            Version = 0,
-        },
-        Subrecords = [.. subrecords],
-    };
+            Header = new MainRecordHeader
+            {
+                Signature = "SCPT",
+                DataSize = 0,
+                Flags = 0,
+                FormId = ScriptFormId,
+                Timestamp = 0,
+                VcsInfo = 15,
+                Version = 0
+            },
+            Subrecords = [.. subrecords]
+        };
+    }
 
-    private static ParsedSubrecord Sub(string signature, byte[] data) => new()
+    private static ParsedSubrecord Sub(string signature, byte[] data)
     {
-        Signature = signature,
-        Data = data,
-    };
+        return new ParsedSubrecord
+        {
+            Signature = signature,
+            Data = data
+        };
+    }
 
-    private static byte[] StringBytes(string value) => [.. Encoding.Latin1.GetBytes(value), 0];
+    private static byte[] StringBytes(string value)
+    {
+        return [.. Encoding.Latin1.GetBytes(value), 0];
+    }
 
     private sealed class RecordingSink : IConversionProgressSink
     {
         public List<ConversionProgressEvent> Events { get; } = [];
 
-        public void OnPhaseStart(string phase, int? totalItems) { }
-        public void OnEvent(ConversionProgressEvent evt) => Events.Add(evt);
-        public void OnPhaseEnd(string phase, ConversionPipelineStats partialStats) { }
-        public void OnComplete(ConversionPipelineStats stats) { }
+        public void OnPhaseStart(string phase, int? totalItems)
+        {
+        }
+
+        public void OnEvent(ConversionProgressEvent evt)
+        {
+            Events.Add(evt);
+        }
+
+        public void OnPhaseEnd(string phase, ConversionPipelineStats partialStats)
+        {
+        }
+
+        public void OnComplete(ConversionPipelineStats stats)
+        {
+        }
     }
 }

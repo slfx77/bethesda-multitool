@@ -372,6 +372,18 @@ public class EsmSubrecordConverterTests
 
     #endregion
 
+    #region Empty Data
+
+    [Fact]
+    public void ConvertSubrecordData_EmptyString_ReturnsEmpty()
+    {
+        byte[] data = [];
+        var result = EsmSubrecordConverter.ConvertSubrecordData("EDID", data, "WEAP");
+        Assert.Empty(result);
+    }
+
+    #endregion
+
     #region NVMI Navmesh Info (NAVI)
 
     // NVMI layout: Flags(4) + NavmeshFormID(4) + LocationFormID(4) + GridKey(4) +
@@ -551,18 +563,6 @@ public class EsmSubrecordConverterTests
             0x00, 0x00, 0x00, 0x3F // Preferred % LE
         ];
         Assert.Equal(expected, result);
-    }
-
-    #endregion
-
-    #region Empty Data
-
-    [Fact]
-    public void ConvertSubrecordData_EmptyString_ReturnsEmpty()
-    {
-        byte[] data = [];
-        var result = EsmSubrecordConverter.ConvertSubrecordData("EDID", data, "WEAP");
-        Assert.Empty(result);
     }
 
     #endregion

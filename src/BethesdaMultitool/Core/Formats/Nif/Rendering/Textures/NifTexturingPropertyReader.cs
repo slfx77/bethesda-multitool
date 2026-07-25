@@ -72,8 +72,19 @@ internal static class NifTexturingPropertyReader
 
             var pos = block.DataOffset;
             var end = block.DataOffset + block.Size;
-            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings, nif.BinaryVersion) ||
-                pos + 4 > end)
+            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings, nif.BinaryVersion))
+            {
+                return null;
+            }
+
+            // NIF ≤ 10.0.1.2 carries a leading Flags ushort BEFORE Apply Mode (nif.xml gates both
+            // fields there — same quirk NifRenderPropertyReader handles for NiMaterialProperty).
+            if (nif.BinaryVersion <= NifVersions.Gamebryo10012)
+            {
+                pos += 2;
+            }
+
+            if (pos + 4 > end)
             {
                 return null;
             }
@@ -121,10 +132,19 @@ internal static class NifTexturingPropertyReader
             return sourceRef >= 0 && sourceRef < nif.Blocks.Count;
         }
 
-        // After NiObjectNET, NiTexturingProperty has either Apply Mode (uint, NIF < 20.1.0.1 — Oblivion)
-        // or TexturingFlags (ushort, NIF >= 20.1.0.2 — FO3/FNV), then Texture Count (uint) + Has Base
-        // Texture (bool). HasInlineStrings (< 20.1.0.1) selects the 4-byte Apply Mode form.
-        var applyModeOrFlagsSize = nif.HasInlineStrings ? 4 : 2;
+        // After NiObjectNET, NiTexturingProperty has THREE era layouts (nif.xml 12469-12481):
+        //   ≤ 10.0.1.2          — Flags (ushort) AND Apply Mode (uint) = 6 bytes. Oblivion's nine
+        //                         default GroundCover* terrain grasses are authored at exactly
+        //                         10.0.1.2; the old 4-byte skip read Has Base Texture out of the
+        //                         middle of Texture Count (always 0x00) → no diffuse → the whole
+        //                         default-grass set rendered as white translucent cards.
+        //   10.0.1.3 – 20.1.0.1 — Apply Mode only (uint, 4 bytes; the rest of Oblivion).
+        //   ≥ 20.1.0.2          — TexturingFlags (ushort, 2 bytes; FO3/FNV).
+        // Then Texture Count (uint) + Has Base Texture (bool). Only (4.2.2.0, 10.0.1.2] reaches the
+        // 6-byte arm — the legacy NetImmerse branch above handles Morrowind.
+        var applyModeOrFlagsSize = nif.BinaryVersion <= NifVersions.Gamebryo10012
+            ? 6
+            : nif.HasInlineStrings ? 4 : 2;
         if (pos + applyModeOrFlagsSize + 4 + 1 > end)
         {
             return false;

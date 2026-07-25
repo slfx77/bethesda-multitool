@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Utils;
 using Xunit;
@@ -26,8 +25,8 @@ public sealed class RuntimeSkyWeatherReaderTests
 
         var snapshot = WeatherTransitionSnapshotParser.Parse(
             bytes,
-            isBigEndian: true,
-            skyVirtualAddress: 0x41000000,
+            true,
+            0x41000000,
             pointer => pointer switch
             {
                 0x41000100 => 0x00012345,
@@ -57,8 +56,8 @@ public sealed class RuntimeSkyWeatherReaderTests
 
         var snapshot = WeatherTransitionSnapshotParser.Parse(
             bytes,
-            isBigEndian: false,
-            skyVirtualAddress: 0x55667788,
+            false,
+            0x55667788,
             pointer => pointer == 0x11223344 ? 0x00ABCDEF : null);
 
         Assert.NotNull(snapshot);
@@ -92,7 +91,7 @@ public sealed class RuntimeSkyWeatherReaderTests
             1.001f,
             float.NaN,
             float.PositiveInfinity,
-            float.NegativeInfinity,
+            float.NegativeInfinity
         };
 
         foreach (var weight in invalidWeights)
@@ -101,7 +100,7 @@ public sealed class RuntimeSkyWeatherReaderTests
             WriteFloat(bytes, WeatherTransitionSnapshotParser.CurrentWeatherWeightOffset, weight, true);
 
             Assert.Null(WeatherTransitionSnapshotParser.Parse(
-                bytes, isBigEndian: true, skyVirtualAddress: 0x41000000, _ => null));
+                bytes, true, 0x41000000, _ => null));
         }
     }
 
@@ -161,7 +160,7 @@ public sealed class RuntimeSkyWeatherReaderTests
     [Fact]
     public void Reader_FailsClosedWhenTwoStructurallyValidSkyObjectsExist()
     {
-        var fixture = CreateRuntimeFixture("Fallout_Release_Beta.exe", duplicateSky: true);
+        var fixture = CreateRuntimeFixture("Fallout_Release_Beta.exe", true);
         var reader = CreateReader(fixture.Data, fixture.Info);
 
         Assert.Null(reader.ReadWeatherTransitionSnapshot());
@@ -186,7 +185,7 @@ public sealed class RuntimeSkyWeatherReaderTests
     [Fact]
     public void Reader_ModuleScanClipsStraddlingRegionAndIgnoresOutsideDecoys()
     {
-        var fixture = CreateModuleStraddlingFixture(includeOutsideDecoys: true);
+        var fixture = CreateModuleStraddlingFixture(true);
         var reader = CreateReader(fixture.Data, fixture.Info);
 
         var snapshot = reader.ReadWeatherTransitionSnapshot();
@@ -203,7 +202,7 @@ public sealed class RuntimeSkyWeatherReaderTests
     public void Reader_RejectsRttiStructuresThatCrossModuleBoundary(string decoyKind)
     {
         const int padding = 0x200;
-        var fixture = CreateModuleStraddlingFixture(includeOutsideDecoys: false);
+        var fixture = CreateModuleStraddlingFixture(false);
         var data = fixture.Data;
         var moduleEnd = ModuleVa + ModuleSize;
 
@@ -279,7 +278,7 @@ public sealed class RuntimeSkyWeatherReaderTests
     {
         return new RuntimeStructReader(
             new ByteArrayMemoryAccessor(data), data.LongLength, info,
-            useProtoOffsets: false, npcLayoutProbe: null);
+            false, null);
     }
 
     private static (byte[] Data, MinidumpInfo Info) CreateModuleStraddlingFixture(
@@ -320,7 +319,7 @@ public sealed class RuntimeSkyWeatherReaderTests
                 {
                     Name = "Fallout_Release_MemDebug.exe",
                     BaseAddress = Xbox360MemoryUtils.VaToLong(ModuleVa),
-                    Size = ModuleSize,
+                    Size = ModuleSize
                 }
             ],
             MemoryRegions =
@@ -329,15 +328,15 @@ public sealed class RuntimeSkyWeatherReaderTests
                 {
                     VirtualAddress = Xbox360MemoryUtils.VaToLong(ModuleVa - padding),
                     Size = moduleRegionSize,
-                    FileOffset = 0,
+                    FileOffset = 0
                 },
                 new MinidumpMemoryRegion
                 {
                     VirtualAddress = HeapVa,
                     Size = HeapSize,
-                    FileOffset = moduleRegionSize,
+                    FileOffset = moduleRegionSize
                 }
-            ],
+            ]
         };
         return (data, info);
     }
@@ -370,7 +369,7 @@ public sealed class RuntimeSkyWeatherReaderTests
                 {
                     Name = "Fallout_Release_MemDebug.exe",
                     BaseAddress = Xbox360MemoryUtils.VaToLong(ModuleVa),
-                    Size = ModuleSize,
+                    Size = ModuleSize
                 }
             ],
             MemoryRegions =
@@ -379,15 +378,15 @@ public sealed class RuntimeSkyWeatherReaderTests
                 {
                     VirtualAddress = Xbox360MemoryUtils.VaToLong(ModuleVa),
                     Size = ModuleSize,
-                    FileOffset = 0,
+                    FileOffset = 0
                 },
                 new MinidumpMemoryRegion
                 {
                     VirtualAddress = HeapVa - prefix,
                     Size = prefix + HeapSize,
-                    FileOffset = ModuleSize,
+                    FileOffset = ModuleSize
                 }
-            ],
+            ]
         };
         return (data, info);
     }

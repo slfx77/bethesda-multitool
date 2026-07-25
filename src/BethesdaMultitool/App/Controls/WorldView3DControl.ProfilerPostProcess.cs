@@ -51,13 +51,16 @@ public sealed partial class WorldView3DControl
     {
         _hdrEnabled = hdrEnabled;
         _bloomEnabled = bloomEnabled;
-        _imagespaceModifiersEnabled = imagespaceEnabled;
         _showFog = fogEnabled;
         _showShadows = shadowsEnabled;
 
         SettingsPanel.HdrToggle.IsOn = hdrEnabled;
         SettingsPanel.BloomToggle.IsOn = bloomEnabled;
-        SettingsPanel.ImagespaceToggle.IsOn = imagespaceEnabled;
+        // The bool scenario contract maps onto the dropdown's Automatic/None entries (explicit IMGS
+        // picks are a GUI-only affordance); this also syncs the ComboBox selection.
+        SetImagespaceSelection(imagespaceEnabled
+            ? ImagespaceSelectionMode.Automatic
+            : ImagespaceSelectionMode.None);
         LightingPanel.FogEnabled = fogEnabled;
         LightingPanel.ShadowsEnabled = shadowsEnabled;
     }
@@ -77,7 +80,7 @@ public sealed partial class WorldView3DControl
             return new WorldView3DProfilerPostProcessState(
                 _hdrEnabled,
                 _bloomEnabled,
-                _imagespaceModifiersEnabled,
+                _imagespaceMode != ImagespaceSelectionMode.None,
                 _showFog,
                 !string.Equals(tonemap.Mode.ToString(), "LegacyClamp", StringComparison.Ordinal),
                 tonemap.BloomEnabled,

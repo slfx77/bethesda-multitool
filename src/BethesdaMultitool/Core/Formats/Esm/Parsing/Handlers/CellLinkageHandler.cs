@@ -450,10 +450,11 @@ internal static class CellLinkageHandler
 
     /// <summary>
     ///     TES4-era child worldspaces inherit PARENT terrain per cell: retail city worlds carry cells
-    ///     with no LAND at all (AnvilWorld's late 0x000CA4xx ring) and a few pre-release relic LANDs
-    ///     the engine ignores (VTEX-only — skipped at attach time by <c>CellRecordHandler</c>), yet
-    ///     in-game those cells render the parent worldspace's textured terrain (user-verified in-game
-    ///     A/B at AnvilWorld (-45,-8), 2026-07-21). Mirror that: any child-worldspace exterior cell
+    ///     with no LAND at all (AnvilWorld's late 0x000CA4xx ring) and 579 pre-release relic LANDs
+    ///     the engine ignores (uncompressed + layer-less — skipped at attach time by
+    ///     <c>CellRecordHandler</c>), yet in-game those cells render the parent worldspace's textured
+    ///     terrain (user-verified in-game A/B at AnvilWorld (-45,-8), 2026-07-21; ICMarketDistrict
+    ///     flora planted at parent heights, 2026-07-22). Mirror that: any child-worldspace exterior cell
     ///     without an attached heightmap borrows the WNAM ancestor's same-grid cell heightmap and
     ///     visual data by reference. Runs after <see cref="LinkCellsToWorldspaces" />; the shared
     ///     heightmap keeps its parent-cell provenance stamp, so the converter's captured-terrain

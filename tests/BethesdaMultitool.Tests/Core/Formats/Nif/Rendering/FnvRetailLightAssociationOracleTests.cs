@@ -11,10 +11,10 @@ public sealed class FnvRetailLightAssociationOracleTests
     public void Influence_UsesSceneOffsetBoundSurfaceDistanceAndStrictBoundary()
     {
         var inside = FnvRetailLightAssociationOracle.EvaluateInfluence(
-            niLightWorldTranslate: new Vector3(18f, 0f, 0f),
-            globalSceneOffset: new Vector3(1f, 0f, 0f),
-            geometryBound: new FnvRetailGeometryBound(new Vector3(10f, 0f, 0f), 2f),
-            effectiveRadius: 8f);
+            new Vector3(18f, 0f, 0f),
+            new Vector3(1f, 0f, 0f),
+            new FnvRetailGeometryBound(new Vector3(10f, 0f, 0f), 2f),
+            8f);
 
         Assert.Equal(new Vector3(9f, 0f, 0f), inside.Delta);
         Assert.Equal(9f, inside.CenterDistance);
@@ -23,10 +23,10 @@ public sealed class FnvRetailLightAssociationOracleTests
         Assert.True(inside.BoundWithinEffectiveRadius);
 
         var edge = FnvRetailLightAssociationOracle.EvaluateInfluence(
-            niLightWorldTranslate: new Vector3(19f, 0f, 0f),
-            globalSceneOffset: Vector3.UnitX,
-            geometryBound: new FnvRetailGeometryBound(new Vector3(10f, 0f, 0f), 2f),
-            effectiveRadius: 8f);
+            new Vector3(19f, 0f, 0f),
+            Vector3.UnitX,
+            new FnvRetailGeometryBound(new Vector3(10f, 0f, 0f), 2f),
+            8f);
 
         Assert.Equal(1f, edge.Score);
         Assert.False(edge.BoundWithinEffectiveRadius);
@@ -36,10 +36,10 @@ public sealed class FnvRetailLightAssociationOracleTests
     public void Influence_AllowsNegativeScoreWhenLightIsInsideGeometryBound()
     {
         var result = FnvRetailLightAssociationOracle.EvaluateInfluence(
-            niLightWorldTranslate: Vector3.Zero,
-            globalSceneOffset: Vector3.Zero,
-            geometryBound: new FnvRetailGeometryBound(Vector3.Zero, 5f),
-            effectiveRadius: 10f);
+            Vector3.Zero,
+            Vector3.Zero,
+            new FnvRetailGeometryBound(Vector3.Zero, 5f),
+            10f);
 
         Assert.Equal(-5f, result.SurfaceDistance);
         Assert.Equal(-0.5f, result.Score);
@@ -51,17 +51,17 @@ public sealed class FnvRetailLightAssociationOracleTests
     {
         FnvRetailAttachedLightCandidate[] attached =
         [
-            Candidate(0x10, distance: 12f),
-            Candidate(0x20, distance: 5f),
-            Candidate(0x30, distance: 5f),
-            Candidate(0x40, distance: 9f),
-            Candidate(0x50, distance: 7f)
+            Candidate(0x10, 12f),
+            Candidate(0x20, 5f),
+            Candidate(0x30, 5f),
+            Candidate(0x40, 9f),
+            Candidate(0x50, 7f)
         ];
 
         var sorted = FnvRetailLightAssociationOracle.StableSortForGeometry(
             attached,
-            globalSceneOffset: Vector3.Zero,
-            geometryBound: new FnvRetailGeometryBound(Vector3.Zero, 2f));
+            Vector3.Zero,
+            new FnvRetailGeometryBound(Vector3.Zero, 2f));
 
         Assert.Equal(5, sorted.Length);
         Assert.Equal(
@@ -92,9 +92,9 @@ public sealed class FnvRetailLightAssociationOracleTests
     public void ActiveNonShadowFilter_DependsOnlyOnTheThreeRecoveredRuntimeFields()
     {
         var diagnosticFieldsUnavailable = new FnvRetailAttachedLightCandidate(
-            EmitterReferenceFormId: 0,
-            NiLightWorldTranslate: new Vector3(float.NaN),
-            EffectiveRadius: float.NaN);
+            0,
+            new Vector3(float.NaN),
+            float.NaN);
 
         var active = FnvRetailLightAssociationOracle.FilterActiveNonShadowInOrder(
             [diagnosticFieldsUnavailable]);
@@ -159,6 +159,8 @@ public sealed class FnvRetailLightAssociationOracleTests
                 new FnvRetailGeometryBound(Vector3.Zero, -1f)));
     }
 
-    private static FnvRetailAttachedLightCandidate Candidate(uint formId, float distance) =>
-        new(formId, new Vector3(distance, 0f, 0f), EffectiveRadius: 10f);
+    private static FnvRetailAttachedLightCandidate Candidate(uint formId, float distance)
+    {
+        return new FnvRetailAttachedLightCandidate(formId, new Vector3(distance, 0f, 0f), 10f);
+    }
 }

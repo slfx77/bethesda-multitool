@@ -1,6 +1,5 @@
 using System.Text;
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Resources;
 using Xunit;
 
@@ -51,7 +50,7 @@ public sealed class DiskBlobCacheTests : IDisposable
     [Fact]
     public void Decoder_version_mismatch_invalidates_and_deletes_the_file()
     {
-        var writerCache = new TestBlobCache(_directory, 1024 * 1024, 1);
+        var writerCache = new TestBlobCache(_directory, 1024 * 1024);
         writerCache.Store("key", "payload");
 
         var readerCache = new TestBlobCache(_directory, 1024 * 1024, 2);

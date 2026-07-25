@@ -1,6 +1,5 @@
-using BethesdaMultitool.Core.Formats.Nif.Parser;
-using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -46,7 +45,7 @@ public sealed class NifAlphaConversionTests
     [Fact]
     public void ConvertedSyntheticBigEndianNif_PreservesExplicitAlphaTest()
     {
-        var xboxData = BigEndianNifBuilder.Build(alphaFlags: 0x12EC, alphaThreshold: 80);
+        var xboxData = BigEndianNifBuilder.Build(0x12EC, 80);
 
         var converted = NifConverter.Convert(xboxData);
 

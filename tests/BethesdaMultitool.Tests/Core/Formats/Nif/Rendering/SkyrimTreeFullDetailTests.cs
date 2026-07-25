@@ -17,6 +17,8 @@ public sealed class SkyrimTreeFullDetailTests
     private const uint SkyrimNifVersion = 0x14020007;
     private const uint SkyrimBsVersion = 83;
 
+    private static readonly int[] ExpectedInactiveFallbackShapes = [5, 6];
+
     [Fact]
     public void SkinPartitionTriangles_SkipClassicSkyrimFooterBetweenPartitions()
     {
@@ -26,7 +28,7 @@ public sealed class SkyrimTreeFullDetailTests
             data,
             0,
             data.Length,
-            isBigEndian: false,
+            false,
             bsVersion: SkyrimBsVersion);
 
         Assert.Equal(new ushort[] { 0, 1, 2, 3, 4, 5 }, triangles);
@@ -47,7 +49,7 @@ public sealed class SkyrimTreeFullDetailTests
         var submesh = NifSubmeshExtractor.ExtractTriShapeData(
             data,
             block,
-            be: false,
+            false,
             SkyrimBsVersion,
             SkyrimNifVersion,
             Matrix4x4.Identity,
@@ -58,12 +60,10 @@ public sealed class SkyrimTreeFullDetailTests
         Assert.Equal(new ushort[] { 0, 1, 2 }, submesh.Triangles);
     }
 
-    private static readonly int[] ExpectedInactiveFallbackShapes = [5, 6];
-
     [Fact]
     public void SwitchNode_PrunesStaticFallbackAndKeepsActiveFullDetailSubtree()
     {
-        var switchBytes = BuildSwitchNode(activeChildOrdinal: 0, [1, 2]);
+        var switchBytes = BuildSwitchNode(0, [1, 2]);
         var nif = new NifInfo
         {
             BinaryVersion = SkyrimNifVersion,
@@ -125,7 +125,7 @@ public sealed class SkyrimTreeFullDetailTests
         writer.Write((ushort)0); // Num Strips
         writer.Write((ushort)4); // Num Weights Per Vertex
         writer.Write((ushort)0); // Bones[0]
-        writer.Write((byte)1);   // Has Vertex Map
+        writer.Write((byte)1); // Has Vertex Map
         foreach (var vertex in vertexMap)
         {
             writer.Write(vertex);
@@ -145,24 +145,24 @@ public sealed class SkyrimTreeFullDetailTests
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
-        writer.Write(0u);        // Group ID
+        writer.Write(0u); // Group ID
         writer.Write((ushort)3); // Num Vertices
-        writer.Write((byte)0);   // Keep Flags
-        writer.Write((byte)0);   // Compress Flags
-        writer.Write((byte)1);   // Has Vertices
+        writer.Write((byte)0); // Keep Flags
+        writer.Write((byte)0); // Compress Flags
+        writer.Write((byte)1); // Has Vertices
         WriteVector(writer, 0f, 0f, 0f);
         WriteVector(writer, 1f, 0f, 0f);
         WriteVector(writer, 0f, 1f, 0f);
         writer.Write((ushort)0); // BS Data Flags
-        writer.Write(0u);        // Material CRC (BS > 34)
-        writer.Write((byte)0);   // Has Normals
+        writer.Write(0u); // Material CRC (BS > 34)
+        writer.Write((byte)0); // Has Normals
         writer.Write(new byte[16]); // Bounding Sphere
-        writer.Write((byte)0);   // Has Vertex Colors
+        writer.Write((byte)0); // Has Vertex Colors
         writer.Write((ushort)0); // Consistency Flags
-        writer.Write(-1);        // Additional Data ref
+        writer.Write(-1); // Additional Data ref
         writer.Write((ushort)0); // Num Triangles
-        writer.Write(0u);        // Num Triangle Points
-        writer.Write((byte)0);   // Has Triangles
+        writer.Write(0u); // Num Triangle Points
+        writer.Write((byte)0); // Has Triangles
         return stream.ToArray();
     }
 
@@ -170,22 +170,22 @@ public sealed class SkyrimTreeFullDetailTests
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
-        writer.Write(-1);         // NiObjectNET.Name
-        writer.Write(0u);         // Num Extra Data List
-        writer.Write(-1);         // Controller ref
+        writer.Write(-1); // NiObjectNET.Name
+        writer.Write(0u); // Num Extra Data List
+        writer.Write(-1); // Controller ref
         writer.Write(0x0000080Eu); // NiAVObject Flags
         WriteVector(writer, 0f, 0f, 0f);
         WriteIdentityRotation(writer);
-        writer.Write(1f);         // Scale
-        writer.Write(-1);         // Collision Object ref
+        writer.Write(1f); // Scale
+        writer.Write(-1); // Collision Object ref
         writer.Write((uint)children.Length);
         foreach (var child in children)
         {
             writer.Write(child);
         }
 
-        writer.Write(0u);         // Num Effects (#NI_BS_LT_FO4#)
-        writer.Write((ushort)3);  // Switch Node Flags
+        writer.Write(0u); // Num Effects (#NI_BS_LT_FO4#)
+        writer.Write((ushort)3); // Switch Node Flags
         writer.Write(activeChildOrdinal);
         return stream.ToArray();
     }

@@ -143,6 +143,11 @@ public sealed partial class WorldView3DControl
                 ShowDisabled = _showDisabled,
             };
 
+            // Export framing preview: reuses the collision line shaders (no spatial index needed — it
+            // draws the export's world-AABB + a view gizmo from a handful of edges).
+            _exportFraming = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.ExportFramingOverlay(
+                _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12);
+
             // TerrainRenderer12 is instantiated lazily in LoadData (needs the per-ESM
             // LTEX/TXST dictionaries + BSA paths) rather than here.
 

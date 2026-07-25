@@ -66,16 +66,18 @@ public sealed class PackageSemanticValidatorTests
         Assert.Contains("does not resolve to an emitted/master PACK", result.Report, StringComparison.Ordinal);
     }
 
-    private static SemanticValidationResult Validate(byte[] bytes, string? masterTargetType = null) =>
-        PluginSemanticValidator.Validate(
+    private static SemanticValidationResult Validate(byte[] bytes, string? masterTargetType = null)
+    {
+        return PluginSemanticValidator.Validate(
             bytes,
             masterTargetType is null ? new HashSet<uint>() : [TargetFormId],
             masterTargetType is null
                 ? new Dictionary<string, HashSet<uint>>(StringComparer.Ordinal)
                 : new Dictionary<string, HashSet<uint>>(StringComparer.Ordinal)
                 {
-                    [masterTargetType] = [TargetFormId],
+                    [masterTargetType] = [TargetFormId]
                 });
+    }
 
     private static byte[] BuildPlugin(params byte[][] records)
     {

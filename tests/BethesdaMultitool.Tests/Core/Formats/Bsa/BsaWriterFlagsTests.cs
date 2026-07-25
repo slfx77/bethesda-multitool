@@ -1,8 +1,8 @@
 using System.Buffers.Binary;
 using System.Reflection;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 using BethesdaMultitool.Core.Formats.Bsa;
+using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Bsa;

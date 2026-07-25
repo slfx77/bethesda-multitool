@@ -60,9 +60,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private readonly GpuPersistentDescriptorAllocator12 _persistentSrvs;
     private readonly GpuDeletionQueue12 _deletionQueue;
     private readonly ID3D12RootSignature _sharedRootSignature;
-    // _pso: depth-test variant (DSV bound, hardware depth test) used when no scene-depth SRV is
-    // available. _psoDepthSample: depth-test OFF (no DSV) used when the host hands us the scene
-    // depth as an SRV — occlusion is then done in-shader via the sampled depth (FNV WATER000 path).
+    // _pso: depth-test variant (writable DSV bound) used when no scene-depth SRV is available.
+    // _psoDepthSample: same hardware GreaterEqual test against the host's READ-ONLY DSV while the
+    // scene depth is simultaneously the shader's SRV (depth fade, FNV WATER000 path); its pixel
+    // shader is the WATER_HARDWARE_OCCLUSION compile (manual occlusion clip dropped).
     // The Oblivion pair is the same HLSL compiled with OBLIVION_WATER (view-angle body + single sun
     // specular — see WaterShaderVariant.OblivionWater000), and the FO4 pair with FO4_WATER (the
     // disassembled BSWaterShader math — see WaterShaderVariant.Fo4Water); both selected by the
@@ -309,7 +310,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         var psMorrowindBytecode = CompileEmbeddedShader(
             "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("MORROWIND_WATER", "1"));
         var psFnvWater001Bytecode = CompileEmbeddedShader(
-            "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("FNV_WATER001", "1"));
+            "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("FNV_WATER001", "1"),
+            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
 
         var psoDesc = new GraphicsPipelineStateDescription
         {
@@ -336,29 +338,41 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _psoMorrowind = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psBytecode;
 
-        // Depth-sample variant: no hardware depth test and no DSV bound, so the scene depth buffer
-        // can be read as an SRV during this pass. Occlusion is done in the shader (discard where the
-        // sampled scene geometry is nearer than the water fragment). Blend/raster match _pso.
-        psoDesc.DepthStencilState = new D12.DepthStencilDescription
-        {
-            DepthEnable = false,
-            DepthWriteMask = D12.DepthWriteMask.Zero,
-            DepthFunc = ComparisonFunction.Always,
-            StencilEnable = false,
-        };
-        psoDesc.DepthStencilFormat = Format.Unknown;
+        // Depth-sample variant: the scene depth buffer is bound BOTH as an SRV (depth-fade /
+        // column math) and as a READ-ONLY DSV, so the same GreaterEqual hardware test as _pso
+        // still rejects water behind opaque geometry — per sample, which antialiases water edges
+        // at MSAA'd mesh silhouettes. The WATER_HARDWARE_OCCLUSION shader variants drop their
+        // pixel-rate occlusion clip (binary keep/kill there left bright fringes around meshes in
+        // front of water). Hosts must bind the read-only DSV while depth sits in
+        // DepthRead | PixelShaderResource; depth state and formats intentionally match _pso.
+        var psDepthSampleBytecode = CompileEmbeddedShader(
+            "water.frag.hlsl", "main", "ps_5_1",
+            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
+        var psOblivionDepthSampleBytecode = CompileEmbeddedShader(
+            "water.frag.hlsl", "main", "ps_5_1",
+            new ShaderMacro("OBLIVION_WATER", "1"),
+            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
+        var psFo4DepthSampleBytecode = CompileEmbeddedShader(
+            "water.frag.hlsl", "main", "ps_5_1",
+            new ShaderMacro("FO4_WATER", "1"),
+            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
+        var psMorrowindDepthSampleBytecode = CompileEmbeddedShader(
+            "water.frag.hlsl", "main", "ps_5_1",
+            new ShaderMacro("MORROWIND_WATER", "1"),
+            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
+        psoDesc.PixelShader = psDepthSampleBytecode;
         _depthSamplePsoTemplate = psoDesc;
         _psoDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         // WATER001 always consumes both scene depth and a separate single-sample opaque-scene
-        // snapshot. It therefore has no hardware-depth/DSV permutation: the host has already
-        // unbound the DSV while depth is an SRV, and the shader performs the same manual occlusion.
+        // snapshot; like every depth-sample PSO it keeps the hardware GreaterEqual test through
+        // the host's read-only DSV (its manual occlusion clip is compiled out above).
         psoDesc.PixelShader = psFnvWater001Bytecode;
         _psoFnvWater001DepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
-        psoDesc.PixelShader = psOblivionBytecode;
+        psoDesc.PixelShader = psOblivionDepthSampleBytecode;
         _psoOblivionDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
-        psoDesc.PixelShader = psFo4Bytecode;
+        psoDesc.PixelShader = psFo4DepthSampleBytecode;
         _psoFo4DepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
-        psoDesc.PixelShader = psMorrowindBytecode;
+        psoDesc.PixelShader = psMorrowindDepthSampleBytecode;
         _psoMorrowindDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
     }
 
@@ -525,10 +539,11 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             _depthSampleCount = 1;
             return;
         }
-        // The host transitions/unbinds depth based on whether it supplied a valid descriptor, so a
-        // malformed enabled binding is a contract violation rather than a fail-soft fallback. Silently
-        // changing its dimension could select Texture2D for a Texture2DMS descriptor (undefined D3D12),
-        // while silently disabling it would make the renderer choose a DSV PSO after the host dropped DSV.
+        // The host transitions depth and swaps to its read-only DSV based on whether it supplied a
+        // valid descriptor, so a malformed enabled binding is a contract violation rather than a
+        // fail-soft fallback. Silently changing its dimension could select Texture2D for a
+        // Texture2DMS descriptor (undefined D3D12), while silently disabling it would make the
+        // renderer choose the writable-DSV PSO while the host has depth in the read-only state.
         if (!float.IsFinite(near) || near <= 0f)
             throw new ArgumentOutOfRangeException(nameof(near), near, "Depth near plane must be finite and positive.");
         if (!float.IsFinite(far) || far <= near)
@@ -1208,7 +1223,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 NoiseTiling = _waterProfile.NoiseTilingWorldUnits,
                 NoiseScale = surface.NoiseScale,
                 WaterOpacity = waterOpacity,
-                Surface0 = new Vector4(surface.NormalsUvScale, surface.FresnelAmount, surface.ReflectivityAmount, surface.Shininess),
+                Surface0 = new Vector4(ResolveSurfaceUvScale(surface), surface.FresnelAmount, surface.ReflectivityAmount, surface.Shininess),
                 // .w carries the lava flag (OBLIV-2): 1 = render as emissive, Fresnel-free lava (Oblivion
                 // Deadlands lava planes) instead of reflective water. Was an unused spare.
                 Surface1 = new Vector4(surface.SunPower, surface.DepthFalloffStart, surface.DepthFalloffEnd,
@@ -1300,9 +1315,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             _instanceSrvPersistent,
             DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView);
 
-        // With a scene-depth SRV the host has unbound the DSV + transitioned depth to
-        // DEPTH_READ | PIXEL_SHADER_RESOURCE, so use the no-depth-test PSO (occlusion is done in-shader).
-        // Otherwise the DSV is still bound → use the hardware-depth-test PSO.
+        // With a scene-depth SRV the host has bound its READ-ONLY DSV + transitioned depth to
+        // DEPTH_READ | PIXEL_SHADER_RESOURCE, so use the depth-sample PSO (hardware GreaterEqual
+        // occlusion + in-shader depth fade). Otherwise the writable DSV is still bound → _pso.
         var depthSample = _depthBindlessIndex != NoNormalMap;
         if (useFnvWater001)
         {
@@ -1412,15 +1427,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         UploadInstances(instanceCount);
         LastStats.GpuUploadMilliseconds = ElapsedMilliseconds(uploadStarted);
 
-        var srvAlloc = _cbvSrvUavHeap.Allocate(1);
-        _gpu.Device.CopyDescriptorsSimple(
-            1,
-            srvAlloc.Cpu,
-            _instanceSrvPersistent,
-            DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView);
-
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
-        cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.SrvTable, srvAlloc.Gpu);
         cmd.SetGraphicsRootDescriptorTable(
             GpuRootSignature12.Slots.BindlessSrvTable,
             _cbvSrvUavHeap.BindlessHeapStartGpu);
@@ -1443,6 +1450,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             bool water001)
         {
             if (drawInstanceCount <= 0) return true;
+            if (_instanceBuffer is null) return true;
 
             var appearance = material.Appearance;
             var surface = appearance?.Surface ?? WaterSurfaceParams.Default;
@@ -1480,7 +1488,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 NoiseScale = surface.NoiseScale,
                 WaterOpacity = surface.Opacity,
                 Surface0 = new Vector4(
-                    surface.NormalsUvScale,
+                    ResolveSurfaceUvScale(surface),
                     surface.FresnelAmount,
                     surface.ReflectivityAmount,
                     surface.Shininess),
@@ -1525,7 +1533,30 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             cmd.SetGraphicsRootConstantBufferView(
                 GpuRootSignature12.Slots.PerFrameCbv,
                 perFrame.GpuAddress);
-            cmd.DrawInstanced(6, (uint)drawInstanceCount, 0, (uint)startInstance);
+            // D3D12's SV_InstanceID does NOT include StartInstanceLocation, so a non-zero start
+            // never reached the VS's uInstances[instanceId] fetch: every batch after the first
+            // re-drew batch 0's slice. Sorted by water FormID, the worldspace-default material
+            // (lowest FormID — the -2300 river/sea cells) always sorted first, so every per-XCWT
+            // batch — exactly the explicit-XCLW lakes (Lake Mead 2600, upstream basins) — silently
+            // vanished. Window the batch's slice through a per-draw SRV instead and always draw
+            // instances [0, count).
+            var batchSrv = _cbvSrvUavHeap.Allocate(1);
+            var batchSrvDesc = new ShaderResourceViewDescription
+            {
+                Format = Format.Unknown,
+                ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Buffer,
+                Shader4ComponentMapping = ShaderComponentMapping.Default,
+                Buffer = new BufferShaderResourceView
+                {
+                    FirstElement = (ulong)startInstance,
+                    NumElements = (uint)drawInstanceCount,
+                    StructureByteStride = (uint)Marshal.SizeOf<WaterInstance>(),
+                    Flags = BufferShaderResourceViewFlags.None,
+                },
+            };
+            _gpu.Device.CreateShaderResourceView(_instanceBuffer, batchSrvDesc, batchSrv.Cpu);
+            cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.SrvTable, batchSrv.Gpu);
+            cmd.DrawInstanced(6, (uint)drawInstanceCount, 0, 0);
             return true;
         }
 
@@ -2104,6 +2135,17 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         finally { bytecode.Dispose(); }
     }
 
+    /// <summary>
+    ///     TES4's global surface animation tiles at ini <c>[Water] fSurfaceTileSize = 2048</c> world
+    ///     units (Oblivion authors no per-WATR NormalsUVScale — the parsed value is FNV's default
+    ///     1000, which tiled the surface almost twice too densely). Ini-derived; other variants keep
+    ///     the authored/parsed scale.
+    /// </summary>
+    private float ResolveSurfaceUvScale(WaterSurfaceParams surface) =>
+        _waterProfile.ShaderVariant == WaterShaderVariant.OblivionWater000
+            ? 2048f
+            : surface.NormalsUvScale;
+
     private static Vector4 ColorToVector4((byte R, byte G, byte B)? color, Vector3 fallback)
     {
         if (color is not { } c) return new Vector4(fallback, 1f);
@@ -2223,11 +2265,21 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                     "ps_5_1",
                     new ShaderMacro("FO4_WATER", "1"),
                     new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1"));
+                // The depth-sample template carries a hardware GreaterEqual test against the
+                // host's read-only DSV, so its pixel shader must be the WATER_HARDWARE_OCCLUSION
+                // compile (occlusion clip dropped) like every other depth-sample PSO.
+                var modernPixelDepthSampleBytecode = CompileEmbeddedShader(
+                    "water.frag.hlsl",
+                    "main",
+                    "ps_5_1",
+                    new ShaderMacro("FO4_WATER", "1"),
+                    new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1"),
+                    new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
                 var pixelDescription = depthTemplate;
                 pixelDescription.PixelShader = modernPixelBytecode;
                 pixel = gpu.Device.CreateGraphicsPipelineState(pixelDescription);
                 var pixelDepthDescription = depthSampleTemplate;
-                pixelDepthDescription.PixelShader = modernPixelBytecode;
+                pixelDepthDescription.PixelShader = modernPixelDepthSampleBytecode;
                 pixelDepthSample = gpu.Device.CreateGraphicsPipelineState(pixelDepthDescription);
 
                 string[] entryPoints =

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 using System.Text.RegularExpressions;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
@@ -19,6 +20,16 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 /// </summary>
 public sealed class FnvTerrainNormalMapTests
 {
+    public enum BrokenNormalChain
+    {
+        MissingLtex,
+        MissingTnam,
+        MissingTxst,
+        NullTx01,
+        EmptyTx01,
+        WhitespaceTx01
+    }
+
     private const ShaderFlags EnableUnboundedDescriptorTables = (ShaderFlags)0x00100000;
     private const uint LtexFormId = 0x100;
     private const uint TxstFormId = 0x200;
@@ -109,7 +120,7 @@ public sealed class FnvTerrainNormalMapTests
     public void TwoLayerVector_DecodesAccumulatesAndNormalizesWithTheSameWeights()
     {
         var actual = BlendPackedNormals(
-            [new(0.8f, 0.6f, 0.9f), new(0.4f, 0.8f, 0.875f)],
+            [new Vector3(0.8f, 0.6f, 0.9f), new Vector3(0.4f, 0.8f, 0.875f)],
             [0.25f, 0.75f]);
 
         AssertVector(new Vector3(0f, 0.54835695f, 0.83624434f), actual);
@@ -120,11 +131,11 @@ public sealed class FnvTerrainNormalMapTests
     {
         var actual = BlendPackedNormals(
             [
-                new(0.75f, 0.55f, 0.93f),
-                new(0.30f, 0.65f, 0.925f),
-                new(0.60f, 0.25f, 0.91f),
-                new(0.45f, 0.80f, 0.89f),
-                new(0.65f, 0.60f, 0.95f)
+                new Vector3(0.75f, 0.55f, 0.93f),
+                new Vector3(0.30f, 0.65f, 0.925f),
+                new Vector3(0.60f, 0.25f, 0.91f),
+                new Vector3(0.45f, 0.80f, 0.89f),
+                new Vector3(0.65f, 0.60f, 0.95f)
             ],
             [0.05f, 0.10f, 0.20f, 0.25f, 0.40f]);
 
@@ -132,10 +143,10 @@ public sealed class FnvTerrainNormalMapTests
 
         var firstFourOnly = BlendPackedNormals(
             [
-                new(0.75f, 0.55f, 0.93f),
-                new(0.30f, 0.65f, 0.925f),
-                new(0.60f, 0.25f, 0.91f),
-                new(0.45f, 0.80f, 0.89f)
+                new Vector3(0.75f, 0.55f, 0.93f),
+                new Vector3(0.30f, 0.65f, 0.925f),
+                new Vector3(0.60f, 0.25f, 0.91f),
+                new Vector3(0.45f, 0.80f, 0.89f)
             ],
             [0.05f, 0.10f, 0.20f, 0.25f]);
         Assert.True(Vector3.Distance(actual, firstFourOnly) > 0.10f);
@@ -182,8 +193,8 @@ public sealed class FnvTerrainNormalMapTests
     {
         var packed = new Vector3(0.75f, 0.25f, 0.0f);
 
-        var retailRgb = DecodePackedNormal(packed, reconstructZ: false);
-        var bc5 = DecodePackedNormal(packed, reconstructZ: true);
+        var retailRgb = DecodePackedNormal(packed, false);
+        var bc5 = DecodePackedNormal(packed, true);
 
         Assert.Equal(new Vector3(0.5f, -0.5f, -1.0f), retailRgb);
         Assert.InRange(MathF.Abs(bc5.X - 0.5f), 0f, 1e-6f);
@@ -321,7 +332,7 @@ public sealed class FnvTerrainNormalMapTests
             cachedCell,
             StringComparison.Ordinal);
         Assert.Equal(2,
-            renderer.Split("NormalTextureEntries = normalTextureEntries,", StringSplitOptions.None).Length - 1);
+            renderer.Split("NormalTextureEntries = normalTextureEntries,").Length - 1);
 
         var shader = ReadEmbeddedShader("terrain_textured.frag.hlsl");
         var perCell = Slice(shader, "cbuffer PerCell : register(b1)", "cbuffer PerMode : register(b2)");
@@ -382,7 +393,7 @@ public sealed class FnvTerrainNormalMapTests
             slotRouting,
             StringComparison.Ordinal);
         Assert.Equal(2,
-            slotRouting.Split("indices.NormalIndex[slot] =", StringSplitOptions.None).Length - 1);
+            slotRouting.Split("indices.NormalIndex[slot] =").Length - 1);
         Assert.Contains("? _textureResolver.ResolveLandscapeNormal(set!.SlotFormIds[slot])", slotRouting,
             StringComparison.Ordinal);
         Assert.Contains(": _textureResolver.EngineDefaultNormal;", slotRouting, StringComparison.Ordinal);
@@ -484,9 +495,9 @@ public sealed class FnvTerrainNormalMapTests
             var result = Compiler.Compile(
                 source,
                 [],
-                include: null!,
+                null!,
                 "main",
-                sourceName: "terrain_textured.frag.hlsl",
+                "terrain_textured.frag.hlsl",
                 "ps_5_1",
                 EnableUnboundedDescriptorTables,
                 EffectFlags.None,
@@ -530,20 +541,12 @@ public sealed class FnvTerrainNormalMapTests
             $@"\b(?:public|private)\s+const\s+uint\s+{Regex.Escape(name)}\s*=\s*(?<value>\d+)\s*;",
             RegexOptions.CultureInvariant);
         Assert.True(match.Success, $"Could not locate uint constant {name}.");
-        return uint.Parse(match.Groups["value"].Value, System.Globalization.CultureInfo.InvariantCulture);
+        return uint.Parse(match.Groups["value"].Value, CultureInfo.InvariantCulture);
     }
 
-    private static uint DivideRoundUp(uint value, uint alignment) =>
-        (value + alignment - 1) / alignment;
-
-    public enum BrokenNormalChain
+    private static uint DivideRoundUp(uint value, uint alignment)
     {
-        MissingLtex,
-        MissingTnam,
-        MissingTxst,
-        NullTx01,
-        EmptyTx01,
-        WhitespaceTx01
+        return (value + alignment - 1) / alignment;
     }
 }
 

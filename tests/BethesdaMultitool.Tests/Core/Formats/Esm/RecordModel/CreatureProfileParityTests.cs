@@ -43,7 +43,7 @@ public class CreatureProfileParityTests
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, cancellationToken: TestContext.Current.CancellationToken);
+            esm!, TestContext.Current.CancellationToken);
 
         var resolver = new FormIdResolver(result.Records.FormIdToEditorId, result.Records.FormIdToDisplayName);
         var profile = new CreatureProfile();
@@ -60,12 +60,14 @@ public class CreatureProfileParityTests
 
             var typed = Serialize(RecordDetailBuilders.BuildCreature(creature, resolver));
             var profiled = Serialize(profile.Build(
-                formId, creature.EditorId, creature.FullName, tree, BethesdaGame.FalloutNewVegas, resolver, result.Records));
+                formId, creature.EditorId, creature.FullName, tree, BethesdaGame.FalloutNewVegas, resolver,
+                result.Records));
 
             compared++;
             if (typed != profiled && mismatches.Count < 5)
             {
-                mismatches.Add($"CREA 0x{formId:X8} ({creature.EditorId}):\n--- typed ---\n{typed}\n--- profile ---\n{profiled}");
+                mismatches.Add(
+                    $"CREA 0x{formId:X8} ({creature.EditorId}):\n--- typed ---\n{typed}\n--- profile ---\n{profiled}");
             }
         }
 

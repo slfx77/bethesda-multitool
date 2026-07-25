@@ -86,12 +86,44 @@ public sealed class AmmoEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MICO", ammo.MessageIconPath));
         }
 
+        // SCRI/YNAM/ZNAM precede DATA in the fopdoc/xEdit AMMO layout.
+        if (ammo.ScriptFormId is > 0)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", ammo.ScriptFormId.Value));
+        }
+
+        if (ammo.PickupSoundFormId is > 0)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("YNAM", ammo.PickupSoundFormId.Value));
+        }
+
+        if (ammo.DropSoundFormId is > 0)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ZNAM", ammo.DropSoundFormId.Value));
+        }
+
         subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "AMMO", 13, ammo, DataExtractors));
 
         if (ammo.ProjectileFormId.HasValue || ammo.ProjectileFormIds.Count > 0)
         {
             warnings.Add(
                 $"New AMMO 0x{ammo.FormId:X8} carries projectile data — DAT2 emission deferred.");
+        }
+
+        // ONAM/QNAM/RCIL follow DATA (and the deferred DAT2) in the AMMO layout.
+        if (!string.IsNullOrEmpty(ammo.ShortName))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ONAM", ammo.ShortName));
+        }
+
+        if (!string.IsNullOrEmpty(ammo.Abbreviation))
+        {
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("QNAM", ammo.Abbreviation));
+        }
+
+        foreach (var ammoEffect in ammo.AmmoEffectFormIds)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("RCIL", ammoEffect));
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };

@@ -58,7 +58,7 @@ public sealed class RecordCatalogTests
             EditorId = "PrototypeGlobal",
             ValueType = 'f',
             Value = 1.0f,
-            Offset = 0x2000,
+            Offset = 0x2000
         };
 
         var entries = RecordCatalog.Build(
@@ -66,7 +66,7 @@ public sealed class RecordCatalogTests
             new DmpRecordSource(new RecordCollection
             {
                 GameSettings = [gameSetting],
-                Globals = [global],
+                Globals = [global]
             }),
             EnabledTypes("GMST", "GLOB"));
 
@@ -134,17 +134,20 @@ public sealed class RecordCatalogTests
         uint formId,
         string editorId,
         int value,
-        long offset) =>
-        new()
+        long offset)
+    {
+        return new GameSettingRecord
         {
             FormId = formId,
             EditorId = editorId,
             IntValue = value,
-            Offset = offset,
+            Offset = offset
         };
+    }
 
-    private static ParsedMainRecord MasterRecord(string type, uint formId) =>
-        new()
+    private static ParsedMainRecord MasterRecord(string type, uint formId)
+    {
+        return new ParsedMainRecord
         {
             Header = new MainRecordHeader
             {
@@ -154,11 +157,14 @@ public sealed class RecordCatalogTests
                 FormId = formId,
                 Timestamp = 0,
                 VcsInfo = 0,
-                Version = 15,
+                Version = 15
             },
-            Offset = 0,
+            Offset = 0
         };
+    }
 
-    private static HashSet<string> EnabledTypes(params string[] types) =>
-        new(types, StringComparer.Ordinal);
+    private static HashSet<string> EnabledTypes(params string[] types)
+    {
+        return new HashSet<string>(types, StringComparer.Ordinal);
+    }
 }

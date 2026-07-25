@@ -16,39 +16,38 @@ public sealed class RecoveredHdrShaderReferenceTests
     [
         [0.106506720f, 0.786985755f, 0.106506720f],
         [0.0544885695f, 0.244201481f, 0.402619928f, 0.244201481f, 0.0544885695f],
-        [0.0366327688f, 0.111280680f, 0.216745213f, 0.270682156f, 0.216745213f, 0.111280680f,
-            0.0366327688f],
-        [0.0276304893f, 0.0662821382f, 0.123831593f, 0.180173829f, 0.204163671f, 0.180173829f,
-            0.123831593f, 0.0662821382f, 0.0276304893f],
-        [0.0221905019f, 0.0455889553f, 0.0798113719f, 0.119064637f, 0.151360765f, 0.163967222f,
-            0.151360765f, 0.119064637f, 0.0798113719f, 0.0455889553f, 0.0221905019f],
-        [0.0185439810f, 0.0341669098f, 0.0563317202f, 0.0831085816f, 0.109719232f, 0.129617959f,
+        [
+            0.0366327688f, 0.111280680f, 0.216745213f, 0.270682156f, 0.216745213f, 0.111280680f,
+            0.0366327688f
+        ],
+        [
+            0.0276304893f, 0.0662821382f, 0.123831593f, 0.180173829f, 0.204163671f, 0.180173829f,
+            0.123831593f, 0.0662821382f, 0.0276304893f
+        ],
+        [
+            0.0221905019f, 0.0455889553f, 0.0798113719f, 0.119064637f, 0.151360765f, 0.163967222f,
+            0.151360765f, 0.119064637f, 0.0798113719f, 0.0455889553f, 0.0221905019f
+        ],
+        [
+            0.0185439810f, 0.0341669098f, 0.0563317202f, 0.0831085816f, 0.109719232f, 0.129617959f,
             0.137022808f, 0.129617959f, 0.109719232f, 0.0831085816f, 0.0563317202f, 0.0341669098f,
-            0.0185439810f],
-        [0.0159283616f, 0.0270778015f, 0.0424232148f, 0.0612547770f, 0.0815124661f, 0.0999668092f,
+            0.0185439810f
+        ],
+        [
+            0.0159283616f, 0.0270778015f, 0.0424232148f, 0.0612547770f, 0.0815124661f, 0.0999668092f,
             0.112988554f, 0.117695801f, 0.112988554f, 0.0999668092f, 0.0815124661f, 0.0612547770f,
-            0.0424232148f, 0.0270778015f, 0.0159283616f]
+            0.0424232148f, 0.0270778015f, 0.0159283616f
+        ]
     ];
-
-    [Flags]
-    private enum CinematicOperation : uint
-    {
-        None = 0,
-        Saturation = 1 << 0,
-        Contrast = 1 << 1,
-        Tint = 1 << 2,
-        Brightness = 1 << 3,
-        All = Saturation | Contrast | Tint | Brightness
-    }
 
     [Fact]
     public void Adapt_CurrentWeightVector_MatchesIshdradapt()
     {
         var adapted = Adapt(
-            previous: new Vector3(0.2f, 0.4f, 0.6f),
-            current: new Vector3(1f, 0.5f, 0.25f),
-            currentWeight: 0.25f,
-            upperLumClamp: 1f);
+            new Vector3(0.2f, 0.4f, 0.6f),
+            new Vector3(1f, 0.5f, 0.25f),
+            0.25f,
+            1f);
 
         VectorAssert.Equal(new Vector3(0.4f, 0.425f, 0.5125f), adapted, 1e-5f);
     }
@@ -57,10 +56,10 @@ public sealed class RecoveredHdrShaderReferenceTests
     public void Adapt_AppliesVectorLengthClampAfterTemporalBlend()
     {
         var adapted = Adapt(
-            previous: new Vector3(3f, 4f, 0f),
-            current: new Vector3(3f, 4f, 0f),
-            currentWeight: 0.4f,
-            upperLumClamp: 1f);
+            new Vector3(3f, 4f, 0f),
+            new Vector3(3f, 4f, 0f),
+            0.4f,
+            1f);
 
         VectorAssert.Equal(new Vector3(0.6f, 0.8f, 0f), adapted, 1e-5f);
     }
@@ -68,12 +67,12 @@ public sealed class RecoveredHdrShaderReferenceTests
     [Fact]
     public void Adapt_PreservesBlackAndSubPointZeroOneVectorLengths()
     {
-        var black = Adapt(Vector3.Zero, Vector3.Zero, currentWeight: 0.5f, upperLumClamp: 1f);
+        var black = Adapt(Vector3.Zero, Vector3.Zero, 0.5f, 1f);
         var nearBlack = Adapt(
-            previous: new Vector3(0.001f, 0f, 0f),
-            current: new Vector3(0.001f, 0f, 0f),
-            currentWeight: 0.5f,
-            upperLumClamp: 1f);
+            new Vector3(0.001f, 0f, 0f),
+            new Vector3(0.001f, 0f, 0f),
+            0.5f,
+            1f);
 
         VectorAssert.Equal(Vector3.Zero, black, 1e-5f);
         VectorAssert.Equal(new Vector3(0.001f, 0f, 0f), nearBlack, 1e-5f);
@@ -83,10 +82,10 @@ public sealed class RecoveredHdrShaderReferenceTests
     public void Composite_UsesAdaptedRgbSumAndDoesNotBrightenBelowTarget()
     {
         var result = Composite(
-            scene: new Vector3(0.8f, 0.6f, 0.4f),
-            bloom: new Vector3(0.1f, 0.2f, 0.3f),
-            adaptedAverage: new Vector3(0.4f, 0.3f, 0.2f),
-            targetLum: 1.2f);
+            new Vector3(0.8f, 0.6f, 0.4f),
+            new Vector3(0.1f, 0.2f, 0.3f),
+            new Vector3(0.4f, 0.3f, 0.2f),
+            1.2f);
 
         VectorAssert.Equal(new Vector3(0.8416667f, 0.6833333f, 0.525f), result, 1e-5f);
     }
@@ -95,10 +94,10 @@ public sealed class RecoveredHdrShaderReferenceTests
     public void Composite_DarkensSceneWhenAdaptedSumExceedsTarget()
     {
         var result = Composite(
-            scene: new Vector3(0.8f, 0.6f, 0.4f),
-            bloom: new Vector3(0.1f, 0.2f, 0.3f),
-            adaptedAverage: Vector3.One,
-            targetLum: 1.2f);
+            new Vector3(0.8f, 0.6f, 0.4f),
+            new Vector3(0.1f, 0.2f, 0.3f),
+            Vector3.One,
+            1.2f);
 
         VectorAssert.Equal(new Vector3(0.3366667f, 0.2733333f, 0.21f), result, 1e-5f);
     }
@@ -112,17 +111,17 @@ public sealed class RecoveredHdrShaderReferenceTests
         var brightPassOutput = BrightPassOutput(bloom, freshAdapted);
 
         var active = CompositeFromBrightPass(
-            scene: new Vector3(0.9f, 0.6f, 0.3f),
+            new Vector3(0.9f, 0.6f, 0.3f),
             brightPassOutput,
-            freshAdaptedFallback: staleAdapted,
-            targetLum: 1.2f,
-            bloomEnabled: true);
+            staleAdapted,
+            1.2f,
+            true);
         var disabled = CompositeFromBrightPass(
-            scene: new Vector3(0.9f, 0.6f, 0.3f),
+            new Vector3(0.9f, 0.6f, 0.3f),
             brightPassOutput,
-            freshAdaptedFallback: freshAdapted,
-            targetLum: 1.2f,
-            bloomEnabled: false);
+            freshAdapted,
+            1.2f,
+            false);
 
         Assert.Equal(2.1f, brightPassOutput.W, 6);
         VectorAssert.Equal(new Vector3(0.53809524f, 0.39047620f, 0.24285716f), active, 1e-5f);
@@ -132,7 +131,7 @@ public sealed class RecoveredHdrShaderReferenceTests
     [Fact]
     public void BrightPass_ThresholdsAndScalesEachTapBeforeFiltering()
     {
-        var result = BrightPass(new Vector3(0.2f, 0.35f, 1.15f), clamp: 0.35f, scale: 1.5f);
+        var result = BrightPass(new Vector3(0.2f, 0.35f, 1.15f), 0.35f, 1.5f);
 
         VectorAssert.Equal(new Vector3(0f, 0f, 1.2f), result, 1e-5f);
     }
@@ -173,15 +172,15 @@ public sealed class RecoveredHdrShaderReferenceTests
         }
 
         var result = BrightPassBlurSeparable(
-            radius: 2,
-            sample: Sample,
-            clamp: 0.35f,
-            scale: 1.5f);
+            2,
+            Sample,
+            0.35f,
+            1.5f);
         var formerDiagonal = BrightPassBlurDiagonal(
-            radius: 2,
-            sample: Sample,
-            clamp: 0.35f,
-            scale: 1.5f);
+            2,
+            Sample,
+            0.35f,
+            1.5f);
 
         VectorAssert.Equal(new Vector3(0.12535849f, 0.03687014f, 0f), result, 1e-5f);
         VectorAssert.Equal(Vector3.Zero, formerDiagonal, 1e-5f);
@@ -190,17 +189,23 @@ public sealed class RecoveredHdrShaderReferenceTests
     [Fact]
     public void BrightPassKernel_PointImpulseResponseIsSymmetricAcrossBothAxesAndDiagonals()
     {
-        Vector3 Sample(int x, int y) => x == 0 && y == 0
-            ? new Vector3(1.2f, 0.6f, 0.1f)
-            : Vector3.Zero;
+        Vector3 Sample(int x, int y)
+        {
+            return x == 0 && y == 0
+                ? new Vector3(1.2f, 0.6f, 0.1f)
+                : Vector3.Zero;
+        }
 
-        Vector3 At(int x, int y) => BrightPassBlurSeparable(
-            radius: 2,
-            sample: Sample,
-            clamp: 0.35f,
-            scale: 1.5f,
-            outputX: x,
-            outputY: y);
+        Vector3 At(int x, int y)
+        {
+            return BrightPassBlurSeparable(
+                2,
+                Sample,
+                0.35f,
+                1.5f,
+                x,
+                y);
+        }
 
         var center = At(0, 0);
         var left = At(-1, 0);
@@ -232,9 +237,9 @@ public sealed class RecoveredHdrShaderReferenceTests
         var source = new float[5, 5];
         source[2, 2] = 16f;
 
-        var recovered = DownsampleFourBilinear(source, targetX: 0, targetY: 0, targetWidth: 1, targetHeight: 1);
+        var recovered = DownsampleFourBilinear(source, 0, 0, 1, 1);
         var formerApproximation = DownsampleSixteenLinear(
-            source, targetX: 0, targetY: 0, targetWidth: 1, targetHeight: 1);
+            source, 0, 0, 1, 1);
 
         Assert.Equal(0f, recovered, 6);
         Assert.Equal(1f, formerApproximation, 6);
@@ -244,23 +249,23 @@ public sealed class RecoveredHdrShaderReferenceTests
     public void Cinematic_ShippedCompositeIgnoresRetainedEnableMask()
     {
         var maskZero = Cinematic(
-            color: new Vector3(0.8f, 0.4f, 0.2f),
-            operations: CinematicOperation.None,
-            saturation: 0.5f,
-            contrastPivot: 0.125f,
-            contrast: 1.2f,
-            brightness: 0.9f,
-            tint: new Vector3(0.6f, 0.5f, 0.4f),
-            tintAmount: 0.25f);
+            new Vector3(0.8f, 0.4f, 0.2f),
+            CinematicOperation.None,
+            0.5f,
+            0.125f,
+            1.2f,
+            0.9f,
+            new Vector3(0.6f, 0.5f, 0.4f),
+            0.25f);
         var maskAll = Cinematic(
-            color: new Vector3(0.8f, 0.4f, 0.2f),
-            operations: CinematicOperation.All,
-            saturation: 0.5f,
-            contrastPivot: 0.125f,
-            contrast: 1.2f,
-            brightness: 0.9f,
-            tint: new Vector3(0.6f, 0.5f, 0.4f),
-            tintAmount: 0.25f);
+            new Vector3(0.8f, 0.4f, 0.2f),
+            CinematicOperation.All,
+            0.5f,
+            0.125f,
+            1.2f,
+            0.9f,
+            new Vector3(0.6f, 0.5f, 0.4f),
+            0.25f);
 
         // The manager expands the four bits into pfEnables, but neither shipped cinematic pixel
         // shader reads that constant. A zero mask and an all-bits mask therefore produce the same
@@ -274,14 +279,14 @@ public sealed class RecoveredHdrShaderReferenceTests
     public void Cinematic_AllOperationsUseRecoveredContrastBrightnessOrder()
     {
         var result = Cinematic(
-            color: new Vector3(0.8f, 0.4f, 0.2f),
-            operations: CinematicOperation.All,
-            saturation: 1f,
-            contrastPivot: 0.125f,
-            contrast: 1.2f,
-            brightness: 0.9f,
-            tint: Vector3.One,
-            tintAmount: 0f);
+            new Vector3(0.8f, 0.4f, 0.2f),
+            CinematicOperation.All,
+            1f,
+            0.125f,
+            1.2f,
+            0.9f,
+            Vector3.One,
+            0f);
 
         // contrast * (brightness * color - pivot) + pivot. Reversing the two authored slots gives
         // (0.8765, 0.4445, 0.2285), so this vector catches the original port mismatch.
@@ -311,8 +316,10 @@ public sealed class RecoveredHdrShaderReferenceTests
         return scene * (targetLum / denominator) + bloom * (0.5f / denominator);
     }
 
-    private static Vector4 BrightPassOutput(Vector3 bloom, Vector3 freshAdaptedAverage) =>
-        new(bloom, freshAdaptedAverage.X + freshAdaptedAverage.Y + freshAdaptedAverage.Z);
+    private static Vector4 BrightPassOutput(Vector3 bloom, Vector3 freshAdaptedAverage)
+    {
+        return new Vector4(bloom, freshAdaptedAverage.X + freshAdaptedAverage.Y + freshAdaptedAverage.Z);
+    }
 
     private static Vector3 CompositeFromBrightPass(
         Vector3 scene,
@@ -331,11 +338,15 @@ public sealed class RecoveredHdrShaderReferenceTests
         return scene * (targetLum / denominator) + bloom * (0.5f / denominator);
     }
 
-    private static Vector3 BrightPass(Vector3 source, float clamp, float scale) =>
-        Vector3.Max(source - new Vector3(clamp), Vector3.Zero) * scale;
+    private static Vector3 BrightPass(Vector3 source, float clamp, float scale)
+    {
+        return Vector3.Max(source - new Vector3(clamp), Vector3.Zero) * scale;
+    }
 
-    private static int SelectBrightPassRadius(float authoredRadius) =>
-        Math.Clamp((int)authoredRadius, 1, 7);
+    private static int SelectBrightPassRadius(float authoredRadius)
+    {
+        return Math.Clamp((int)authoredRadius, 1, 7);
+    }
 
     private static Vector3 BrightPassBlurDiagonal(
         int radius,
@@ -417,6 +428,7 @@ public sealed class RecoveredHdrShaderReferenceTests
                     v + (y - 1.5f) / sourceHeight);
             }
         }
+
         return sum / 16f;
     }
 
@@ -457,5 +469,16 @@ public sealed class RecoveredHdrShaderReferenceTests
         color = Vector3.Lerp(color, luma * tint, tintAmount);
         return contrast * (brightness * color - new Vector3(contrastPivot))
                + new Vector3(contrastPivot);
+    }
+
+    [Flags]
+    private enum CinematicOperation : uint
+    {
+        None = 0,
+        Saturation = 1 << 0,
+        Contrast = 1 << 1,
+        Tint = 1 << 2,
+        Brightness = 1 << 3,
+        All = Saturation | Contrast | Tint | Brightness
     }
 }

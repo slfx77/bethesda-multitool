@@ -15,9 +15,9 @@ public sealed class CollisionReferencePriorityResolverTests
         var calls = new List<string>();
         List<CollisionReferenceCandidate> candidates =
         [
-            Candidate("far.nif", formId: 30, distanceSquared: 900, sourceOrder: 0),
-            Candidate("middle.nif", formId: 20, distanceSquared: 100, sourceOrder: 1),
-            Candidate("near.nif", formId: 10, distanceSquared: 1, sourceOrder: 2),
+            Candidate("far.nif", 30, 900, 0),
+            Candidate("middle.nif", 20, 100, 1),
+            Candidate("near.nif", 10, 1, 2)
         ];
         var selected = new List<CollisionWireframeInstance>();
 
@@ -28,9 +28,9 @@ public sealed class CollisionReferencePriorityResolverTests
                 calls.Add(path);
                 return Resolved(mesh);
             },
-            warmup: null,
-            maxWarmupRequests: 0,
-            maxLineVertices: 6,
+            null,
+            0,
+            6,
             selected);
 
         Assert.Equal(["near.nif"], calls);
@@ -52,14 +52,14 @@ public sealed class CollisionReferencePriorityResolverTests
         {
             ["a.nif"] = meshA,
             ["b.nif"] = meshB,
-            ["z.nif"] = meshZ,
+            ["z.nif"] = meshZ
         };
         List<CollisionReferenceCandidate> candidates =
         [
-            Candidate("z.nif", formId: 2, distanceSquared: 25, sourceOrder: 0),
-            Candidate("b.nif", formId: 1, distanceSquared: 25, sourceOrder: 2),
-            Candidate("a.nif", formId: 1, distanceSquared: 25, sourceOrder: 3, worldX: 3),
-            Candidate("a.nif", formId: 1, distanceSquared: 25, sourceOrder: 1, worldX: 1),
+            Candidate("z.nif", 2, 25, 0),
+            Candidate("b.nif", 1, 25, 2),
+            Candidate("a.nif", 1, 25, 3, 3),
+            Candidate("a.nif", 1, 25, 1, 1)
         ];
         var selected = new List<CollisionWireframeInstance>();
 
@@ -79,10 +79,10 @@ public sealed class CollisionReferencePriorityResolverTests
         var warmups = new List<(string Path, float Priority)>();
         List<CollisionReferenceCandidate> candidates =
         [
-            Candidate("third.nif", formId: 4, distanceSquared: 16, sourceOrder: 0),
-            Candidate("SHARED.NIF", formId: 2, distanceSquared: 4, sourceOrder: 1),
-            Candidate("second.nif", formId: 3, distanceSquared: 9, sourceOrder: 2),
-            Candidate("shared.nif", formId: 1, distanceSquared: 1, sourceOrder: 3),
+            Candidate("third.nif", 4, 16, 0),
+            Candidate("SHARED.NIF", 2, 4, 1),
+            Candidate("second.nif", 3, 9, 2),
+            Candidate("shared.nif", 1, 1, 3)
         ];
         var selected = new List<CollisionWireframeInstance>();
 
@@ -96,8 +96,8 @@ public sealed class CollisionReferencePriorityResolverTests
                     ? Resolved(warmedMesh)
                     : CollisionMeshResolution.Unresolved;
             },
-            maxWarmupRequests: 2,
-            maxLineVertices: 60,
+            2,
+            60,
             selected);
 
         Assert.Equal([("shared.nif", 1f), ("second.nif", 9f)], warmups);
@@ -113,10 +113,10 @@ public sealed class CollisionReferencePriorityResolverTests
         var warmups = new List<(string Path, float Priority)>();
         List<CollisionReferenceCandidate> candidates =
         [
-            Candidate("far.nif", formId: 30, distanceSquared: 900, sourceOrder: 0),
-            Candidate("SHARED.NIF", formId: 20, distanceSquared: 4, sourceOrder: 1),
-            Candidate("second.nif", formId: 10, distanceSquared: 9, sourceOrder: 2),
-            Candidate("shared.nif", formId: 5, distanceSquared: 1, sourceOrder: 3),
+            Candidate("far.nif", 30, 900, 0),
+            Candidate("SHARED.NIF", 20, 4, 1),
+            Candidate("second.nif", 10, 9, 2),
+            Candidate("shared.nif", 5, 1, 3)
         ];
 
         var requests = resolver.WarmNearest(
@@ -126,7 +126,7 @@ public sealed class CollisionReferencePriorityResolverTests
                 warmups.Add((path, priority));
                 return CollisionMeshResolution.Unresolved;
             },
-            maxWarmupRequests: 2);
+            2);
 
         Assert.Equal(2, requests);
         Assert.Equal([("shared.nif", 1f), ("second.nif", 9f)], warmups);
@@ -140,8 +140,8 @@ public sealed class CollisionReferencePriorityResolverTests
         var warmups = new List<string>();
         List<CollisionReferenceCandidate> candidates =
         [
-            Candidate("known-null.nif", formId: 1, distanceSquared: 1, sourceOrder: 0),
-            Candidate("cold.nif", formId: 2, distanceSquared: 4, sourceOrder: 1),
+            Candidate("known-null.nif", 1, 1, 0),
+            Candidate("cold.nif", 2, 4, 1)
         ];
         var selected = new List<CollisionWireframeInstance>();
 
@@ -155,8 +155,8 @@ public sealed class CollisionReferencePriorityResolverTests
                 warmups.Add(path);
                 return Resolved(warmedMesh);
             },
-            maxWarmupRequests: 1,
-            maxLineVertices: 6,
+            1,
+            6,
             selected);
 
         Assert.Equal(["cold.nif"], warmups);
@@ -176,10 +176,10 @@ public sealed class CollisionReferencePriorityResolverTests
         [
             Candidate(
                 "category-effect.nif",
-                formId: 1,
-                distanceSquared: 1,
-                sourceOrder: 0,
-                category: PlacedObjectCategory.Effects),
+                1,
+                1,
+                0,
+                category: PlacedObjectCategory.Effects)
         ];
         var selected = new List<CollisionWireframeInstance>();
 
@@ -195,8 +195,8 @@ public sealed class CollisionReferencePriorityResolverTests
                 warmedCategories.Add(category);
                 return Resolved(mesh, CollisionMeshSource.AuthoredHavok);
             },
-            maxWarmupRequests: 1,
-            maxLineVertices: 6,
+            1,
+            6,
             selected);
 
         Assert.Equal([PlacedObjectCategory.Effects], resolvedCategories);
@@ -213,12 +213,12 @@ public sealed class CollisionReferencePriorityResolverTests
         var meshes = new Dictionary<string, CollisionMesh>
         {
             ["invalid.nif"] = invalid,
-            ["valid.nif"] = valid,
+            ["valid.nif"] = valid
         };
         List<CollisionReferenceCandidate> candidates =
         [
-            Candidate("valid.nif", formId: 2, distanceSquared: 4, sourceOrder: 0),
-            Candidate("invalid.nif", formId: 1, distanceSquared: 1, sourceOrder: 1),
+            Candidate("valid.nif", 2, 4, 0),
+            Candidate("invalid.nif", 1, 1, 1)
         ];
         var selected = new List<CollisionWireframeInstance>();
 
@@ -242,21 +242,27 @@ public sealed class CollisionReferencePriorityResolverTests
         int sourceOrder,
         float worldX = 0,
         PlacedObjectCategory category = PlacedObjectCategory.Unknown)
-        => new(
+    {
+        return new CollisionReferenceCandidate(
             path,
             formId,
             distanceSquared,
             Matrix4x4.CreateTranslation(worldX, 0, 0),
             sourceOrder,
             category);
+    }
 
     private static CollisionMesh TriangleMesh()
-        => new(
+    {
+        return new CollisionMesh(
             [new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0, 1, 0)],
             [0, 1, 2]);
+    }
 
     private static CollisionMeshResolution Resolved(
         CollisionMesh mesh,
         CollisionMeshSource source = CollisionMeshSource.VisualFallback)
-        => CollisionMeshResolution.From(new CollisionBuildResult(mesh, source));
+    {
+        return CollisionMeshResolution.From(new CollisionBuildResult(mesh, source));
+    }
 }

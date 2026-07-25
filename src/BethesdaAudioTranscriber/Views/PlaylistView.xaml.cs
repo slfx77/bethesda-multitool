@@ -34,10 +34,10 @@ public sealed partial class PlaylistView : UserControl
 
     // Transcription state
     private TranscriptionProject? _project;
+    private bool _reviewDirty;
 
     // Suspected-typo review sidecar (.fnvreview.json)
     private ReviewFile? _reviewFile;
-    private bool _reviewDirty;
 
     // Filter state
     private string _searchQuery = "";
@@ -363,7 +363,7 @@ public sealed partial class PlaylistView : UserControl
 
         ExportButton.IsEnabled = true;
 
-        RefreshListAndSelect(selected, advance: true);
+        RefreshListAndSelect(selected, true);
     }
 
     /// <summary>
@@ -435,7 +435,7 @@ public sealed partial class PlaylistView : UserControl
         }
 
         ResolveReviewFlag(selected);
-        RefreshListAndSelect(selected, advance: true);
+        RefreshListAndSelect(selected, true);
     }
 
     private void DetailPanel_RejectRequested(object? sender, EventArgs e)
@@ -456,7 +456,7 @@ public sealed partial class PlaylistView : UserControl
         _autoSaveTimer?.Start();
 
         // Re-selecting fires SelectionChanged, which refreshes the detail panel
-        RefreshListAndSelect(selected, advance: false);
+        RefreshListAndSelect(selected, false);
     }
 
     private void UpdateBatchButtonState()

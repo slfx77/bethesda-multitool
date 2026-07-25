@@ -1,5 +1,5 @@
-using EsmAnalyzer.Commands;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
+using EsmAnalyzer.Commands;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Tools.EsmAnalyzer;
@@ -47,7 +47,7 @@ public sealed class CorpusSuppressionReportCommandTests
                 ["info-speaker-scope-form-id"] = "0x00002000",
                 ["info-speaker-name"] = "Transient speaker name",
                 ["info-response-000-number"] = "0",
-                ["info-response-000-text"] = "Line",
+                ["info-response-000-text"] = "Line"
             });
         var master = new CorpusSuppressionReportCommand.MasterNames(
             new Dictionary<uint, string?> { [0x000000C8] = "GREETING" },
@@ -76,20 +76,20 @@ public sealed class CorpusSuppressionReportCommandTests
             Occurrence("a.dmp", infoId, scriptId, 8, "MissingTwo"),
             Occurrence("b.dmp", infoId, scriptId, 7, "MissingOne"),
             // Repeated identical diagnostic must not duplicate a line or condition.
-            Occurrence("b.dmp", infoId, scriptId, 7, "MissingOne"),
+            Occurrence("b.dmp", infoId, scriptId, 7, "MissingOne")
         };
         var captures = new[]
         {
             Capture("a.dmp", infoId, (1, "Direct line")),
             Capture("b.dmp", infoId, (1, "Direct line"), (1, "Changed line"),
-                (2, DialogueTextBackfill.PlaceholderText)),
+                (2, DialogueTextBackfill.PlaceholderText))
         };
         var csvLines = new[]
         {
             new CorpusSuppressionReportCommand.CsvDialogueLine(
                 infoId, 1, "CSV must not replace direct NAM1", "Sunny", "Test quest", 0, 1),
             new CorpusSuppressionReportCommand.CsvDialogueLine(
-                infoId, 2, "CSV fallback line", "Sunny", "Test quest", 0, 2),
+                infoId, 2, "CSV fallback line", "Sunny", "Test quest", 0, 2)
         };
 
         var rows = CorpusSuppressionReportCommand.BuildDialogueRows(
@@ -143,7 +143,7 @@ public sealed class CorpusSuppressionReportCommandTests
                 ["script-path"] = "ResultScripts[0]",
                 ["reference-field"] = "ResultScripts[0].SCRO[1]",
                 ["target-source-form-id"] = $"0x{missingTarget:X8}",
-                ["local-variable-id"] = null,
+                ["local-variable-id"] = null
             });
 
         var row = Assert.Single(CorpusSuppressionReportCommand.BuildDialogueRows(
@@ -176,7 +176,7 @@ public sealed class CorpusSuppressionReportCommandTests
                 ["target-quest-form-id"] = $"0x{questId:X8}",
                 ["target-script-form-id"] = $"0x{scriptId:X8}",
                 ["target-variable-index"] = "57",
-                ["target-variable-name"] = "RecoveredLocal",
+                ["target-variable-name"] = "RecoveredLocal"
             });
 
         var row = Assert.Single(CorpusSuppressionReportCommand.BuildDialogueRows(
@@ -214,7 +214,7 @@ public sealed class CorpusSuppressionReportCommandTests
                 "ratAmbushCave01SCRIPT",
                 "SCRO[0]",
                 0x001041D6,
-                0x02005678),
+                0x02005678)
         };
 
         var row = Assert.Single(CorpusSuppressionReportCommand.BuildScriptRows(occurrences));
@@ -234,8 +234,9 @@ public sealed class CorpusSuppressionReportCommandTests
         uint infoId,
         uint scriptId,
         uint variableId,
-        string variableName) =>
-        new(
+        string variableName)
+    {
+        return new CorpusSuppressionReportCommand.SuppressionOccurrence(
             dump,
             "INFO",
             infoId,
@@ -246,14 +247,16 @@ public sealed class CorpusSuppressionReportCommandTests
                 ["condition-target-form-id"] = "0x00001111",
                 ["condition-target-script-form-id"] = $"0x{scriptId:X8}",
                 ["condition-variable-index"] = variableId.ToString(),
-                ["condition-variable-name"] = variableName,
+                ["condition-variable-name"] = variableName
             });
+    }
 
     private static CorpusSuppressionReportCommand.InfoCapture Capture(
         string dump,
         uint infoId,
-        params (byte Number, string Text)[] responses) =>
-        new(
+        params (byte Number, string Text)[] responses)
+    {
+        return new CorpusSuppressionReportCommand.InfoCapture(
             dump,
             infoId,
             "InfoEditorId",
@@ -267,6 +270,7 @@ public sealed class CorpusSuppressionReportCommandTests
             responses.Select(response => new CorpusSuppressionReportCommand.CapturedResponse(
                 response.Number,
                 response.Text)).ToArray());
+    }
 
     private static CorpusSuppressionReportCommand.SuppressionOccurrence ScriptOccurrence(
         string dump,
@@ -275,8 +279,9 @@ public sealed class CorpusSuppressionReportCommandTests
         string editorId,
         string referenceField,
         uint targetSourceFormId,
-        uint targetEmittedFormId) =>
-        new(
+        uint targetEmittedFormId)
+    {
+        return new CorpusSuppressionReportCommand.SuppressionOccurrence(
             dump,
             "SCPT",
             emittedFormId,
@@ -290,6 +295,7 @@ public sealed class CorpusSuppressionReportCommandTests
                 ["reference-field"] = referenceField,
                 ["reference-action"] = "Resolved",
                 ["target-source-form-id"] = $"0x{targetSourceFormId:X8}",
-                ["target-emitted-form-id"] = $"0x{targetEmittedFormId:X8}",
+                ["target-emitted-form-id"] = $"0x{targetEmittedFormId:X8}"
             });
+    }
 }

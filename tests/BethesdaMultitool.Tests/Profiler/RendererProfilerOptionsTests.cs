@@ -202,7 +202,7 @@ public sealed class RendererProfilerOptionsTests
                 [
                     "--input", input,
                     "--scenario", RendererProfilerScenarioCatalog.FnvCelestial,
-                    option, value,
+                    option, value
                 ],
                 out _,
                 out var error));

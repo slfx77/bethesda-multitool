@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
@@ -32,7 +31,7 @@ public sealed class OverrideDoorCloningTests
     [Fact]
     public void Door_Override_In_New_Worldspace_Cell_Clones_As_New()
     {
-        var original = OverrideDoorChild(DoorRefId, x: 100f);
+        var original = OverrideDoorChild(DoorRefId, 100f);
         var cells = Apply(MakeProtoCell(original));
 
         var child = Assert.Single(cells[ProtoCellId].TemporaryChildren);
@@ -48,9 +47,9 @@ public sealed class OverrideDoorCloningTests
     {
         // Master places the same door REFR in the SAME worldspace within 1 unit of the
         // captured position — a clone would double the door.
-        var cell = MakeCell(ProtoCellId, MasterWorldspaceId, OverrideDoorChild(DoorRefId, x: 100f));
+        var cell = MakeCell(ProtoCellId, MasterWorldspaceId, OverrideDoorChild(DoorRefId, 100f));
 
-        var cells = Apply(cell, masterRefPosition: (DoorRefId, 100.4f));
+        var cells = Apply(cell, (DoorRefId, 100.4f));
 
         var child = Assert.Single(cells[ProtoCellId].TemporaryChildren);
         Assert.Equal(RecordDisposition.Override, child.Disposition);
@@ -60,9 +59,9 @@ public sealed class OverrideDoorCloningTests
     [Fact]
     public void Distant_Same_Worldspace_Door_Clones()
     {
-        var cell = MakeCell(ProtoCellId, MasterWorldspaceId, OverrideDoorChild(DoorRefId, x: 100f));
+        var cell = MakeCell(ProtoCellId, MasterWorldspaceId, OverrideDoorChild(DoorRefId, 100f));
 
-        var cells = Apply(cell, masterRefPosition: (DoorRefId, 5000f));
+        var cells = Apply(cell, (DoorRefId, 5000f));
 
         var child = Assert.Single(cells[ProtoCellId].TemporaryChildren);
         Assert.Equal(RecordDisposition.New, child.Disposition);
@@ -84,7 +83,7 @@ public sealed class OverrideDoorCloningTests
     {
         var cell = MakeCell(MasterCellId, MasterWorldspaceId, OverrideDoorChild(DoorRefId, 100f)) with
         {
-            CellRecordPlan = MakeCellRecordPlan(MasterCellId, master: MakeMasterRecord("CELL", MasterCellId)),
+            CellRecordPlan = MakeCellRecordPlan(MasterCellId, MakeMasterRecord("CELL", MasterCellId))
         };
 
         var cells = Apply(cell);
@@ -109,15 +108,15 @@ public sealed class OverrideDoorCloningTests
                 BlockGroupType = 4,
                 SubblockGroupType = 5,
                 BlockLabel = [0, 0, 0, 0],
-                SubblockLabel = [0, 0, 0, 0],
-            },
+                SubblockLabel = [0, 0, 0, 0]
+            }
         };
         var masterByFormId = new Dictionary<uint, ParsedMainRecord>
         {
             [DoorBaseId] = MakeMasterRecord("DOOR", DoorBaseId),
             [StatBaseId] = MakeMasterRecord("STAT", StatBaseId),
             [MasterCellId] = MakeMasterRecord("CELL", MasterCellId),
-            [DoorRefId] = MakeMasterRefr(DoorRefId, masterRefPosition?.MasterX ?? 0f),
+            [DoorRefId] = MakeMasterRefr(DoorRefId, masterRefPosition?.MasterX ?? 0f)
         };
         var masterRefToCell = new Dictionary<uint, uint> { [DoorRefId] = MasterCellId };
 
@@ -126,69 +125,85 @@ public sealed class OverrideDoorCloningTests
             cells, masterContexts, masterByFormId, masterRefToCell, new FormIdAllocator());
     }
 
-    private static CellPlan MakeProtoCell(params RecordPlan[] temporary) =>
-        MakeCell(ProtoCellId, ProtoWorldspaceId, temporary);
-
-    private static CellPlan MakeCell(uint cellFormId, uint worldspaceId, params RecordPlan[] temporary) => new()
+    private static CellPlan MakeProtoCell(params RecordPlan[] temporary)
     {
-        CellFormId = cellFormId,
-        CellRecordPlan = MakeCellRecordPlan(cellFormId, master: null),
-        Context = new PcEsmCellContext
+        return MakeCell(ProtoCellId, ProtoWorldspaceId, temporary);
+    }
+
+    private static CellPlan MakeCell(uint cellFormId, uint worldspaceId, params RecordPlan[] temporary)
+    {
+        return new CellPlan
         {
             CellFormId = cellFormId,
-            IsInterior = false,
-            WorldspaceFormId = worldspaceId,
-            BlockGroupType = 4,
-            SubblockGroupType = 5,
-            BlockLabel = null,
-            SubblockLabel = null,
-        },
-        PersistentChildren = ImmutableArray<RecordPlan>.Empty,
-        VwdChildren = ImmutableArray<RecordPlan>.Empty,
-        TemporaryChildren = [.. temporary],
-        ParentWorldspaceFormId = worldspaceId,
-        Mode = CellMergeMode.LoadedReplacement,
-    };
+            CellRecordPlan = MakeCellRecordPlan(cellFormId, null),
+            Context = new PcEsmCellContext
+            {
+                CellFormId = cellFormId,
+                IsInterior = false,
+                WorldspaceFormId = worldspaceId,
+                BlockGroupType = 4,
+                SubblockGroupType = 5,
+                BlockLabel = null,
+                SubblockLabel = null
+            },
+            PersistentChildren = ImmutableArray<RecordPlan>.Empty,
+            VwdChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = [.. temporary],
+            ParentWorldspaceFormId = worldspaceId,
+            Mode = CellMergeMode.LoadedReplacement
+        };
+    }
 
-    private static RecordPlan MakeCellRecordPlan(uint cellFormId, ParsedMainRecord? master) => new()
+    private static RecordPlan MakeCellRecordPlan(uint cellFormId, ParsedMainRecord? master)
     {
-        Type = "CELL",
-        Disposition = master is null ? RecordDisposition.New : RecordDisposition.Override,
-        FormId = cellFormId,
-        Model = new CellRecord { FormId = cellFormId },
-        Master = master,
-        References = ImmutableArray<ResolvedRef>.Empty,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
-    };
+        return new RecordPlan
+        {
+            Type = "CELL",
+            Disposition = master is null ? RecordDisposition.New : RecordDisposition.Override,
+            FormId = cellFormId,
+            Model = new CellRecord { FormId = cellFormId },
+            Master = master,
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+        };
+    }
 
-    private static RecordPlan OverrideDoorChild(uint formId, float x) =>
-        MakeChild("REFR", formId, DoorBaseId, RecordDisposition.Override, x);
+    private static RecordPlan OverrideDoorChild(uint formId, float x)
+    {
+        return MakeChild("REFR", formId, DoorBaseId, RecordDisposition.Override, x);
+    }
 
     private static RecordPlan MakeChild(
-        string type, uint formId, uint baseFormId, RecordDisposition disposition, float x) => new()
+        string type, uint formId, uint baseFormId, RecordDisposition disposition, float x)
     {
-        Type = type,
-        Disposition = disposition,
-        FormId = formId,
-        Model = new PlacedReference
+        return new RecordPlan
         {
-            FormId = formId, BaseFormId = baseFormId, RecordType = type, X = x, Y = 0f, Z = 0f
-        },
-        References = ImmutableArray<ResolvedRef>.Empty,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
-    };
+            Type = type,
+            Disposition = disposition,
+            FormId = formId,
+            Model = new PlacedReference
+            {
+                FormId = formId, BaseFormId = baseFormId, RecordType = type, X = x, Y = 0f, Z = 0f
+            },
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+        };
+    }
 
-    private static ParsedMainRecord MakeMasterRecord(string signature, uint formId) => new()
+    private static ParsedMainRecord MakeMasterRecord(string signature, uint formId)
     {
-        Header = new MainRecordHeader
+        return new ParsedMainRecord
         {
-            Signature = signature, DataSize = 0, Flags = 0, FormId = formId,
-            Timestamp = 0, VcsInfo = 0, Version = 15
-        },
-        Offset = 0
-    };
+            Header = new MainRecordHeader
+            {
+                Signature = signature, DataSize = 0, Flags = 0, FormId = formId,
+                Timestamp = 0, VcsInfo = 0, Version = 15
+            },
+            Offset = 0
+        };
+    }
 
     private static ParsedMainRecord MakeMasterRefr(uint formId, float x)
     {

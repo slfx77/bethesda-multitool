@@ -649,6 +649,17 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             ];
         }
 
+        // TES4 also stores its per-layer cloud colors INSIDE NAM0 — categories 2 "Clouds-Lower" and
+        // 9 "Clouds-Upper" (xEdit wbWeatherColors IsTES4 arms; FO3+ repurpose those slots as Unused
+        // and moved cloud colors to the per-layer PNAM parsed above). Route them into the same
+        // cloudColors slots (index 0 → CNAM lower layer, 1 → DNAM upper layer) so the sky renderer
+        // samples the authored time-of-day bands — without this every Oblivion cloud layer fell back
+        // to the white tint and glowed at night.
+        if (Context.Game == BethesdaGame.Oblivion && cloudColors is null && colors is { Count: >= 10 })
+        {
+            cloudColors = [colors[2], colors[9]];
+        }
+
         IReadOnlyList<string> textureValues = cloudLayers.Count == 0 ? [] : cloudLayers.Values.ToList();
         IReadOnlyList<int> textureIndices = cloudLayers.Count == 0 ? [] : cloudLayers.Keys.ToList();
         var ambientBands = BuildDirectionalAmbientBands(directionalAmbientBands);

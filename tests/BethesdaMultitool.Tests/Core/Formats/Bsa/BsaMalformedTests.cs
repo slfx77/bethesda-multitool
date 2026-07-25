@@ -62,18 +62,18 @@ public sealed class BsaMalformedTests : IDisposable
         using var bw = new BinaryWriter(ms, Encoding.ASCII);
         bw.Write("BSA\0"u8.ToArray());
         bw.Write(104u); // version
-        bw.Write(36u);  // folder record offset
+        bw.Write(36u); // folder record offset
         bw.Write(0x3u); // IncludeDirectoryNames | IncludeFileNames
-        bw.Write(1u);   // folder count
-        bw.Write(1u);   // file count
+        bw.Write(1u); // folder count
+        bw.Write(1u); // file count
         bw.Write((uint)(folderName.Length + 1)); // total folder name length
-        bw.Write((uint)(fileName.Length + 1));   // total file name length
+        bw.Write((uint)(fileName.Length + 1)); // total file name length
         bw.Write((ushort)0x1); // file flags: meshes
-        bw.Write((ushort)0);   // padding
+        bw.Write((ushort)0); // padding
 
         bw.Write(0x1122334455667788ul); // folder name hash
-        bw.Write(1u);                   // folder file count
-        bw.Write(0u);                   // folder offset (informational)
+        bw.Write(1u); // folder file count
+        bw.Write(0u); // folder offset (informational)
 
         bw.Write((byte)(folderName.Length + 1)); // folder name length incl. null
         bw.Write(Encoding.ASCII.GetBytes(folderName));
@@ -132,7 +132,7 @@ public sealed class BsaMalformedTests : IDisposable
     [Fact]
     public void ExtractFile_OffsetBeyondArchive_ThrowsInvalidDataException()
     {
-        var bytes = BuildV104Bsa(Payload, fileOffsetOverride: 0x10000);
+        var bytes = BuildV104Bsa(Payload, 0x10000);
         using var extractor = new BsaExtractor(WriteBsa(bytes));
         var record = Assert.Single(extractor.Archive.AllFiles);
 

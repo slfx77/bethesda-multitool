@@ -28,7 +28,10 @@ public sealed class NifNonRenderableHelperShapeTests
         return nif;
     }
 
-    private static List<int> Refs(int count) => Enumerable.Range(1, count).ToList();
+    private static List<int> Refs(int count)
+    {
+        return Enumerable.Range(1, count).ToList();
+    }
 
     [Fact]
     public void ZeroProperties_OnBsShaderEra_IsHelper()
@@ -49,10 +52,10 @@ public sealed class NifNonRenderableHelperShapeTests
     [Theory]
     [InlineData("BSShaderPPLightingProperty")] // FO3/FNV — the substring-bug guard
     [InlineData("BSShaderNoLightingProperty")] // FO3/FNV emissive
-    [InlineData("BSLightingShaderProperty")]   // Skyrim/FO4
-    [InlineData("BSEffectShaderProperty")]     // effects
-    [InlineData("WaterShaderProperty")]        // placeable water
-    [InlineData("SkyShaderProperty")]          // sky layers
+    [InlineData("BSLightingShaderProperty")] // Skyrim/FO4
+    [InlineData("BSEffectShaderProperty")] // effects
+    [InlineData("WaterShaderProperty")] // placeable water
+    [InlineData("SkyShaderProperty")] // sky layers
     public void ShaderProperty_OnBsShaderEra_IsRenderable(string shaderType)
     {
         var nif = NifWith(34, shaderType);

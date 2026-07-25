@@ -11,6 +11,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 /// </summary>
 public sealed class NifWaterGeometryTests
 {
+    private static readonly float[] ExpectedSlopedVertexHeights = [11f, 12f, 17f, 21f];
+
     [Fact]
     public void Transform_preserves_rotation_nonuniform_scale_and_index_winding()
     {
@@ -19,7 +21,7 @@ public sealed class NifWaterGeometryTests
             new Vector3(-1f, -1f, 0f),
             new Vector3(1f, -1f, 0f),
             new Vector3(-1f, 1f, 0f),
-            new Vector3(1f, 1f, 0f),
+            new Vector3(1f, 1f, 0f)
         };
         ushort[] indices = [0, 1, 2, 2, 1, 3];
         Assert.True(NifWaterGeometry.TryCreate(positions, indices, out var local));
@@ -37,8 +39,6 @@ public sealed class NifWaterGeometryTests
         VectorAssert.Equal(new Vector3(12f, 23f, 30f), placed.BoundsMax, 1e-4f);
     }
 
-    private static readonly float[] ExpectedSlopedVertexHeights = [11f, 12f, 17f, 21f];
-
     [Fact]
     public void Transform_retains_each_sloped_vertex_height_instead_of_one_plane_height()
     {
@@ -47,7 +47,7 @@ public sealed class NifWaterGeometryTests
             new(0f, 0f, 1f),
             new(4f, 0f, 2f),
             new(0f, 5f, 7f),
-            new(4f, 5f, 11f),
+            new(4f, 5f, 11f)
         ];
         Assert.True(NifWaterGeometry.TryCreate(positions, [0, 1, 2, 2, 1, 3], out var local));
 
@@ -67,7 +67,7 @@ public sealed class NifWaterGeometryTests
             new(2f, 0f, 3f),
             new(0f, 2f, 3f),
             new(-2f, 0f, 3f),
-            new(0f, -2f, 3f),
+            new(0f, -2f, 3f)
         ];
         ushort[] indices = [0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 1];
         Assert.True(NifWaterGeometry.TryCreate(positions, indices, out var geometry));
@@ -88,7 +88,7 @@ public sealed class NifWaterGeometryTests
             new(0f, 0f, 0f),
             new(2f, 0f, 0f),
             new(0f, 3f, 1f),
-            new(2f, 4f, 2f),
+            new(2f, 4f, 2f)
         ];
         // Deliberately non-sequential index order: the packet must not canonicalize either triangle.
         Assert.True(NifWaterGeometry.TryCreate(positions, [2, 0, 1, 1, 0, 3], out var geometry));

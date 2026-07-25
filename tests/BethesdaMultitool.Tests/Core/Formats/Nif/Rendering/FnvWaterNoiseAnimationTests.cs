@@ -39,7 +39,7 @@ public sealed class FnvWaterNoiseAnimationTests
         Assert.Equal(-431_602_080f, debugFill);
         Assert.Equal(Vector2.Zero, FnvWaterNoiseAnimation.Scroll(layer, 0f));
         var phase = FnvWaterNoiseAnimation.Scroll(layer, 1.2345f);
-        var nextPhase = FnvWaterNoiseAnimation.Scroll(layer, 1.2345f + (1f / 60f));
+        var nextPhase = FnvWaterNoiseAnimation.Scroll(layer, 1.2345f + 1f / 60f);
         Assert.NotEqual(Vector2.Zero, phase);
         Assert.InRange(phase.X, 0f, 1f - float.Epsilon);
         Assert.InRange(phase.Y, 0f, 1f - float.Epsilon);

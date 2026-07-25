@@ -2,6 +2,8 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.CommandLine;
 using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
@@ -445,9 +447,26 @@ public static class DmpToEsmCommand
             : new TeeProgressSink(consoleSink, jsonlSink);
         var pipeline = new PluginConversionPipeline(registry, sink);
 
-        var result = await pipeline.BuildAsync(inputs, ct);
+        // Turn on the two opt-in read-side diagnostics for the duration of the build so a DMP→ESM run
+        // surfaces silently-dropped subrecords (unmodeled shapes) and schema fallbacks, instead of them
+        // being invisible by default. Reset in finally so the global flags don't leak to later work.
+        UnmodeledSubrecordLog.Clear();
+        UnmodeledSubrecordLog.Enabled = true;
+        SubrecordSchemaRegistry.ClearFallbackLog();
+        SubrecordSchemaRegistry.EnableFallbackLogging = true;
+        PluginBuildResult result;
+        try
+        {
+            result = await pipeline.BuildAsync(inputs, ct);
+        }
+        finally
+        {
+            UnmodeledSubrecordLog.Enabled = false;
+            SubrecordSchemaRegistry.EnableFallbackLogging = false;
+        }
 
         AnsiConsole.WriteLine();
+        ReportReadDiagnostics();
         if (result.Success)
         {
             var s = result.Stats;
@@ -622,6 +641,34 @@ public static class DmpToEsmCommand
     ///     Parse a list of hex form-id strings (with or without 0x prefix) into a set.
     ///     Invalid entries are reported and skipped.
     /// </summary>
+    /// <summary>
+    ///     Prints a concise summary of the two read-side diagnostics captured during the build:
+    ///     subrecords the typed handlers iterated but did not model, and schema-lookup fallbacks.
+    ///     Both are silent by default; surfacing them lets a user judge recovery completeness.
+    /// </summary>
+    private static void ReportReadDiagnostics()
+    {
+        var unmodeled = UnmodeledSubrecordLog.Snapshot();
+        if (unmodeled.Count > 0)
+        {
+            var occurrences = unmodeled.Sum(e => (long)e.Count);
+            var top = string.Join(", ",
+                unmodeled.Take(5).Select(e => $"{e.RecordType}/{e.Signature}({e.DataLength})×{e.Count}"));
+            AnsiConsole.MarkupLine(
+                $"  [yellow]Unmodeled subrecords:[/] {unmodeled.Count:N0} shapes, {occurrences:N0} occurrences — " +
+                $"top: {Markup.Escape(top)}");
+        }
+
+        var fallbacks = SubrecordSchemaRegistry.GetFallbackUsage().ToList();
+        if (fallbacks.Count > 0)
+        {
+            var top = string.Join(", ",
+                fallbacks.Take(5).Select(f => $"{f.RecordType}/{f.Subrecord}:{f.FallbackType}×{f.Count}"));
+            AnsiConsole.MarkupLine(
+                $"  [yellow]Schema fallbacks:[/] {fallbacks.Count:N0} shapes — top: {Markup.Escape(top)}");
+        }
+    }
+
     private static HashSet<uint> ParseHexFormIdSet(string[] hexStrings)
     {
         var set = new HashSet<uint>();

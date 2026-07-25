@@ -11,13 +11,15 @@ public sealed class ExternalEmittanceResolverTests
     public void BuildIndex_DecodesRegionAndLittleEndianPackedLightRgb()
     {
         var index = ExternalEmittanceResolver.BuildIndex(
-            [new RegionRecord
-            {
-                FormId = 0x100,
-                EmittanceColorR = 255,
-                EmittanceColorG = 128,
-                EmittanceColorB = 0
-            }],
+            [
+                new RegionRecord
+                {
+                    FormId = 0x100,
+                    EmittanceColorR = 255,
+                    EmittanceColorG = 128,
+                    EmittanceColorB = 0
+                }
+            ],
             [new LightRecord { FormId = 0x200, Color = 0x7f3f1fu }]);
 
         Assert.Equal(new Vector3(1f, 128f / 255f, 0f), index[0x100]);

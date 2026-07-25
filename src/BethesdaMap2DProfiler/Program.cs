@@ -1,7 +1,7 @@
-using BethesdaMultitool;
-using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core;
 using System.Runtime.InteropServices;
+using BethesdaMultitool;
+using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Diagnostics;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using WinRT;

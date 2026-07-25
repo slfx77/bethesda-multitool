@@ -15,7 +15,9 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 public sealed class MaterialSwapTests
 {
     private static KeyValuePair<string, ShapeTextureOverride> Entry(string shape, string? diffuse)
-        => new(shape, new ShapeTextureOverride(diffuse, null));
+    {
+        return new KeyValuePair<string, ShapeTextureOverride>(shape, new ShapeTextureOverride(diffuse, null));
+    }
 
     private static Dictionary<string, string> Swaps(params (string From, string To)[] pairs)
     {

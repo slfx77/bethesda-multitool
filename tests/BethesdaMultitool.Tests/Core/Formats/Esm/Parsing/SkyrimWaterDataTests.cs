@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using Xunit;
 
@@ -17,18 +18,30 @@ public sealed class SkyrimWaterDataTests
     private static byte[] BuildSkyrimDnam(bool bigEndian)
     {
         var d = new byte[228]; // Skyrim LE DNAM length
-        WriteFloat(d, 16, 50f, bigEndian);   // Sun Specular Power
-        WriteFloat(d, 20, 0.5f, bigEndian);  // Reflectivity
+        WriteFloat(d, 16, 50f, bigEndian); // Sun Specular Power
+        WriteFloat(d, 20, 0.5f, bigEndian); // Reflectivity
         WriteFloat(d, 24, 0.02f, bigEndian); // Fresnel
         // Sentinel at +36 (FNV's Shallow offset) must NOT be read as Shallow — proves the +4 shift.
-        d[36] = 0xAA; d[37] = 0xBB; d[38] = 0xCC; d[39] = 0xFF;
-        d[40] = 0x10; d[41] = 0x20; d[42] = 0x30; d[43] = 0xFF; // Shallow
-        d[44] = 0x40; d[45] = 0x50; d[46] = 0x60; d[47] = 0xFF; // Deep
-        d[48] = 0x70; d[49] = 0x80; d[50] = 0x90; d[51] = 0xFF; // Reflection
-        WriteFloat(d, 144, 0f, bigEndian);    // under-water fog Near → DepthFalloffStart
+        d[36] = 0xAA;
+        d[37] = 0xBB;
+        d[38] = 0xCC;
+        d[39] = 0xFF;
+        d[40] = 0x10;
+        d[41] = 0x20;
+        d[42] = 0x30;
+        d[43] = 0xFF; // Shallow
+        d[44] = 0x40;
+        d[45] = 0x50;
+        d[46] = 0x60;
+        d[47] = 0xFF; // Deep
+        d[48] = 0x70;
+        d[49] = 0x80;
+        d[50] = 0x90;
+        d[51] = 0xFF; // Reflection
+        WriteFloat(d, 144, 0f, bigEndian); // under-water fog Near → DepthFalloffStart
         WriteFloat(d, 148, 1000f, bigEndian); // under-water fog Far → DepthFalloffEnd
-        WriteFloat(d, 156, 100f, bigEndian);  // Specular Power → Shininess
-        WriteFloat(d, 172, 80f, bigEndian);   // Noise Layer 1 UV Scale
+        WriteFloat(d, 156, 100f, bigEndian); // Specular Power → Shininess
+        WriteFloat(d, 172, 80f, bigEndian); // Noise Layer 1 UV Scale
         return d;
     }
 
@@ -71,7 +84,7 @@ public sealed class SkyrimWaterDataTests
     [InlineData(true)]
     public void ReadSkyrimWaterData_FeedsWaterAppearanceColors(bool bigEndian)
     {
-        var appearance = BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance
+        var appearance = WaterAppearance
             .FromVisualProperties(MiscEnvironmentHandler.ReadSkyrimWaterData(
                 BuildSkyrimDnam(bigEndian), bigEndian), null);
 
@@ -87,9 +100,12 @@ public sealed class SkyrimWaterDataTests
         // A truncated DNAM (optionalFromElement) carries the colors but not the later noise/specular
         // fields. The in-bounds guard must add only what's present (no IndexOutOfRange, no junk keys).
         var d = new byte[52];
-        d[40] = 0x11; d[41] = 0x22; d[42] = 0x33; d[43] = 0xFF; // Shallow only-region
+        d[40] = 0x11;
+        d[41] = 0x22;
+        d[42] = 0x33;
+        d[43] = 0xFF; // Shallow only-region
 
-        var props = MiscEnvironmentHandler.ReadSkyrimWaterData(d, isBigEndian: false);
+        var props = MiscEnvironmentHandler.ReadSkyrimWaterData(d, false);
 
         Assert.Equal(0x00_33_22_11u, Assert.IsType<uint>(props["ShallowColor"]));
         Assert.False(props.ContainsKey("Shininess"));

@@ -268,6 +268,43 @@ internal readonly record struct GpuTonemapSettings
         SunlightScale = 1.5f,
     };
 
+    /// <summary>
+    ///     TES4 engine-default HDR values. Semantics + field mapping recovered from the remaster-PDB
+    ///     decompile of <c>Sky::UpdateHDRValues</c> (per-field "authored ≤ 0 → engine-default
+    ///     Setting" substitution); numeric defaults are the shipped <c>Oblivion_default.ini</c>
+    ///     <c>[BlurShaderHDR]</c> values — see
+    ///     <c>tools/GhidraProject/tes4_hdr_engine_defaults_decompiled.txt</c>. The bright-pass trio
+    ///     matches FNV (which inherited TES4's settings); TES4 differs on BlurRadius 4 (FNV 8),
+    ///     EyeAdaptSpeed 0.7, and UpperLumClamp 1.0. Cinematic grade is neutral — TES4 has no IMGS,
+    ///     so none of FNV's exterior tint/saturation may leak in.
+    /// </summary>
+    public static GpuTonemapSettings EngineTes4Defaults { get; } = new()
+    {
+        Mode = GpuTonemapMode.EngineFo3Fnv,
+        Exposure = 1f,
+        EyeAdaptSpeed = 0.7f, // fEyeAdaptSpeed
+        EmissiveMult = 1f,    // fEmissiveHDRMult
+        TargetLum = 1.2f,     // fTargetLUM
+        UpperLumClamp = 1f,   // fUpperLUMClamp
+        Saturation = 1f,
+        ContrastAvgLum = 0.5f,
+        Contrast = 1f,
+        Brightness = 1f,
+        CinematicFlags = ImageSpaceCinematicFlags.All,
+        TintR = 1f,
+        TintG = 1f,
+        TintB = 1f,
+        TintAmount = 0f,
+        BloomEnabled = true,
+        BlurRadius = 4f,      // fBlurRadius
+        BlurPasses = 2f,      // iNumBlurpasses
+        BrightScale = 1.5f,   // fBrightScale
+        BrightClamp = 0.35f,  // fBrightClamp
+        // TES4 HNAM's SunlightDimmer is retained on the record; this bounded consumer is recovered
+        // only for the FO3/FNV scene-light path, so stay neutral here.
+        SunlightScale = 1f,
+    };
+
     public static GpuTonemapSettings GammaAcesDefaults { get; } = new()
     {
         Mode = GpuTonemapMode.GammaAces,
@@ -396,7 +433,7 @@ internal readonly record struct GpuTonemapSettings
         var settings = game switch
         {
             BethesdaGame.Morrowind => GammaAcesDefaults with { Mode = GpuTonemapMode.LegacyClamp },
-            BethesdaGame.Oblivion => ForOblivionWeather(null, interior),
+            BethesdaGame.Oblivion => ForOblivionWeather(null),
             BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas =>
                 interior ? EngineInteriorDefaults : EngineExteriorDefaults,
             // Retain Skyrim's semantic family even while GammaAces remains the default display
@@ -414,63 +451,33 @@ internal readonly record struct GpuTonemapSettings
     }
 
     /// <summary>
-    ///     Oblivion HDR factory. TES4 has no IMGS cinematic grade; applying FNV's exterior tint is the
-    ///     source of the washed-out/olive image. HNAM supplies the HDR/bloom fields while every cinematic
-    ///     operation remains neutral.
+    ///     Oblivion HDR factory. TES4 has no IMGS cinematic grade (applying FNV's exterior tint was
+    ///     the source of the washed-out/olive image) and no interior/exterior HDR split — one
+    ///     engine-default Setting set covers both. <c>Sky::UpdateHDRValues</c> copies each active
+    ///     weather's HNAM float with a per-field "authored ≤ 0 → engine default" substitution, so an
+    ///     authored 0 never reaches the shader (a 0 BrightClamp turned the bright pass into an
+    ///     everything-pass — the bloomed, clipped "posterized" horizon). TES4's all-zero
+    ///     DefaultWeather placeholder falls out naturally: every field substitutes.
     /// </summary>
-    public static GpuTonemapSettings ForOblivionWeather(WeatherHdr? hdr, bool interior = false)
+    public static GpuTonemapSettings ForOblivionWeather(WeatherHdr? hdr)
     {
-        var settings = (interior ? EngineInteriorDefaults : EngineExteriorDefaults) with
-        {
-            Saturation = 1f,
-            ContrastAvgLum = 0.5f,
-            Contrast = 1f,
-            Brightness = 1f,
-            TintR = 1f,
-            TintG = 1f,
-            TintB = 1f,
-            TintAmount = 0f,
-            CinematicFlags = ImageSpaceCinematicFlags.All,
-            // TES4 HNAM carries a similarly named retained field, but this bounded consumer is
-            // recovered only for the FO3/FNV scene-light path.
-            SunlightScale = 1f,
-        };
-
-        // TES4's DefaultWeather (0x0000015E) carries a required HNAM payload whose fourteen
-        // floats are all zero. It is a placeholder/default block, not an instruction to multiply
-        // the entire HDR scene by TargetLum=0 (which produces a black frame). Keep authored zeros
-        // in otherwise-active HNAM records losslessly; only the wholly empty placeholder falls back.
-        if (hdr is null || IsEmptyOblivionWeatherHdr(hdr)) return settings;
+        var settings = EngineTes4Defaults;
+        if (hdr is null) return settings;
         return settings with
         {
-            EyeAdaptSpeed = hdr.EyeAdaptSpeed,
-            BlurRadius = hdr.BlurRadius,
-            BlurPasses = hdr.BlurPasses,
-            EmissiveMult = hdr.EmissiveMult,
-            TargetLum = hdr.TargetLum,
-            UpperLumClamp = hdr.UpperLumClamp,
-            BrightScale = hdr.BrightScale,
-            BrightClamp = hdr.BrightClamp,
+            EyeAdaptSpeed = PositiveOr(hdr.EyeAdaptSpeed, settings.EyeAdaptSpeed),
+            BlurRadius = PositiveOr(hdr.BlurRadius, settings.BlurRadius),
+            BlurPasses = PositiveOr(hdr.BlurPasses, settings.BlurPasses),
+            EmissiveMult = PositiveOr(hdr.EmissiveMult, settings.EmissiveMult),
+            TargetLum = PositiveOr(hdr.TargetLum, settings.TargetLum),
+            UpperLumClamp = PositiveOr(hdr.UpperLumClamp, settings.UpperLumClamp),
+            BrightScale = PositiveOr(hdr.BrightScale, settings.BrightScale),
+            BrightClamp = PositiveOr(hdr.BrightClamp, settings.BrightClamp),
         };
     }
 
-#pragma warning disable S1244 // exact all-zero HNAM placeholder detection by design (see comment above)
-    private static bool IsEmptyOblivionWeatherHdr(WeatherHdr hdr) =>
-        hdr.EyeAdaptSpeed == 0f &&
-        hdr.BlurRadius == 0f &&
-        hdr.BlurPasses == 0f &&
-        hdr.EmissiveMult == 0f &&
-        hdr.TargetLum == 0f &&
-        hdr.UpperLumClamp == 0f &&
-        hdr.BrightScale == 0f &&
-        hdr.BrightClamp == 0f &&
-        hdr.LumRampNoTex == 0f &&
-        hdr.LumRampMin == 0f &&
-        hdr.LumRampMax == 0f &&
-        hdr.SunlightDimmer == 0f &&
-        hdr.GrassDimmer == 0f &&
-        hdr.TreeDimmer == 0f;
-#pragma warning restore S1244
+    private static float PositiveOr(float authored, float engineDefault) =>
+        authored > 0f ? authored : engineDefault;
 
     /// <summary>Env overrides: mode swap for A/Bs, bloom kill-switch, + the existing exposure knob.</summary>
     public static GpuTonemapSettings ApplyOverrides(GpuTonemapSettings settings)

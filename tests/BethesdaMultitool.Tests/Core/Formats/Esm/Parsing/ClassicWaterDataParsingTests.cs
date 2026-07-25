@@ -25,15 +25,15 @@ public sealed class ClassicWaterDataParsingTests
     public void FalloutNvDnam196_ParsesClassicSurfaceOffsetsAliasesAndFnam(bool bigEndian)
     {
         var dnam = new byte[196];
-        WriteFloat(dnam, 16, 116.25f, bigEndian);  // SunPower
-        WriteFloat(dnam, 20, 120.25f, bigEndian);  // ReflectivityAmount
-        WriteFloat(dnam, 24, 124.25f, bigEndian);  // FresnelAmount
-        WriteFloat(dnam, 32, 132.25f, bigEndian);  // FogNear
-        WriteFloat(dnam, 36, 136.25f, bigEndian);  // FogFar
+        WriteFloat(dnam, 16, 116.25f, bigEndian); // SunPower
+        WriteFloat(dnam, 20, 120.25f, bigEndian); // ReflectivityAmount
+        WriteFloat(dnam, 24, 124.25f, bigEndian); // FresnelAmount
+        WriteFloat(dnam, 32, 132.25f, bigEndian); // FogNear
+        WriteFloat(dnam, 36, 136.25f, bigEndian); // FogFar
         WriteUInt32(dnam, 40, 0xAA_33_22_11u, bigEndian); // ShallowColor
         WriteUInt32(dnam, 44, 0xBB_66_55_44u, bigEndian); // DeepColor
         WriteUInt32(dnam, 48, 0xCC_99_88_77u, bigEndian); // ReflectionColor
-        WriteFloat(dnam, 96, 196.25f, bigEndian);  // NoiseScale
+        WriteFloat(dnam, 96, 196.25f, bigEndian); // NoiseScale
         WriteFloat(dnam, 100, 100.25f, bigEndian); // Layer 1 WindDir
         WriteFloat(dnam, 104, 104.25f, bigEndian); // Layer 2 WindDir
         WriteFloat(dnam, 108, 108.25f, bigEndian); // Layer 3 WindDir
@@ -42,19 +42,19 @@ public sealed class ClassicWaterDataParsingTests
         WriteFloat(dnam, 120, 120.75f, bigEndian); // Layer 3 WindSpeed
         WriteFloat(dnam, 124, 124.50f, bigEndian); // DepthFalloffStart
         WriteFloat(dnam, 128, 128.50f, bigEndian); // DepthFalloffEnd
-        WriteFloat(dnam, 132, 0.625f, bigEndian);  // AboveWaterFogAmount
+        WriteFloat(dnam, 132, 0.625f, bigEndian); // AboveWaterFogAmount
         WriteFloat(dnam, 136, 136.50f, bigEndian); // NormalsUVScale
-        WriteFloat(dnam, 140, 0.875f, bigEndian);  // UnderWaterFogAmount
+        WriteFloat(dnam, 140, 0.875f, bigEndian); // UnderWaterFogAmount
         WriteFloat(dnam, 144, 144.50f, bigEndian); // UnderWaterFogNear
         WriteFloat(dnam, 148, 148.50f, bigEndian); // UnderWaterFogFar
-        WriteFloat(dnam, 152, 2.75f, bigEndian);   // DistortionAmount
+        WriteFloat(dnam, 152, 2.75f, bigEndian); // DistortionAmount
         WriteFloat(dnam, 156, 156.50f, bigEndian); // Shininess
         WriteFloat(dnam, 172, 172.25f, bigEndian); // Layer 1 UVScale
         WriteFloat(dnam, 176, 176.25f, bigEndian); // Layer 2 UVScale
         WriteFloat(dnam, 180, 180.25f, bigEndian); // Layer 3 UVScale
-        WriteFloat(dnam, 184, 0.184f, bigEndian);  // Layer 1 AmpScale
-        WriteFloat(dnam, 188, 0.188f, bigEndian);  // Layer 2 AmpScale
-        WriteFloat(dnam, 192, 0.192f, bigEndian);  // Layer 3 AmpScale
+        WriteFloat(dnam, 184, 0.184f, bigEndian); // Layer 1 AmpScale
+        WriteFloat(dnam, 188, 0.188f, bigEndian); // Layer 2 AmpScale
+        WriteFloat(dnam, 192, 0.192f, bigEndian); // Layer 3 AmpScale
 
         var water = ParseWater(bigEndian,
             ("FNAM", new byte[] { 0x03 }), // WATR U8: bit 0 Causes Damage, bit 1 Reflective.
@@ -208,15 +208,18 @@ public sealed class ClassicWaterDataParsingTests
         return Assert.IsType<WaterAppearance>(WaterAppearance.FromVisualProperties(properties, null));
     }
 
-    private static Dictionary<string, object?> CompleteRefractionProperties() => new()
+    private static Dictionary<string, object?> CompleteRefractionProperties()
     {
-        ["FogNear"] = 100f,
-        ["FogFar"] = 10_000f,
-        ["DepthFalloffStart"] = 0f,
-        ["DepthFalloffEnd"] = 0.01f,
-        ["AboveWaterFogAmount"] = 0.5f,
-        ["DistortionAmount"] = 250f,
-    };
+        return new Dictionary<string, object?>
+        {
+            ["FogNear"] = 100f,
+            ["FogFar"] = 10_000f,
+            ["DepthFalloffStart"] = 0f,
+            ["DepthFalloffEnd"] = 0.01f,
+            ["AboveWaterFogAmount"] = 0.5f,
+            ["DistortionAmount"] = 250f
+        };
+    }
 
     private static WaterRecord ParseWater(
         bool bigEndian,
@@ -228,19 +231,19 @@ public sealed class ClassicWaterDataParsingTests
         data.CopyTo(file, headerSize);
         var record = new DetectedMainRecord("WATR", (uint)data.Length, 0, 0x0100_1234, 0, bigEndian)
         {
-            HeaderSize = headerSize,
+            HeaderSize = headerSize
         };
         var scan = new EsmRecordScanResult
         {
             Game = BethesdaGame.FalloutNewVegas,
-            MainRecords = [record],
+            MainRecords = [record]
         };
         var context = new RecordParserContext(
             scan,
-            formIdCorrelations: null,
-            accessor: new ByteArrayMemoryAccessor(file),
-            fileSize: file.Length,
-            minidumpInfo: null);
+            null,
+            new ByteArrayMemoryAccessor(file),
+            file.Length,
+            null);
 
         return Assert.Single(new MiscEnvironmentHandler(context).ParseWater());
     }

@@ -382,7 +382,7 @@ public class WorldObjectEncoderTests
             ]
         };
 
-        var encoded = TermEncoder.EncodeNew(term, validFormIds: new HashSet<uint> { 0xABC, 0xDEF });
+        var encoded = TermEncoder.EncodeNew(term, new HashSet<uint> { 0xABC, 0xDEF });
 
         var itxts = encoded.Subrecords.Where(s => s.Signature == "ITXT").ToList();
         var rnams = encoded.Subrecords.Where(s => s.Signature == "RNAM").ToList();

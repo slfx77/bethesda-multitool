@@ -172,11 +172,14 @@ internal static class NifTriStripExtractor
             pos += numVerts * 16;
         }
 
-        var numUVSets = bsDataFlags & 1;
-        if (numUVSets != 0)
-        {
-            pos += numVerts * 8;
-        }
+        // Pre-20.2.0.7 the low 6 bits are a UV-set COUNT (retail TES4 collision NiTriStripsData
+        // authors 2 sets — arringouterwall01 block 3); 20.2.0.7's BSDataFlags collapse it to a
+        // single has-UV bit. Reading the count as a bit skipped nothing on multi-set blocks and
+        // desynced the strip section into "no triangles".
+        var numUVSets = binaryVersion >= NifVersions.Gamebryo202007
+            ? bsDataFlags & 1
+            : bsDataFlags & 0x3F;
+        pos += numVerts * 8 * numUVSets;
 
         pos += 2; // ConsistencyFlags
         if (binaryVersion >= 0x14000004)

@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Nif.Parser;
-using BethesdaMultitool.Core.Formats.Nif;
 
 namespace BethesdaMultitool.Tests.Helpers;
 

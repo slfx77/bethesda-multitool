@@ -88,8 +88,10 @@ internal static class BigEndianNifBuilder
         [(0x0101, 0), (0x0001, 300), (0x0100, 230)];
 
     /// <summary>Ascending 16-byte pattern — every 4-byte unit changes under the AGD swap.</summary>
-    public static byte[] DefaultAgdPayload() =>
-        [.. Enumerable.Range(0, 16).Select(i => (byte)i)];
+    public static byte[] DefaultAgdPayload()
+    {
+        return [.. Enumerable.Range(0, 16).Select(i => (byte)i)];
+    }
 
     /// <summary>
     ///     Build the fixture. All three knobs default to the values the conversion regression
@@ -118,13 +120,13 @@ internal static class BigEndianNifBuilder
             BuildNiAlphaProperty(alphaFlags, alphaThreshold),
             BuildShaderProperty(),
             BuildDismemberSkinInstance(partitions),
-            BuildAdditionalGeometryData(agdPayload),
+            BuildAdditionalGeometryData(agdPayload)
         ];
 
         string[] blockTypeNames =
         [
             "NiNode", "NiTriShape", "NiTriShapeData", "NiAlphaProperty",
-            "BSShaderNoLightingProperty", "BSDismemberSkinInstance", "NiAdditionalGeometryData",
+            "BSShaderNoLightingProperty", "BSDismemberSkinInstance", "NiAdditionalGeometryData"
         ];
 
         var w = new Writer();
@@ -133,13 +135,13 @@ internal static class BigEndianNifBuilder
         w.Ascii("Gamebryo File Format, Version 20.2.0.7");
         w.U8(0x0A);
         w.U32Le(0x14020007); // binary version
-        w.U8(0);             // endian byte: 0 = big-endian
-        w.U32Le(11);         // user version
+        w.U8(0); // endian byte: 0 = big-endian
+        w.U32Le(11); // user version
         w.U32Le((uint)blocks.Length);
-        w.U32Le(34);         // BS version (FNV)
-        w.ExportString();    // Author
-        w.ExportString();    // Process Script (BS < 131)
-        w.ExportString();    // Export Script (no Max Filepath below BS 103)
+        w.U32Le(34); // BS version (FNV)
+        w.ExportString(); // Author
+        w.ExportString(); // Process Script (BS < 131)
+        w.ExportString(); // Export Script (no Max Filepath below BS 103)
 
         // ── Header (BE segment) ──
         w.U16Be((ushort)blockTypeNames.Length);
@@ -171,8 +173,8 @@ internal static class BigEndianNifBuilder
         }
 
         // ── Footer ──
-        w.U32Be(1);                 // num roots
-        w.U32Be(NiNodeBlockIndex);  // root
+        w.U32Be(1); // num roots
+        w.U32Be(NiNodeBlockIndex); // root
 
         return w.ToArray();
     }
@@ -247,31 +249,45 @@ internal static class BigEndianNifBuilder
         var w = new Writer();
         w.I32Be(0); // group id
         w.U16Be(3); // num vertices
-        w.U8(0);    // keep flags
-        w.U8(0);    // compress flags
+        w.U8(0); // keep flags
+        w.U8(0); // compress flags
 
         w.U8(1); // has vertices
-        w.F32Be(0f); w.F32Be(0f); w.F32Be(0f);
-        w.F32Be(1f); w.F32Be(0f); w.F32Be(0f);
-        w.F32Be(0f); w.F32Be(1f); w.F32Be(0f);
+        w.F32Be(0f);
+        w.F32Be(0f);
+        w.F32Be(0f);
+        w.F32Be(1f);
+        w.F32Be(0f);
+        w.F32Be(0f);
+        w.F32Be(0f);
+        w.F32Be(1f);
+        w.F32Be(0f);
 
         w.U16Be(0x0001); // BS Data Flags: Has UV, no tangents
 
         w.U8(1); // has normals
         for (var i = 0; i < 3; i++)
         {
-            w.F32Be(0f); w.F32Be(0f); w.F32Be(1f);
+            w.F32Be(0f);
+            w.F32Be(0f);
+            w.F32Be(1f);
         }
 
         // Bounding sphere: center + radius.
-        w.F32Be(0f); w.F32Be(0f); w.F32Be(0f); w.F32Be(1.5f);
+        w.F32Be(0f);
+        w.F32Be(0f);
+        w.F32Be(0f);
+        w.F32Be(1.5f);
 
         w.U8(0); // has vertex colors
 
         // One UV set × 3 vertices.
-        w.F32Be(0f); w.F32Be(0f);
-        w.F32Be(1f); w.F32Be(0f);
-        w.F32Be(0f); w.F32Be(1f);
+        w.F32Be(0f);
+        w.F32Be(0f);
+        w.F32Be(1f);
+        w.F32Be(0f);
+        w.F32Be(0f);
+        w.F32Be(1f);
 
         w.U16Be(0x4000); // consistency flags: CT_STATIC
         w.I32Be(AdditionalGeometryDataBlockIndex);
@@ -279,8 +295,10 @@ internal static class BigEndianNifBuilder
         // NiTriBasedGeomData + NiTriShapeData tail.
         w.U16Be(1); // num triangles
         w.U32Be(3); // num triangle points
-        w.U8(1);    // has triangles
-        w.U16Be(0); w.U16Be(1); w.U16Be(2);
+        w.U8(1); // has triangles
+        w.U16Be(0);
+        w.U16Be(1);
+        w.U16Be(2);
         w.U16Be(0); // num match groups
         return w.ToArray();
     }
@@ -302,24 +320,27 @@ internal static class BigEndianNifBuilder
     {
         var w = new Writer();
         ObjectNetHeader(w, -1);
-        w.U16Be(0x0001);      // shade flags: SHADING_SMOOTH
-        w.U32Be(0);           // shader type: SHADER_DEFAULT
-        w.U32Be(0x82000000);  // shader flags
-        w.U32Be(0x00000001);  // shader flags 2
-        w.F32Be(1f);          // environment map scale
-        w.U32Be(3);           // texture clamp mode: WRAP_S_WRAP_T
+        w.U16Be(0x0001); // shade flags: SHADING_SMOOTH
+        w.U32Be(0); // shader type: SHADER_DEFAULT
+        w.U32Be(0x82000000); // shader flags
+        w.U32Be(0x00000001); // shader flags 2
+        w.F32Be(1f); // environment map scale
+        w.U32Be(3); // texture clamp mode: WRAP_S_WRAP_T
         w.SizedStringBe("synth.dds");
-        w.F32Be(1f); w.F32Be(0f); w.F32Be(1f); w.F32Be(0f); // falloff angles/opacities
+        w.F32Be(1f);
+        w.F32Be(0f);
+        w.F32Be(1f);
+        w.F32Be(0f); // falloff angles/opacities
         return w.ToArray();
     }
 
     private static byte[] BuildDismemberSkinInstance((ushort PartFlag, ushort BodyPart)[] partitions)
     {
         var w = new Writer();
-        w.I32Be(-1);                // NiSkinData ref
-        w.I32Be(-1);                // NiSkinPartition ref
-        w.I32Be(NiNodeBlockIndex);  // skeleton root
-        w.U32Be(1);                 // num bones
+        w.I32Be(-1); // NiSkinData ref
+        w.I32Be(-1); // NiSkinPartition ref
+        w.I32Be(NiNodeBlockIndex); // skeleton root
+        w.U32Be(1); // num bones
         w.I32Be(NiNodeBlockIndex);
         w.U32Be((uint)partitions.Length);
         foreach (var (partFlag, bodyPart) in partitions)
@@ -348,13 +369,13 @@ internal static class BigEndianNifBuilder
         w.U8(2);
 
         w.U32Be(1); // num blocks
-        w.U8(1);    // NiAGDDataBlocks.Has Data
+        w.U8(1); // NiAGDDataBlocks.Has Data
 
         // NiAGDDataBlock (arg 0 — no trailing Shader Index / Total Size).
         w.U32Be((uint)payload.Length); // block size
-        w.U32Be(1);                    // num blocks
-        w.U32Be(0);                    // block offsets[0]
-        w.U32Be(1);                    // num data
+        w.U32Be(1); // num blocks
+        w.U32Be(0); // block offsets[0]
+        w.U32Be(1); // num data
         w.U32Be((uint)payload.Length); // data sizes[0]
         w.Bytes(payload);
         return w.ToArray();
@@ -365,11 +386,20 @@ internal static class BigEndianNifBuilder
     {
         private readonly List<byte> _bytes = [];
 
-        public void U8(byte value) => _bytes.Add(value);
+        public void U8(byte value)
+        {
+            _bytes.Add(value);
+        }
 
-        public void Bytes(byte[] value) => _bytes.AddRange(value);
+        public void Bytes(byte[] value)
+        {
+            _bytes.AddRange(value);
+        }
 
-        public void Ascii(string value) => _bytes.AddRange(Encoding.ASCII.GetBytes(value));
+        public void Ascii(string value)
+        {
+            _bytes.AddRange(Encoding.ASCII.GetBytes(value));
+        }
 
         public void U16Be(ushort value)
         {
@@ -399,9 +429,15 @@ internal static class BigEndianNifBuilder
             _bytes.Add((byte)(value >> 24));
         }
 
-        public void I32Be(int value) => U32Be(unchecked((uint)value));
+        public void I32Be(int value)
+        {
+            U32Be(unchecked((uint)value));
+        }
 
-        public void F32Be(float value) => U32Be(BitConverter.SingleToUInt32Bits(value));
+        public void F32Be(float value)
+        {
+            U32Be(BitConverter.SingleToUInt32Bits(value));
+        }
 
         /// <summary>BSStreamHeader ExportString: length byte (incl. terminator) + NUL.</summary>
         public void ExportString()
@@ -417,6 +453,9 @@ internal static class BigEndianNifBuilder
             Ascii(value);
         }
 
-        public byte[] ToArray() => [.. _bytes];
+        public byte[] ToArray()
+        {
+            return [.. _bytes];
+        }
     }
 }

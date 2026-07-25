@@ -1,7 +1,5 @@
-using BethesdaMultitool.Core.Formats.Bsa.Extraction;
-using BethesdaMultitool.Core.Formats.Bsa.Index;
-using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaAudioTranscriber.Models;
+using BethesdaMultitool.Core.Formats.Bsa.Index;
 using NAudio.Wave;
 
 namespace BethesdaAudioTranscriber.Services;
@@ -14,8 +12,8 @@ namespace BethesdaAudioTranscriber.Services;
 public sealed class AudioPlaybackService : IDisposable
 {
     private readonly LinkedList<(string key, byte[] data)> _cache = new();
-    private readonly Dictionary<string, ArchiveReader> _readers = new();
     private readonly int _maxCacheSize;
+    private readonly Dictionary<string, ArchiveReader> _readers = new();
     private RawSourceWaveStream? _currentStream;
     private Dictionary<string, ArchiveReader.ArchiveEntry> _fileRecords = new();
 

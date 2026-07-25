@@ -19,12 +19,42 @@ public sealed class TerminalEmbeddedScriptRoundTripTests
     private const uint DisplayNote = 0x000B1234;
     private const uint SubTerminal = 0x000C5678;
 
+    private static readonly byte[] BigEndianBytecode =
+    [
+        0x00, 0x1D, 0x00, 0x00,
+        0x00, 0x10, 0x00, 0x08,
+        0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+        0x00, 0x15, 0x00, 0x09,
+        0x66,
+        0x00, 0x07,
+        0x00, 0x06,
+        0x20, 0x6E, 0x00, 0x00, 0x00, 0x01,
+        0x00, 0x11, 0x00, 0x00
+    ];
+
+    private static readonly byte[] ExpectedLittleEndianBytecode =
+    [
+        0x1D, 0x00, 0x00, 0x00,
+        0x10, 0x00, 0x08, 0x00,
+        0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+        0x15, 0x00, 0x09, 0x00,
+        0x66,
+        0x07, 0x00,
+        0x06, 0x00,
+        0x20, 0x6E, 0x01, 0x00, 0x00, 0x00,
+        0x11, 0x00, 0x00, 0x00
+    ];
+
     [Fact]
     public void EncodeNew_EmbeddedScriptUsesCanonicalHeaderAndPreservesTableOrder()
     {
         var encoded = TermEncoder.EncodeNew(
             CreateTerminal(),
-            validFormIds: new HashSet<uint>
+            new HashSet<uint>
             {
                 FirstObjectRef, SecondObjectRef, DisplayNote, SubTerminal
             });
@@ -80,7 +110,7 @@ public sealed class TerminalEmbeddedScriptRoundTripTests
     {
         var encoded = TermEncoder.EncodeNew(
             CreateTerminal(),
-            validFormIds: new HashSet<uint>
+            new HashSet<uint>
             {
                 FirstObjectRef, SecondObjectRef, DisplayNote, SubTerminal
             });
@@ -125,17 +155,17 @@ public sealed class TerminalEmbeddedScriptRoundTripTests
                         {
                             FunctionIndex = 79, // GetQuestVariable
                             Parameter1 = sourceQuest,
-                            Parameter2 = 17,
-                        },
-                    ],
-                },
-            ],
+                            Parameter2 = 17
+                        }
+                    ]
+                }
+            ]
         };
 
         var encoded = TermEncoder.EncodeNew(
             terminal,
-            validFormIds: new HashSet<uint> { targetQuest },
-            remapTable: new Dictionary<uint, uint> { [sourceQuest] = targetQuest });
+            new HashSet<uint> { targetQuest },
+            new Dictionary<uint, uint> { [sourceQuest] = targetQuest });
 
         var condition = Assert.Single(Assert.Single(ParseEncodedTerminal(encoded).MenuItems).Conditions);
         Assert.Equal((ushort)79, condition.FunctionIndex);
@@ -165,21 +195,21 @@ public sealed class TerminalEmbeddedScriptRoundTripTests
                         {
                             FunctionIndex = 79, // GetQuestVariable
                             Parameter1 = danglingQuest,
-                            Parameter2 = 17,
-                        },
-                    ],
+                            Parameter2 = 17
+                        }
+                    ]
                 },
                 new TerminalMenuItem
                 {
                     Text = "Safe sibling",
-                    ResultText = "Still available",
-                },
-            ],
+                    ResultText = "Still available"
+                }
+            ]
         };
 
         var encoded = TermEncoder.EncodeNew(
             terminal,
-            validFormIds: new HashSet<uint> { 0x00000001 });
+            new HashSet<uint> { 0x00000001 });
 
         var item = Assert.Single(ParseEncodedTerminal(encoded).MenuItems);
         Assert.Equal("Safe sibling", item.Text);
@@ -205,16 +235,16 @@ public sealed class TerminalEmbeddedScriptRoundTripTests
                     [
                         new DialogueCondition
                         {
-                            FunctionIndex = 0x5102,
-                        },
-                    ],
+                            FunctionIndex = 0x5102
+                        }
+                    ]
                 },
                 new TerminalMenuItem
                 {
                     Text = "Safe sibling",
-                    ResultText = "Still available",
-                },
-            ],
+                    ResultText = "Still available"
+                }
+            ]
         };
 
         var encoded = TermEncoder.EncodeNew(terminal);
@@ -289,34 +319,4 @@ public sealed class TerminalEmbeddedScriptRoundTripTests
 
         return Assert.Single(parser.ParseTerminals());
     }
-
-    private static readonly byte[] BigEndianBytecode =
-    [
-        0x00, 0x1D, 0x00, 0x00,
-        0x00, 0x10, 0x00, 0x08,
-        0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00,
-        0x00, 0x15, 0x00, 0x09,
-        0x66,
-        0x00, 0x07,
-        0x00, 0x06,
-        0x20, 0x6E, 0x00, 0x00, 0x00, 0x01,
-        0x00, 0x11, 0x00, 0x00
-    ];
-
-    private static readonly byte[] ExpectedLittleEndianBytecode =
-    [
-        0x1D, 0x00, 0x00, 0x00,
-        0x10, 0x00, 0x08, 0x00,
-        0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00,
-        0x15, 0x00, 0x09, 0x00,
-        0x66,
-        0x07, 0x00,
-        0x06, 0x00,
-        0x20, 0x6E, 0x01, 0x00, 0x00, 0x00,
-        0x11, 0x00, 0x00, 0x00
-    ];
 }

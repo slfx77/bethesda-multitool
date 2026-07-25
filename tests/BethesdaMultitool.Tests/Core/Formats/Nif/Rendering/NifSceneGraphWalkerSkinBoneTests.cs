@@ -1,8 +1,6 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
-using BethesdaMultitool.Core.Formats.Nif;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -128,4 +126,3 @@ public sealed class NifSceneGraphWalkerSkinBoneTests
         return ("NiSkinInstance", b);
     }
 }
-

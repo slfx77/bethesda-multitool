@@ -1,6 +1,5 @@
 using System.Numerics;
 using BethesdaMultitool.CLI.Rendering.Npc;
-using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -12,15 +11,15 @@ public sealed class NifEyeTransformTests
 {
     private const float PositionEpsilon = 0.01f;
 
-    public NifEyeTransformTests()
-    {
-        BucketBTestGuard.SkipUnlessEnabled();
-    }
-
     private static readonly string SampleRoot = NifSampleLoader.FindCharactersSampleRoot();
     private static readonly string EyeLeftPath = Path.Combine(SampleRoot, "head", "eyelefthuman.nif");
     private static readonly string EyeRightPath = Path.Combine(SampleRoot, "head", "eyerighthuman.nif");
     private static readonly string HeadHumanPath = Path.Combine(SampleRoot, "head", "headhuman.nif");
+
+    public NifEyeTransformTests()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+    }
 
     [Theory]
     [InlineData(@"head\eyelefthuman.nif")]

@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
@@ -6,8 +7,8 @@ using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
-using EsmStringUtils = BethesdaMultitool.Core.Utils.EsmStringUtils;
 using Xunit;
+using EsmStringUtils = BethesdaMultitool.Core.Utils.EsmStringUtils;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Reporting;
 
@@ -30,12 +31,12 @@ public sealed class ScriptEmissionProvenanceReporterTests
             DecompiledText = "ScriptName CapturedScript",
             IsBigEndian = true,
             Variables = [new ScriptVariableInfo(7, "Flag", 1)],
-            ReferencedObjects = [0x00111111],
+            ReferencedObjects = [0x00111111]
         };
         var sctx = GameTextBytes(source.SourceText);
         var scda = new byte[] { 0x1D, 0x00, 0x00, 0x00 };
         var slsd = new byte[24];
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(slsd, 7);
+        BinaryPrimitives.WriteUInt32LittleEndian(slsd, 7);
         slsd[16] = 1;
         var emitted = new EncodedSubrecord[]
         {
@@ -43,7 +44,7 @@ public sealed class ScriptEmissionProvenanceReporterTests
             new("SCDA", scda),
             new("SLSD", slsd),
             new("SCVR", StringBytes("Flag")),
-            new("SCRO", BitConverter.GetBytes(0x00222222u)),
+            new("SCRO", BitConverter.GetBytes(0x00222222u))
         };
         var sink = new RecordingSink();
 
@@ -86,7 +87,7 @@ public sealed class ScriptEmissionProvenanceReporterTests
             FormId = 0x00123456,
             EditorId = "CapturedScript",
             SourceText = "scn CapturedScript\r\n; it’s captured",
-            SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject,
+            SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject
         };
         var emittedSctx = GameTextBytes("scn DifferentScript");
         var sink = new RecordingSink();
@@ -119,7 +120,7 @@ public sealed class ScriptEmissionProvenanceReporterTests
     {
         var scda = new byte[] { 0x1D, 0x00 };
         var originalSlsd = new byte[24];
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(originalSlsd, 7);
+        BinaryPrimitives.WriteUInt32LittleEndian(originalSlsd, 7);
         originalSlsd[16] = 1;
         const string masterSource = "scn RetailScript\r\nBegin GameMode\r\nEnd";
         const string augmentedSource =
@@ -130,7 +131,7 @@ public sealed class ScriptEmissionProvenanceReporterTests
             {
                 Signature = "SCPT",
                 FormId = 0x0000ABCD,
-                DataSize = 0,
+                DataSize = 0
             },
             Subrecords =
             [
@@ -138,11 +139,11 @@ public sealed class ScriptEmissionProvenanceReporterTests
                 Sub("SCDA", scda),
                 Sub("SCTX", GameTextBytes(masterSource)),
                 Sub("SLSD", originalSlsd),
-                Sub("SCVR", StringBytes("RetailFlag")),
-            ],
+                Sub("SCVR", StringBytes("RetailFlag"))
+            ]
         };
         var addedSlsd = new byte[24];
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(addedSlsd, 8);
+        BinaryPrimitives.WriteUInt32LittleEndian(addedSlsd, 8);
         addedSlsd[16] = 1;
         var emitted = master.Subrecords
             .Select(subrecord => subrecord.Signature == "SCTX"
@@ -150,7 +151,7 @@ public sealed class ScriptEmissionProvenanceReporterTests
                 : subrecord)
             .Concat([
                 Sub("SLSD", addedSlsd),
-                Sub("SCVR", StringBytes("RecoveredFlag")),
+                Sub("SCVR", StringBytes("RecoveredFlag"))
             ])
             .ToArray();
         var augmentation = new ScriptVariableAugmentation(
@@ -200,17 +201,17 @@ public sealed class ScriptEmissionProvenanceReporterTests
             {
                 Signature = "SCPT",
                 FormId = 0x0000ABCD,
-                DataSize = 0,
+                DataSize = 0
             },
             Subrecords =
             [
                 Sub("EDID", StringBytes("RetailScript")),
                 Sub("SCDA", scda),
-                Sub("SCTX", source),
-            ],
+                Sub("SCTX", source)
+            ]
         };
         var addedSlsd = new byte[24];
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(addedSlsd, 8);
+        BinaryPrimitives.WriteUInt32LittleEndian(addedSlsd, 8);
         addedSlsd[16] = 1;
         var augmentedSource = GameTextBytes(
             "scn RetailScript\r\nint RecoveredFlag\r\nBegin GameMode\r\nEnd");
@@ -219,10 +220,10 @@ public sealed class ScriptEmissionProvenanceReporterTests
                 ? Sub("SCTX", augmentedSource)
                 : subrecord)
             .Concat(
-        [
-            Sub("SLSD", addedSlsd),
-            Sub("SCVR", StringBytes("RecoveredFlag")),
-        ]).ToArray();
+            [
+                Sub("SLSD", addedSlsd),
+                Sub("SCVR", StringBytes("RecoveredFlag"))
+            ]).ToArray();
         var augmentation = new ScriptVariableAugmentation(
             master.Header.FormId,
             new ScriptVariableInfo(8, "RecoveredFlag", 1),
@@ -258,7 +259,7 @@ public sealed class ScriptEmissionProvenanceReporterTests
         var emitted = master.Subrecords.Concat(
         [
             Sub("SLSD", LocalSlsd(8, 1)),
-            Sub("SCVR", StringBytes("RecoveredFlag")),
+            Sub("SCVR", StringBytes("RecoveredFlag"))
         ]).ToArray();
         var augmentation = new ScriptVariableAugmentation(
             master.Header.FormId,
@@ -284,12 +285,12 @@ public sealed class ScriptEmissionProvenanceReporterTests
                 "SCTX" => Sub("SCTX", GameTextBytes(
                     "scn RetailScript\nint RecoveredFlag\nBegin GameMode\nEnd")),
                 "SCDA" => Sub("SCDA", [0x1D, 0x01]),
-                _ => subrecord,
+                _ => subrecord
             })
             .Concat(
             [
                 Sub("SLSD", LocalSlsd(8, 1)),
-                Sub("SCVR", StringBytes("RecoveredFlag")),
+                Sub("SCVR", StringBytes("RecoveredFlag"))
             ]).ToArray();
         var augmentation = new ScriptVariableAugmentation(
             master.Header.FormId,
@@ -316,7 +317,7 @@ public sealed class ScriptEmissionProvenanceReporterTests
             CompiledSize = 4,
             ExecutableBundleFromRuntime = true,
             DecompiledText = "ScriptName StaleScript\r\nBegin OnTriggerEnter BRef\r\nEnd",
-            IsBigEndian = true,
+            IsBigEndian = true
         };
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
@@ -326,7 +327,7 @@ public sealed class ScriptEmissionProvenanceReporterTests
                 0x01000800,
                 [
                     new EncodedSubrecord("SCTX", GameTextBytes(source.SourceText)),
-                    new EncodedSubrecord("SCDA", [0x1D, 0x00, 0x00, 0x00]),
+                    new EncodedSubrecord("SCDA", [0x1D, 0x00, 0x00, 0x00])
                 ]));
 
         Assert.Contains("shared emission contract rejected", exception.Message, StringComparison.Ordinal);
@@ -348,7 +349,7 @@ public sealed class ScriptEmissionProvenanceReporterTests
             ExecutableBundleFromRuntime = true,
             DecompiledText = "ScriptName CapturedScript",
             IsBigEndian = true,
-            Variables = [new ScriptVariableInfo(7, "Flag", 1)],
+            Variables = [new ScriptVariableInfo(7, "Flag", 1)]
         };
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
@@ -358,56 +359,78 @@ public sealed class ScriptEmissionProvenanceReporterTests
                 0x01000800,
                 [
                     new EncodedSubrecord("SCTX", GameTextBytes(source.SourceText)),
-                    new EncodedSubrecord("SCDA", [0x1D, 0x00, 0x00, 0x00]),
+                    new EncodedSubrecord("SCDA", [0x1D, 0x00, 0x00, 0x00])
                 ]));
 
         Assert.Contains("shared emission contract rejected", exception.Message, StringComparison.Ordinal);
         Assert.Contains("storage", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static ParsedMainRecord AugmentationMaster(byte[] source, byte[] scda) => new()
+    private static ParsedMainRecord AugmentationMaster(byte[] source, byte[] scda)
     {
-        Header = new MainRecordHeader
+        return new ParsedMainRecord
         {
-            Signature = "SCPT",
-            FormId = 0x0000ABCD,
-            DataSize = 0,
-        },
-        Subrecords =
-        [
-            Sub("EDID", StringBytes("RetailScript")),
-            Sub("SCDA", scda),
-            Sub("SCTX", source),
-        ],
-    };
+            Header = new MainRecordHeader
+            {
+                Signature = "SCPT",
+                FormId = 0x0000ABCD,
+                DataSize = 0
+            },
+            Subrecords =
+            [
+                Sub("EDID", StringBytes("RetailScript")),
+                Sub("SCDA", scda),
+                Sub("SCTX", source)
+            ]
+        };
+    }
 
     private static byte[] LocalSlsd(uint index, byte type)
     {
         var slsd = new byte[24];
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(slsd, index);
+        BinaryPrimitives.WriteUInt32LittleEndian(slsd, index);
         slsd[16] = type;
         return slsd;
     }
 
-    private static ParsedSubrecord Sub(string signature, byte[] data) => new()
+    private static ParsedSubrecord Sub(string signature, byte[] data)
     {
-        Signature = signature,
-        Data = data,
-    };
+        return new ParsedSubrecord
+        {
+            Signature = signature,
+            Data = data
+        };
+    }
 
-    private static byte[] StringBytes(string value) =>
-        GameTextBytes(value);
+    private static byte[] StringBytes(string value)
+    {
+        return GameTextBytes(value);
+    }
 
-    private static byte[] GameTextBytes(string value) =>
-        [.. EsmStringUtils.EncodeGameText(value), 0];
+    private static byte[] GameTextBytes(string value)
+    {
+        return [.. EsmStringUtils.EncodeGameText(value), 0];
+    }
 
     private sealed class RecordingSink : IConversionProgressSink
     {
         public List<ConversionProgressEvent> Events { get; } = [];
 
-        public void OnPhaseStart(string phase, int? totalItems) { }
-        public void OnEvent(ConversionProgressEvent evt) => Events.Add(evt);
-        public void OnPhaseEnd(string phase, ConversionPipelineStats partialStats) { }
-        public void OnComplete(ConversionPipelineStats stats) { }
+        public void OnPhaseStart(string phase, int? totalItems)
+        {
+        }
+
+        public void OnEvent(ConversionProgressEvent evt)
+        {
+            Events.Add(evt);
+        }
+
+        public void OnPhaseEnd(string phase, ConversionPipelineStats partialStats)
+        {
+        }
+
+        public void OnComplete(ConversionPipelineStats stats)
+        {
+        }
     }
 }

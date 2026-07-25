@@ -6,7 +6,9 @@ namespace BethesdaMultitool.Tests.App;
 
 /// <summary>
 ///     Asserts the engine-accurate cross-quadrant blend behavior of
-///     <see cref="CellLayerWeightTable.Build(System.Collections.Generic.IReadOnlyList{LandTextureLayer}, System.Collections.Generic.IReadOnlyList{LandTextureLayer}, System.Collections.Generic.IReadOnlyList{LandTextureLayer}, System.Collections.Generic.IReadOnlyList{LandTextureLayer}, System.Collections.Generic.IReadOnlyList{LandTextureLayer})" />.
+///     <see
+///         cref="CellLayerWeightTable.Build(System.Collections.Generic.IReadOnlyList{LandTextureLayer}, System.Collections.Generic.IReadOnlyList{LandTextureLayer}, System.Collections.Generic.IReadOnlyList{LandTextureLayer}, System.Collections.Generic.IReadOnlyList{LandTextureLayer}, System.Collections.Generic.IReadOnlyList{LandTextureLayer})" />
+///     .
 ///     The seam fix relies on shared-edge vertices
 ///     (cell column 16 / row 16) and the cell center (16, 16) carrying contributions from all
 ///     touching quadrants; bilinear interp during per-pixel sampling then produces a smooth

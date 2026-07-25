@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Games;
 using Xunit;
 
@@ -52,7 +51,9 @@ public class GameProfilesTests
     [InlineData(0.94f, BethesdaGame.Fallout3)] // [0.93, 0.945) — overlaps Skyrim; name refinement disambiguates
     [InlineData(0.5f, BethesdaGame.FalloutNewVegas)] // default
     public void ResolveByHedrVersion_MatchesHistoricalThresholds(float version, BethesdaGame expected)
-        => Assert.Equal(expected, GameProfiles.ResolveByHedrVersion(version));
+    {
+        Assert.Equal(expected, GameProfiles.ResolveByHedrVersion(version));
+    }
 
     [Theory]
     [InlineData(BethesdaGame.Skyrim, "Skyrim.esm")]
@@ -60,7 +61,9 @@ public class GameProfilesTests
     [InlineData(BethesdaGame.Fallout76, "SeventySix.esm")]
     [InlineData(BethesdaGame.Starfield, "Starfield.esm")]
     public void ResolveByNames_MatchesGameByHint(BethesdaGame expected, string name)
-        => Assert.Equal(expected, GameProfiles.ResolveByNames([name]));
+    {
+        Assert.Equal(expected, GameProfiles.ResolveByNames([name]));
+    }
 
     [Fact]
     public void ResolveByNames_PrefersNewerGameWhenMultipleMatch()
@@ -73,7 +76,9 @@ public class GameProfilesTests
     [InlineData("RandomMod.esp")]
     [InlineData("")]
     public void ResolveByNames_NoMatch_ReturnsNull(string name)
-        => Assert.Null(GameProfiles.ResolveByNames([name]));
+    {
+        Assert.Null(GameProfiles.ResolveByNames([name]));
+    }
 
     [Fact]
     public void Profiles_PinKeyCapabilities()
@@ -139,6 +144,7 @@ public class GameProfilesTests
 
     [Fact]
     public void DefaultGame_IsFalloutNewVegas()
-        => Assert.Equal(BethesdaGame.FalloutNewVegas, GameProfiles.DefaultGame);
+    {
+        Assert.Equal(BethesdaGame.FalloutNewVegas, GameProfiles.DefaultGame);
+    }
 }
-

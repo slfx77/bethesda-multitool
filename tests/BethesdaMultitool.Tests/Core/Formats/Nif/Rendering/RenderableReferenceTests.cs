@@ -315,8 +315,10 @@ public sealed class RenderableReferenceTests
     [InlineData("meshes\\architecture\\strip\\Imposter\\OverpassSectionLo01_Imposter.NIF")] // segment + suffix
     [InlineData("meshes\\foo\\bar_imposter.nif")] // suffix only
     [InlineData("meshes\\architecture\\IMPOSTER\\thing.nif")] // segment, case-insensitive
-    [InlineData("LOD\\Neighborhoods\\Fens\\Fens10_Bld01LOD.nif")] // FO4: LOD segment (no meshes\ prefix) + LOD.nif suffix
-    [InlineData("Meshes\\LOD\\Architecture\\Unique\\LOD_Fake_TallBuilding01.nif")] // FO4: LOD segment, filename lacks the suffix
+    [InlineData(
+        "LOD\\Neighborhoods\\Fens\\Fens10_Bld01LOD.nif")] // FO4: LOD segment (no meshes\ prefix) + LOD.nif suffix
+    [InlineData(
+        "Meshes\\LOD\\Architecture\\Unique\\LOD_Fake_TallBuilding01.nif")] // FO4: LOD segment, filename lacks the suffix
     [InlineData("meshes\\architecture\\fens\\Fens10_Bld01LOD.nif")] // FO4: suffix only, no underscore before "LOD"
     public void IsImposterModelPath_Imposters_ReturnTrue(string path)
     {

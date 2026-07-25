@@ -53,6 +53,7 @@ internal sealed class TopDownStillScenario : TopDownScenarioBase
                     "topdown-still: small pan exposed a blank edge outside the cached overlay margin. " +
                     Describe(afterSmallPan));
             }
+
             AssertNonempty(afterSmallPan, "small-pan overlay");
             await Task.Delay(100);
         }
@@ -83,7 +84,7 @@ internal sealed class TopDownStillScenario : TopDownScenarioBase
         var converged = await WaitForQuiescentAsync(
             control, queue,
             snapshot => IsConverged(snapshot)
-                && snapshot.OverlayRequestId > beforeLargePan.OverlayRequestId,
+                        && snapshot.OverlayRequestId > beforeLargePan.OverlayRequestId,
             ConvergenceTimeout,
             "large-pan overlay convergence");
         AssertNonempty(converged, "large-pan overlay");
@@ -92,6 +93,7 @@ internal sealed class TopDownStillScenario : TopDownScenarioBase
             throw new InvalidOperationException(
                 "topdown-still: large pan converged without a new request sequence. " + Describe(converged));
         }
+
         LogSnapshot("large-pan-settled", converged);
 
         await AssertStaticAsync(control, queue, converged, StaticHold, "post-pan settled hold");
@@ -116,11 +118,13 @@ internal sealed class TopDownStillScenario : TopDownScenarioBase
                     $"topdown-still: {phase} started an unexpected request while static " +
                     $"({baseline.RequestsStarted} -> {current.RequestsStarted}). {Describe(current)}");
             }
+
             if (!IsConverged(current))
             {
                 throw new InvalidOperationException(
                     $"topdown-still: {phase} lost settled/covered overlay state. {Describe(current)}");
             }
+
             AssertNonempty(current, phase);
         }
 
@@ -128,5 +132,4 @@ internal sealed class TopDownStillScenario : TopDownScenarioBase
             "Scenario(topdown-still): {0} remained idle at {1} request(s) for {2:F1}s.",
             phase, baseline.RequestsStarted, hold.TotalSeconds);
     }
-
 }

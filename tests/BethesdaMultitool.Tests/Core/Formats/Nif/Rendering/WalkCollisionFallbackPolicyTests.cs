@@ -1,7 +1,8 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
-using System.Numerics;
 using Xunit;
+using Xunit.Sdk;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
@@ -71,8 +72,8 @@ public sealed class WalkCollisionFallbackPolicyTests
         var result = CollisionMeshBuilder.Build(
             path,
             category,
-            authoredPositions: null,
-            authoredTriangles: null,
+            null,
+            null,
             () =>
             {
                 visualFactoryCalled = true;
@@ -99,11 +100,66 @@ public sealed class WalkCollisionFallbackPolicyTests
         var result = CollisionMeshBuilder.Build(
             @"landscape\rocks\cliffs\CliffVerti_C2.NIF",
             PlacedObjectCategory.Landscape,
-            authoredPositions: null,
-            authoredTriangles: null,
+            null,
+            null,
             () => visual);
 
         Assert.Same(visual, result.Mesh);
         Assert.Equal(CollisionMeshSource.VisualFallback, result.Source);
+    }
+
+    [Fact]
+    public void Vegetation_NeverReceivesSpeculativeBoundsCollision()
+    {
+        // Plants and Trees (even a plausibly-solid path) contribute no OBND-box wall.
+        foreach (var category in new[] { PlacedObjectCategory.Plants, PlacedObjectCategory.Tree })
+        {
+            Assert.True(WalkCollisionFallbackPolicy.IsVegetation(category));
+            Assert.False(WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(
+                @"plants\WastelandShrub01.nif", category));
+        }
+    }
+
+    [Fact]
+    public void VegetationWithoutHavok_ResolvesNoneWithoutBuildingVisualFallback()
+    {
+        foreach (var category in new[] { PlacedObjectCategory.Plants, PlacedObjectCategory.Tree })
+        {
+            var visualFactoryCalled = false;
+
+            var result = CollisionMeshBuilder.Build(
+                @"plants\WastelandShrub01.nif",
+                category,
+                null,
+                null,
+                () =>
+                {
+                    visualFactoryCalled = true;
+                    return new CollisionMesh([Vector3.Zero, Vector3.UnitX, Vector3.UnitY], [0, 1, 2]);
+                });
+
+            Assert.False(visualFactoryCalled);
+            Assert.Null(result.Mesh);
+            Assert.Equal(CollisionMeshSource.None, result.Source);
+        }
+    }
+
+    [Fact]
+    public void VegetationWithAuthoredHavok_StaysSolid()
+    {
+        // Authored Havok is checked BEFORE the vegetation exclusion, so a plant that genuinely ships
+        // collision (e.g. a solid cactus) still collides.
+        var positions = new[] { Vector3.Zero, Vector3.UnitX, Vector3.UnitY };
+        int[] triangles = [0, 1, 2];
+
+        var result = CollisionMeshBuilder.Build(
+            @"plants\SolidCactus01.nif",
+            PlacedObjectCategory.Plants,
+            positions,
+            triangles,
+            () => throw new XunitException("visual fallback must not run when Havok is authored"));
+
+        Assert.NotNull(result.Mesh);
+        Assert.Equal(CollisionMeshSource.AuthoredHavok, result.Source);
     }
 }

@@ -24,8 +24,8 @@ public sealed class NifBillboardFacingTests
             vertices,
             [0, 2, 1, 0, 1, 3]);
 
-        VectorAssert.Equal(-Vector2.UnitY, negativeY, 1e-6f);
-        VectorAssert.Equal(Vector2.UnitY, positiveY, 1e-6f);
+        VectorAssert.Equal(-Vector2.UnitY, negativeY);
+        VectorAssert.Equal(Vector2.UnitY, positiveY);
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public sealed class NifBillboardFacingTests
             NifBillboardMode.AlwaysFaceCenter,
             authoredFront,
             toCamera,
-            cameraForward: -toCamera);
+            -toCamera);
         var resolved = Vector3.Normalize(Vector3.TransformNormal(authoredFront, rotation));
 
         Assert.InRange(Vector3.Dot(resolved, toCamera), 0.99999f, 1.00001f);
@@ -87,9 +87,59 @@ public sealed class NifBillboardFacingTests
             NifBillboardMode.RotateAboutUp,
             authoredFront,
             toCamera,
-            cameraForward: -toCamera);
+            -toCamera);
         var resolved = Vector3.Normalize(Vector3.TransformNormal(authoredFront, rotation));
 
+        Assert.Equal(0f, resolved.Z, 6);
+        Assert.InRange(Vector2.Dot(
+            Vector2.Normalize(new Vector2(resolved.X, resolved.Y)),
+            Vector2.Normalize(new Vector2(toCamera.X, toCamera.Y))), 0.99999f, 1.00001f);
+    }
+
+    [Fact]
+    public void ResolveRotation_RotateAboutUp_VerticalNormalCardErectsThenYaws()
+    {
+        // TES4 Gamebryo Y-up effect card (FireTorchLarge / FXLightBeam02): quad spans X × +Y with
+        // a vertical +Z normal and authored mode ROTATE_ABOUT_UP. The old XY-collapse left it
+        // lying flat (edge-on/invisible head-on). It must erect (+Y height → world +Z) and face
+        // the camera azimuthally — cylindrical after erection, so still no per-frame pitch.
+        var authoredFront = Vector3.UnitZ;
+        var toCamera = Vector3.Normalize(new Vector3(3f, -4f, 0.5f));
+
+        var rotation = NifBillboardFacing.ResolveRotation(
+            NifBillboardMode.RotateAboutUp,
+            authoredFront,
+            toCamera,
+            -toCamera);
+
+        // The card's height axis (+Y) stands up to world +Z…
+        var height = Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitY, rotation));
+        VectorAssert.Equal(Vector3.UnitZ, height, 1e-5f);
+        // …and its normal lands horizontal, aimed at the camera azimuth.
+        var resolvedNormal = Vector3.Normalize(Vector3.TransformNormal(authoredFront, rotation));
+        Assert.Equal(0f, resolvedNormal.Z, 5);
+        Assert.InRange(Vector2.Dot(
+            Vector2.Normalize(new Vector2(resolvedNormal.X, resolvedNormal.Y)),
+            Vector2.Normalize(new Vector2(toCamera.X, toCamera.Y))), 0.99999f, 1.00001f);
+    }
+
+    [Fact]
+    public void ResolveRotation_RotateAboutUp_HorizontalNormalCardKeepsCylindricalRoute()
+    {
+        // FNV/Skyrim rotate-about-up cards author coherent horizontal fronts — the erect branch
+        // must not touch them (their height is already world +Z).
+        var authoredFront = -Vector3.UnitY; // FireBall09 convention
+        var toCamera = Vector3.Normalize(new Vector3(3f, -4f, 5f));
+
+        var rotation = NifBillboardFacing.ResolveRotation(
+            NifBillboardMode.RotateAboutUp,
+            authoredFront,
+            toCamera,
+            -toCamera);
+
+        var height = Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ, rotation));
+        VectorAssert.Equal(Vector3.UnitZ, height, 1e-5f);
+        var resolved = Vector3.Normalize(Vector3.TransformNormal(authoredFront, rotation));
         Assert.Equal(0f, resolved.Z, 6);
         Assert.InRange(Vector2.Dot(
             Vector2.Normalize(new Vector2(resolved.X, resolved.Y)),
@@ -154,13 +204,16 @@ public sealed class NifBillboardFacingTests
         }
     }
 
-    private static GpuMeshUploader.GpuVertex[] VerticalQuad() =>
-    [
-        new() { Position = new Vector3(-1f, 0f, -1f) },
-        new() { Position = new Vector3( 1f, 0f,  1f) },
-        new() { Position = new Vector3(-1f, 0f,  1f) },
-        new() { Position = new Vector3( 1f, 0f, -1f) },
-    ];
+    private static GpuMeshUploader.GpuVertex[] VerticalQuad()
+    {
+        return
+        [
+            new GpuMeshUploader.GpuVertex { Position = new Vector3(-1f, 0f, -1f) },
+            new GpuMeshUploader.GpuVertex { Position = new Vector3(1f, 0f, 1f) },
+            new GpuMeshUploader.GpuVertex { Position = new Vector3(-1f, 0f, 1f) },
+            new GpuMeshUploader.GpuVertex { Position = new Vector3(1f, 0f, -1f) }
+        ];
+    }
 
     private static void AssertFrontAndBackCullDirections(Vector2 front, float yaw, Vector2 toCamera)
     {
@@ -174,5 +227,4 @@ public sealed class NifBillboardFacingTests
         Assert.InRange(Vector2.Dot(Vector2.Normalize(rotatedFront), toCamera), 0.99999f, 1.00001f);
         Assert.InRange(Vector2.Dot(Vector2.Normalize(-rotatedFront), toCamera), -1.00001f, -0.99999f);
     }
-
 }

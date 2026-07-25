@@ -23,6 +23,21 @@ internal sealed class CachedSubmesh12
     public required GpuTextureCache12.Entry Normal { get; init; }
 
     /// <summary>
+    ///     Diagnostics back-ref to the mesh whose arena allocation backs the buffer views. Set once
+    ///     at upload; null only for submeshes built outside the mesh cache (tests). Lets draw-time
+    ///     validation detect a batch drawing an evicted mesh (<see cref="CachedNifMesh12.IsDisposed" />)
+    ///     or views outside the mesh's allocation.
+    /// </summary>
+    public CachedNifMesh12? OwnerMesh { get; set; }
+
+    /// <summary>FNV-1a of this submesh's uploaded vertex window — filled only at
+    /// FALLOUT_VIEWER_GEOMETRY_VALIDATE=2 (0 otherwise) for draw-time byte comparison.</summary>
+    internal ulong DebugVertexHash;
+
+    /// <inheritdoc cref="DebugVertexHash" />
+    internal ulong DebugIndexHash;
+
+    /// <summary>
     ///     FO4/FO76 per-texel specular mask (<c>_s.dds</c>, R channel), or null when the material has
     ///     none — the shader then leaves specular off for alpha-less (BC5) normal maps instead of
     ///     applying a uniform mask, which blows out whole scenes.

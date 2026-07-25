@@ -24,8 +24,8 @@ public sealed class MapExport3DPlannerTests
         // 8192 × 4096 world rect (2×1 cells), top-down north-up, 1×, single image.
         var plan = MapExport3DPlanner.Plan(
             ProjectionMode.Orthographic, 0,
-            worldMinX: 0f, worldMaxX: 8192f, worldMinY: 0f, worldMaxY: 4096f,
-            worldMinZ: 0f, worldMaxZ: 1000f, scale: 1f, tiled: false, maxTileDim: 16384, maxImageDim: 16384);
+            0f, 8192f, 0f, 4096f,
+            0f, 1000f, 1f, false, 16384, 16384);
 
         Assert.Equal(4096f, plan.Focus.X, 1);
         Assert.Equal(2048f, plan.Focus.Y, 1);
@@ -44,7 +44,7 @@ public sealed class MapExport3DPlannerTests
     {
         var plan = MapExport3DPlanner.Plan(
             ProjectionMode.Orthographic, 0,
-            0f, 40_000f, 0f, 24_000f, 0f, 4096f, scale: 1f, tiled: true, maxTileDim: 2048, maxImageDim: 16384);
+            0f, 40_000f, 0f, 24_000f, 0f, 4096f, 1f, true, 2048, 16384);
 
         Assert.True(plan.Cols > 1 && plan.Rows > 1, "a large area at 1× must tile");
         Assert.True(plan.TileWidth <= 2048 && plan.TileHeight <= 2048, "tiles must fit the cap");
@@ -58,7 +58,7 @@ public sealed class MapExport3DPlannerTests
         // Tiled output is per-tile PNGs + manifest — maxImageDim must not shrink it.
         var plan = MapExport3DPlanner.Plan(
             ProjectionMode.Orthographic, 0,
-            0f, 120_000f, 0f, 120_000f, 0f, 4096f, scale: 1f, tiled: true, maxTileDim: 2048, maxImageDim: 16384);
+            0f, 120_000f, 0f, 120_000f, 0f, 4096f, 1f, true, 2048, 16384);
 
         Assert.True(plan.ImageWidth > 16_384, "tiled export must keep the full wanted resolution");
     }
@@ -69,7 +69,7 @@ public sealed class MapExport3DPlannerTests
         // Small worldspace: fits one GPU tile — 1×1 grid, no internal tiling, exactly as before.
         var plan = MapExport3DPlanner.Plan(
             ProjectionMode.Orthographic, 0,
-            0f, 4000f, 0f, 3000f, 0f, 1000f, scale: 1f, tiled: false, maxTileDim: 2048, maxImageDim: 16384);
+            0f, 4000f, 0f, 3000f, 0f, 1000f, 1f, false, 2048, 16384);
 
         Assert.Equal(1, plan.Cols);
         Assert.Equal(1, plan.Rows);
@@ -85,7 +85,7 @@ public sealed class MapExport3DPlannerTests
         // image cap after long-edge scaling.
         var plan = MapExport3DPlanner.Plan(
             ProjectionMode.Orthographic, 0,
-            0f, 40_000f, 0f, 24_000f, 0f, 4096f, scale: 1f, tiled: false, maxTileDim: 2048, maxImageDim: 16384);
+            0f, 40_000f, 0f, 24_000f, 0f, 4096f, 1f, false, 2048, 16384);
 
         Assert.True(plan.Cols > 1 && plan.Rows > 1, "output beyond one GPU tile must grid internally");
         Assert.True(plan.TileWidth <= 2048 && plan.TileHeight <= 2048, "tiles must fit the GPU cap");
@@ -103,7 +103,7 @@ public sealed class MapExport3DPlannerTests
         // A misconfigured maxImageDim below the tile cap must clamp up, not shrink tiles.
         var plan = MapExport3DPlanner.Plan(
             ProjectionMode.Orthographic, 0,
-            0f, 40_000f, 0f, 24_000f, 0f, 4096f, scale: 1f, tiled: false, maxTileDim: 2048, maxImageDim: 512);
+            0f, 40_000f, 0f, 24_000f, 0f, 4096f, 1f, false, 2048, 512);
 
         Assert.Equal(1, plan.Cols);
         Assert.Equal(1, plan.Rows);

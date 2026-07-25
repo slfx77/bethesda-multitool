@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
@@ -27,7 +28,7 @@ public sealed class PlanCellSectionBuilderLandTests
             FormId = cellEmitted,
             WorldspaceFormId = worldspaceSource,
             GridX = 0,
-            GridY = 0,
+            GridY = 0
         };
         var land = new CellLandDecision
         {
@@ -35,9 +36,9 @@ public sealed class PlanCellSectionBuilderLandTests
             Heightmap = new LandHeightmap
             {
                 HeightOffset = 100f,
-                HeightDeltas = Enumerable.Repeat((sbyte)1, 33 * 33).ToArray(),
+                HeightDeltas = Enumerable.Repeat((sbyte)1, 33 * 33).ToArray()
             },
-            HeightSource = CellLandHeightSource.CapturedHeightmap,
+            HeightSource = CellLandHeightSource.CapturedHeightmap
         };
         var context = new PcEsmCellContext
         {
@@ -47,7 +48,7 @@ public sealed class PlanCellSectionBuilderLandTests
             BlockGroupType = 4,
             SubblockGroupType = 5,
             BlockLabel = [0, 0, 0, 0],
-            SubblockLabel = [0, 0, 0, 0],
+            SubblockLabel = [0, 0, 0, 0]
         };
         var cell = new CellPlan
         {
@@ -57,7 +58,7 @@ public sealed class PlanCellSectionBuilderLandTests
             PersistentChildren = [],
             VwdChildren = [],
             TemporaryChildren = [Record("LAND", landEmitted, land)],
-            ParentWorldspaceFormId = worldspaceSource,
+            ParentWorldspaceFormId = worldspaceSource
         };
         var worldspace = new WorldspacePlan
         {
@@ -66,7 +67,7 @@ public sealed class PlanCellSectionBuilderLandTests
                 "WRLD", worldspaceEmitted,
                 new WorldspaceRecord { FormId = worldspaceSource, EditorId = "TheStripWorld" },
                 worldspaceSource),
-            CellFormIds = [cellEmitted],
+            CellFormIds = [cellEmitted]
         };
         var plan = EmptyPlan() with
         {
@@ -77,7 +78,7 @@ public sealed class PlanCellSectionBuilderLandTests
                 .Add(worldspaceSource, worldspaceEmitted),
             EmittedFormIds = ImmutableHashSet.Create(worldspaceEmitted, cellEmitted, landEmitted),
             LandByCellSourceFormId = ImmutableDictionary<uint, uint>.Empty
-                .Add(land.CellSourceFormId, landEmitted),
+                .Add(land.CellSourceFormId, landEmitted)
         };
 
         var bytes = PlanCellSectionBuilder.BuildCellSection(
@@ -92,33 +93,39 @@ public sealed class PlanCellSectionBuilderLandTests
 
     private static int FindSignature(byte[] bytes, string signature)
     {
-        var expected = System.Text.Encoding.ASCII.GetBytes(signature);
+        var expected = Encoding.ASCII.GetBytes(signature);
         return bytes.AsSpan().IndexOf(expected);
     }
 
-    private static RecordPlan Record(string type, uint formId, object model, uint? source = null) => new()
+    private static RecordPlan Record(string type, uint formId, object model, uint? source = null)
     {
-        Type = type,
-        Disposition = RecordDisposition.New,
-        FormId = formId,
-        SourceFormId = source,
-        Model = model,
-        References = ImmutableArray<ResolvedRef>.Empty,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
-    };
-
-    private static EmitPlan EmptyPlan() => new()
-    {
-        Records = ImmutableArray<RecordPlan>.Empty,
-        SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-        EmittedFormIds = ImmutableHashSet<uint>.Empty,
-        RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
-        Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-        Meta = new PlanMetadata
+        return new RecordPlan
         {
-            NextObjectId = 0x800,
-            PlannerCoverage = ImmutableHashSet<string>.Empty,
-        },
-    };
+            Type = type,
+            Disposition = RecordDisposition.New,
+            FormId = formId,
+            SourceFormId = source,
+            Model = model,
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+        };
+    }
+
+    private static EmitPlan EmptyPlan()
+    {
+        return new EmitPlan
+        {
+            Records = ImmutableArray<RecordPlan>.Empty,
+            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
+            EmittedFormIds = ImmutableHashSet<uint>.Empty,
+            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
+            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
+            Meta = new PlanMetadata
+            {
+                NextObjectId = 0x800,
+                PlannerCoverage = ImmutableHashSet<string>.Empty
+            }
+        };
+    }
 }

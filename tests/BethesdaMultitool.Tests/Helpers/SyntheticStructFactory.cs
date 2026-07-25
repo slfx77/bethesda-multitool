@@ -123,6 +123,30 @@ internal static class SyntheticStructFactory
     }
 
     /// <summary>
+    ///     Builds a synthetic TESObjectAMMO (FormType 0x29) at buffer offset 0. Value sits at the stable
+    ///     +140, while the AMMO_DATA sub-block (fSpeed / iFlags @+4 / pProjectile @+8) is placed at the
+    ///     caller-supplied <paramref name="ammoDataOffset" /> — that block drifts per build (172/184/188),
+    ///     so the production reader discovers it via <c>RuntimeAmmoDataProbe</c>.
+    /// </summary>
+    public static byte[] BuildAmmo(
+        uint formId,
+        int ammoDataOffset,
+        float speed = 1000f,
+        uint flags = 1,
+        uint projectilePtr = 0,
+        int value = 25,
+        int bufferSize = 0x200)
+    {
+        var buf = new byte[bufferSize];
+        WriteFormHeader(buf, 0, 0x29, formId);
+        WriteInt32BE(buf, 140, value); // AmmoValueOffset (stable across builds)
+        WriteFloatBE(buf, ammoDataOffset, speed);
+        WriteUInt32BE(buf, ammoDataOffset + 4, flags);
+        WriteUInt32BE(buf, ammoDataOffset + 8, projectilePtr);
+        return buf;
+    }
+
+    /// <summary>
     ///     Builds a synthetic TESObjectWEAP (FormType 0x28). PDB-aligned
     ///     core region (+16 build shift baked in). Per Phase 1B.11 anchors.
     /// </summary>

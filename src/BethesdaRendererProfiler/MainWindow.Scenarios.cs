@@ -14,7 +14,8 @@ internal sealed partial class MainWindow
     {
         if (!RendererProfilerScenarioCatalog.TryCreate(_options.ScenarioName, out var plan) || plan is null)
         {
-            throw new InvalidOperationException($"Scenario '{_options.ScenarioName}' passed parsing but is not registered.");
+            throw new InvalidOperationException(
+                $"Scenario '{_options.ScenarioName}' passed parsing but is not registered.");
         }
 
         var outputDirectory = _options.ScenarioOutputDirectory ?? throw new InvalidOperationException(
@@ -47,13 +48,13 @@ internal sealed partial class MainWindow
     /// </summary>
     private sealed class WorldView3DScenarioHost : IRendererProfilerScenarioHost
     {
-        private readonly MainWindow _owner;
         private readonly string _outputDirectory;
+        private readonly MainWindow _owner;
         private bool _prepared;
         private Vector3? _previousCameraPosition;
-        private string? _previousWeather;
         private byte[]? _previousPixels;
         private string? _previousStepId;
+        private string? _previousWeather;
 
         internal WorldView3DScenarioHost(MainWindow owner, string outputDirectory)
         {
@@ -137,9 +138,9 @@ internal sealed partial class MainWindow
                     {
                         fixture.RotationRadians.X,
                         fixture.RotationRadians.Y,
-                        fixture.RotationRadians.Z,
+                        fixture.RotationRadians.Z
                     },
-                    ["scale"] = fixture.Scale,
+                    ["scale"] = fixture.Scale
                 });
             }
 
@@ -180,7 +181,7 @@ internal sealed partial class MainWindow
                     ["terrainMaximumHeight"] = waterFixture.TerrainMaximumHeight,
                     ["terrainSamplesBelowPlane"] = waterFixture.TerrainSamplesBelowPlane,
                     ["generatedWaterCellCount"] = 1,
-                    ["opaqueSceneSource"] = "retail-land-and-references",
+                    ["opaqueSceneSource"] = "retail-land-and-references"
                 });
             }
 
@@ -229,7 +230,7 @@ internal sealed partial class MainWindow
             {
                 Position = step.CameraPosition,
                 Pitch = DegreesToRadians(step.CameraPitchDegrees),
-                Yaw = DegreesToRadians(step.CameraYawDegrees),
+                Yaw = DegreesToRadians(step.CameraYawDegrees)
             });
 
             // The first target/cold weather gets the same long settle as one-shot capture. Later
@@ -302,7 +303,7 @@ internal sealed partial class MainWindow
                             throw new InvalidOperationException(
                                 $"Step '{step.Id}' captured pixels but produced no structural snapshot.")) with
             {
-                SceneSampleCount = _owner._worldView.Profiler_SceneSampleCount,
+                SceneSampleCount = _owner._worldView.Profiler_SceneSampleCount
             };
             var path = Path.Combine(_outputDirectory, $"{stepIndex:D2}-{step.Id}.png");
             PngWriter.SaveRgba(BgraToRgba(bgra), width, height, path);
@@ -472,7 +473,7 @@ internal sealed partial class MainWindow
             {
                 ["fromBand"] = result.Snapshot.AtmosphericColorBand.FromBand,
                 ["toBand"] = result.Snapshot.AtmosphericColorBand.ToBand,
-                ["toWeight"] = result.Snapshot.AtmosphericColorBand.ToWeight,
+                ["toWeight"] = result.Snapshot.AtmosphericColorBand.ToWeight
             };
             fields["tonemapTargetLum"] = result.Snapshot.Tonemap.TargetLum;
             fields["tonemapTint"] = new[]
@@ -480,7 +481,7 @@ internal sealed partial class MainWindow
                 result.Snapshot.Tonemap.TintR,
                 result.Snapshot.Tonemap.TintG,
                 result.Snapshot.Tonemap.TintB,
-                result.Snapshot.Tonemap.TintAmount,
+                result.Snapshot.Tonemap.TintAmount
             };
             fields["weatherImageSpaceContributions"] = result.Snapshot.WeatherImageSpaceContributions
                 .Select(static contribution => new Dictionary<string, object?>
@@ -490,7 +491,7 @@ internal sealed partial class MainWindow
                     ["modifierFormIdHex"] = $"0x{contribution.ModifierFormId:X8}",
                     ["modifierEditorId"] = contribution.ModifierEditorId,
                     ["weight"] = contribution.Weight,
-                    ["timelineTime"] = contribution.TimelineTime,
+                    ["timelineTime"] = contribution.TimelineTime
                 }).ToArray();
             fields["imageRegions"] = RegionFields(result.ImageRegions);
             if (result.AppliedPostProcessSettings is { } postProcess)
@@ -602,7 +603,7 @@ internal sealed partial class MainWindow
             {
                 for (var x = x0; x < x1; x++)
                 {
-                    var i = checked(((y * imageWidth) + x) * 4);
+                    var i = checked((y * imageWidth + x) * 4);
                     var blue = bgra[i];
                     var green = bgra[i + 1];
                     var red = bgra[i + 2];
@@ -615,6 +616,7 @@ internal sealed partial class MainWindow
                     {
                         signalPixelCount++;
                     }
+
                     luminanceTotal += luminance;
                 }
             }
@@ -636,12 +638,15 @@ internal sealed partial class MainWindow
                 signalPixelCount);
         }
 
-        private static int ScaleRegionEdge(int value, int sourceExtent, int targetExtent) =>
-            (int)Math.Round(value * (double)targetExtent / sourceExtent, MidpointRounding.AwayFromZero);
+        private static int ScaleRegionEdge(int value, int sourceExtent, int targetExtent)
+        {
+            return (int)Math.Round(value * (double)targetExtent / sourceExtent, MidpointRounding.AwayFromZero);
+        }
 
         private static object[] RegionFields(
-            IReadOnlyList<RendererProfilerScenarioImageRegionStatistics>? regions) =>
-            regions?.Select(static region => (object)new Dictionary<string, object?>
+            IReadOnlyList<RendererProfilerScenarioImageRegionStatistics>? regions)
+        {
+            return regions?.Select(static region => (object)new Dictionary<string, object?>
             {
                 ["regionId"] = region.RegionId,
                 ["x"] = region.X,
@@ -655,8 +660,9 @@ internal sealed partial class MainWindow
                 ["medianLuminance"] = region.MedianLuminance,
                 ["meanLuminance"] = region.MeanLuminance,
                 ["signalLuminanceThreshold"] = region.SignalLuminanceThreshold,
-                ["signalPixelCount"] = region.SignalPixelCount,
+                ["signalPixelCount"] = region.SignalPixelCount
             }).ToArray() ?? [];
+        }
 
         private static RendererProfilerScenarioImageStatistics AnalyzeImage(
             byte[] bgra,
@@ -668,8 +674,8 @@ internal sealed partial class MainWindow
             long luminanceTotal = 0;
             long brightPixelCount = 0;
             long brightLuminanceTotal = 0;
-            byte minimum = byte.MaxValue;
-            byte maximum = byte.MinValue;
+            var minimum = byte.MaxValue;
+            var maximum = byte.MinValue;
             var luminanceHistogram = new int[256];
             for (var i = 0; i + 3 < bgra.Length; i += 4)
             {
@@ -761,8 +767,10 @@ internal sealed partial class MainWindow
                 maximumAbsolute);
         }
 
-        private static byte Luminance(byte red, byte green, byte blue) =>
-            (byte)((54 * red + 183 * green + 19 * blue + 128) >> 8);
+        private static byte Luminance(byte red, byte green, byte blue)
+        {
+            return (byte)((54 * red + 183 * green + 19 * blue + 128) >> 8);
+        }
 
         private static byte Percentile(int[] histogram, int sampleCount, double percentile)
         {
@@ -785,6 +793,9 @@ internal sealed partial class MainWindow
             return byte.MaxValue;
         }
 
-        private static float DegreesToRadians(float degrees) => degrees * (MathF.PI / 180f);
+        private static float DegreesToRadians(float degrees)
+        {
+            return degrees * (MathF.PI / 180f);
+        }
     }
 }

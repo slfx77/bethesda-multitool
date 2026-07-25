@@ -52,12 +52,12 @@ public sealed class AuthoredSkyArchitectureTests
             new Vector3(16f, 17f, 18f));
 
         Assert.Equal(cube, AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
-            BethesdaGame.Skyrim, explicitlyEnabled: false, cube));
+            BethesdaGame.Skyrim, false, cube));
         Assert.Null(AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
-            BethesdaGame.Fallout4, explicitlyEnabled: false, cube));
+            BethesdaGame.Fallout4, false, cube));
         Assert.Equal(cube, AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
-            BethesdaGame.Fallout4, explicitlyEnabled: true, cube));
+            BethesdaGame.Fallout4, true, cube));
         Assert.Null(AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
-            BethesdaGame.Skyrim, explicitlyEnabled: false, directionalAmbient: null));
+            BethesdaGame.Skyrim, false, null));
     }
 }

@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Papyrus;
 using BethesdaMultitool.Tests.Helpers;
@@ -114,7 +115,7 @@ public sealed class PexParserTests
     [Fact]
     public void Parse_OutOfRangeStringReference_IsRejectedAtReference()
     {
-        var bytes = BuildFixture(PexGameId.Fallout4, 9, invalidObjectName: true);
+        var bytes = BuildFixture(PexGameId.Fallout4, 9, true);
 
         var exception = Assert.Throws<PexParseException>(() => PexParser.Parse(bytes));
 
@@ -443,20 +444,31 @@ public sealed class PexParserTests
     {
         private readonly MemoryStream _stream = new();
 
-        public void WriteByte(byte value) => _stream.WriteByte(value);
+        public void Dispose()
+        {
+            _stream.Dispose();
+        }
 
-        public void WriteBytes(ReadOnlySpan<byte> value) => _stream.Write(value);
+        public void WriteByte(byte value)
+        {
+            _stream.WriteByte(value);
+        }
+
+        public void WriteBytes(ReadOnlySpan<byte> value)
+        {
+            _stream.Write(value);
+        }
 
         public void WriteUInt16(ushort value)
         {
             Span<byte> bytes = stackalloc byte[2];
             if (bigEndian)
             {
-                System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(bytes, value);
+                BinaryPrimitives.WriteUInt16BigEndian(bytes, value);
             }
             else
             {
-                System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(bytes, value);
+                BinaryPrimitives.WriteUInt16LittleEndian(bytes, value);
             }
 
             _stream.Write(bytes);
@@ -467,11 +479,11 @@ public sealed class PexParserTests
             Span<byte> bytes = stackalloc byte[4];
             if (bigEndian)
             {
-                System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(bytes, value);
+                BinaryPrimitives.WriteUInt32BigEndian(bytes, value);
             }
             else
             {
-                System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bytes, value);
+                BinaryPrimitives.WriteUInt32LittleEndian(bytes, value);
             }
 
             _stream.Write(bytes);
@@ -482,11 +494,11 @@ public sealed class PexParserTests
             Span<byte> bytes = stackalloc byte[8];
             if (bigEndian)
             {
-                System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(bytes, value);
+                BinaryPrimitives.WriteInt64BigEndian(bytes, value);
             }
             else
             {
-                System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(bytes, value);
+                BinaryPrimitives.WriteInt64LittleEndian(bytes, value);
             }
 
             _stream.Write(bytes);
@@ -499,8 +511,9 @@ public sealed class PexParserTests
             WriteBytes(bytes);
         }
 
-        public byte[] ToArray() => _stream.ToArray();
-
-        public void Dispose() => _stream.Dispose();
+        public byte[] ToArray()
+        {
+            return _stream.ToArray();
+        }
     }
 }

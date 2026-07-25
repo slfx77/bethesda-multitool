@@ -11,9 +11,9 @@ public sealed class ImageSpaceSelectionResolverTests
     public void ExteriorCellLookup_UsesSharedFloorRuleAtPositiveAndNegativeBoundaries()
     {
         const float cellSize = 4096f;
-        var negative = Cell(0x10, -1, 0, imageSpaceId: 0x100);
-        var origin = Cell(0x11, 0, 0, imageSpaceId: 0x101);
-        var east = Cell(0x12, 1, 0, imageSpaceId: 0x102);
+        var negative = Cell(0x10, -1, 0, 0x100);
+        var origin = Cell(0x11, 0, 0, 0x101);
+        var east = Cell(0x12, 1, 0, 0x102);
         var cells = Grid(negative, origin, east);
 
         Assert.Same(negative, Lookup(-0.01f).Cell);
@@ -26,19 +26,21 @@ public sealed class ImageSpaceSelectionResolverTests
         Assert.Equal(0, boundary.GridY);
         Assert.Equal("camera-grid", boundary.SourceTelemetry);
 
-        ImageSpaceCellContext Lookup(float x) =>
-            ImageSpaceSelectionResolver.ResolveExteriorCell(cells, x, 0f, cellSize);
+        ImageSpaceCellContext Lookup(float x)
+        {
+            return ImageSpaceSelectionResolver.ResolveExteriorCell(cells, x, 0f, cellSize);
+        }
     }
 
     [Fact]
     public void Resolve_ExteriorCellXcimWinsOverWorldspaceInam()
     {
         var worldspace = new WorldspaceRecord { FormId = 0x20, ImageSpaceFormId = 0x200 };
-        var cell = Cell(0x10, 0, 0, imageSpaceId: 0x100);
+        var cell = Cell(0x10, 0, 0, 0x100);
         var cellContext = ImageSpaceSelectionResolver.ResolveExteriorCell(Grid(cell), 1f, 1f, 4096f);
 
         var result = ImageSpaceSelectionResolver.Resolve(
-            cellContext, worldspace, [worldspace], interior: false, useClassicDefault: true);
+            cellContext, worldspace, [worldspace], false, true);
 
         Assert.Equal(0x100u, result.ImageSpaceFormId);
         Assert.Equal(ImageSpaceSelectionSource.CellXcim, result.Source);
@@ -51,11 +53,11 @@ public sealed class ImageSpaceSelectionResolverTests
     public void Resolve_CellWithoutXcimUsesDirectWorldspaceInam()
     {
         var worldspace = new WorldspaceRecord { FormId = 0x20, ImageSpaceFormId = 0x200 };
-        var cell = Cell(0x10, 0, 0, imageSpaceId: null);
+        var cell = Cell(0x10, 0, 0, null);
         var cellContext = ImageSpaceSelectionResolver.ResolveExteriorCell(Grid(cell), 1f, 1f, 4096f);
 
         var result = ImageSpaceSelectionResolver.Resolve(
-            cellContext, worldspace, [worldspace], interior: false, useClassicDefault: true);
+            cellContext, worldspace, [worldspace], false, true);
 
         Assert.Equal(0x200u, result.ImageSpaceFormId);
         Assert.Equal(ImageSpaceSelectionSource.WorldspaceInam, result.Source);
@@ -73,11 +75,11 @@ public sealed class ImageSpaceSelectionResolverTests
             ParentWorldspaceFormId = parent.FormId,
             ParentUseFlags = 1 << 5,
             // Must be ignored because PNAM delegates this field to the parent.
-            ImageSpaceFormId = 0x201,
+            ImageSpaceFormId = 0x201
         };
 
         var result = ImageSpaceSelectionResolver.Resolve(
-            default, child, [child, parent], interior: false, useClassicDefault: true);
+            default, child, [child, parent], false, true);
 
         Assert.Equal(0x200u, result.ImageSpaceFormId);
         Assert.Equal(ImageSpaceSelectionSource.ParentWorldspaceInam, result.Source);
@@ -93,18 +95,18 @@ public sealed class ImageSpaceSelectionResolverTests
             FormId = 0x20,
             ParentWorldspaceFormId = 0x21,
             ParentUseFlags = 1 << 5,
-            ImageSpaceFormId = 0x200,
+            ImageSpaceFormId = 0x200
         };
         var second = new WorldspaceRecord
         {
             FormId = 0x21,
             ParentWorldspaceFormId = 0x20,
             ParentUseFlags = 1 << 5,
-            ImageSpaceFormId = 0x201,
+            ImageSpaceFormId = 0x201
         };
 
         var result = ImageSpaceSelectionResolver.Resolve(
-            default, first, [first, second], interior: false, useClassicDefault: true);
+            default, first, [first, second], false, true);
 
         Assert.Equal(ImageSpaceSelectionResolver.DefaultImageSpaceExteriorFormId, result.ImageSpaceFormId);
         Assert.Equal(ImageSpaceSelectionSource.DefaultExterior, result.Source);
@@ -115,11 +117,11 @@ public sealed class ImageSpaceSelectionResolverTests
     public void Resolve_ClassicDefaultsRespectBehavesLikeExteriorClassification()
     {
         var interior = ImageSpaceSelectionResolver.Resolve(
-            default, contextWorldspace: null, allWorldspaces: null,
-            interior: true, useClassicDefault: true);
+            default, null, null,
+            true, true);
         var exterior = ImageSpaceSelectionResolver.Resolve(
-            default, contextWorldspace: null, allWorldspaces: null,
-            interior: false, useClassicDefault: true);
+            default, null, null,
+            false, true);
 
         Assert.Equal(ImageSpaceSelectionResolver.DefaultImageSpaceInteriorFormId, interior.ImageSpaceFormId);
         Assert.Equal(ImageSpaceSelectionSource.DefaultInterior, interior.Source);
@@ -132,8 +134,8 @@ public sealed class ImageSpaceSelectionResolverTests
     {
         const float cellSize = 4096f;
         const ulong clearGeneration = 7;
-        var west = Cell(0x10, 0, 0, imageSpaceId: 0x100);
-        var east = Cell(0x11, 1, 0, imageSpaceId: 0x101);
+        var west = Cell(0x10, 0, 0, 0x100);
+        var east = Cell(0x11, 1, 0, 0x101);
         var cells = Grid(west, east);
         var worldspace = new WorldspaceRecord { FormId = 0x20, ImageSpaceFormId = 0x200 };
         float[] positions = [cellSize - 2f, cellSize - 0.01f, cellSize, cellSize + 2f];
@@ -143,8 +145,8 @@ public sealed class ImageSpaceSelectionResolverTests
             var cellContext = ImageSpaceSelectionResolver.ResolveExteriorCell(
                 cells, position, 0f, cellSize);
             var selection = ImageSpaceSelectionResolver.Resolve(
-                cellContext, worldspace, [worldspace], interior: false, useClassicDefault: true);
-            return (CellFormId: selection.CellContext.CellFormId, selection.ImageSpaceFormId,
+                cellContext, worldspace, [worldspace], false, true);
+            return (selection.CellContext.CellFormId, selection.ImageSpaceFormId,
                 Key: TonemapHistoryKeyBuilder.Build(BethesdaGame.FalloutNewVegas, clearGeneration));
         }).ToArray();
 
@@ -154,15 +156,19 @@ public sealed class ImageSpaceSelectionResolverTests
         Assert.Single(frames.Select(frame => frame.Key).Distinct());
     }
 
-    private static Dictionary<(int gx, int gy), CellRecord> Grid(params CellRecord[] cells) =>
-        cells.ToDictionary(cell => (cell.GridX!.Value, cell.GridY!.Value));
+    private static Dictionary<(int gx, int gy), CellRecord> Grid(params CellRecord[] cells)
+    {
+        return cells.ToDictionary(cell => (cell.GridX!.Value, cell.GridY!.Value));
+    }
 
-    private static CellRecord Cell(uint formId, int gx, int gy, uint? imageSpaceId) =>
-        new()
+    private static CellRecord Cell(uint formId, int gx, int gy, uint? imageSpaceId)
+    {
+        return new CellRecord
         {
             FormId = formId,
             GridX = gx,
             GridY = gy,
-            ImageSpaceFormId = imageSpaceId,
+            ImageSpaceFormId = imageSpaceId
         };
+    }
 }

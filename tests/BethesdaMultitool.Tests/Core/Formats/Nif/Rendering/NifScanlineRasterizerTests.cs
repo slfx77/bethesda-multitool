@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core.Formats.Dds;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -91,15 +91,15 @@ public sealed class NifScanlineRasterizerTests
 
         var texture = DecodedTexture.FromBaseLevel(
             [
-                255, 0, 0, 255,   0, 255, 0, 255,
-                0, 0, 255, 255,   255, 255, 255, 255
+                255, 0, 0, 255, 0, 255, 0, 255,
+                0, 0, 255, 255, 255, 255, 255, 255
             ],
             2,
             2,
-            generateMipChain: false);
+            false);
 
         var wrappedU = NifTextureSampler.SampleTexture(texture, 1.25f, 0.25f);
-        var clampedU = NifTextureSampler.SampleTexture(texture, 1.25f, 0.25f, clampU: true);
+        var clampedU = NifTextureSampler.SampleTexture(texture, 1.25f, 0.25f, true);
         var wrappedV = NifTextureSampler.SampleTexture(texture, 0.25f, 1.25f);
         var clampedV = NifTextureSampler.SampleTexture(texture, 0.25f, 1.25f, clampV: true);
 
@@ -249,11 +249,11 @@ public sealed class NifScanlineRasterizerTests
                      1f,
                      TestTextures.FromTexels(1, 1, (0, 255, 0, 128)),
                      NifAlphaRenderMode.Blend,
-                     hasAlphaBlend: true,
-                     hasAlphaTest: false,
-                     alphaTestThreshold: 0,
-                     alphaTestFunction: 4,
-                     reverseWinding: reverseWinding))
+                     true,
+                     false,
+                     0,
+                     4,
+                     reverseWinding))
         {
             NifScanlineRasterizer.RasterizeTriangle(
                 pixels,
@@ -308,10 +308,10 @@ public sealed class NifScanlineRasterizerTests
             1f,
             TestTextures.FromTexels(1, 1, (0, 255, 0, 128)),
             NifAlphaRenderMode.Blend,
-            hasAlphaBlend: true,
-            hasAlphaTest: false,
-            alphaTestThreshold: 0,
-            alphaTestFunction: 4);
+            true,
+            false,
+            0,
+            4);
         var triangle = front[0];
         triangle.IsEmissive = true;
         NifScanlineRasterizer.RasterizeTriangle(

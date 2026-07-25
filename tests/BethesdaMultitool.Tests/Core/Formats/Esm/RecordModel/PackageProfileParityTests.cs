@@ -45,7 +45,7 @@ public class PackageProfileParityTests
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, cancellationToken: TestContext.Current.CancellationToken);
+            esm!, TestContext.Current.CancellationToken);
 
         var resolver = new FormIdResolver(result.Records.FormIdToEditorId, result.Records.FormIdToDisplayName);
         var profile = new PackageProfile();
@@ -73,7 +73,8 @@ public class PackageProfileParityTests
             compared++;
             if (typed != profiled && mismatches.Count < 5)
             {
-                mismatches.Add($"PACK 0x{formId:X8} ({package.EditorId}):\n--- typed ---\n{typed}\n--- profile ---\n{profiled}");
+                mismatches.Add(
+                    $"PACK 0x{formId:X8} ({package.EditorId}):\n--- typed ---\n{typed}\n--- profile ---\n{profiled}");
             }
         }
 

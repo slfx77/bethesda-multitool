@@ -9,7 +9,7 @@ public sealed class ParticleLiveSnapshotTests
     [Fact]
     public void Build_AdvancesQuietPulseAndEmitsCapacityBoundedGpuTopology()
     {
-        var runtime = PulsedRuntime(capacity: 3);
+        var runtime = PulsedRuntime(3);
 
         var quiet = ParticleLiveSnapshotBuilder.Build(runtime, 0.5f);
         var active = ParticleLiveSnapshotBuilder.Build(runtime, 2f);
@@ -31,14 +31,14 @@ public sealed class ParticleLiveSnapshotTests
     [Fact]
     public void Build_SameDefinitionAndTimeProducesIdenticalUploadData()
     {
-        var runtime = PulsedRuntime(capacity: 19);
+        var runtime = PulsedRuntime(19);
 
         var first = ParticleLiveSnapshotBuilder.Build(runtime, 1.75f);
         var second = ParticleLiveSnapshotBuilder.Build(runtime, 1.75f);
 
         Assert.NotEmpty(first.Vertices);
-        Assert.Equal<ushort>(first.Indices, second.Indices);
-        Assert.Equal<Vector3>(first.Centers, second.Centers);
+        Assert.Equal(first.Indices, second.Indices);
+        Assert.Equal(first.Centers, second.Centers);
         Assert.Equal(first.Vertices.Length, second.Vertices.Length);
         for (var i = 0; i < first.Vertices.Length; i++)
         {
@@ -65,13 +65,13 @@ public sealed class ParticleLiveSnapshotTests
     public void PersistentDecodedCache_IsKeptForStaticModeAndBypassedForLiveMode()
     {
         Assert.True(ParticleLiveSettings.UsePersistentDecodedMeshCache(
-            liveParticlesEnabled: false, isNegative: true, containsParticleSource: true));
+            false, true, true));
         Assert.True(ParticleLiveSettings.UsePersistentDecodedMeshCache(
-            liveParticlesEnabled: true, isNegative: false, containsParticleSource: false));
+            true, false, false));
         Assert.False(ParticleLiveSettings.UsePersistentDecodedMeshCache(
-            liveParticlesEnabled: true, isNegative: false, containsParticleSource: true));
+            true, false, true));
         Assert.False(ParticleLiveSettings.UsePersistentDecodedMeshCache(
-            liveParticlesEnabled: true, isNegative: true, containsParticleSource: false));
+            true, true, false));
     }
 
     private static ParticleRuntimeDefinition PulsedRuntime(int capacity)
@@ -94,15 +94,15 @@ public sealed class ParticleLiveSnapshotTests
                 [
                     new ParticleRateKey(0f, 0f),
                     new ParticleRateKey(1f, 0f),
-                    new ParticleRateKey(2f, 100f),
-                ],
-            },
+                    new ParticleRateKey(2f, 100f)
+                ]
+            }
         };
         var definition = new ParticleSystemDefinition
         {
             BlockIndex = 0x23,
             Capacity = capacity,
-            Emitter = emitter,
+            Emitter = emitter
         };
         definition.Modifiers.Add(emitter);
         definition.Modifiers.Add(new ParticleModifierDefinition { Kind = ParticleModifierKind.AgeDeath });
@@ -114,7 +114,7 @@ public sealed class ParticleLiveSnapshotTests
             {
                 TimeStep = 0.25f,
                 SettleMarginSeconds = 0f,
-                MaxParticles = 100,
+                MaxParticles = 100
             });
     }
 }

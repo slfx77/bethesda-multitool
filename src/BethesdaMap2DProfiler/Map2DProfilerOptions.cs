@@ -312,9 +312,11 @@ internal sealed record Map2DProfilerOptions
         }
     }
 
-    private static bool IsTopDownScenario(string? scenarioName) =>
-        scenarioName is not null
-        && scenarioName.StartsWith("topdown-", StringComparison.OrdinalIgnoreCase);
+    private static bool IsTopDownScenario(string? scenarioName)
+    {
+        return scenarioName is not null
+               && scenarioName.StartsWith("topdown-", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string CreateDefaultProfileOutputPath()
     {

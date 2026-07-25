@@ -9,7 +9,7 @@ public sealed class PlacedReferenceEnableStateResolverTests
     [Fact]
     public void NormalAndInverseParents_ResolveAuthoredInitialState()
     {
-        var parent = Placement(0x10, initiallyDisabled: true);
+        var parent = Placement(0x10, true);
         var normal = Placement(0x11, parent: parent.FormId);
         var inverse = Placement(0x12, parent: parent.FormId, parentFlags: 1);
 
@@ -22,7 +22,7 @@ public sealed class PlacedReferenceEnableStateResolverTests
     [Fact]
     public void MultiLevelChain_AppliesEveryInverseEdge()
     {
-        var root = Placement(0x20, initiallyDisabled: true);
+        var root = Placement(0x20, true);
         var middle = Placement(0x21, parent: root.FormId, parentFlags: 1);
         var normalChild = Placement(0x22, parent: middle.FormId);
         var inverseChild = Placement(0x23, parent: middle.FormId, parentFlags: 1);
@@ -40,7 +40,7 @@ public sealed class PlacedReferenceEnableStateResolverTests
         const int edgeCount = 20;
         var placements = new List<PlacedReference>
         {
-            Placement(0x100, initiallyDisabled: true)
+            Placement(0x100, true)
         };
         for (var edge = 1; edge <= edgeCount; edge++)
         {
@@ -57,7 +57,7 @@ public sealed class PlacedReferenceEnableStateResolverTests
     [Fact]
     public void CrossCellParent_IsResolvedFromTheCompletePlacementIndex()
     {
-        var parent = Placement(0x30, initiallyDisabled: true);
+        var parent = Placement(0x30, true);
         var child = Placement(0x31, parent: parent.FormId);
 
         var disabled = Resolve([Cell(0x300, child), Cell(0x301, parent)]);
@@ -71,9 +71,9 @@ public sealed class PlacedReferenceEnableStateResolverTests
         var enabledChild = Placement(0x40, parent: 0xDEADBEEF, parentFlags: 1);
         var alreadyDisabledChild = Placement(
             0x41,
-            initiallyDisabled: true,
-            parent: 0xDEADBEEF,
-            parentFlags: 1);
+            true,
+            0xDEADBEEF,
+            1);
 
         var disabled = Resolve([Cell(0x400, enabledChild, alreadyDisabledChild)]);
 
@@ -109,26 +109,34 @@ public sealed class PlacedReferenceEnableStateResolverTests
         Assert.Contains(third.FormId, disabled);
     }
 
-    private static HashSet<uint> Resolve(IReadOnlyList<CellRecord> cells) =>
-        PlacedReferenceEnableStateResolver.ResolveXespDisabledRefs(cells);
-
-    private static CellRecord Cell(uint formId, params PlacedReference[] placements) => new()
+    private static HashSet<uint> Resolve(IReadOnlyList<CellRecord> cells)
     {
-        FormId = formId,
-        PlacedObjects = [.. placements]
-    };
+        return PlacedReferenceEnableStateResolver.ResolveXespDisabledRefs(cells);
+    }
+
+    private static CellRecord Cell(uint formId, params PlacedReference[] placements)
+    {
+        return new CellRecord
+        {
+            FormId = formId,
+            PlacedObjects = [.. placements]
+        };
+    }
 
     private static PlacedReference Placement(
         uint formId,
         bool initiallyDisabled = false,
         uint? parent = null,
-        byte? parentFlags = null) => new()
+        byte? parentFlags = null)
     {
-        FormId = formId,
-        BaseFormId = 0x01000000 + formId,
-        RecordType = "REFR",
-        IsInitiallyDisabled = initiallyDisabled,
-        EnableParentFormId = parent,
-        EnableParentFlags = parentFlags
-    };
+        return new PlacedReference
+        {
+            FormId = formId,
+            BaseFormId = 0x01000000 + formId,
+            RecordType = "REFR",
+            IsInitiallyDisabled = initiallyDisabled,
+            EnableParentFormId = parent,
+            EnableParentFlags = parentFlags
+        };
+    }
 }

@@ -12,10 +12,13 @@ using WinRT.Interop;
 namespace BethesdaMultitool;
 
 /// <summary>
-///     Toolbar "Export" button: opens <see cref="MapExport3DDialog" /> and renders the active exterior
-///     worldspace as an orthographic / isometric / trimetric PNG (or a tiled grid + manifest) via the
-///     offscreen path in <c>WorldView3DControl.Export3D.cs</c>. The live render loop is paused for the
-///     duration so the export and the live frame don't fight over the shared command recorder.
+///     3D-export render pipeline: renders the active exterior worldspace as an orthographic /
+///     isometric / trimetric PNG (or a tiled grid + manifest) via the offscreen path in
+///     <c>WorldView3DControl.Export3D.cs</c>. The live render loop is paused for the duration so the
+///     export and the live frame don't fight over the shared command recorder. Options are collected
+///     by the right-panel Export tab and the run is triggered from
+///     <c>WorldView3DControl.ExportPanel.cs</c> (<c>ExportRun_Click</c>), which calls
+///     <see cref="RunProjectionExportAsync" /> here.
 /// </summary>
 public sealed partial class WorldView3DControl
 {
@@ -26,116 +29,14 @@ public sealed partial class WorldView3DControl
     private const float Export3DFallbackMinZ = -8192f;
     private const float Export3DFallbackMaxZ = 32768f;
 
-    private async void ExportButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_data is null) return;
-        if (!CanRenderProjectionExport)
-        {
-            ShowStatus("3D export isn't ready yet — the renderer is still initializing.", autoDismiss: true);
-            return;
-        }
-        if (_selectedInterior is not null)
-        {
-            ShowStatus("3D export covers exterior worldspaces. Switch to an exterior view first.", autoDismiss: true);
-            return;
-        }
-
-        var cells = GetSelectedWorldspaceCells(_data).Cells
-            .Where(c => c.GridX is int && c.GridY is int).ToList();
-        if (cells.Count == 0)
-        {
-            ShowStatus("No exterior cells in the active worldspace to export.", autoDismiss: true);
-            return;
-        }
-
-        var minGx = cells.Min(c => c.GridX!.Value);
-        var maxGx = cells.Max(c => c.GridX!.Value);
-        var minGy = cells.Min(c => c.GridY!.Value);
-        var maxGy = cells.Max(c => c.GridY!.Value);
-        var worldMinX = minGx * _cellSize;
-        var worldMaxX = (maxGx + 1) * _cellSize;
-        var worldMinY = minGy * _cellSize;
-        var worldMaxY = (maxGy + 1) * _cellSize;
-        var (worldMinZ, worldMaxZ) = ComputeGridZExtent(cells) ?? (Export3DFallbackMinZ, Export3DFallbackMaxZ);
-
-        var dialog = new MapExport3DDialog(
-            worldMinX, worldMaxX, worldMinY, worldMaxY, worldMinZ, worldMaxZ,
-            Export3DMaxTileDimension, Export3DMaxImageDimension,
-            showTerrain: _showTerrain, showMeshes: _showReferences, showWater: _showWater,
-            showTrees: !_hiddenCategories.Contains(PlacedObjectCategory.Tree),
-            showActivators: !_hiddenCategories.Contains(PlacedObjectCategory.Activator),
-            showMarkers: _showMarkers, showDisabled: _showDisabled, showNavMesh: _showNavMesh,
-            showCollision: _showCollision, showGrid: _showWireframe,
-            enableLighting: _showLighting, enableFog: _showFog)
-        {
-            XamlRoot = XamlRoot
-        };
-
-        if (await dialog.ShowAsync() != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary) return;
-        var req = dialog.GetRequest();
-
-        var hidden = new HashSet<PlacedObjectCategory>(_hiddenCategories);
-        if (req.ShowActivators) hidden.Remove(PlacedObjectCategory.Activator);
-        else hidden.Add(PlacedObjectCategory.Activator);
-        if (req.ShowTrees) hidden.Remove(PlacedObjectCategory.Tree);
-        else hidden.Add(PlacedObjectCategory.Tree);
-
-        var opts = new Export3DOptions(
-            ShowTerrain: req.ShowTerrain, ShowReferences: req.ShowMeshes, ShowWater: req.ShowWater,
-            ShowNavMesh: req.ShowNavMesh, ShowCollision: req.ShowCollision, ShowGrid: req.ShowGrid,
-            ShowDisabled: req.ShowDisabled, ShowMarkers: req.ShowMarkers,
-            EnableLighting: req.EnableLighting, EnableFog: req.EnableFog,
-            HiddenCategories: hidden);
-
-        var plan = MapExport3DPlanner.Plan(
-            req.Mode, req.DirectionQuadrant, worldMinX, worldMaxX, worldMinY, worldMaxY,
-            worldMinZ, worldMaxZ, req.Scale, req.Tiled, Export3DMaxTileDimension, Export3DMaxImageDimension);
-
-        // Per-tile PNGs + manifest only when the user asked for tiles AND there is more than one
-        // (a one-tile "tiled" run stays a single basePath PNG, as before). A non-tiled run whose grid
-        // exceeds one tile is an internal render detail — stitched into a single PNG.
-        var tiledOutput = req.Tiled && (plan.Cols * plan.Rows) > 1;
-
-        var wsIdx = WorldspaceComboBox.SelectedIndex;
-        var wsName = _data.Worldspaces is { } wss && wsIdx >= 0 && wsIdx < wss.Count
-            ? wss[wsIdx].EditorId ?? wss[wsIdx].FullName ?? "worldspace"
-            : "worldspace";
-
-        var picker = new FileSavePicker { SuggestedStartLocation = PickerLocationId.PicturesLibrary };
-        picker.FileTypeChoices.Add("PNG Image", [".png"]);
-        picker.SuggestedFileName = $"{wsName}_3d";
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
-        var file = await picker.PickSaveFileAsync();
-        if (file is null) return;
-
-        var progress = new ExportProgressController(XamlRoot);
-        _ = progress.ShowAsync();
-        // Pause the live render loop: the export records on the shared command recorder, which would
-        // race the per-frame loop. Drain the GPU so no in-flight frame collides with the first tile.
-        DetachRenderLoop();
-        try
-        {
-            _commandRecorder12?.WaitForGpuIdle();
-            await RunProjectionExportAsync(
-                plan, opts, file.Path, worldMaxZ - worldMinZ, tiledOutput, progress, progress.Cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            // User canceled — keep whatever tiles were already written.
-        }
-        catch (Exception ex)
-        {
-            Core.Diagnostics.Logger.Instance.Warn("3D export failed: {0}", ex.ToString());
-        }
-        finally
-        {
-            progress.Complete();
-            AttachRenderLoop();
-        }
-    }
+    // Extra strict-settle wait allowed AFTER a tile reports loose-complete (nothing actively loading).
+    // Well beyond the "frame or two" the copy-queue upload window needs, but far below the 20s box the
+    // permanently-missing-texture case would otherwise burn per tile. See RunProjectionExportAsync.
+    private static readonly TimeSpan LooseCompleteSettleGrace = TimeSpan.FromSeconds(1.5);
 
     private async Task RunProjectionExportAsync(
         Export3DPlan plan, Export3DOptions opts, string basePath, float zSpan, bool tiledOutput,
+        IReadOnlyList<(float X, float Y)> contentCellCenters,
         ExportProgressController progress, CancellationToken ct)
     {
         var (basisRight, basisUp) = OrthoViewProjBuilder.CameraBasis(plan.Azimuth, plan.Elevation);
@@ -181,6 +82,22 @@ public sealed partial class WorldView3DControl
                                  + MathF.Abs(zSpan) + (2f * _cellSize);
                 var cylinder = OrthoViewProjBuilder.BuildCoverCylinder(tileCenter, tileRadius);
 
+                // Provably-empty tile skip: the export grid spans the cell bounding box, but a tile whose
+                // cover cylinder contains NO actual worldspace cell renders nothing. Skipping the GPU
+                // render + fence + readback here (instead of rendering it only to drop it as a uniform
+                // clear below) is memory- and output-neutral — the stitch buffer is pre-cleared and a
+                // tiled run simply omits the empty PNG, exactly as the post-render uniform skip did. The
+                // radius already carries a 2-cell slack, so a cell straddling the tile edge is still hit.
+                var tileHasContent = false;
+                var tileRadiusSq = tileRadius * tileRadius;
+                for (var c = 0; c < contentCellCenters.Count; c++)
+                {
+                    var dcx = contentCellCenters[c].X - tileCenter.X;
+                    var dcy = contentCellCenters[c].Y - tileCenter.Y;
+                    if ((dcx * dcx) + (dcy * dcy) <= tileRadiusSq) { tileHasContent = true; break; }
+                }
+                if (!tileHasContent) continue;
+
                 // Re-request until streaming FULLY settles (strict: no submesh withheld on pending
                 // textures) so the export captures the fully-loaded scene. The re-renders are what
                 // drive streaming — the live loop is detached, so a pure delay-poll would spin on
@@ -189,6 +106,7 @@ public sealed partial class WorldView3DControl
                 // textures can pin the strict counter.
                 Export3DTile? tile = null;
                 var settleTimer = System.Diagnostics.Stopwatch.StartNew();
+                System.Diagnostics.Stopwatch? looseCompleteSince = null;
                 while (true)
                 {
                     ct.ThrowIfCancellationRequested();
@@ -196,6 +114,22 @@ public sealed partial class WorldView3DControl
                         viewProj, cylinder, basisRight, basisUp, shadingEye,
                         plan.TileWidth, plan.TileHeight, opts, ct);
                     if (tile is null || tile.IsFullySettled) break;
+                    // Loose-complete grace: once nothing is ACTIVELY loading (IsComplete), the only thing
+                    // strict still waits on is ReferenceTexturePending — the copy-queue window that clears
+                    // within a frame or two for resident textures but pins for the full 20s box on
+                    // permanently-missing/cut content. Giving strict a short grace after loose-complete
+                    // lets every transient upload finish (identical output) while cutting the ~20s wait on
+                    // a genuinely-missing texture down to the grace (whose bake is the SAME placeholder the
+                    // timeout would have produced). Reset if the tile starts loading again.
+                    if (tile.IsComplete)
+                    {
+                        looseCompleteSince ??= System.Diagnostics.Stopwatch.StartNew();
+                        if (looseCompleteSince.Elapsed >= LooseCompleteSettleGrace) break;
+                    }
+                    else
+                    {
+                        looseCompleteSince = null;
+                    }
                     if (settleTimer.Elapsed >= StreamingQuiescence.DefaultSettleTimeout)
                     {
                         Log.Warn(

@@ -29,7 +29,7 @@ public sealed class EsmPlannerDiagnosticDirectiveTests
         [
             new DiagnosticKeepMasterDispositionPolicy([FormId]),
             new ForceGlobSkipPolicy(),
-            new DefaultDispositionPolicy(),
+            new DefaultDispositionPolicy()
         ]);
         var requested = new CatalogEntry
         {
@@ -38,12 +38,12 @@ public sealed class EsmPlannerDiagnosticDirectiveTests
             MasterFormId = FormId,
             DmpFormId = FormId,
             Model = new GlobalRecord { FormId = FormId },
-            Master = BuildMasterGlobal(),
+            Master = BuildMasterGlobal()
         };
         var other = requested with
         {
             MasterFormId = FormId + 1,
-            DmpFormId = FormId + 1,
+            DmpFormId = FormId + 1
         };
 
         var decisions = engine.Decide([requested, other]);
@@ -140,11 +140,11 @@ public sealed class EsmPlannerDiagnosticDirectiveTests
     public void GomorrahShapedNpcRetention_PreservesMasterRowsAndAcbsIdentityEndToEnd()
     {
         var masterAcbs = BuildAcbs(
-            flags: 0x00000018,
-            fatigue: 20,
-            barterGold: 30,
-            level: 4,
-            templateFlags: 0x015F);
+            0x00000018,
+            20,
+            30,
+            4,
+            0x015F);
         var masterAidt = Enumerable.Range(0x40, 20).Select(static value => (byte)value).ToArray();
         var masterDnam = Enumerable.Range(0x10, 28).Select(static value => (byte)value).ToArray();
         var masterSnamA = BuildSnam(0x000F1001, 1);
@@ -155,7 +155,7 @@ public sealed class EsmPlannerDiagnosticDirectiveTests
             {
                 Signature = "NPC_",
                 FormId = FormId,
-                Version = 0x000F,
+                Version = 0x000F
             },
             Subrecords =
             [
@@ -164,8 +164,8 @@ public sealed class EsmPlannerDiagnosticDirectiveTests
                 new ParsedSubrecord { Signature = "SNAM", Data = masterSnamA },
                 new ParsedSubrecord { Signature = "SNAM", Data = masterSnamB },
                 new ParsedSubrecord { Signature = "AIDT", Data = masterAidt },
-                new ParsedSubrecord { Signature = "DNAM", Data = masterDnam },
-            ],
+                new ParsedSubrecord { Signature = "DNAM", Data = masterDnam }
+            ]
         };
         var captured = new NpcRecord
         {
@@ -176,10 +176,10 @@ public sealed class EsmPlannerDiagnosticDirectiveTests
             Factions =
             [
                 new FactionMembership(0x000F2001, 3),
-                new FactionMembership(0x000F2002, 4),
+                new FactionMembership(0x000F2002, 4)
             ],
             AiData = new NpcAiData(3, 4, 80, 100, 6, 0x11223344, 2),
-            Skills = Enumerable.Range(0x70, 14).Select(static value => (byte)value).ToArray(),
+            Skills = Enumerable.Range(0x70, 14).Select(static value => (byte)value).ToArray()
         };
         var retentions = ImmutableDictionary<uint, ImmutableHashSet<string>>.Empty.Add(
             FormId,
@@ -248,7 +248,7 @@ public sealed class EsmPlannerDiagnosticDirectiveTests
         [
             new DiagnosticKeepMasterDispositionPolicy(keepMasterFormIds),
             new RuntimeStatePolicy(),
-            new DefaultDispositionPolicy(),
+            new DefaultDispositionPolicy()
         ]);
         return new EsmPlanner(
             disposition,
@@ -256,39 +256,46 @@ public sealed class EsmPlannerDiagnosticDirectiveTests
             new ReferenceResolver([], new DegradationPolicy()));
     }
 
-    private static RecordCollection BuildDmpGlobal() => new()
+    private static RecordCollection BuildDmpGlobal()
     {
-        Globals =
-        [
-            new GlobalRecord
-            {
-                FormId = FormId,
-                EditorId = "GomorrahDiagnosticGlobal",
-                ValueType = 'f',
-                Value = 9.5f,
-            },
-        ],
-    };
-
-    private static ParsedMainRecord BuildMasterGlobal() => new()
-    {
-        Header = new MainRecordHeader
+        return new RecordCollection
         {
-            Signature = "GLOB",
-            FormId = FormId,
-            DataSize = 0,
-            Flags = 0,
-            Timestamp = 0,
-            VcsInfo = 0,
-            Version = 0x000F,
-        },
-        Subrecords =
-        [
-            new ParsedSubrecord { Signature = "EDID", Data = Encoding.ASCII.GetBytes("GomorrahDiagnosticGlobal\0") },
-            new ParsedSubrecord { Signature = "FNAM", Data = [(byte)'f'] },
-            new ParsedSubrecord { Signature = "FLTV", Data = BitConverter.GetBytes(1.5f) },
-        ],
-    };
+            Globals =
+            [
+                new GlobalRecord
+                {
+                    FormId = FormId,
+                    EditorId = "GomorrahDiagnosticGlobal",
+                    ValueType = 'f',
+                    Value = 9.5f
+                }
+            ]
+        };
+    }
+
+    private static ParsedMainRecord BuildMasterGlobal()
+    {
+        return new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
+            {
+                Signature = "GLOB",
+                FormId = FormId,
+                DataSize = 0,
+                Flags = 0,
+                Timestamp = 0,
+                VcsInfo = 0,
+                Version = 0x000F
+            },
+            Subrecords =
+            [
+                new ParsedSubrecord
+                    { Signature = "EDID", Data = Encoding.ASCII.GetBytes("GomorrahDiagnosticGlobal\0") },
+                new ParsedSubrecord { Signature = "FNAM", Data = [(byte)'f'] },
+                new ParsedSubrecord { Signature = "FLTV", Data = BitConverter.GetBytes(1.5f) }
+            ]
+        };
+    }
 
     private static byte[] ReadRecordSubrecord(byte[] topLevelGrup, string signature)
     {
@@ -383,10 +390,13 @@ public sealed class EsmPlannerDiagnosticDirectiveTests
         public IReadOnlySet<string> RecordTypes { get; } =
             new HashSet<string>(StringComparer.Ordinal) { "GLOB" };
 
-        public DispositionDecision? Decide(CatalogEntry entry) => new()
+        public DispositionDecision? Decide(CatalogEntry entry)
         {
-            Disposition = RecordDisposition.Skip,
-            Provenance = new PlanProvenance { PolicyId = "test.force-skip", Reason = "test" },
-        };
+            return new DispositionDecision
+            {
+                Disposition = RecordDisposition.Skip,
+                Provenance = new PlanProvenance { PolicyId = "test.force-skip", Reason = "test" }
+            };
+        }
     }
 }

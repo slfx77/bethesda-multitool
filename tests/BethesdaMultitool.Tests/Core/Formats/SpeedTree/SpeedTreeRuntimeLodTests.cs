@@ -37,11 +37,11 @@ public sealed class SpeedTreeRuntimeLodTests
     public void PlacementSelector_ScalesTransitionDistancesWithReferenceScale()
     {
         var metadata = new SpeedTreeLodMetadata(
-            Level: 0,
-            BranchLevelCount: 2,
-            NearDistance: 100f,
-            FarDistance: 300f,
-            Component: SpeedTreeLodComponent.Branch);
+            0,
+            2,
+            100f,
+            300f,
+            SpeedTreeLodComponent.Branch);
 
         Assert.Equal(1, SpeedTreeRuntimeLod.SelectLevelForPlacement(250f, 1f, metadata));
         Assert.Equal(0, SpeedTreeRuntimeLod.SelectLevelForPlacement(250f, 2f, metadata));
@@ -55,7 +55,7 @@ public sealed class SpeedTreeRuntimeLodTests
         {
             NumBranchLods = 6,
             BranchNearFraction = 1f,
-            BranchFarFraction = 0.45f,
+            BranchFarFraction = 0.45f
         };
 
         Assert.Equal(1f, SpeedTreeRuntimeLod.BranchKeepFraction(lod, 0));
@@ -113,7 +113,7 @@ public sealed class SpeedTreeRuntimeLodTests
         {
             LeafBillboard = true,
             RuntimeLod = true,
-            BillboardTexturePath = @"textures\trees\billboards\testtree.dds",
+            BillboardTexturePath = @"textures\trees\billboards\testtree.dds"
         });
 
         Assert.DoesNotContain(established.Submeshes, sub => sub.SpeedTreeLod is not null);
@@ -156,7 +156,7 @@ public sealed class SpeedTreeRuntimeLodTests
             {
                 LeafBillboard = true,
                 RuntimeLod = true,
-                BillboardTexturePath = SpeedTreeRuntimeLod.BillboardTexturePath(path),
+                BillboardTexturePath = SpeedTreeRuntimeLod.BillboardTexturePath(path)
             });
 
             var branchLevels = runtime.Submeshes
@@ -184,7 +184,7 @@ public sealed class SpeedTreeRuntimeLodTests
             {
                 BarkTexturePath = @"C:\x\TestTreeBark.tga",
                 Float2006 = 10f,
-                Token2005 = 7,
+                Token2005 = 7
             },
             Branches =
             [
@@ -196,7 +196,7 @@ public sealed class SpeedTreeRuntimeLodTests
                     Float6010 = 0f,
                     Float6011 = 1f,
                     Float6012 = 40f,
-                    Float6014 = 1f,
+                    Float6014 = 1f
                 }
             ],
             Leaves =
@@ -207,7 +207,7 @@ public sealed class SpeedTreeRuntimeLodTests
                     Position = Vector3.One,
                     Corner0 = new Vector3(0.5f, 0.25f, 0f),
                     Corner1 = new Vector3(0.1f, 0.1f, 0f),
-                    Corner2 = new Vector3(1f, 1f, 0f),
+                    Corner2 = new Vector3(1f, 1f, 0f)
                 }
             ],
             Lod = new SptLodInfo
@@ -216,8 +216,8 @@ public sealed class SpeedTreeRuntimeLodTests
                 BranchNearFraction = 1f,
                 BranchFarFraction = 0.25f,
                 NumLeafLods = 2,
-                LeafLodSizeIncrease = 0.2f,
-            },
+                LeafLodSizeIncrease = 0.2f
+            }
         };
     }
 }

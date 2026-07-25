@@ -39,7 +39,7 @@ public class FalloutNvSchemaEnrichmentTests
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, cancellationToken: TestContext.Current.CancellationToken);
+            esm!, TestContext.Current.CancellationToken);
 
         // 1. No regression: FNV still reads through its rich typed handlers (the schema did NOT take over).
         Assert.True(result.Records.Npcs.Count > 1000,

@@ -18,7 +18,19 @@ internal sealed class GeometryArenaAllocator
     private readonly int _alignment;
     private readonly List<List<FreeSpan>> _blocks = new();
     private readonly List<long> _blockSizes = new();
+    private readonly Dictionary<(int Block, long Offset), ulong> _liveAllocations = new();
     private long _allocatedBytes;
+    private ulong _nextAllocationId = 1;
+
+    /// <summary>
+    ///     Opt-in free validation (FALLOUT_VIEWER_GEOMETRY_VALIDATE): tracks live allocations by
+    ///     (block, offset) → allocation id so <see cref="Free" /> can throw at the exact call site
+    ///     of a double-free / stale free / overlapping free instead of silently corrupting the
+    ///     free-list, and <see cref="QueryLiveness" /> can distinguish a freed range from one that
+    ///     was freed AND re-issued to a different allocation. Off by default — the live map is then
+    ///     never populated and the release path allocates nothing extra.
+    /// </summary>
+    public bool StrictValidation { get; set; }
 
     /// <summary>Creates an arena that sub-allocates spans from fixed-size blocks.</summary>
     /// <param name="blockSize">Bytes per block (rounded down to a multiple of <paramref name="alignment" />).</param>
@@ -68,7 +80,7 @@ internal sealed class GeometryArenaAllocator
             if (TryAllocateInBlock(b, alignedSize, out var offset))
             {
                 _allocatedBytes += alignedSize;
-                return new ArenaAllocation(b, offset, size, alignedSize);
+                return Issue(b, offset, size, alignedSize);
             }
         }
 
@@ -79,17 +91,96 @@ internal sealed class GeometryArenaAllocator
         var blockIndex = _blocks.Count - 1;
         TryAllocateInBlock(blockIndex, alignedSize, out var newOffset);
         _allocatedBytes += alignedSize;
-        return new ArenaAllocation(blockIndex, newOffset, size, alignedSize);
+        return Issue(blockIndex, newOffset, size, alignedSize);
     }
 
-    /// <summary>Returns an allocation's range to its block's free-list, coalescing with neighbors.</summary>
+    /// <summary>Returns an allocation's range to its block's free-list, coalescing with neighbors.
+    /// In strict mode a double-free, a free of a recycled range, or a free whose span overlaps the
+    /// free-list throws HERE, so the offending caller is named by the stack trace.</summary>
     public void Free(ArenaAllocation allocation)
     {
         if ((uint)allocation.BlockIndex >= (uint)_blocks.Count)
             throw new ArgumentOutOfRangeException(nameof(allocation), "Block index out of range.");
 
+        if (StrictValidation)
+        {
+            ValidateFree(allocation);
+            _liveAllocations.Remove((allocation.BlockIndex, allocation.Offset));
+        }
+
         InsertAndCoalesce(_blocks[allocation.BlockIndex], allocation.Offset, allocation.AlignedSize);
         _allocatedBytes -= allocation.AlignedSize;
+    }
+
+    /// <summary>
+    ///     Liveness of <paramref name="allocation" /> under strict tracking: <c>Live</c> when its
+    ///     (block, offset) still maps to the same allocation id, <c>Recycled</c> when the range was
+    ///     freed and re-issued to a DIFFERENT allocation, <c>NotLive</c> when freed and not
+    ///     re-issued, <c>Untracked</c> when strict mode is off or the allocation predates it.
+    /// </summary>
+    public ArenaLiveness QueryLiveness(in ArenaAllocation allocation)
+    {
+        if (!StrictValidation || allocation.AllocationId == 0)
+        {
+            return ArenaLiveness.Untracked;
+        }
+
+        if (!_liveAllocations.TryGetValue((allocation.BlockIndex, allocation.Offset), out var liveId))
+        {
+            return ArenaLiveness.NotLive;
+        }
+
+        return liveId == allocation.AllocationId ? ArenaLiveness.Live : ArenaLiveness.Recycled;
+    }
+
+    private ArenaAllocation Issue(int blockIndex, long offset, long size, long alignedSize)
+    {
+        var allocation = new ArenaAllocation(blockIndex, offset, size, alignedSize, _nextAllocationId++);
+        if (StrictValidation)
+        {
+            _liveAllocations[(blockIndex, offset)] = allocation.AllocationId;
+        }
+
+        return allocation;
+    }
+
+    private void ValidateFree(in ArenaAllocation allocation)
+    {
+        if (!_liveAllocations.TryGetValue((allocation.BlockIndex, allocation.Offset), out var liveId))
+        {
+            throw new InvalidOperationException(
+                $"Geometry arena double-free / stale free: block={allocation.BlockIndex} " +
+                $"offset=0x{allocation.Offset:X} alignedSize=0x{allocation.AlignedSize:X} " +
+                $"id={allocation.AllocationId} (range is not live)");
+        }
+
+        if (liveId != allocation.AllocationId)
+        {
+            throw new InvalidOperationException(
+                $"Geometry arena stale free of a recycled range: block={allocation.BlockIndex} " +
+                $"offset=0x{allocation.Offset:X} alignedSize=0x{allocation.AlignedSize:X} " +
+                $"id={allocation.AllocationId} (range is live under id {liveId})");
+        }
+
+        var end = allocation.Offset + allocation.AlignedSize;
+        if (allocation.Offset < 0 || end > _blockSizes[allocation.BlockIndex])
+        {
+            throw new InvalidOperationException(
+                $"Geometry arena free outside its block: block={allocation.BlockIndex} " +
+                $"offset=0x{allocation.Offset:X} end=0x{end:X} " +
+                $"blockSize=0x{_blockSizes[allocation.BlockIndex]:X} id={allocation.AllocationId}");
+        }
+
+        foreach (var span in _blocks[allocation.BlockIndex])
+        {
+            if (allocation.Offset < span.Offset + span.Length && span.Offset < end)
+            {
+                throw new InvalidOperationException(
+                    $"Geometry arena overlapping free: block={allocation.BlockIndex} " +
+                    $"offset=0x{allocation.Offset:X} end=0x{end:X} overlaps free span " +
+                    $"[0x{span.Offset:X}, 0x{span.Offset + span.Length:X}) id={allocation.AllocationId}");
+            }
+        }
     }
 
     /// <summary>Total free bytes in <paramref name="blockIndex" /> (diagnostics / tests).</summary>
@@ -172,5 +263,25 @@ internal sealed class GeometryArenaAllocator
 ///     One sub-allocation handed out by <see cref="GeometryArenaAllocator" />. <see cref="Offset" />
 ///     is the byte offset within block <see cref="BlockIndex" />; <see cref="AlignedSize" /> is the
 ///     padded span returned to the free-list on <see cref="GeometryArenaAllocator.Free" />.
+///     <see cref="AllocationId" /> is a process-unique monotonic stamp (0 only for hand-built test
+///     values) letting diagnostics tell a live range from one freed and re-issued at the same offset.
 /// </summary>
-internal readonly record struct ArenaAllocation(int BlockIndex, long Offset, long Size, long AlignedSize);
+internal readonly record struct ArenaAllocation(
+    int BlockIndex, long Offset, long Size, long AlignedSize, ulong AllocationId = 0);
+
+/// <summary>Liveness verdicts for <see cref="GeometryArenaAllocator.QueryLiveness" />.</summary>
+internal enum ArenaLiveness
+{
+    /// <summary>Strict tracking is off (or the allocation predates it) — no verdict.</summary>
+    Untracked,
+
+    /// <summary>The range is still owned by this allocation.</summary>
+    Live,
+
+    /// <summary>The range was freed and has not been re-issued.</summary>
+    NotLive,
+
+    /// <summary>The range was freed and re-issued to a DIFFERENT allocation — reads through stale
+    /// views now fetch that other allocation's bytes.</summary>
+    Recycled,
+}

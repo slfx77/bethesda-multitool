@@ -44,7 +44,7 @@ public class DialogTopicProfileParityTests
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, cancellationToken: TestContext.Current.CancellationToken);
+            esm!, TestContext.Current.CancellationToken);
 
         var resolver = new FormIdResolver(result.Records.FormIdToEditorId, result.Records.FormIdToDisplayName);
         var profile = new DialogTopicProfile();
@@ -70,7 +70,8 @@ public class DialogTopicProfileParityTests
             compared++;
             if (typed != profiled && mismatches.Count < 5)
             {
-                mismatches.Add($"DIAL 0x{formId:X8} ({topic.EditorId}):\n--- typed ---\n{typed}\n--- profile ---\n{profiled}");
+                mismatches.Add(
+                    $"DIAL 0x{formId:X8} ({topic.EditorId}):\n--- typed ---\n{typed}\n--- profile ---\n{profiled}");
             }
         }
 

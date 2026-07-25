@@ -13,9 +13,9 @@ public sealed class WalkVoidRecoveryTests
         var anchor = new Vector3(10, 20, 112);
 
         Assert.True(recovery.TryArmJump(anchor));
-        Assert.False(recovery.TryRecover(descending: false, floorKnown: false, out _));
-        Assert.False(recovery.TryRecover(descending: true, floorKnown: true, out _));
-        Assert.True(recovery.TryRecover(descending: true, floorKnown: false, out var restored));
+        Assert.False(recovery.TryRecover(false, false, out _));
+        Assert.False(recovery.TryRecover(true, true, out _));
+        Assert.True(recovery.TryRecover(true, false, out var restored));
 
         Assert.Equal(anchor, restored);
         Assert.True(recovery.LaunchBlockedUntilRelease);
@@ -27,7 +27,7 @@ public sealed class WalkVoidRecoveryTests
         var recovery = new WalkVoidRecovery();
         recovery.RecordGrounded(new Vector3(1, 2, 3));
 
-        Assert.False(recovery.TryRecover(descending: true, floorKnown: false, out _));
+        Assert.False(recovery.TryRecover(true, false, out _));
         Assert.False(recovery.LaunchBlockedUntilRelease);
     }
 
@@ -38,8 +38,8 @@ public sealed class WalkVoidRecoveryTests
         var precedingGround = new Vector3(100, 200, 312);
         recovery.RecordGrounded(precedingGround);
 
-        Assert.True(recovery.TryArmJump(currentGroundedPosition: null));
-        Assert.True(recovery.TryRecover(descending: true, floorKnown: false, out var restored));
+        Assert.True(recovery.TryArmJump(null));
+        Assert.True(recovery.TryRecover(true, false, out var restored));
 
         Assert.Equal(precedingGround, restored);
     }
@@ -51,12 +51,12 @@ public sealed class WalkVoidRecoveryTests
         var firstAnchor = new Vector3(10, 20, 30);
         var secondAnchor = new Vector3(40, 50, 60);
         Assert.True(recovery.TryArmJump(firstAnchor));
-        Assert.True(recovery.TryRecover(descending: true, floorKnown: false, out _));
+        Assert.True(recovery.TryRecover(true, false, out _));
 
-        recovery.ObserveJumpKey(isDown: true);
+        recovery.ObserveJumpKey(true);
         Assert.False(recovery.TryArmJump(secondAnchor));
 
-        recovery.ObserveJumpKey(isDown: false);
+        recovery.ObserveJumpKey(false);
         Assert.False(recovery.LaunchBlockedUntilRelease);
         Assert.True(recovery.TryArmJump(secondAnchor));
     }
@@ -68,7 +68,7 @@ public sealed class WalkVoidRecoveryTests
         Assert.True(recovery.TryArmJump(new Vector3(1, 1, 112)));
         recovery.CompleteLanding(new Vector3(5, 6, 212));
 
-        Assert.False(recovery.TryRecover(descending: true, floorKnown: false, out _));
-        Assert.True(recovery.TryArmJump(currentGroundedPosition: null));
+        Assert.False(recovery.TryRecover(true, false, out _));
+        Assert.True(recovery.TryArmJump(null));
     }
 }

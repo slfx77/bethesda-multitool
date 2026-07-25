@@ -1125,8 +1125,15 @@ public static class AtmosphereState
     //   day→highNoon→day  over sunriseEnd..sunsetBegin, pivoting at the fixed 12:00 member —
     //     this is the engine's "extra daytime slot pivoting at a stored noon time";
     //   day→sunset over sunsetBegin..sunsetMid, sunset→night over sunsetMid..sunsetEnd.
-    // FNV authors the HighNoon slot per fopdoc. Presence, not color value, selects it: retail
-    // FillColorBlend always reads index 4, including an explicitly all-zero RGBA entry.
+    // FNV authors the HighNoon slot per fopdoc. Presence, not color value, selects it — VERIFIED
+    // against the decompile 2026-07-22 (Sky::FillColorBlend @ 0x8246E0xx, atmosphere_decompiled.txt):
+    // between sunrise-end and the stored noon member the engine sets bands (Day=1 → HighNoon=4) with
+    // the HighNoon weight reaching exactly 1.0 at noon, and Sky::FillColorBlendColors loads the RGBA
+    // words unconditionally (its only zero branch handles a missing second WEATHER, not zero colors).
+    // Consequence: FNV's FO3 carry-over weathers (e.g. MegatonCloudy01, NAM0 240 bytes with ALL-ZERO
+    // HighNoon/Midnight columns — byte-verified in FalloutNV.esm @ 0x00D15953) genuinely render a
+    // black sky at noon in the retail engine too. That is broken shipped DATA, not a parse or blend
+    // bug; do not add a zero-color guard here without an explicit product decision.
     // Modern eight-band records insert authored early/late colors at the quarter points of each climate
     // transition window, retaining every stored band instead of skipping them.
     // Every segment denominator is a window half-width, provably > 0 after NormalizeWindows (the peak

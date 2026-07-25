@@ -118,19 +118,22 @@ public sealed class WorldSpatialIndex3DTests
         Assert.Empty(refs);
     }
 
-    private static WorldViewData CreateData(List<CellRecord> cells) => new()
+    private static WorldViewData CreateData(List<CellRecord> cells)
     {
-        Worldspaces = [],
-        InteriorCells = [],
-        BoundsIndex = [],
-        CategoryIndex = [],
-        Resolver = FormIdResolver.Empty,
-        MapMarkers = [],
-        MarkersByWorldspace = [],
-        AllCells = cells,
-        CellByFormId = cells.ToDictionary(c => c.FormId),
-        RefrToCellIndex = [],
-        UnlinkedExteriorCells = [],
-        UnlinkedMapMarkers = []
-    };
+        return new WorldViewData
+        {
+            Worldspaces = [],
+            InteriorCells = [],
+            BoundsIndex = [],
+            CategoryIndex = [],
+            Resolver = FormIdResolver.Empty,
+            MapMarkers = [],
+            MarkersByWorldspace = [],
+            AllCells = cells,
+            CellByFormId = cells.ToDictionary(c => c.FormId),
+            RefrToCellIndex = [],
+            UnlinkedExteriorCells = [],
+            UnlinkedMapMarkers = []
+        };
+    }
 }

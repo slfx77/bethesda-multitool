@@ -14,6 +14,10 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 /// </summary>
 public sealed class OrthoViewProjBuilderTests
 {
+    // ── CoverRadius: ground footprint + terrain-relief parallax ────────────────────────────────
+
+    private const float CellSize = 4096f;
+
     private static Vector3 Ndc(Matrix4x4 vp, Vector3 world)
     {
         var c = Vector4.Transform(new Vector4(world, 1f), vp);
@@ -25,8 +29,8 @@ public sealed class OrthoViewProjBuilderTests
     {
         // Orthographic mode is straight down (90°); az 0 = north-up. Must match the 2D map's top-down
         // convention (east → screen right, north → screen top), i.e. TopDownViewProjBuilder.
-        var vp = OrthoViewProjBuilder.BuildViewProj(Vector3.Zero, azimuthDeg: 0f, elevationDeg: 90f,
-            orthoHalfHeight: 1000f, aspect: 1f);
+        var vp = OrthoViewProjBuilder.BuildViewProj(Vector3.Zero, 0f, 90f,
+            1000f, 1f);
 
         var west = Ndc(vp, new Vector3(-500f, 0f, 0f));
         var east = Ndc(vp, new Vector3(500f, 0f, 0f));
@@ -38,14 +42,14 @@ public sealed class OrthoViewProjBuilderTests
     }
 
     [Theory]
-    [InlineData(90f)]   // orthographic
-    [InlineData(30f)]   // isometric
+    [InlineData(90f)] // orthographic
+    [InlineData(30f)] // isometric
     [InlineData(25.65891f)] // trimetric
     public void FocusProjectsToClipCenter(float elevationDeg)
     {
         var focus = new Vector3(4096f, -8192f, 256f);
-        var vp = OrthoViewProjBuilder.BuildViewProj(focus, azimuthDeg: 45f, elevationDeg,
-            orthoHalfHeight: 2000f, aspect: 1.6f);
+        var vp = OrthoViewProjBuilder.BuildViewProj(focus, 45f, elevationDeg,
+            2000f, 1.6f);
 
         var center = Ndc(vp, focus);
         Assert.InRange(center.X, -0.01f, 0.01f);
@@ -62,9 +66,9 @@ public sealed class OrthoViewProjBuilderTests
         const float elevation = 30f;
         var eye = OrthoViewProjBuilder.EyePosition(focus, azimuth, elevation);
         var expectedEye = focus +
-                          (OrthoViewProjBuilder.EyeDirection(azimuth, elevation) *
-                           OrthoViewProjBuilder.EyeDistance);
-        var cylinder = OrthoViewProjBuilder.BuildCoverCylinder(focus, radius: 2048f);
+                          OrthoViewProjBuilder.EyeDirection(azimuth, elevation) *
+                          OrthoViewProjBuilder.EyeDistance;
+        var cylinder = OrthoViewProjBuilder.BuildCoverCylinder(focus, 2048f);
 
         Assert.InRange(Vector3.Distance(eye, expectedEye), 0f, 0.01f);
         Assert.True(Vector3.Distance(eye, cylinder.Position) > 100_000f,
@@ -78,15 +82,15 @@ public sealed class OrthoViewProjBuilderTests
         // + depth cleared to 0). For a tilted view, "toward the camera" is along +toEye from the focus.
         const float az = 45f, el = 30f;
         var focus = Vector3.Zero;
-        var vp = OrthoViewProjBuilder.BuildViewProj(focus, az, el, orthoHalfHeight: 2000f, aspect: 1f);
+        var vp = OrthoViewProjBuilder.BuildViewProj(focus, az, el, 2000f, 1f);
 
         var azR = az * (MathF.PI / 180f);
         var elR = el * (MathF.PI / 180f);
         var cosEl = MathF.Cos(elR);
         var toEye = new Vector3(cosEl * MathF.Sin(azR), cosEl * MathF.Cos(azR), MathF.Sin(elR));
 
-        var near = Ndc(vp, toEye * 1000f);   // shifted toward the eye
-        var far = Ndc(vp, toEye * -1000f);   // shifted away from the eye
+        var near = Ndc(vp, toEye * 1000f); // shifted toward the eye
+        var far = Ndc(vp, toEye * -1000f); // shifted away from the eye
         Assert.True(near.Z > far.Z,
             "geometry nearer the camera must produce a larger clip Z (reversed-Z wins GreaterEqual)");
     }
@@ -127,8 +131,8 @@ public sealed class OrthoViewProjBuilderTests
         // At the top-down extreme the azimuth becomes the image ROLL (the ◄ ► rotate + the export's
         // N/E/S/W "what's at the top"). az 90 must put EAST at the top — a fixed north-up would ignore
         // the azimuth there, leaving the rotate buttons inert in orthographic mode.
-        var vp = OrthoViewProjBuilder.BuildViewProj(Vector3.Zero, azimuthDeg: 90f, elevationDeg: 90f,
-            orthoHalfHeight: 1000f, aspect: 1f);
+        var vp = OrthoViewProjBuilder.BuildViewProj(Vector3.Zero, 90f, 90f,
+            1000f, 1f);
 
         var east = Ndc(vp, new Vector3(500f, 0f, 0f));
         var west = Ndc(vp, new Vector3(-500f, 0f, 0f));
@@ -142,7 +146,7 @@ public sealed class OrthoViewProjBuilderTests
         // (X∈[-1000,0]) × north half (Y∈[0,1000]); that sub-rect's center (−500, +500) must land at the
         // tile's clip center. tileRow counts top→bottom, so row 0 is the NORTH (top) band.
         var vp = OrthoViewProjBuilder.BuildViewProjTile(Vector3.Zero, 0f, 90f, 1000f, 1f,
-            tileCol: 0, tileRow: 0, cols: 2, rows: 2);
+            0, 0, 2, 2);
 
         var center = Ndc(vp, new Vector3(-500f, 500f, 0f));
         Assert.InRange(center.X, -0.01f, 0.01f);
@@ -162,7 +166,7 @@ public sealed class OrthoViewProjBuilderTests
         var tile = OrthoViewProjBuilder.BuildViewProjTile(focus, az, el, half, 1f, 0, 0, 2, 2);
 
         var (right, up) = OrthoViewProjBuilder.CameraBasis(az, el);
-        var p = focus - (right * (half * 0.5f)) + (up * (half * 0.5f)); // view-space (−500, +500)
+        var p = focus - right * (half * 0.5f) + up * (half * 0.5f); // view-space (−500, +500)
 
         var cFull = Ndc(full, p);
         Assert.InRange(cFull.X, -0.51f, -0.49f);
@@ -216,13 +220,14 @@ public sealed class OrthoViewProjBuilderTests
         var p = new Vector3(1500f, -200f, 350f);
 
         var before = Ndc(OrthoViewProjBuilder.BuildViewProj(focus, az, el, half, aspect), p);
-        var slidFocus = focus + (OrthoViewProjBuilder.EyeDirection(az, el) * 5000f);
+        var slidFocus = focus + OrthoViewProjBuilder.EyeDirection(az, el) * 5000f;
         var after = Ndc(OrthoViewProjBuilder.BuildViewProj(slidFocus, az, el, half, aspect), p);
 
         Assert.Equal(before.X, after.X, 2);
         Assert.Equal(before.Y, after.Y, 2);
         // Depth DOES change (the camera moved along its view axis) — the whole point is XY is preserved.
-        Assert.True(MathF.Abs(before.Z - after.Z) > 1e-3f, "depth should change as the focus slides along the view axis");
+        Assert.True(MathF.Abs(before.Z - after.Z) > 1e-3f,
+            "depth should change as the focus slides along the view axis");
     }
 
     [Fact]
@@ -234,17 +239,13 @@ public sealed class OrthoViewProjBuilderTests
         Assert.Equal(5000f, cyl.Radius, 3);
     }
 
-    // ── CoverRadius: ground footprint + terrain-relief parallax ────────────────────────────────
-
-    private const float CellSize = 4096f;
-
     /// <summary>The pre-relief formula: visible rectangle's ground-footprint diagonal + 2 cells slack.</summary>
     private static float FlatFootprintRadius(float halfH, float aspect, float elevationDeg)
     {
         var halfW = halfH * MathF.Max(aspect, 1e-4f);
         var sinEl = MathF.Max(MathF.Sin(elevationDeg * (MathF.PI / 180f)), 0.1f);
         var groundHalfH = halfH / sinEl;
-        return MathF.Sqrt((halfW * halfW) + (groundHalfH * groundHalfH)) + (2f * CellSize);
+        return MathF.Sqrt(halfW * halfW + groundHalfH * groundHalfH) + 2f * CellSize;
     }
 
     [Theory]
@@ -254,7 +255,7 @@ public sealed class OrthoViewProjBuilderTests
     public void CoverRadius_NoRelief_MatchesFlatFootprintFormula(float elevationDeg)
     {
         var radius = OrthoViewProjBuilder.CoverRadius(
-            2048f, 1.6f, elevationDeg, CellSize, reliefAboveFocus: 0f, reliefBelowFocus: 0f);
+            2048f, 1.6f, elevationDeg, CellSize, 0f, 0f);
         Assert.Equal(FlatFootprintRadius(2048f, 1.6f, elevationDeg), radius, 1);
     }
 
@@ -281,7 +282,7 @@ public sealed class OrthoViewProjBuilderTests
         var focus = Vector3.Zero;
         var sinEl = MathF.Sin(el * (MathF.PI / 180f));
         var cotEl = MathF.Cos(el * (MathF.PI / 180f)) / sinEl;
-        var d = (halfH / sinEl) + (dz * cotEl) - 2f; // 2 units inside the bottom screen edge
+        var d = halfH / sinEl + dz * cotEl - 2f; // 2 units inside the bottom screen edge
         var peak = new Vector3(0f, d, dz); // toward the camera (north), Δz above the focus plane
 
         var vp = OrthoViewProjBuilder.BuildViewProj(focus, az, el, halfH, aspect);
@@ -291,7 +292,8 @@ public sealed class OrthoViewProjBuilderTests
 
         var oldRadius = OrthoViewProjBuilder.CoverRadius(halfH, aspect, el, CellSize, 0f, 0f);
         var newRadius = OrthoViewProjBuilder.CoverRadius(halfH, aspect, el, CellSize, dz, 0f);
-        Assert.True(d > oldRadius, $"bug demo: on-screen peak at {d:F0} must lie OUTSIDE the flat radius {oldRadius:F0}");
+        Assert.True(d > oldRadius,
+            $"bug demo: on-screen peak at {d:F0} must lie OUTSIDE the flat radius {oldRadius:F0}");
         Assert.True(d < newRadius, $"fix: relief-aware radius {newRadius:F0} must cover the on-screen peak at {d:F0}");
     }
 
@@ -311,6 +313,6 @@ public sealed class OrthoViewProjBuilderTests
         // Extreme relief must not stream half the map: the parallax reach saturates at 16 cells.
         var flat = OrthoViewProjBuilder.CoverRadius(2048f, 1f, 30f, CellSize, 0f, 0f);
         var capped = OrthoViewProjBuilder.CoverRadius(2048f, 1f, 30f, CellSize, 1_000_000f, 0f);
-        Assert.Equal(flat + (16f * CellSize), capped, 1);
+        Assert.Equal(flat + 16f * CellSize, capped, 1);
     }
 }

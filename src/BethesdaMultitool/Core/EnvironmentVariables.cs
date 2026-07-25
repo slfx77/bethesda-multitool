@@ -64,6 +64,24 @@ internal static class EnvironmentVariables
         public const string DumpReference = "FALLOUT_VIEWER_DUMP_REFR";
 
         /// <summary>
+        ///     Geometry/instance validation for the D3D12 reference renderer. "1": draw-time
+        ///     liveness + view-window checks on every opaque batch, upload-time packing self-check,
+        ///     strict arena free validation, and per-instance world-matrix sanity checks. "2":
+        ///     additionally byte-hashes the mapped arena ranges each drawn batch reads and compares
+        ///     against the upload-time hash. Unset/0 = off (zero hot-path cost).
+        /// </summary>
+        public const string GeometryValidate = "FALLOUT_VIEWER_GEOMETRY_VALIDATE";
+
+        /// <summary>When "1" (and <see cref="GeometryValidate" /> is on), a draw that fails
+        /// validation is skipped — instance accounting still advances. Visual confirmation lever
+        /// for diagnosis only, never a fix.</summary>
+        public const string GeometryValidateSkipDraw = "FALLOUT_VIEWER_GEOMETRY_VALIDATE_SKIP_DRAW";
+
+        /// <summary>When "1", emits geometry-arena alloc/free/evict JSONL audit events to the
+        /// renderer profiler trace (needs <see cref="ProfileJsonl" /> or --profile-jsonl).</summary>
+        public const string GeometryAudit = "FALLOUT_VIEWER_GEOMETRY_AUDIT";
+
+        /// <summary>
         ///     Explicit opt-in for the lazy FO4/FO76 dynamic-water architecture. Unset keeps the
         ///     established stand-in pipeline byte-for-byte; initialization or per-frame prepass
         ///     failure also falls back to it.

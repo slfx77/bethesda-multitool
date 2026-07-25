@@ -16,14 +16,15 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class SkyrimWindowGlowRenderingTests
 {
+    private const string ArchivePath = @"E:\SteamLibrary\SteamApps\common\Skyrim\Data\Skyrim - Meshes.bsa";
+
+    private const string AssetPath =
+        @"meshes\architecture\whiterun\wrbuildings\wrlodwindowglow01.nif";
+
     public SkyrimWindowGlowRenderingTests()
     {
         BucketBTestGuard.SkipUnlessEnabled();
     }
-
-    private const string ArchivePath = @"E:\SteamLibrary\SteamApps\common\Skyrim\Data\Skyrim - Meshes.bsa";
-    private const string AssetPath =
-        @"meshes\architecture\whiterun\wrbuildings\wrlodwindowglow01.nif";
 
     [Fact]
     public void WrLodWindowGlow_InlineEffect_IsAdditiveUnlitAndScaled()

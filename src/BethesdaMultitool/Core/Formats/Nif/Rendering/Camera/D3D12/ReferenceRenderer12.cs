@@ -855,6 +855,8 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
 
     private bool _lastBuildValid;
     private int _framesSinceBuild;
+    // This frame's reuse decision, captured for the geometry draw validator's violation context.
+    private bool _frameReusedBatches;
     private int _quietBuildStreak;
     private int _lastBuildCullEpoch;
     private Vector3 _lastBuildRenderOrigin;
@@ -1099,6 +1101,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                            && _lastBuildRenderOrigin == renderOrigin
                            && _lastBuildQuiesced
                            && _lastBuildEvictionGen == _meshCache.EvictionGeneration;
+        _frameReusedBatches = reuseBatches;
         if (!reuseBatches)
         {
             _opaqueBatches.Begin();
@@ -1471,6 +1474,13 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                     (false, true) => _pipelines.OpaqueBackDecalPso,
                     (false, false) => _pipelines.OpaqueBackPso
                 };
+                if (r.IsGrass && sub.AlphaTest && !sub.IsDecal)
+                {
+                    // Grass cutouts take the alpha-to-coverage variants so MSAA antialiases the
+                    // blade silhouettes (identical to the plain opaque PSOs when the scene is
+                    // single-sampled — the factory aliases them, so no fallback branch here).
+                    pso = sub.DoubleSided ? _pipelines.OpaqueDoubleA2CPso : _pipelines.OpaqueBackA2CPso;
+                }
                 var usesGrassDistanceEnvelope =
                     GrassDistanceCullPolicy.UsesEnvelope(r.IsGrass, in _grassDistanceEnvelope);
                 var usesTallGrassWind = _tallGrassWindSupported && r.IsGrass && sub.IsTallGrass;
@@ -1540,6 +1550,13 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                 }
 
                 var pso = sub.DoubleSided ? _pipelines.OpaqueDoublePso : _pipelines.OpaqueBackPso;
+                if (r.IsGrass && sub.AlphaTest)
+                {
+                    // Mirror the main pass's A2C routing so the shadow-only instances join the
+                    // SAME batch (the PSO is part of the batch key) instead of splitting a
+                    // second plain-PSO batch for the identical grass submesh.
+                    pso = sub.DoubleSided ? _pipelines.OpaqueDoubleA2CPso : _pipelines.OpaqueBackA2CPso;
+                }
                 var usesGrassDistanceEnvelope =
                     GrassDistanceCullPolicy.UsesEnvelope(r.IsGrass, in _grassDistanceEnvelope);
                 var usesTallGrassWind = _tallGrassWindSupported && r.IsGrass && sub.IsTallGrass;
@@ -1913,10 +1930,14 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
         var haveSharedBlock = _ringBuffer.TryAllocate(
             frameIndex, instanceBytes + instanceStride - 1, out var instanceAlloc, alignment: 16);
         var refilter = _frameRefilterActive;
+        // CPU-mapped base of the shared instance block, kept for the geometry draw validator: it
+        // reads back the exact matrices each batch's draw will fetch (0 when there is no shared block).
+        nint sharedInstanceCpuBase = 0;
         if (haveSharedBlock)
         {
             var instanceByteOffset = AlignUp(instanceAlloc.ByteOffset, instanceStride);
             var instanceCpuPtr = instanceAlloc.CpuPtr + (int)(instanceByteOffset - instanceAlloc.ByteOffset);
+            sharedInstanceCpuBase = instanceCpuPtr;
 
             var offset = 0;
             unsafe
@@ -2026,6 +2047,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
             if (batch.Count == 0 && (shadowOnly is null || shadowOnly.Count == 0)) continue;
 
             var drawStartInstance = startInstance;
+            var drawInstanceCpuBase = sharedInstanceCpuBase;
             int drawCount;
             int shadowCount;
             if (!haveSharedBlock)
@@ -2121,6 +2143,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                 BindReferenceInstanceBuffer(cmd, batchInstanceAddress, ref srvBinds, ref srvBindMs);
                 boundInstanceAddress = batchInstanceAddress;
                 drawStartInstance = 0;
+                drawInstanceCpuBase = batchCpuPtr;
             }
             else
             {
@@ -2222,10 +2245,20 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
             cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, instanceDrawAlloc.GpuAddress);
             cbUpdateMs += ElapsedMilliseconds(cbStarted);
 
+            // FALLOUT_VIEWER_GEOMETRY_VALIDATE: prove the geometry views and compacted instance
+            // matrices this draw will read are sane. A violation only suppresses the cmd.* calls
+            // (under _SKIP_DRAW) — the startInstance accounting below MUST advance regardless,
+            // because every batch's instances were already compacted at fixed offsets.
+            var drawLiveness = !GeometryArenaDiagnostics.Enabled ||
+                               GeometryDrawValidator12.ValidateOpaqueDraw(
+                                   batchState, _meshCache, drawInstanceCpuBase, drawStartInstance,
+                                   drawCount, shadowCount, _framesSinceBuild, _lastBuildEvictionGen,
+                                   _frameReusedBatches);
+
             var drawStarted = StartTiming();
             cmd.IASetVertexBuffers(0, batchState.Submesh.EffectiveVertexBufferView);
             cmd.IASetIndexBuffer(batchState.Submesh.IndexBufferView);
-            if (drawCount > 0)
+            if (drawCount > 0 && drawLiveness)
             {
                 // The main scene draw excludes the shadow-only tail of the instance range.
                 cmd.DrawIndexedInstanced((uint)batchState.Submesh.IndexCount, (uint)drawCount, 0, 0, 0);
@@ -2237,7 +2270,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                     ObserveTallGrassWaveMultiplier(batchState.GrassWaveMultiplier);
                 }
             }
-            if (_shadowCaptureArmed && !sub.IsDecal && drawCount + shadowCount > 0)
+            if (_shadowCaptureArmed && !sub.IsDecal && drawCount + shadowCount > 0 && drawLiveness)
             {
                 // Record this draw for the frame-end shadow replay: the ring-buffer CB just bound
                 // (uInstanceBase et al.) + the t8 instance block it indexes stay valid until the

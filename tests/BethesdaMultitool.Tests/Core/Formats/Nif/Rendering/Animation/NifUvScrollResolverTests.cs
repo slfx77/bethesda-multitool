@@ -15,17 +15,17 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
 /// </summary>
 public class NifUvScrollResolverTests
 {
-    private const ushort ActiveLoop = 0x8;          // cycle bits 1-2 = 0 (loop), bit 3 = active
-    private const ushort ActiveClamp = 0x8 | 0x4;   // cycle = 2 (clamp), active
+    private const ushort ActiveLoop = 0x8; // cycle bits 1-2 = 0 (loop), bit 3 = active
+    private const ushort ActiveClamp = 0x8 | 0x4; // cycle = 2 (clamp), active
 
     [Fact]
     public void WaterfallShapedRamp_ResolvesConstantVelocity()
     {
         var (data, nif) = BuildChain(
-            controllerFlags: ActiveLoop, frequency: 1f,
-            vKeys: [(0f, 0f), (1f, -4f)]);
+            ActiveLoop, 1f,
+            [(0f, 0f), (1f, -4f)]);
 
-        Assert.True(NifUvScrollResolver.TryResolve(data, nif, shapeBlockIndex: 0, out var velocity));
+        Assert.True(NifUvScrollResolver.TryResolve(data, nif, 0, out var velocity));
         Assert.Equal(new Vector2(0f, -4f), velocity);
     }
 
@@ -33,8 +33,8 @@ public class NifUvScrollResolverTests
     public void Frequency_ScalesTheVelocity()
     {
         var (data, nif) = BuildChain(
-            controllerFlags: ActiveLoop, frequency: 2f,
-            vKeys: [(0f, 0f), (1f, -4f)]);
+            ActiveLoop, 2f,
+            [(0f, 0f), (1f, -4f)]);
 
         Assert.True(NifUvScrollResolver.TryResolve(data, nif, 0, out var velocity));
         Assert.Equal(new Vector2(0f, -8f), velocity);
@@ -44,8 +44,8 @@ public class NifUvScrollResolverTests
     public void MultiKeyRamp_WithConstantSlope_Resolves()
     {
         var (data, nif) = BuildChain(
-            controllerFlags: ActiveLoop, frequency: 1f,
-            vKeys: [(0f, 0f), (0.5f, -2f), (1f, -4f)]);
+            ActiveLoop, 1f,
+            [(0f, 0f), (0.5f, -2f), (1f, -4f)]);
 
         Assert.True(NifUvScrollResolver.TryResolve(data, nif, 0, out var velocity));
         Assert.Equal(new Vector2(0f, -4f), velocity);
@@ -55,8 +55,8 @@ public class NifUvScrollResolverTests
     public void NonConstantCurve_ReturnsFalse()
     {
         var (data, nif) = BuildChain(
-            controllerFlags: ActiveLoop, frequency: 1f,
-            vKeys: [(0f, 0f), (0.5f, -3f), (1f, -4f)]); // slope -6 then -2
+            ActiveLoop, 1f,
+            [(0f, 0f), (0.5f, -3f), (1f, -4f)]); // slope -6 then -2
 
         Assert.False(NifUvScrollResolver.TryResolve(data, nif, 0, out _));
     }
@@ -65,8 +65,8 @@ public class NifUvScrollResolverTests
     public void ClampCycle_ReturnsFalse()
     {
         var (data, nif) = BuildChain(
-            controllerFlags: ActiveClamp, frequency: 1f,
-            vKeys: [(0f, 0f), (1f, -4f)]);
+            ActiveClamp, 1f,
+            [(0f, 0f), (1f, -4f)]);
 
         Assert.False(NifUvScrollResolver.TryResolve(data, nif, 0, out _));
     }
@@ -75,8 +75,8 @@ public class NifUvScrollResolverTests
     public void InactiveController_ReturnsFalse()
     {
         var (data, nif) = BuildChain(
-            controllerFlags: 0x0, frequency: 1f,
-            vKeys: [(0f, 0f), (1f, -4f)]);
+            0x0, 1f,
+            [(0f, 0f), (1f, -4f)]);
 
         Assert.False(NifUvScrollResolver.TryResolve(data, nif, 0, out _));
     }
@@ -85,8 +85,8 @@ public class NifUvScrollResolverTests
     public void NoTranslationMotion_ReturnsFalse()
     {
         var (data, nif) = BuildChain(
-            controllerFlags: ActiveLoop, frequency: 1f,
-            vKeys: [(0f, -1f)]); // single key = no motion
+            ActiveLoop, 1f,
+            [(0f, -1f)]); // single key = no motion
 
         Assert.False(NifUvScrollResolver.TryResolve(data, nif, 0, out _));
     }
@@ -100,27 +100,27 @@ public class NifUvScrollResolverTests
         var shape = new List<byte>();
         AppendSizedString(shape, "Tri Waterfall 0");
         AppendInt(shape, -1); // extra data
-        AppendInt(shape, 1);  // controller → block 1
+        AppendInt(shape, 1); // controller → block 1
 
         // NiUVController: base header (26) + Texture Set ushort + Data ref.
         var controller = new List<byte>();
-        AppendInt(controller, -1);                    // next controller
+        AppendInt(controller, -1); // next controller
         AppendUShort(controller, controllerFlags);
         AppendFloat(controller, frequency);
-        AppendFloat(controller, 0f);                  // phase
-        AppendFloat(controller, 0f);                  // start
-        AppendFloat(controller, 1f);                  // stop
-        AppendInt(controller, 0);                     // target (the shape)
-        AppendUShort(controller, 0);                  // texture set
-        AppendInt(controller, 2);                     // data → block 2
+        AppendFloat(controller, 0f); // phase
+        AppendFloat(controller, 0f); // start
+        AppendFloat(controller, 1f); // stop
+        AppendInt(controller, 0); // target (the shape)
+        AppendUShort(controller, 0); // texture set
+        AppendInt(controller, 2); // data → block 2
 
         // NiUVData: U-trans empty, V-trans keys (linear), scales empty.
         var uvData = new List<byte>();
-        AppendUInt(uvData, 0);                        // U translation: none
-        AppendUInt(uvData, (uint)vKeys.Length);       // V translation
+        AppendUInt(uvData, 0); // U translation: none
+        AppendUInt(uvData, (uint)vKeys.Length); // V translation
         if (vKeys.Length > 0)
         {
-            AppendUInt(uvData, 1);                    // LINEAR
+            AppendUInt(uvData, 1); // LINEAR
             foreach (var (t, v) in vKeys)
             {
                 AppendFloat(uvData, t);
@@ -128,8 +128,8 @@ public class NifUvScrollResolverTests
             }
         }
 
-        AppendUInt(uvData, 0);                        // U scale: none
-        AppendUInt(uvData, 0);                        // V scale: none
+        AppendUInt(uvData, 0); // U scale: none
+        AppendUInt(uvData, 0); // V scale: none
 
         return BuildNif(
             ("NiTriShape", shape.ToArray()),
@@ -144,7 +144,7 @@ public class NifUvScrollResolverTests
             IsBigEndian = false,
             BlockCount = blocks.Length,
             BinaryVersion = 0x04000002,
-            HasInlineStrings = true,
+            HasInlineStrings = true
         };
         using var ms = new MemoryStream();
         var offsets = new int[blocks.Length];

@@ -145,7 +145,7 @@ public sealed class DataFolderResolverTests : IDisposable
         secondary.Build();
 
         // enableFuzzy: false — the fuzzy cascade is gated off, so a renamed asset misses...
-        var exactOnly = new DataFolderResolver(baseline, [secondary], overrideBaseline: false, enableFuzzy: false);
+        var exactOnly = new DataFolderResolver(baseline, [secondary], false, false);
         Assert.Equal(AssetResolutionKind.Missing, exactOnly.Resolve("meshes\\armor\\headgear\\helm.nif").Kind);
         // ...but exact resolution is unaffected.
         Assert.Equal(AssetResolutionKind.ResolvedExact, exactOnly.Resolve("meshes\\exact.nif").Kind);

@@ -1,8 +1,9 @@
 using System.Buffers.Binary;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 using BethesdaMultitool.Core.Minidump;
 using Xunit;
 using static BethesdaMultitool.Tests.Helpers.BinaryTestWriter;
@@ -10,7 +11,7 @@ using static BethesdaMultitool.Tests.Helpers.BinaryTestWriter;
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Runtime.Synthetic;
 
 [CollectionDefinition("RuntimeImageSpaceModifierDiagnostics", DisableParallelization = true)]
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix",
+[SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix",
     Justification = "xUnit [CollectionDefinition] marker type; the 'Collection' suffix is idiomatic for these.")]
 public sealed class RuntimeImageSpaceModifierDiagnosticsCollection;
 
@@ -21,15 +22,15 @@ public sealed class ImadOffsetReaderTests
     private const uint FormId = 0x000CDA79;
 
     private static readonly TestLayout Early = new(
-        Size: 0x740, Data: 0x28, ParameterPointers: 0x65C,
-        NamedPointers: 0x704, Name: 0x738, HasSounds: false);
+        0x740, 0x28, 0x65C,
+        0x704, 0x738, false);
 
     private static readonly TestLayout Final = new(
-        Size: 0x748, Data: 0x30, ParameterPointers: 0x664,
-        NamedPointers: 0x70C, Name: 0x740, HasSounds: true);
+        0x748, 0x30, 0x664,
+        0x70C, 0x740, true);
 
     private static readonly Dictionary<string, int> NamedPointerOrdinals =
-        new Dictionary<string, int>(StringComparer.Ordinal)
+        new(StringComparer.Ordinal)
         {
             ["BNAM"] = 0,
             ["VNAM"] = 1,
@@ -43,14 +44,14 @@ public sealed class ImadOffsetReaderTests
             ["WNAM"] = 9,
             ["XNAM"] = 10,
             ["YNAM"] = 11,
-            ["NAM4"] = 12,
+            ["NAM4"] = 12
         };
 
     [Fact]
     public void EarlyLayout_ReconstructsXex21ShapeAndPackedDnamInCanonicalLittleEndian()
     {
         var fixture = Build(Early, _ => 2);
-        var result = new RuntimeImageSpaceModifierReader(fixture.Context, preferEarlyLayout: true)
+        var result = new RuntimeImageSpaceModifierReader(fixture.Context, true)
             .ReadRuntimeImageSpaceModifier(fixture.Entry);
 
         Assert.NotNull(result);
@@ -85,7 +86,7 @@ public sealed class ImadOffsetReaderTests
         const uint outroFormId = 0x00010002;
         var fixture = Build(Final, _ => 2, introFormId, outroFormId);
 
-        var result = new RuntimeImageSpaceModifierReader(fixture.Context, preferEarlyLayout: false)
+        var result = new RuntimeImageSpaceModifierReader(fixture.Context, false)
             .ReadRuntimeImageSpaceModifier(fixture.Entry);
 
         Assert.NotNull(result);
@@ -102,7 +103,7 @@ public sealed class ImadOffsetReaderTests
     {
         var fixture = Build(Early, _ => 0);
 
-        var result = new RuntimeImageSpaceModifierReader(fixture.Context, preferEarlyLayout: true)
+        var result = new RuntimeImageSpaceModifierReader(fixture.Context, true)
             .ReadRuntimeImageSpaceModifier(fixture.Entry);
 
         Assert.NotNull(result);
@@ -151,7 +152,7 @@ public sealed class ImadOffsetReaderTests
         {
             var fixture = Build(Early, _ => 0);
 
-            var result = new RuntimeImageSpaceModifierReader(fixture.Context, preferEarlyLayout: true)
+            var result = new RuntimeImageSpaceModifierReader(fixture.Context, true)
                 .ReadRuntimeImageSpaceModifier(fixture.Entry);
 
             Assert.NotNull(result);
@@ -172,7 +173,7 @@ public sealed class ImadOffsetReaderTests
         var fixture = Build(Early, layout => layout.Signature == "BNAM" ? 1u : 0u);
         WriteUInt32BE(fixture.Bytes, Early.NamedPointers, 0);
 
-        var result = new RuntimeImageSpaceModifierReader(fixture.Context, preferEarlyLayout: true)
+        var result = new RuntimeImageSpaceModifierReader(fixture.Context, true)
             .ReadRuntimeImageSpaceModifier(fixture.Entry);
 
         Assert.Null(result);
@@ -184,7 +185,7 @@ public sealed class ImadOffsetReaderTests
         var fixture = Build(Early, layout => layout.Signature == "BNAM" ? 2u : 0u);
         WriteUInt32BE(fixture.Bytes, Early.NamedPointers, BaseVa + (uint)fixture.Bytes.Length - 4);
 
-        var result = new RuntimeImageSpaceModifierReader(fixture.Context, preferEarlyLayout: true)
+        var result = new RuntimeImageSpaceModifierReader(fixture.Context, true)
             .ReadRuntimeImageSpaceModifier(fixture.Entry);
 
         Assert.Null(result);
@@ -198,7 +199,7 @@ public sealed class ImadOffsetReaderTests
             fixture.Bytes.AsSpan(Early.NamedPointers, 4));
         WriteUInt32BE(fixture.Bytes, checked((int)(pointer - BaseVa)), 0x7FC00000);
 
-        var result = new RuntimeImageSpaceModifierReader(fixture.Context, preferEarlyLayout: true)
+        var result = new RuntimeImageSpaceModifierReader(fixture.Context, true)
             .ReadRuntimeImageSpaceModifier(fixture.Entry);
 
         Assert.Null(result);
@@ -212,7 +213,7 @@ public sealed class ImadOffsetReaderTests
             fixture.Bytes.AsSpan(Early.Name, 4));
         fixture.Bytes[checked((int)(namePointer - BaseVa))] = (byte)'X';
 
-        var result = new RuntimeImageSpaceModifierReader(fixture.Context, preferEarlyLayout: true)
+        var result = new RuntimeImageSpaceModifierReader(fixture.Context, true)
             .ReadRuntimeImageSpaceModifier(fixture.Entry);
 
         Assert.Null(result);
@@ -223,7 +224,7 @@ public sealed class ImadOffsetReaderTests
     {
         var fixture = Build(Early, layout => layout.Signature == "BNAM" ? 1u : 0u);
 
-        var result = new RuntimeImageSpaceModifierReader(fixture.Context, preferEarlyLayout: true)
+        var result = new RuntimeImageSpaceModifierReader(fixture.Context, true)
             .ReadRuntimeImageSpaceModifier(fixture.Entry);
 
         Assert.Null(result);
@@ -235,7 +236,7 @@ public sealed class ImadOffsetReaderTests
         var fixture = Build(Early, layout => layout.Signature == "BNAM" ? 2u : 0u);
         WriteFloatBE(fixture.Bytes, KeyTableOffset(fixture.Bytes, Early, "BNAM"), 0.25f);
 
-        var result = new RuntimeImageSpaceModifierReader(fixture.Context, preferEarlyLayout: true)
+        var result = new RuntimeImageSpaceModifierReader(fixture.Context, true)
             .ReadRuntimeImageSpaceModifier(fixture.Entry);
 
         Assert.Null(result);
@@ -247,7 +248,7 @@ public sealed class ImadOffsetReaderTests
         var fixture = Build(Early, layout => layout.Signature == "BNAM" ? 2u : 0u);
         WriteFloatBE(fixture.Bytes, KeyTableOffset(fixture.Bytes, Early, "BNAM") + 8, 0.75f);
 
-        var result = new RuntimeImageSpaceModifierReader(fixture.Context, preferEarlyLayout: true)
+        var result = new RuntimeImageSpaceModifierReader(fixture.Context, true)
             .ReadRuntimeImageSpaceModifier(fixture.Entry);
 
         Assert.Null(result);
@@ -260,7 +261,7 @@ public sealed class ImadOffsetReaderTests
         var keyOffset = KeyTableOffset(fixture.Bytes, Early, "BNAM");
         WriteFloatBE(fixture.Bytes, keyOffset + 8, 0f);
 
-        var result = new RuntimeImageSpaceModifierReader(fixture.Context, preferEarlyLayout: true)
+        var result = new RuntimeImageSpaceModifierReader(fixture.Context, true)
             .ReadRuntimeImageSpaceModifier(fixture.Entry);
 
         Assert.Null(result);
@@ -274,7 +275,7 @@ public sealed class ImadOffsetReaderTests
             layout => layout.Signature == "BNAM" ? 1u : 0u,
             animatable: false);
 
-        var result = new RuntimeImageSpaceModifierReader(fixture.Context, preferEarlyLayout: true)
+        var result = new RuntimeImageSpaceModifierReader(fixture.Context, true)
             .ReadRuntimeImageSpaceModifier(fixture.Entry);
 
         Assert.NotNull(result);
@@ -291,7 +292,7 @@ public sealed class ImadOffsetReaderTests
         var fixture = Build(Early, _ => 0);
         fixture.Bytes[Early.Data + relativeOffset] = 1;
 
-        var result = new RuntimeImageSpaceModifierReader(fixture.Context, preferEarlyLayout: true)
+        var result = new RuntimeImageSpaceModifierReader(fixture.Context, true)
             .ReadRuntimeImageSpaceModifier(fixture.Entry);
 
         Assert.Null(result);
@@ -305,7 +306,7 @@ public sealed class ImadOffsetReaderTests
             layout => layout.Signature == "BNAM");
         WriteUInt32BE(fixture.Bytes, Early.Data + 8 + blurLayout.CountIndex * 4, 4097);
 
-        var result = new RuntimeImageSpaceModifierReader(fixture.Context, preferEarlyLayout: true)
+        var result = new RuntimeImageSpaceModifierReader(fixture.Context, true)
             .ReadRuntimeImageSpaceModifier(fixture.Entry);
 
         Assert.Null(result);
@@ -414,13 +415,13 @@ public sealed class ImadOffsetReaderTests
         return new RuntimeFixture(
             bytes,
             context,
-            new BethesdaMultitool.Core.Formats.Esm.Models.RuntimeEditorIdEntry
+            new RuntimeEditorIdEntry
             {
                 EditorId = "HVSimISFX",
                 FormId = FormId,
                 FormType = 0x54,
                 TesFormOffset = 0,
-                TesFormPointer = BaseVa,
+                TesFormPointer = BaseVa
             });
     }
 
@@ -450,9 +451,9 @@ public sealed class ImadOffsetReaderTests
                     {
                         VirtualAddress = BaseVa,
                         FileOffset = 0,
-                        Size = bytes.Length,
-                    },
-                ],
+                        Size = bytes.Length
+                    }
+                ]
             });
     }
 
@@ -474,5 +475,5 @@ public sealed class ImadOffsetReaderTests
     private sealed record RuntimeFixture(
         byte[] Bytes,
         RuntimeMemoryContext Context,
-        BethesdaMultitool.Core.Formats.Esm.Models.RuntimeEditorIdEntry Entry);
+        RuntimeEditorIdEntry Entry);
 }

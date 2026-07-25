@@ -55,7 +55,10 @@ public class VerifyOpenMwFieldsParseTests
 
     private static readonly string[] ExpectedRecordTypes = ["GMST", "LTEX", "CELL", "NPC_", "REGN"];
 
-    private static string SampleDump() => string.Join("\n", SampleDumpLines);
+    private static string SampleDump()
+    {
+        return string.Join("\n", SampleDumpLines);
+    }
 
     [Fact]
     public void ParseRecords_ReadsAllRecordTypes_AndSkipsBanner()
@@ -116,6 +119,8 @@ public class VerifyOpenMwFieldsParseTests
         Assert.Equal("Tx_sand_01.tga", ltex.Fields["Texture"]);
     }
 
-    private static string Unquote(string s) =>
-        s.Length >= 2 && s[0] == '"' && s[^1] == '"' ? s[1..^1] : s;
+    private static string Unquote(string s)
+    {
+        return s.Length >= 2 && s[0] == '"' && s[^1] == '"' ? s[1..^1] : s;
+    }
 }

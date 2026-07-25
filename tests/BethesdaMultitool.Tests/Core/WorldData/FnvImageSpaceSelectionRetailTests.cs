@@ -56,13 +56,13 @@ public sealed class FnvImageSpaceSelectionRetailTests(SampleFileFixture samples)
             grid, 6.5f * CellSize, -4.5f * CellSize, CellSize);
         var west = ImageSpaceSelectionResolver.Resolve(
             westContext, wasteland, collection.Worldspaces,
-            interior: false, useClassicDefault: true);
+            false, true);
         var east = ImageSpaceSelectionResolver.Resolve(
             eastContext, wasteland, collection.Worldspaces,
-            interior: false, useClassicDefault: true);
+            false, true);
         var encounterSelection = ImageSpaceSelectionResolver.Resolve(
             default, encounter, collection.Worldspaces,
-            interior: false, useClassicDefault: true);
+            false, true);
 
         Assert.Equal((5, -5), (westContext.GridX, westContext.GridY));
         Assert.Equal((6, -5), (eastContext.GridX, eastContext.GridY));

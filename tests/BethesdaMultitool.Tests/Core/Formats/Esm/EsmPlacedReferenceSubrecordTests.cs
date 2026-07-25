@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
@@ -228,6 +227,7 @@ public sealed class EsmPlacedReferenceSubrecordTests
         {
             BinaryPrimitives.WriteSingleLittleEndian(data, value);
         }
+
         return new ParsedSubrecord
         {
             Signature = signature,

@@ -13,7 +13,7 @@ public sealed class NifGeometryTransformUtilsTests
         var source = new[]
         {
             0.25f, 0f, 0f,
-            0f, 1f, 0f,
+            0f, 1f, 0f
         };
         var transform = Matrix4x4.CreateScale(4f) *
                         Matrix4x4.CreateRotationZ(MathF.PI / 2f);
@@ -36,6 +36,8 @@ public sealed class NifGeometryTransformUtilsTests
         VectorAssert.Equal(Vector3.Zero, Read(transformed, 0), 1e-5f);
     }
 
-    private static Vector3 Read(float[] values, int vertex) =>
-        new(values[vertex * 3], values[vertex * 3 + 1], values[vertex * 3 + 2]);
+    private static Vector3 Read(float[] values, int vertex)
+    {
+        return new Vector3(values[vertex * 3], values[vertex * 3 + 1], values[vertex * 3 + 2]);
+    }
 }

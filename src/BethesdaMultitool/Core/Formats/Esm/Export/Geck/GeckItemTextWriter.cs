@@ -336,9 +336,9 @@ internal static class GeckItemTextWriter
             sb.AppendLine($"  Value:          {item.Value} caps");
             sb.AppendLine($"  Weight:         {item.Weight:F1}");
 
-            if (item.AddictionFormId.HasValue)
+            if (item.WithdrawalEffectFormId.HasValue)
             {
-                sb.AppendLine($"  Addiction:      {resolver.FormatFull(item.AddictionFormId.Value)}");
+                sb.AppendLine($"  Withdrawal Fx:  {resolver.FormatFull(item.WithdrawalEffectFormId.Value)}");
                 sb.AppendLine($"  Addict. Chance: {item.AddictionChance * 100:F0}%");
             }
 

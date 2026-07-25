@@ -13,11 +13,11 @@ public sealed partial class AudioPlayerControl : UserControl
     private readonly DispatcherTimer? _positionTimer;
     private VoiceFileEntry? _currentEntry;
     private bool _isSeeking;
-    private AudioPlaybackService? _playbackService;
 
     // Seek requested while stopped: there is no stream yet to seek, so remember
     // the position and apply it once playback starts.
     private TimeSpan? _pendingSeek;
+    private AudioPlaybackService? _playbackService;
 
     public AudioPlayerControl()
     {

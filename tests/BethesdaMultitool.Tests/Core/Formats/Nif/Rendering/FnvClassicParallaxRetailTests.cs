@@ -11,6 +11,7 @@ public sealed class FnvClassicParallaxRetailTests
 {
     private const string MeshesBsaRelative =
         @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+
     private const string SilverRushPath = @"meshes\architecture\strip\nv_silverrush01.nif";
     private const string SulfurCavePath = @"meshes\dungeons\caves\rooms\nvsulfurcaveroomdoor01.nif";
     private const string PomPath = @"meshes\architecture\retaining wall\rwstairsstone01_nv.nif";
@@ -92,7 +93,7 @@ public sealed class FnvClassicParallaxRetailTests
             try
             {
                 data = archive.Extract(entry);
-                nif = NifParser.Parse(data) as NifInfo;
+                nif = NifParser.Parse(data);
             }
             catch
             {
@@ -172,9 +173,11 @@ public sealed class FnvClassicParallaxRetailTests
     }
 
     /// <summary>Bitwise float equality — these are exact authored constants decoded from retail NIFs.</summary>
-    private static bool IsExactly(float authored, float? value) =>
-        value is { } present
-        && BitConverter.SingleToInt32Bits(present) == BitConverter.SingleToInt32Bits(authored);
+    private static bool IsExactly(float authored, float? value)
+    {
+        return value is { } present
+               && BitConverter.SingleToInt32Bits(present) == BitConverter.SingleToInt32Bits(authored);
+    }
 
     private static (byte[] Data, NifInfo Nif) ReadNif(ArchiveReader archive, string path)
     {
@@ -183,13 +186,15 @@ public sealed class FnvClassicParallaxRetailTests
         return (data, Assert.IsType<NifInfo>(NifParser.Parse(data)));
     }
 
-    private static NifRenderableModel ExtractModel(byte[] data, NifInfo nif) =>
-        Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(
+    private static NifRenderableModel ExtractModel(byte[] data, NifInfo nif)
+    {
+        return Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(
             data, nif,
             skipSkinning: true,
             collectBillboards: true,
             dropBoneAttachedShapes: true,
             treatRootsAsIdentity: true));
+    }
 
     private static string FindRetailMeshesPath()
     {

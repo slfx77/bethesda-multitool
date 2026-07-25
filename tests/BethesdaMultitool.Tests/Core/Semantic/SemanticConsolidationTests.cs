@@ -8,8 +8,6 @@ using BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
 using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
@@ -19,6 +17,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Presentation;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Core.VersionTracking.Extraction;
 using BethesdaMultitool.Core.VersionTracking.Models;
@@ -88,7 +87,7 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
     {
         var grassData = new byte[32];
         grassData[0] = 35; // density
-        grassData[1] = 5;  // minimum slope
+        grassData[1] = 5; // minimum slope
         grassData[2] = 60; // maximum slope
         BinaryPrimitives.WriteUInt16LittleEndian(grassData.AsSpan(4), 24);
         BinaryPrimitives.WriteUInt32LittleEndian(grassData.AsSpan(8), 3);
@@ -115,7 +114,7 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
             new SemanticFileLoadOptions { FileType = AnalysisFileType.EsmFile },
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(BethesdaMultitool.Core.Games.BethesdaGame.Skyrim, loaded.Records.Game);
+        Assert.Equal(BethesdaGame.Skyrim, loaded.Records.Game);
         var grass = Assert.Single(loaded.Records.Grasses);
         Assert.Equal(0x00001010u, grass.FormId);
         Assert.Equal("TestGrass", grass.EditorId);
@@ -1942,4 +1941,3 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
         throw new DirectoryNotFoundException("Could not locate repository root from test base directory.");
     }
 }
-

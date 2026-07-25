@@ -66,7 +66,7 @@ public sealed class SkySunProfileTests
         var profile = SkySunProfile.ForGame(BethesdaGame.Oblivion);
         var midday = profile.ResolveTrianglePosition(12.5f, new AtmosphereState.ClimateTiming(6f, 7f, 18f, 19f));
 
-        var elevation = MathF.Atan2(midday.Z, MathF.Sqrt((midday.X * midday.X) + (midday.Y * midday.Y)));
+        var elevation = MathF.Atan2(midday.Z, MathF.Sqrt(midday.X * midday.X + midday.Y * midday.Y));
         Assert.True(elevation > 80f * (MathF.PI / 180f),
             $"expected a near-zenith noon apex, got {elevation * 180f / MathF.PI:F1} deg");
     }
@@ -82,10 +82,10 @@ public sealed class SkySunProfileTests
 
         Assert.Equal(1f, profile.ResolveVisibility(12f, timing));
         AssertClose(0.5f, profile.ResolveVisibility(18.5f, timing)); // halfway down the sunset ramp
-        Assert.Equal(0f, profile.ResolveVisibility(19f, timing));    // sunset midpoint → hidden
-        Assert.Equal(0f, profile.ResolveVisibility(2f, timing));     // deep night
-        Assert.Equal(0f, profile.ResolveVisibility(7f, timing));     // sunrise midpoint → still hidden
-        AssertClose(0.5f, profile.ResolveVisibility(7.5f, timing));  // halfway up the sunrise ramp
+        Assert.Equal(0f, profile.ResolveVisibility(19f, timing)); // sunset midpoint → hidden
+        Assert.Equal(0f, profile.ResolveVisibility(2f, timing)); // deep night
+        Assert.Equal(0f, profile.ResolveVisibility(7f, timing)); // sunrise midpoint → still hidden
+        AssertClose(0.5f, profile.ResolveVisibility(7.5f, timing)); // halfway up the sunrise ramp
         Assert.Equal(1f, profile.ResolveVisibility(8.5f, timing));
     }
 
@@ -104,7 +104,7 @@ public sealed class SkySunProfileTests
     {
         // Climate 6/8/18/20 with a 2h transition produces day edges 6..20 and x=0 at 13:00.
         // Raw center = (0,-100,800), while retail PC INI half-extents are 750 and 800.
-        var distance = MathF.Sqrt((100f * 100f) + (800f * 800f));
+        var distance = MathF.Sqrt(100f * 100f + 800f * 800f);
         var expectedDisc = ViewerRadius * 750f / distance;
         var expectedGlare = ViewerRadius * 800f / distance;
 
@@ -121,7 +121,7 @@ public sealed class SkySunProfileTests
         // At 09:30, x=+0.5 on the recovered 6..20 day leg: raw center=(400,-100,400).
         // This distance is intentionally not the noon distance; a constant viewer fraction cannot
         // preserve both projections.
-        var distance = MathF.Sqrt((400f * 400f) + (100f * 100f) + (400f * 400f));
+        var distance = MathF.Sqrt(400f * 400f + 100f * 100f + 400f * 400f);
         var expectedDisc = ViewerRadius * 750f / distance;
 
         var profile = SkySunProfile.ForGame(BethesdaGame.FalloutNewVegas);
@@ -137,7 +137,7 @@ public sealed class SkySunProfileTests
     public void ResolveBillboardHalfSizes_CreationDefaultsMatchRecoveredFo4AndSkyrimVectors()
     {
         // Creation timing 5/7/17/19 produces a 5..19 day leg and noon center=(0,25,400).
-        var distance = MathF.Sqrt((25f * 25f) + (400f * 400f));
+        var distance = MathF.Sqrt(25f * 25f + 400f * 400f);
         var expectedDisc = ViewerRadius * 425f / distance;
         var expectedGlare = ViewerRadius * 600f / distance;
 
@@ -154,16 +154,16 @@ public sealed class SkySunProfileTests
     public void ResolveBillboardHalfSizes_UsesGmstAndIniOverridesWithoutClippingAuthoredValues()
     {
         // Raw noon center=(0,50,600); authored INI extents deliberately exceed the defaults.
-        var distance = MathF.Sqrt((50f * 50f) + (600f * 600f));
+        var distance = MathF.Sqrt(50f * 50f + 600f * 600f);
         var expectedDisc = ViewerRadius * 900f / distance;
         var expectedGlare = ViewerRadius * 1200f / distance;
 
         var actual = SkySunProfile.ForGame(BethesdaGame.Fallout4).ResolveBillboardHalfSizes(
             ViewerRadius, 12f, CreationTiming,
-            sunXExtreme: 600f,
-            sunYExtreme: 50f,
-            discHalfExtent: 900f,
-            glareHalfExtent: 1200f);
+            600f,
+            50f,
+            900f,
+            1200f);
 
         AssertClose(expectedDisc, actual.Disc);
         AssertClose(expectedGlare, actual.Glare);
@@ -175,7 +175,7 @@ public sealed class SkySunProfileTests
         // With zero transition padding, creation timing 5/7/17/19 has a 6..18 day leg. At 09:00,
         // x=+0.5 and raw center=(200,25,200). Treating zero as missing would use the default 5..19
         // leg and produce a different projection.
-        var distance = MathF.Sqrt((200f * 200f) + (25f * 25f) + (200f * 200f));
+        var distance = MathF.Sqrt(200f * 200f + 25f * 25f + 200f * 200f);
         var expectedDisc = ViewerRadius * 425f / distance;
 
         var actual = SkySunProfile.ForGame(BethesdaGame.Skyrim).ResolveBillboardHalfSizes(
@@ -198,7 +198,7 @@ public sealed class SkySunProfileTests
     public void ResolveTrianglePosition_ZeroXExtremeIsAnAuthoredOverride()
     {
         var actual = SkySunProfile.ForGame(BethesdaGame.Fallout4).ResolveTrianglePosition(
-            12f, CreationTiming, sunXExtreme: 0f, sunYExtreme: 25f);
+            12f, CreationTiming, 0f, 25f);
 
         Assert.Equal(new Vector3(0f, 25f, 0f), actual);
     }

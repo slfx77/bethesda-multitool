@@ -1,5 +1,4 @@
 using System.Text;
-using BethesdaMultitool.CLI;
 using BethesdaMultitool.CLI.Formatters;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using Xunit;

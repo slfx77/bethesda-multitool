@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using Xunit;
 
@@ -15,26 +16,36 @@ public sealed class OblivionWaterDataTests
     private static byte[] BuildOblivionData(bool bigEndian)
     {
         var d = new byte[102];
-        WriteFloat(d, 0, 15f, bigEndian);        // Wind Velocity
-        WriteFloat(d, 4, 90f, bigEndian);        // Wind Direction
-        WriteFloat(d, 8, 1.25f, bigEndian);      // Wave Amplitude
-        WriteFloat(d, 12, 2.5f, bigEndian);      // Wave Frequency
-        WriteFloat(d, 16, 50f, bigEndian);       // SunPower
-        WriteFloat(d, 20, 0.5f, bigEndian);      // Reflectivity
-        WriteFloat(d, 24, 0.025f, bigEndian);    // Fresnel
-        WriteFloat(d, 28, 0.03f, bigEndian);     // Scroll X
-        WriteFloat(d, 32, -0.04f, bigEndian);    // Scroll Y
-        WriteFloat(d, 36, 27852.8f, bigEndian);  // Fog Near
-        WriteFloat(d, 40, 163840f, bigEndian);   // Fog Far
+        WriteFloat(d, 0, 15f, bigEndian); // Wind Velocity
+        WriteFloat(d, 4, 90f, bigEndian); // Wind Direction
+        WriteFloat(d, 8, 1.25f, bigEndian); // Wave Amplitude
+        WriteFloat(d, 12, 2.5f, bigEndian); // Wave Frequency
+        WriteFloat(d, 16, 50f, bigEndian); // SunPower
+        WriteFloat(d, 20, 0.5f, bigEndian); // Reflectivity
+        WriteFloat(d, 24, 0.025f, bigEndian); // Fresnel
+        WriteFloat(d, 28, 0.03f, bigEndian); // Scroll X
+        WriteFloat(d, 32, -0.04f, bigEndian); // Scroll Y
+        WriteFloat(d, 36, 27852.8f, bigEndian); // Fog Near
+        WriteFloat(d, 40, 163840f, bigEndian); // Fog Far
         // wbByteColors are a byte sequence R,G,B,A.
-        d[44] = 0x10; d[45] = 0x20; d[46] = 0x30; d[47] = 0xFF; // Shallow
-        d[48] = 0x40; d[49] = 0x50; d[50] = 0x60; d[51] = 0xFF; // Deep
-        d[52] = 0x70; d[53] = 0x80; d[54] = 0x90; d[55] = 0xFF; // Reflection
+        d[44] = 0x10;
+        d[45] = 0x20;
+        d[46] = 0x30;
+        d[47] = 0xFF; // Shallow
+        d[48] = 0x40;
+        d[49] = 0x50;
+        d[50] = 0x60;
+        d[51] = 0xFF; // Deep
+        d[52] = 0x70;
+        d[53] = 0x80;
+        d[54] = 0x90;
+        d[55] = 0xFF; // Reflection
         d[56] = 73; // Texture Blend is a percentage byte, not a float.
         for (var i = 0; i < 10; i++)
         {
             WriteFloat(d, 60 + i * 4, i + 1, bigEndian); // Rain then displacement controls.
         }
+
         return d;
     }
 
@@ -92,7 +103,7 @@ public sealed class OblivionWaterDataTests
     [InlineData(true)]
     public void ReadOblivionWaterData_FeedsWaterAppearanceColorsAndControls(bool bigEndian)
     {
-        var appearance = BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance
+        var appearance = WaterAppearance
             .FromVisualProperties(MiscEnvironmentHandler.ReadOblivionWaterData(
                 BuildOblivionData(bigEndian), bigEndian), null);
 

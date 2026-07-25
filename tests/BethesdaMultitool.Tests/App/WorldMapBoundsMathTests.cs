@@ -38,7 +38,7 @@ public sealed class WorldMapBoundsMathTests
 
         Assert.True(extents.HasBounds);
         Assert.Equal(100f, extents.HalfW); // (100 - -100) * 0.5 * 1
-        Assert.Equal(50f, extents.HalfH);  // (50 - -50) * 0.5 * 1
+        Assert.Equal(50f, extents.HalfH); // (50 - -50) * 0.5 * 1
         Assert.Equal(5000f, extents.Area); // 100 * 50
     }
 

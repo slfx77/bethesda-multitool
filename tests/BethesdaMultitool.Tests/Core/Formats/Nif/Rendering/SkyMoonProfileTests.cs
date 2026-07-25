@@ -45,7 +45,8 @@ public sealed class SkyMoonProfileTests
         var profile = SkyMoonProfile.ForGame(game);
 
         Assert.NotEmpty(profile.PrimaryTextureCandidates);
-        Assert.All(profile.PrimaryTextureCandidates, p => Assert.EndsWith(".dds", p, System.StringComparison.OrdinalIgnoreCase));
+        Assert.All(profile.PrimaryTextureCandidates,
+            p => Assert.EndsWith(".dds", p, StringComparison.OrdinalIgnoreCase));
         Assert.True(profile.PrimaryHalfSizeFraction > 0f,
             $"{game} primary moon must have a positive size, got {profile.PrimaryHalfSizeFraction}");
     }
@@ -72,8 +73,10 @@ public sealed class SkyMoonProfileTests
         // textures\sky\ slot the later games share.
         var profile = SkyMoonProfile.ForGame(BethesdaGame.Morrowind);
 
-        Assert.Contains(profile.PrimaryTextureCandidates, p => p.Contains("tx_masser", System.StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(profile.SecondaryTextureCandidates, p => p.Contains("tx_secunda", System.StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(profile.PrimaryTextureCandidates,
+            p => p.Contains("tx_masser", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(profile.SecondaryTextureCandidates,
+            p => p.Contains("tx_secunda", StringComparison.OrdinalIgnoreCase));
     }
 
     [Theory]
@@ -103,11 +106,11 @@ public sealed class SkyMoonProfileTests
         var profile = SkyMoonProfile.ForGame(game);
 
         Assert.Contains(profile.PrimaryTextureCandidates,
-            p => p.Contains("secunda", System.StringComparison.OrdinalIgnoreCase));
+            p => p.Contains("secunda", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(profile.PrimaryTextureCandidates,
-            p => p.Contains("masser", System.StringComparison.OrdinalIgnoreCase));
+            p => p.Contains("masser", StringComparison.OrdinalIgnoreCase));
         Assert.True(profile.PrimaryUsesSecundaSize, $"{game} moon size must come from iSecundaSize");
-        Assert.Equal(@"textures\sky\secunda_full.dds", profile.PhaseTexturePath(secondary: false, 4));
+        Assert.Equal(@"textures\sky\secunda_full.dds", profile.PhaseTexturePath(false, 4));
     }
 
     [Fact]

@@ -18,15 +18,17 @@ public sealed class FnvTallGrassRetailAssetTests
 {
     private const string MeshesBsaRelative =
         @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+
     private const string Textures2BsaRelative =
         @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Textures2.bsa";
+
     private const string DiffusePath = @"textures\landscape\grass\NVGreenGrass.dds";
 
     private static readonly GrassFixture[] Fixtures =
     [
         new(@"meshes\landscape\grass\NVGreenGrass01.NIF", 40, 24, 100),
         new(@"meshes\landscape\grass\NVGreenGrass02.NIF", 18, 6, 90),
-        new(@"meshes\landscape\grass\NVGreenGrass03.NIF", 54, 54, 128),
+        new(@"meshes\landscape\grass\NVGreenGrass03.NIF", 54, 54, 128)
     ];
 
     [Fact]
@@ -50,7 +52,7 @@ public sealed class FnvTallGrassRetailAssetTests
             var model = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(
                 data,
                 nif,
-                textureResolver: textures,
+                textures,
                 skipSkinning: true,
                 treatRootsAsIdentity: true,
                 collectBillboards: true,

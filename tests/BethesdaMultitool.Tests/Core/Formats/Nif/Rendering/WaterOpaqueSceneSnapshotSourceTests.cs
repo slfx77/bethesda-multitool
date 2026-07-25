@@ -190,7 +190,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             "TryEnsureWaterOpaqueSnapshotSrv()",
             "surface.TryPrepareWaterOpaqueSnapshot(cmd)",
             "_water.SetFnvWater001Snapshot(",
-            "cmd.OMSetRenderTargets(sceneRtv)",
+            "cmd.OMSetRenderTargets(sceneRtv, surface.ReadOnlyDepthStencilView)",
             "_water?.Render(",
             "isPerspectiveProjection: !projectionActive",
             "surface.RestoreWaterOpaqueSnapshot(cmd);");
@@ -226,7 +226,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             "_water.GetFnvWater001Preflight(",
             "target.TryPrepareWaterOpaqueSnapshot(cmd)",
             "_water.SetFnvWater001Snapshot(",
-            "target.BindColorOnly(cmd)",
+            "target.BindColorReadOnlyDepth(cmd)",
             "_water.RenderAtTime(viewProj, cylinder, Vector3.Zero, animationTimeSeconds)",
             "target.RestoreWaterOpaqueSnapshot(cmd);");
         Assert.DoesNotContain("TryEnsureCaptureDepthSrv(target)", pass, StringComparison.Ordinal);
@@ -310,7 +310,8 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             "public CpuDescriptorHandle MsaaColorRtv");
         Assert.Contains("if (_waterOpaqueSnapshotPrepared || _waterOpaqueCopy is null) return false;",
             liveRelease, StringComparison.Ordinal);
-        SourceContract.AssertOrder(liveRelease, "_waterOpaqueCopy.Dispose();", "_waterOpaqueCopy = null;", "return true;");
+        SourceContract.AssertOrder(liveRelease, "_waterOpaqueCopy.Dispose();", "_waterOpaqueCopy = null;",
+            "return true;");
 
         var offscreen = ReadSurface("GpuOffscreenSceneTarget12.cs");
         var captureRelease = Extract(
@@ -319,7 +320,8 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             "public bool TonemapHistoryReset");
         Assert.Contains("_disposed || _waterOpaqueSnapshotPrepared || _waterOpaqueCopy is null",
             captureRelease, StringComparison.Ordinal);
-        SourceContract.AssertOrder(captureRelease, "_waterOpaqueCopy.Dispose();", "_waterOpaqueCopy = null;", "return true;");
+        SourceContract.AssertOrder(captureRelease, "_waterOpaqueCopy.Dispose();", "_waterOpaqueCopy = null;",
+            "return true;");
     }
 
     [Fact]
@@ -408,13 +410,17 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
         return source[start..end];
     }
 
-    private static string ReadSurface(string fileName) =>
-        SourceContract.ReadSource(
+    private static string ReadSurface(string fileName)
+    {
+        return SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             fileName);
+    }
 
-    private static string ReadAppSource(string fileName) =>
-        SourceContract.ReadSource(
+    private static string ReadAppSource(string fileName)
+    {
+        return SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls",
             fileName);
+    }
 }

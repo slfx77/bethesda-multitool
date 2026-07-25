@@ -333,9 +333,9 @@ internal static class SubrecordItemSchemas
         schemas[new SubrecordSchemaRegistry.SchemaKey("ENIT", "ALCH", 20)] = new SubrecordSchema(
             F.UInt32("Value"),
             F.Bytes("Flags", 4),
-            F.FormId("Addiction"),
+            F.FormId("WithdrawalEffect"),
             F.Float("AddictionChance"),
-            F.FormId("UseSoundOrWithdrawalEffect"))
+            F.FormId("ConsumeSound"))
         {
             Description = "Alchemy/Potion Data"
         };

@@ -37,15 +37,56 @@ public sealed class GrassPlacementBuilderTests
     }
 
     [Fact]
+    public void Profile_OblivionUsesShippedIniDefaultsWithConservativePlacement()
+    {
+        // Oblivion_default.ini [Grass] (see GrassScatterProfile.ForGame comment): iMinGrassSize=80,
+        // iGrassDensityEvalSize=2, iMaxGrassTypesPerTexure=2 (inclusive → three entries),
+        // fGrassStartFadeDistance=2000 + fGrassEndDistance=3000 (END distance, not a range).
+        var profile = GrassScatterProfile.ForGame(BethesdaGame.Oblivion);
+
+        Assert.True(profile.Supported);
+        Assert.Equal(80f, profile.MinGrassSize);
+        Assert.Equal(2, profile.EvalRadius);
+        Assert.Equal(3, profile.MaxGrassEntriesPerTexture);
+        Assert.Equal(0f, profile.TexturePercentageThreshold);
+        // Quantization/topology/height-floor stay conservative until a TES4 CreateGrass decompile
+        // proves the FNV ancestry values.
+        Assert.Equal(GrassPositionQuantization.None, profile.PositionQuantization);
+        Assert.Null(profile.TerrainTopology);
+        Assert.False(profile.FloorSampledHeight);
+        Assert.Equal(2000f, profile.DistanceEnvelope.FadeStart);
+        Assert.Equal(1000f, profile.DistanceEnvelope.FadeRange);
+        Assert.Equal(3000f, profile.DistanceEnvelope.HardEnd);
+    }
+
+    [Fact]
+    public void Build_OblivionUsesGenericPlacementTransformWithoutFnvArtifacts()
+    {
+        var heights = Enumerable.Repeat(123.456f, 33 * 33).ToArray();
+        var fixture = CreateFixture(heights, 100, 512f);
+
+        var placements = Build(fixture, BethesdaGame.Oblivion);
+
+        Assert.NotEmpty(placements);
+        Assert.All(placements, p =>
+        {
+            // No FNV wind contract and no FNV floor/checkerboard artifacts: the sampled flat
+            // height survives un-floored.
+            Assert.Equal(0f, p.GrassWaveMultiplier);
+            Assert.Equal(123.456f, p.WorldMatrix.Translation.Z, 3);
+        });
+    }
+
+    [Fact]
     public void Build_InclusiveEngineLimitConsumesThreeGrassLinks()
     {
-        var fixture = CreateFixture(CreateFlatHeights(), density: 100, positionRange: 512f);
+        var fixture = CreateFixture(CreateFlatHeights(), 100, 512f);
         var grass2 = fixture.Grass with { FormId = fixture.Grass.FormId + 1 };
         var grass3 = fixture.Grass with { FormId = fixture.Grass.FormId + 2 };
         var grass4 = fixture.Grass with { FormId = fixture.Grass.FormId + 3 };
         var landTexture = fixture.LandTexture with
         {
-            GrassFormIds = [fixture.Grass.FormId, grass2.FormId, grass3.FormId, grass4.FormId],
+            GrassFormIds = [fixture.Grass.FormId, grass2.FormId, grass3.FormId, grass4.FormId]
         };
 
         var placements = GrassPlacementBuilder.Build(
@@ -57,10 +98,10 @@ public sealed class GrassPlacementBuilderTests
                 [fixture.Grass.FormId] = fixture.Grass,
                 [grass2.FormId] = grass2,
                 [grass3.FormId] = grass3,
-                [grass4.FormId] = grass4,
+                [grass4.FormId] = grass4
             },
             BethesdaGame.FalloutNewVegas,
-            effectiveWaterHeight: null);
+            null);
 
         Assert.Equal(64 * 3, placements.Count);
         Assert.Contains(placements, p => p.FormId == fixture.Grass.FormId);
@@ -72,7 +113,7 @@ public sealed class GrassPlacementBuilderTests
     [Fact]
     public void Build_FullDensityBaseTexture_ProducesOneCandidatePerEvaluationChunk()
     {
-        var fixture = CreateFixture(CreateFlatHeights(), density: 100, positionRange: 512f);
+        var fixture = CreateFixture(CreateFlatHeights(), 100, 512f);
 
         var placements = Build(fixture, BethesdaGame.FalloutNewVegas);
 
@@ -96,7 +137,7 @@ public sealed class GrassPlacementBuilderTests
     public void Build_SkyrimRoundTripsPositionsThroughBlockRelativeHalfPrecision()
     {
         var heights = Enumerable.Repeat(123.456f, 33 * 33).ToArray();
-        var fixture = CreateFixture(heights, density: 100, positionRange: 512f);
+        var fixture = CreateFixture(heights, 100, 512f);
 
         var placements = Build(fixture, BethesdaGame.Skyrim);
 
@@ -121,10 +162,11 @@ public sealed class GrassPlacementBuilderTests
                 heights[y * 33 + x] = ((x + y) & 1) == 0 ? 0f : 80.75f;
             }
         }
+
         var fixture = CreateFixture(
             heights,
-            density: 100,
-            positionRange: 512f,
+            100,
+            512f,
             maxSlope: 90,
             flags: 0x06);
 
@@ -140,7 +182,7 @@ public sealed class GrassPlacementBuilderTests
                 33,
                 position.X,
                 position.Y,
-                spacing: 128f,
+                128f,
                 TerrainTriangleTopology.AlternatingCheckerboard,
                 out var sampledHeight,
                 out var sampledNormal));
@@ -156,6 +198,7 @@ public sealed class GrassPlacementBuilderTests
                 placement.WorldMatrix.M33));
             Assert.InRange(Vector3.Distance(sampledNormal, placedUp), 0f, 1e-5f);
         }
+
         Assert.True(fractionalSamples > 0);
     }
 
@@ -180,9 +223,9 @@ public sealed class GrassPlacementBuilderTests
         var sloped = GrassPlacementBuilder.ComposeFnvWorldMatrix(
             new Vector3(10f, 20f, 30f),
             new Vector3(0.8f, 0f, 0.6f),
-            fitToSlope: true,
-            heightScale: 1.25f,
-            uniformScale: false);
+            true,
+            1.25f,
+            false);
 
         // |X| is not the smallest component, so GRASS2002 chooses N cross Y for T.
         AssertAxis(sloped, 1, new Vector3(0f, 1f, 0f));
@@ -193,9 +236,9 @@ public sealed class GrassPlacementBuilderTests
         var flat = GrassPlacementBuilder.ComposeFnvWorldMatrix(
             Vector3.Zero,
             Vector3.UnitZ,
-            fitToSlope: true,
-            heightScale: 1.2f,
-            uniformScale: true);
+            true,
+            1.2f,
+            true);
 
         // abs(Y) >= abs(X) is true on the 0 == 0 tie. The packed normal's upper clamp decodes
         // retail +Z as 0.94, and the resulting flat basis is the shader's deterministic 180° turn.
@@ -209,16 +252,16 @@ public sealed class GrassPlacementBuilderTests
     {
         var fixture = CreateFixture(
             CreateFlatHeights(),
-            density: 100,
-            positionRange: 512f,
+            100,
+            512f,
             flags: 0,
             heightRange: 0.42f);
         var uniformFixture = fixture with
         {
             Grass = fixture.Grass with
             {
-                Data = fixture.Grass.Data! with { Flags = 0x02 },
-            },
+                Data = fixture.Grass.Data! with { Flags = 0x02 }
+            }
         };
 
         var verticalOnly = Build(fixture, BethesdaGame.FalloutNewVegas);
@@ -254,9 +297,9 @@ public sealed class GrassPlacementBuilderTests
         GrassPositionQuantizer.Quantize(
             ref x,
             ref y,
-            cellX: -1,
-            cellY: -13,
-            cellSize: 4096f,
+            -1,
+            -13,
+            4096f,
             GrassPositionQuantization.HalfRelativeToTwelveCellBlock);
 
         // Signed engine division truncates: -1 / 12 -> 0, while -13 / 12 -> -1.
@@ -267,7 +310,7 @@ public sealed class GrassPlacementBuilderTests
     [Fact]
     public void Build_RecoveredYawSamplingUsesPositiveSquareRootHalfCircle()
     {
-        var fixture = CreateFixture(CreateFlatHeights(), density: 100, positionRange: 512f);
+        var fixture = CreateFixture(CreateFlatHeights(), 100, 512f);
 
         var placements = Build(fixture, BethesdaGame.Skyrim);
 
@@ -281,7 +324,7 @@ public sealed class GrassPlacementBuilderTests
     [Fact]
     public void Build_IsDeterministicForTheSameCellAndRecords()
     {
-        var fixture = CreateFixture(CreateFlatHeights(), density: 47, positionRange: 256f);
+        var fixture = CreateFixture(CreateFlatHeights(), 47, 256f);
 
         var first = Build(fixture, BethesdaGame.Skyrim);
         var second = Build(fixture, BethesdaGame.Skyrim);
@@ -298,7 +341,7 @@ public sealed class GrassPlacementBuilderTests
     [Fact]
     public void Build_ZeroDensitySuppressesEveryCandidate()
     {
-        var fixture = CreateFixture(CreateFlatHeights(), density: 0, positionRange: 512f);
+        var fixture = CreateFixture(CreateFlatHeights(), 0, 512f);
 
         Assert.Empty(Build(fixture, BethesdaGame.Skyrim));
     }
@@ -306,9 +349,9 @@ public sealed class GrassPlacementBuilderTests
     [Fact]
     public void Build_AppliesRecoveredSlopeGate()
     {
-        var heights = CreatePlanarHeights(dzdx: 1f);
-        var tooSteep = CreateFixture(heights, density: 100, positionRange: 512f, maxSlope: 30);
-        var accepted = CreateFixture(heights, density: 100, positionRange: 512f, maxSlope: 60);
+        var heights = CreatePlanarHeights(1f);
+        var tooSteep = CreateFixture(heights, 100, 512f, maxSlope: 30);
+        var accepted = CreateFixture(heights, 100, 512f, maxSlope: 60);
 
         Assert.Empty(Build(tooSteep, BethesdaGame.Skyrim));
         Assert.Equal(64, Build(accepted, BethesdaGame.Skyrim).Count);
@@ -318,9 +361,9 @@ public sealed class GrassPlacementBuilderTests
     public void Build_FitToSlopeAlignsTheLocalUpAxisWithTerrainNormal()
     {
         var fixture = CreateFixture(
-            CreatePlanarHeights(dzdx: 1f),
-            density: 100,
-            positionRange: 512f,
+            CreatePlanarHeights(1f),
+            100,
+            512f,
             maxSlope: 90,
             flags: 0x04);
 
@@ -340,25 +383,25 @@ public sealed class GrassPlacementBuilderTests
     {
         var belowOnly = CreateFixture(
             CreateFlatHeights(),
-            density: 100,
-            positionRange: 512f,
+            100,
+            512f,
             waterAmount: 20,
             waterState: 2);
         var aboveOnly = CreateFixture(
             CreateFlatHeights(),
-            density: 100,
-            positionRange: 512f,
+            100,
+            512f,
             waterAmount: 20,
             waterState: 1);
 
-        Assert.Equal(64, Build(belowOnly, BethesdaGame.Fallout4, waterHeight: 100f).Count);
-        Assert.Empty(Build(aboveOnly, BethesdaGame.Fallout4, waterHeight: 100f));
+        Assert.Equal(64, Build(belowOnly, BethesdaGame.Fallout4, 100f).Count);
+        Assert.Empty(Build(aboveOnly, BethesdaGame.Fallout4, 100f));
     }
 
     [Fact]
     public void Build_UnsupportedGameDoesNotScatterGrass()
     {
-        var fixture = CreateFixture(CreateFlatHeights(), density: 100, positionRange: 512f);
+        var fixture = CreateFixture(CreateFlatHeights(), 100, 512f);
 
         Assert.Empty(Build(fixture, BethesdaGame.Morrowind));
     }
@@ -367,13 +410,15 @@ public sealed class GrassPlacementBuilderTests
         Fixture fixture,
         BethesdaGame game,
         float? waterHeight = null)
-        => GrassPlacementBuilder.Build(
+    {
+        return GrassPlacementBuilder.Build(
             fixture.Cell,
             fixture.Heights,
             new Dictionary<uint, LandscapeTextureRecord> { [fixture.LandTexture.FormId] = fixture.LandTexture },
             new Dictionary<uint, GrassRecord> { [fixture.Grass.FormId] = fixture.Grass },
             game,
             waterHeight);
+    }
 
     private static Fixture CreateFixture(
         float[] heights,
@@ -393,7 +438,7 @@ public sealed class GrassPlacementBuilderTests
             {
                 Kind = LandTextureLayerKind.Base,
                 TextureFormId = ltexFormId,
-                Quadrant = (byte)q,
+                Quadrant = (byte)q
             })
             .ToList();
         var cell = new CellRecord
@@ -402,12 +447,12 @@ public sealed class GrassPlacementBuilderTests
             GridX = 0,
             GridY = 0,
             CellWorldSize = 4096f,
-            LandVisualData = new LandVisualData { TextureLayers = layers },
+            LandVisualData = new LandVisualData { TextureLayers = layers }
         };
         var landTexture = new LandscapeTextureRecord
         {
             FormId = ltexFormId,
-            GrassFormIds = [grassFormId],
+            GrassFormIds = [grassFormId]
         };
         var grass = new GrassRecord
         {
@@ -425,13 +470,16 @@ public sealed class GrassPlacementBuilderTests
                 HeightRange = heightRange,
                 ColorRange = 0.5f,
                 WavePeriod = 10f,
-                Flags = flags,
-            },
+                Flags = flags
+            }
         };
         return new Fixture(cell, heights, landTexture, grass);
     }
 
-    private static float[] CreateFlatHeights() => new float[33 * 33];
+    private static float[] CreateFlatHeights()
+    {
+        return new float[33 * 33];
+    }
 
     private static float[] CreatePlanarHeights(float dzdx)
     {
@@ -443,6 +491,7 @@ public sealed class GrassPlacementBuilderTests
                 heights[y * 33 + x] = x * 128f * dzdx;
             }
         }
+
         return heights;
     }
 
@@ -453,7 +502,7 @@ public sealed class GrassPlacementBuilderTests
             1 => new Vector3(matrix.M11, matrix.M12, matrix.M13),
             2 => new Vector3(matrix.M21, matrix.M22, matrix.M23),
             3 => new Vector3(matrix.M31, matrix.M32, matrix.M33),
-            _ => throw new ArgumentOutOfRangeException(nameof(row)),
+            _ => throw new ArgumentOutOfRangeException(nameof(row))
         };
         Assert.Equal(expected.X, actual.X, 5);
         Assert.Equal(expected.Y, actual.Y, 5);

@@ -37,7 +37,7 @@ public sealed class BigEndianNifBuilderTests
         Assert.Equal(
             [
                 "NiNode", "NiTriShape", "NiTriShapeData", "NiAlphaProperty",
-                "BSShaderNoLightingProperty", "BSDismemberSkinInstance", "NiAdditionalGeometryData",
+                "BSShaderNoLightingProperty", "BSDismemberSkinInstance", "NiAdditionalGeometryData"
             ],
             info.Blocks.Select(b => b.TypeName));
 
@@ -55,7 +55,7 @@ public sealed class BigEndianNifBuilderTests
     [Fact]
     public void Parse_AlphaPropertyFieldsReadBackAtDocumentedOffsets()
     {
-        var data = BigEndianNifBuilder.Build(alphaFlags: 0x12EC, alphaThreshold: 80);
+        var data = BigEndianNifBuilder.Build(0x12EC, 80);
         var info = Assert.IsType<NifInfo>(NifParser.Parse(data));
         var alphaBlock = info.Blocks[BigEndianNifBuilder.NiAlphaPropertyBlockIndex];
 

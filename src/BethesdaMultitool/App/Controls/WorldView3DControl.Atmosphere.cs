@@ -241,10 +241,12 @@ public sealed partial class WorldView3DControl
         var weatherTransition = ResolveSelectedWeatherTransition();
         _weatherImageSpaceTelemetry = weatherTransition.Telemetry;
         var activeWeather = weatherTransition.CurrentWeather;
+        // TES4 has no interior/exterior HDR split — the weather HNAM (with per-field engine-default
+        // substitution) governs everywhere the sky is active.
         var settings = game == Core.Games.BethesdaGame.Oblivion
             ? Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ApplyOverrides(
                 Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ForOblivionWeather(
-                    activeWeather?.Hdr, interior))
+                    activeWeather?.Hdr))
             : Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ForGame(game, interior);
         var engineImagespaceFamily = game is Core.Games.BethesdaGame.Oblivion
             or Core.Games.BethesdaGame.Fallout3
@@ -263,8 +265,17 @@ public sealed partial class WorldView3DControl
             useClassicDefault: engineImagespaceFamily);
         _tonemapBaseImageSpaceSelection = imageSpaceSelection;
         var formId = imageSpaceSelection.ImageSpaceFormId;
+        // Explicit dropdown pick replaces the resolved cell/worldspace IMGS with the chosen record;
+        // the resolver still runs so the Inspection panel can show what Automatic WOULD have used.
+        var explicitImagespace = _imagespaceMode == ImagespaceSelectionMode.Explicit;
+        if (explicitImagespace)
+        {
+            formId = _imagespaceExplicitFormId;
+        }
         _tonemapBaseImageSpaceFormId = formId;
-        _tonemapBaseImageSpaceSource = imageSpaceSelection.SourceTelemetry;
+        _tonemapBaseImageSpaceSource = explicitImagespace
+            ? "explicit UI selection"
+            : imageSpaceSelection.SourceTelemetry;
         if (_data is null)
         {
             _tonemapBaseImageSpaceUnavailableReason = "world data is unavailable";
@@ -307,7 +318,7 @@ public sealed partial class WorldView3DControl
                 HistoryKey = historyKey,
                 EmissiveMult = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings
                     .ResolveEmissiveMult(settings.EmissiveMult, null, hdrEnabled: false,
-                        imagespaceModifiersEnabled: _imagespaceModifiersEnabled),
+                        imagespaceModifiersEnabled: _imagespaceMode != ImagespaceSelectionMode.None),
             };
         }
 
@@ -322,9 +333,9 @@ public sealed partial class WorldView3DControl
             };
         }
 
-        // Imagespace modifiers off = skip the authored IMGS overlay (cinematic grade + HDR params)
+        // Imagespace "(None)" = skip the authored IMGS overlay (cinematic grade + HDR params)
         // and render with a neutral scene grade; the eye-adapt exposure stays.
-        if (!_imagespaceModifiersEnabled)
+        if (_imagespaceMode == ImagespaceSelectionMode.None)
         {
             settings = settings with
             {
@@ -345,7 +356,8 @@ public sealed partial class WorldView3DControl
             };
         }
 
-        if (_imagespaceModifiersEnabled && formId is { } id && _data.ImageSpacesByFormId.TryGetValue(id, out var imgs))
+        if (_imagespaceMode != ImagespaceSelectionMode.None
+            && formId is { } id && _data.ImageSpacesByFormId.TryGetValue(id, out var imgs))
         {
             if (modernImagespaceFamily)
             {
@@ -407,7 +419,9 @@ public sealed partial class WorldView3DControl
         // Creation-era WTHR IMSP entries reference IMGS records directly. FO4's recovered
         // Sky::UpdateHDRValues WeightedAdd path selects two semantic time bands and, during a
         // weather transition, two weathers (up to four base-data/LUT contributions).
-        if (_imagespaceModifiersEnabled && modernImagespaceFamily && !interior
+        // Weather IMAD bands only ride the Automatic resolution — an explicit dropdown pick is an
+        // atomic "show me this IMGS" preview and (None) is neutral by definition.
+        if (_imagespaceMode == ImagespaceSelectionMode.Automatic && modernImagespaceFamily && !interior
             && (activeWeather?.ImageSpaceModifiers is not null
                 || weatherTransition.OutgoingWeather?.ImageSpaceModifiers is not null))
         {
@@ -430,7 +444,7 @@ public sealed partial class WorldView3DControl
         // climate-default views retain Sky's outgoing/current pair; explicit previews stay atomic.
         // The IMAD elapsed clock is not in the recovered Sky layout, so animatable timelines are
         // explicitly gated as unknown instead of silently sampling a fabricated t=0.
-        if (_imagespaceModifiersEnabled && !interior
+        if (_imagespaceMode == ImagespaceSelectionMode.Automatic && !interior
             && game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas
             && (activeWeather?.ImageSpaceModifiers is not null
                 || weatherTransition.OutgoingWeather?.ImageSpaceModifiers is not null))

@@ -324,25 +324,25 @@ public sealed class CellChildAllocatorTests
             FormId = 0x0010B9A5,
             WorldspaceFormId = 0x0010B96F,
             GridX = 0,
-            GridY = 0,
+            GridY = 0
         };
         var entry = new CellCatalogEntry
         {
             CellFormId = cell.FormId,
             Source = SourceKind.DmpNew,
-            DmpModel = cell,
+            DmpModel = cell
         };
         var navm = new NavMeshRecord
         {
             FormId = 0xAA000001,
             CellFormId = cell.FormId,
-            RawSubrecords = [new NavMeshSubrecord("DATA", [1, 2, 3, 4])],
+            RawSubrecords = [new NavMeshSubrecord("DATA", [1, 2, 3, 4])]
         };
         var land = new CellLandDecision
         {
             CellSourceFormId = cell.FormId,
             Heightmap = new LandHeightmap { HeightDeltas = new sbyte[33 * 33] },
-            HeightSource = CellLandHeightSource.CapturedHeightmap,
+            HeightSource = CellLandHeightSource.CapturedHeightmap
         };
 
         var result = allocator.AllocateAll(
@@ -365,20 +365,20 @@ public sealed class CellChildAllocatorTests
             FormId = masterCellId,
             WorldspaceFormId = 0x000DA726,
             GridX = 0,
-            GridY = 0,
+            GridY = 0
         };
         var entry = new CellCatalogEntry
         {
             CellFormId = masterCellId,
             Source = SourceKind.DmpOverride,
-            DmpModel = cell,
+            DmpModel = cell
         };
         var land = new CellLandDecision
         {
             CellSourceFormId = masterCellId,
             Heightmap = new LandHeightmap { HeightDeltas = new sbyte[33 * 33] },
             HeightSource = CellLandHeightSource.CapturedHeightmap,
-            MasterLandFormId = masterLandId,
+            MasterLandFormId = masterLandId
         };
         var masterFormIds = new HashSet<uint> { masterCellId, masterLandId };
 

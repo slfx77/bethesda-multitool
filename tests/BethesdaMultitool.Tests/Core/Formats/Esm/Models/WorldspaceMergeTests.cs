@@ -12,11 +12,15 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Models;
 /// </summary>
 public sealed class WorldspaceMergeTests
 {
-    private static CellRecord Cell(uint formId, int gx, int gy) =>
-        new() { FormId = formId, GridX = gx, GridY = gy };
+    private static CellRecord Cell(uint formId, int gx, int gy)
+    {
+        return new CellRecord { FormId = formId, GridX = gx, GridY = gy };
+    }
 
-    private static WorldspaceRecord Worldspace(uint formId, string editorId, params CellRecord[] cells) =>
-        new() { FormId = formId, EditorId = editorId, Cells = [.. cells] };
+    private static WorldspaceRecord Worldspace(uint formId, string editorId, params CellRecord[] cells)
+    {
+        return new WorldspaceRecord { FormId = formId, EditorId = editorId, Cells = [.. cells] };
+    }
 
     [Fact]
     public void MergeWith_WorldspaceOverride_UnionsCellChildren()
@@ -28,7 +32,10 @@ public sealed class WorldspaceMergeTests
         // The DLC override: one colliding cell (its version must win) + one DLC-only cell.
         var overlay = new RecordCollection
         {
-            Worldspaces = [Worldspace(0x3C, "Commonwealth", Cell(0x101, 1, 0) with { EditorId = "DlcOverride" }, Cell(0x200, 5, 5))]
+            Worldspaces =
+            [
+                Worldspace(0x3C, "Commonwealth", Cell(0x101, 1, 0) with { EditorId = "DlcOverride" }, Cell(0x200, 5, 5))
+            ]
         };
 
         var merged = baseRecords.MergeWith(overlay);

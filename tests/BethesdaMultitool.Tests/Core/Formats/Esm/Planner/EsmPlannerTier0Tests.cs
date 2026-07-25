@@ -86,8 +86,8 @@ public sealed class EsmPlannerTier0Tests
             {
                 Signature = "GMST",
                 FormId = masterFormId,
-                Version = 15,
-            },
+                Version = 15
+            }
         };
         var dmp = new RecordCollection
         {
@@ -97,9 +97,9 @@ public sealed class EsmPlannerTier0Tests
                 {
                     FormId = sourceFormId,
                     EditorId = "SharedEditorId",
-                    IntValue = 1,
-                },
-            ],
+                    IntValue = 1
+                }
+            ]
         };
 
         var plan = planner.Build(
@@ -131,8 +131,8 @@ public sealed class EsmPlannerTier0Tests
             GameSettings =
             [
                 GameSetting(aliasFormId, "SharedEditorId", 1),
-                GameSetting(masterFormId, "SharedEditorId", 2),
-            ],
+                GameSetting(masterFormId, "SharedEditorId", 2)
+            ]
         };
 
         var plan = planner.Build(
@@ -162,8 +162,8 @@ public sealed class EsmPlannerTier0Tests
             GameSettings =
             [
                 GameSetting(firstAliasFormId, "SharedEditorId", 1),
-                GameSetting(secondAliasFormId, "SharedEditorId", 2),
-            ],
+                GameSetting(secondAliasFormId, "SharedEditorId", 2)
+            ]
         };
 
         var plan = planner.Build(
@@ -175,7 +175,7 @@ public sealed class EsmPlannerTier0Tests
             masterFormIdAliases: new Dictionary<uint, uint>
             {
                 [firstAliasFormId] = masterFormId,
-                [secondAliasFormId] = masterFormId,
+                [secondAliasFormId] = masterFormId
             });
 
         Assert.Single(plan.Records);
@@ -278,22 +278,28 @@ public sealed class EsmPlannerTier0Tests
         Assert.Equal(0x800u, allocator.NextObjectId);
     }
 
-    private static ParsedMainRecord MasterGameSetting(uint formId) => new()
+    private static ParsedMainRecord MasterGameSetting(uint formId)
     {
-        Header = new MainRecordHeader
+        return new ParsedMainRecord
         {
-            Signature = "GMST",
-            FormId = formId,
-            Version = 15,
-        },
-    };
+            Header = new MainRecordHeader
+            {
+                Signature = "GMST",
+                FormId = formId,
+                Version = 15
+            }
+        };
+    }
 
-    private static GameSettingRecord GameSetting(uint formId, string editorId, int value) => new()
+    private static GameSettingRecord GameSetting(uint formId, string editorId, int value)
     {
-        FormId = formId,
-        EditorId = editorId,
-        IntValue = value,
-    };
+        return new GameSettingRecord
+        {
+            FormId = formId,
+            EditorId = editorId,
+            IntValue = value
+        };
+    }
 
     private static EsmPlanner BuildPlanner(FormIdAllocator? allocator = null)
     {

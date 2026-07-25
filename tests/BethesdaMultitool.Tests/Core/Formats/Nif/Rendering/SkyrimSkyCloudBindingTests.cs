@@ -24,8 +24,8 @@ public sealed class SkyrimSkyCloudBindingTests
                     15 => @"sky\layer15.dds",
                     19 => @"sky\layer19.dds",
                     20 => @"sky\layer20.dds",
-                    _ => null,
-                },
+                    _ => null
+                }
             })
             .ToArray();
         var weather = new WeatherRecord { CloudLayers = layers };
@@ -59,6 +59,9 @@ public sealed class SkyrimSkyCloudBindingTests
         Assert.Equal("13_CDHorizon_1_E", Name(children[19]));
         Assert.Equal("13_CDHorizon_1_W", Name(children[20]));
 
-        string? Name(int blockIndex) => NifBlockParsers.ReadBlockName(data, nif.Blocks[blockIndex], nif);
+        string? Name(int blockIndex)
+        {
+            return NifBlockParsers.ReadBlockName(data, nif.Blocks[blockIndex], nif);
+        }
     }
 }

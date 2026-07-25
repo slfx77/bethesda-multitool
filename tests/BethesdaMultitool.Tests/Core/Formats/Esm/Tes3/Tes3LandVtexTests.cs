@@ -1,6 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Tes3;
 using Xunit;
@@ -27,11 +25,11 @@ public class Tes3LandVtexTests
         Assert.NotNull(tex);
         const int size = 16;
 
-        Assert.Equal(0, tex![0 * size + 0]);   // readPos 0  → (0,0)
-        Assert.Equal(1, tex[0 * size + 1]);    // readPos 1  → (1,0)
-        Assert.Equal(3, tex[0 * size + 3]);    // readPos 3  → (3,0)
-        Assert.Equal(4, tex[1 * size + 0]);    // readPos 4  → (0,1)  (next inner row of block 0)
-        Assert.Equal(16, tex[0 * size + 4]);   // readPos 16 → (4,0)  (next outer block, x1=1)
+        Assert.Equal(0, tex![0 * size + 0]); // readPos 0  → (0,0)
+        Assert.Equal(1, tex[0 * size + 1]); // readPos 1  → (1,0)
+        Assert.Equal(3, tex[0 * size + 3]); // readPos 3  → (3,0)
+        Assert.Equal(4, tex[1 * size + 0]); // readPos 4  → (0,1)  (next inner row of block 0)
+        Assert.Equal(16, tex[0 * size + 4]); // readPos 16 → (4,0)  (next outer block, x1=1)
         Assert.Equal(255, tex[15 * size + 15]); // readPos 255 → (15,15)
     }
 

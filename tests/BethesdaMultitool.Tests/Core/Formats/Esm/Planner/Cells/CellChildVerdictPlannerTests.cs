@@ -32,7 +32,7 @@ public sealed class CellChildVerdictPlannerTests
     public void New_Ref_With_Master_Base_Gets_Emit_Verdict_With_Bucket()
     {
         var cells = Apply(MakeCell(
-            temporary: [NewChild("REFR", NewRefId, Ref(NewRefId, MasterStatBaseId))]));
+            [NewChild("REFR", NewRefId, Ref(NewRefId, MasterStatBaseId))]));
 
         var verdict = cells[CellId].RefDecisions[NewRefId];
         Assert.Equal(PlacedRefEmitVerdict.Emit, verdict.Verdict);
@@ -46,7 +46,7 @@ public sealed class CellChildVerdictPlannerTests
     {
         var placed = Ref(NewRefId, MasterStatBaseId) with { IsInitiallyDisabled = true };
         var cells = Apply(MakeCell(
-            temporary: [NewChild("REFR", NewRefId, placed)],
+            [NewChild("REFR", NewRefId, placed)],
             worldspaceFormId: 0x0010B96F));
 
         Assert.False(cells[CellId].RefDecisions[NewRefId].NewInitiallyDisabled);
@@ -59,10 +59,10 @@ public sealed class CellChildVerdictPlannerTests
         {
             IsInitiallyDisabled = true,
             EnableParentFormId = 0x01002415,
-            EnableParentFlags = 0x01,
+            EnableParentFlags = 0x01
         };
         var cells = Apply(MakeCell(
-            temporary: [NewChild("REFR", NewRefId, placed)],
+            [NewChild("REFR", NewRefId, placed)],
             worldspaceFormId: 0x0010B96F));
 
         Assert.True(cells[CellId].RefDecisions[NewRefId].NewInitiallyDisabled);
@@ -79,10 +79,10 @@ public sealed class CellChildVerdictPlannerTests
         var placed = Ref(NewRefId, MasterStatBaseId) with
         {
             IsInitiallyDisabled = true,
-            EnableParentFormId = prototypeParent,
+            EnableParentFormId = prototypeParent
         };
         var cells = Apply(MakeCell(
-            temporary: [NewChild("REFR", NewRefId, placed)],
+            [NewChild("REFR", NewRefId, placed)],
             worldspaceFormId: 0x0010B96F));
 
         var verdict = cells[CellId].RefDecisions[NewRefId];
@@ -98,7 +98,7 @@ public sealed class CellChildVerdictPlannerTests
     {
         var placed = Ref(markerFormId, MasterStatBaseId) with { IsInitiallyDisabled = true };
         var cells = Apply(MakeCell(
-            temporary: [NewChild("REFR", markerFormId, placed)],
+            [NewChild("REFR", markerFormId, placed)],
             worldspaceFormId: 0x0010B96F));
 
         var verdict = cells[CellId].RefDecisions[markerFormId];
@@ -123,7 +123,7 @@ public sealed class CellChildVerdictPlannerTests
                 children.Add(NewChild("REFR", formId, Ref(formId, MasterStatBaseId) with
                 {
                     IsInitiallyDisabled = true,
-                    EnableParentFormId = prototypeParent,
+                    EnableParentFormId = prototypeParent
                 }));
             }
         }
@@ -148,7 +148,7 @@ public sealed class CellChildVerdictPlannerTests
         }
 
         var cells = Apply(MakeCell(
-            temporary: [.. children],
+            [.. children],
             worldspaceFormId: 0x0010B96F));
         var verdicts = cells[CellId].RefDecisions;
         var staged = stagedIds.Select(id => verdicts[id]).ToArray();
@@ -178,10 +178,10 @@ public sealed class CellChildVerdictPlannerTests
         var placed = Ref(NewRefId, baseFormId) with
         {
             RecordType = recordType,
-            IsInitiallyDisabled = true,
+            IsInitiallyDisabled = true
         };
         var cells = Apply(MakeCell(
-            temporary: [NewChild(recordType, NewRefId, placed)],
+            [NewChild(recordType, NewRefId, placed)],
             worldspaceFormId: 0x0010B96F));
 
         Assert.True(cells[CellId].RefDecisions[NewRefId].NewInitiallyDisabled);
@@ -192,7 +192,7 @@ public sealed class CellChildVerdictPlannerTests
     {
         var placed = Ref(NewRefId, MasterStatBaseId) with { IsInitiallyDisabled = true };
         var cells = Apply(MakeCell(
-            temporary: [NewChild("REFR", NewRefId, placed)],
+            [NewChild("REFR", NewRefId, placed)],
             worldspaceFormId: 0x0010B970));
 
         Assert.True(cells[CellId].RefDecisions[NewRefId].NewInitiallyDisabled);
@@ -202,7 +202,7 @@ public sealed class CellChildVerdictPlannerTests
     public void New_Ref_With_Dangling_Base_Gets_Drop_Verdict()
     {
         var cells = Apply(MakeCell(
-            temporary: [NewChild("REFR", NewRefId, Ref(NewRefId, 0x00DEAD01))]));
+            [NewChild("REFR", NewRefId, Ref(NewRefId, 0x00DEAD01))]));
 
         var verdict = cells[CellId].RefDecisions[NewRefId];
         Assert.Equal(PlacedRefEmitVerdict.Drop, verdict.Verdict);
@@ -215,9 +215,9 @@ public sealed class CellChildVerdictPlannerTests
         var actor = Ref(ActorRefId, RuntimeCloneBase) with
         {
             RecordType = "ACHR",
-            LeveledCreatureOriginalBaseFormId = MasterNpcBaseId,
+            LeveledCreatureOriginalBaseFormId = MasterNpcBaseId
         };
-        var cells = Apply(MakeCell(temporary: [NewChild("ACHR", ActorRefId, actor)]));
+        var cells = Apply(MakeCell([NewChild("ACHR", ActorRefId, actor)]));
 
         var verdict = cells[CellId].RefDecisions[ActorRefId];
         Assert.Equal(PlacedRefEmitVerdict.Emit, verdict.Verdict);
@@ -229,13 +229,12 @@ public sealed class CellChildVerdictPlannerTests
     public void Master_Temporary_Actor_Override_Is_Suppressed_And_Covered()
     {
         var cells = Apply(
-            MakeCell(temporary:
-            [
+            MakeCell([
                 OverrideChild("ACHR", MasterRefId, Ref(MasterRefId, MasterNpcBaseId) with { RecordType = "ACHR" })
             ]),
-            configureIndex: index => index.ChildLocations[MasterRefId] =
+            index => index.ChildLocations[MasterRefId] =
                 new MasterChildLocation(CellId, 9, "ACHR"),
-            extraMaster: ("ACHR", MasterRefId));
+            ("ACHR", MasterRefId));
 
         var verdict = cells[CellId].RefDecisions[MasterRefId];
         Assert.Equal(PlacedRefEmitVerdict.Drop, verdict.Verdict);
@@ -251,9 +250,9 @@ public sealed class CellChildVerdictPlannerTests
             [
                 OverrideChild("REFR", MasterRefId, Ref(MasterRefId, MasterStatBaseId))
             ]),
-            configureIndex: index => index.ChildLocations[MasterRefId] =
+            index => index.ChildLocations[MasterRefId] =
                 new MasterChildLocation(CellId, 8, "REFR"),
-            extraMaster: ("REFR", MasterRefId));
+            ("REFR", MasterRefId));
 
         var verdict = cells[CellId].RefDecisions[MasterRefId];
         Assert.Equal(PlacedRefEmitVerdict.Emit, verdict.Verdict);
@@ -271,14 +270,14 @@ public sealed class CellChildVerdictPlannerTests
         var cells = Apply(
             MakeCell(mode: CellMergeMode.PersistentOnly, temporary:
             [
-                OverrideChild("ACHR", MasterRefId, actor, reparented: true)
+                OverrideChild("ACHR", MasterRefId, actor, true)
             ]),
-            configureIndex: index =>
+            index =>
             {
                 index.ChildLocations[MasterRefId] = new MasterChildLocation(0x000FFFFF, 8, "ACHR");
                 index.RefToCell[MasterRefId] = 0x000FFFFF; // master files the actor elsewhere
             },
-            extraMaster: ("ACHR", MasterRefId));
+            ("ACHR", MasterRefId));
 
         var verdict = cells[CellId].RefDecisions[MasterRefId];
         Assert.Equal(PlacedRefEmitVerdict.Emit, verdict.Verdict);
@@ -295,9 +294,9 @@ public sealed class CellChildVerdictPlannerTests
             [
                 OverrideChild("ACHR", MasterRefId, actor)
             ]),
-            configureIndex: index => index.ChildLocations[MasterRefId] =
+            index => index.ChildLocations[MasterRefId] =
                 new MasterChildLocation(0x000FFFFF, 8, "ACHR"),
-            extraMaster: ("ACHR", MasterRefId));
+            ("ACHR", MasterRefId));
 
         var verdict = cells[CellId].RefDecisions[MasterRefId];
         Assert.Equal(PlacedRefEmitVerdict.Drop, verdict.Verdict);
@@ -313,12 +312,12 @@ public sealed class CellChildVerdictPlannerTests
             [
                 OverrideChild("ACHR", MasterRefId, actor)
             ]),
-            configureIndex: index =>
+            index =>
             {
                 index.ChildLocations[MasterRefId] = new MasterChildLocation(0x000FFFFF, 8, "ACHR");
                 index.RefToCell[MasterRefId] = 0x000FFFFF;
             },
-            extraMaster: ("ACHR", MasterRefId));
+            ("ACHR", MasterRefId));
 
         var verdict = cells[CellId].RefDecisions[MasterRefId];
         Assert.Equal(PlacedRefEmitVerdict.Drop, verdict.Verdict);
@@ -334,14 +333,14 @@ public sealed class CellChildVerdictPlannerTests
         var captured = Ref(MasterRefId, MasterStatBaseId);
         var cells = Apply(
             MakeCell(
-                temporary: [OverrideChild("REFR", MasterRefId, captured)],
+                [OverrideChild("REFR", MasterRefId, captured)],
                 worldspaceFormId: 0x000DA726),
-            configureIndex: index =>
+            index =>
             {
                 index.ChildLocations[MasterRefId] = new MasterChildLocation(0x000FFFFF, 9, "REFR");
                 index.RefToCell[MasterRefId] = 0x000FFFFF;
             },
-            extraMaster: ("REFR", MasterRefId));
+            ("REFR", MasterRefId));
 
         var verdict = cells[CellId].RefDecisions[MasterRefId];
         Assert.Equal(PlacedRefEmitVerdict.Emit, verdict.Verdict);
@@ -358,14 +357,14 @@ public sealed class CellChildVerdictPlannerTests
         // must carry the proto state or nothing changes in-game.
         var captured = Ref(MasterRefId, MasterStatBaseId);
         var cells = Apply(
-            MakeCell(temporary: [OverrideChild("REFR", MasterRefId, captured)]),
-            configureIndex: index =>
+            MakeCell([OverrideChild("REFR", MasterRefId, captured)]),
+            index =>
             {
                 index.ChildLocations[MasterRefId] = new MasterChildLocation(0x000FFFFF, 9, "REFR");
                 index.RefToCell[MasterRefId] = 0x000FFFFF;
             },
-            extraMaster: ("REFR", MasterRefId),
-            extraMasterFlags: 0x00000800);
+            ("REFR", MasterRefId),
+            0x00000800);
 
         var verdict = cells[CellId].RefDecisions[MasterRefId];
         Assert.Equal(PlacedRefEmitVerdict.Emit, verdict.Verdict);
@@ -380,15 +379,15 @@ public sealed class CellChildVerdictPlannerTests
         var captured = Ref(MasterRefId, MasterStatBaseId);
         var cells = Apply(
             MakeCell(
-                temporary: [OverrideChild("REFR", MasterRefId, captured)],
+                [OverrideChild("REFR", MasterRefId, captured)],
                 worldspaceFormId: 0x01000FFF,
                 masterAnchored: false),
-            configureIndex: index =>
+            index =>
             {
                 index.ChildLocations[MasterRefId] = new MasterChildLocation(0x000FFFFF, 9, "REFR");
                 index.RefToCell[MasterRefId] = 0x000FFFFF;
             },
-            extraMaster: ("REFR", MasterRefId));
+            ("REFR", MasterRefId));
 
         var verdict = cells[CellId].RefDecisions[MasterRefId];
         Assert.Equal(PlacedRefEmitVerdict.Drop, verdict.Verdict);
@@ -400,18 +399,18 @@ public sealed class CellChildVerdictPlannerTests
     {
         const uint homeCellId = 0x000ABD00;
         var captured = Ref(MasterRefId, MasterStatBaseId);
-        var foreignCell = MakeCell(temporary: [OverrideChild("REFR", MasterRefId, captured)]);
+        var foreignCell = MakeCell([OverrideChild("REFR", MasterRefId, captured)]);
         var homeCell = MakeCell(
-            temporary: [OverrideChild("REFR", MasterRefId, captured)], cellFormId: homeCellId);
+            [OverrideChild("REFR", MasterRefId, captured)], cellFormId: homeCellId);
 
         var cells = ApplyCells(
             [foreignCell, homeCell],
-            configureIndex: index =>
+            index =>
             {
                 index.ChildLocations[MasterRefId] = new MasterChildLocation(homeCellId, 9, "REFR");
                 index.RefToCell[MasterRefId] = homeCellId;
             },
-            extraMasters: [("REFR", MasterRefId, 0u)]);
+            [("REFR", MasterRefId, 0u)]);
 
         // The home cell's own capture wins the FormID even though the foreign cell sorts
         // first; the foreign copy is a duplicate capture of the same ref.
@@ -427,18 +426,18 @@ public sealed class CellChildVerdictPlannerTests
     {
         const uint otherCellId = 0x000ABD00; // Sorts after CellId → CellId claims first.
         var captured = Ref(MasterRefId, MasterStatBaseId);
-        var cellA = MakeCell(temporary: [OverrideChild("REFR", MasterRefId, captured)]);
+        var cellA = MakeCell([OverrideChild("REFR", MasterRefId, captured)]);
         var cellB = MakeCell(
-            temporary: [OverrideChild("REFR", MasterRefId, captured)], cellFormId: otherCellId);
+            [OverrideChild("REFR", MasterRefId, captured)], cellFormId: otherCellId);
 
         var cells = ApplyCells(
             [cellB, cellA],
-            configureIndex: index =>
+            index =>
             {
                 index.ChildLocations[MasterRefId] = new MasterChildLocation(0x000FFFFF, 9, "REFR");
                 index.RefToCell[MasterRefId] = 0x000FFFFF;
             },
-            extraMasters: [("REFR", MasterRefId, 0u)]);
+            [("REFR", MasterRefId, 0u)]);
 
         Assert.Equal(PlacedRefEmitVerdict.Emit, cells[CellId].RefDecisions[MasterRefId].Verdict);
         var loser = cells[otherCellId].RefDecisions[MasterRefId];
@@ -456,12 +455,12 @@ public sealed class CellChildVerdictPlannerTests
         var cells = Apply(
             MakeCell(mode: CellMergeMode.PersistentOnly, temporary:
             [
-                OverrideChild("ACHR", MasterRefId, actor, reparented: true)
+                OverrideChild("ACHR", MasterRefId, actor, true)
             ]),
-            configureIndex: index => index.ChildLocations[MasterRefId] =
+            index => index.ChildLocations[MasterRefId] =
                 new MasterChildLocation(0x000FFFFF, 8, "ACHR"),
-            extraMaster: ("ACHR", MasterRefId),
-            extraMasterFlags: 0x00000800u | 0x00000400u);
+            ("ACHR", MasterRefId),
+            0x00000800u | 0x00000400u);
 
         var verdict = cells[CellId].RefDecisions[MasterRefId];
         Assert.Equal(PlacedRefEmitVerdict.Emit, verdict.Verdict);
@@ -476,7 +475,7 @@ public sealed class CellChildVerdictPlannerTests
         var marker = Ref(NewRefId, MasterStatBaseId); // IsPersistent = false
         var cells = Apply(MakeCell(mode: CellMergeMode.PersistentOnly, temporary:
         [
-            NewChild("REFR", NewRefId, marker, reparented: true)
+            NewChild("REFR", NewRefId, marker, true)
         ]));
 
         var verdict = cells[CellId].RefDecisions[NewRefId];
@@ -492,11 +491,11 @@ public sealed class CellChildVerdictPlannerTests
         var cells = Apply(
             MakeCell(mode: CellMergeMode.PersistentOnly, temporary:
             [
-                OverrideChild("ACHR", MasterRefId, actor, reparented: true)
+                OverrideChild("ACHR", MasterRefId, actor, true)
             ]),
-            configureIndex: index => index.ChildLocations[MasterRefId] =
+            index => index.ChildLocations[MasterRefId] =
                 new MasterChildLocation(0x000FFFFF, 9, "ACHR"),
-            extraMaster: ("ACHR", MasterRefId));
+            ("ACHR", MasterRefId));
 
         var verdict = cells[CellId].RefDecisions[MasterRefId];
         Assert.Equal(PlacedRefEmitVerdict.Drop, verdict.Verdict);
@@ -523,7 +522,7 @@ public sealed class CellChildVerdictPlannerTests
     public void Gate_All_Children_Dropped_Is_Itm_Suppressed()
     {
         var cells = Apply(MakeCell(
-            temporary: [NewChild("REFR", NewRefId, Ref(NewRefId, 0x00DEAD01))]));
+            [NewChild("REFR", NewRefId, Ref(NewRefId, 0x00DEAD01))]));
 
         var plan = cells[CellId];
         Assert.False(plan.Emits);
@@ -535,7 +534,7 @@ public sealed class CellChildVerdictPlannerTests
     public void Gate_New_Content_Cell_Emits()
     {
         var cells = Apply(MakeCell(
-            temporary: [NewChild("REFR", NewRefId, Ref(NewRefId, MasterStatBaseId))]));
+            [NewChild("REFR", NewRefId, Ref(NewRefId, MasterStatBaseId))]));
 
         var plan = cells[CellId];
         Assert.True(plan.Emits);
@@ -562,7 +561,7 @@ public sealed class CellChildVerdictPlannerTests
             Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
 
-        var cells = Apply(MakeCell(temporary: [navmPlan]));
+        var cells = Apply(MakeCell([navmPlan]));
 
         var plan = cells[CellId];
         Assert.True(plan.NavmOnlySuppressed);
@@ -585,14 +584,14 @@ public sealed class CellChildVerdictPlannerTests
                 CellSourceFormId = CellId,
                 Heightmap = new LandHeightmap { HeightDeltas = new sbyte[33 * 33] },
                 HeightSource = CellLandHeightSource.CapturedHeightmap,
-                MasterLandFormId = 0x000AB001,
+                MasterLandFormId = 0x000AB001
             },
             References = ImmutableArray<ResolvedRef>.Empty,
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
 
-        var cells = Apply(MakeCell(temporary: [landPlan], worldspaceFormId: 0x000DA726));
+        var cells = Apply(MakeCell([landPlan], worldspaceFormId: 0x000DA726));
 
         var plan = cells[CellId];
         Assert.True(plan.Emits);
@@ -634,7 +633,7 @@ public sealed class CellChildVerdictPlannerTests
         {
             [MasterStatBaseId] = MakeMasterRecord("STAT", MasterStatBaseId),
             [MasterNpcBaseId] = MakeMasterRecord("NPC_", MasterNpcBaseId),
-            [MasterCreatureBaseId] = MakeMasterRecord("CREA", MasterCreatureBaseId),
+            [MasterCreatureBaseId] = MakeMasterRecord("CREA", MasterCreatureBaseId)
         };
         var cells = ImmutableDictionary.CreateBuilder<uint, CellPlan>();
         foreach (var cellPlan in cellPlans)
@@ -664,7 +663,7 @@ public sealed class CellChildVerdictPlannerTests
             RefsByCell = [],
             NavmsByCell = [],
             LandsByCell = [],
-            CellContexts = [],
+            CellContexts = []
         };
         configureIndex?.Invoke(index);
 
@@ -712,47 +711,60 @@ public sealed class CellChildVerdictPlannerTests
             PersistentChildren = ImmutableArray<RecordPlan>.Empty,
             VwdChildren = ImmutableArray<RecordPlan>.Empty,
             TemporaryChildren = temporary is null ? ImmutableArray<RecordPlan>.Empty : [.. temporary],
-            Mode = mode,
+            Mode = mode
         };
     }
 
-    private static PlacedReference Ref(uint formId, uint baseFormId) => new()
+    private static PlacedReference Ref(uint formId, uint baseFormId)
     {
-        FormId = formId,
-        BaseFormId = baseFormId,
-        RecordType = "REFR",
-        IsPersistent = false,
-    };
+        return new PlacedReference
+        {
+            FormId = formId,
+            BaseFormId = baseFormId,
+            RecordType = "REFR",
+            IsPersistent = false
+        };
+    }
 
     private static RecordPlan NewChild(
-        string type, uint formId, PlacedReference model, bool reparented = false) =>
-        MakeChild(type, formId, model, RecordDisposition.New, reparented);
+        string type, uint formId, PlacedReference model, bool reparented = false)
+    {
+        return MakeChild(type, formId, model, RecordDisposition.New, reparented);
+    }
 
     private static RecordPlan OverrideChild(
-        string type, uint formId, PlacedReference model, bool reparented = false) =>
-        MakeChild(type, formId, model, RecordDisposition.Override, reparented);
+        string type, uint formId, PlacedReference model, bool reparented = false)
+    {
+        return MakeChild(type, formId, model, RecordDisposition.Override, reparented);
+    }
 
     private static RecordPlan MakeChild(
         string type, uint formId, PlacedReference model, RecordDisposition disposition,
-        bool reparented = false) => new()
+        bool reparented = false)
     {
-        Type = type,
-        Disposition = disposition,
-        FormId = formId,
-        Model = model,
-        References = ImmutableArray<ResolvedRef>.Empty,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
-        Reparented = reparented,
-    };
-
-    private static ParsedMainRecord MakeMasterRecord(string signature, uint formId, uint flags = 0) => new()
-    {
-        Header = new MainRecordHeader
+        return new RecordPlan
         {
-            Signature = signature, DataSize = 0, Flags = flags, FormId = formId,
-            Timestamp = 0, VcsInfo = 0, Version = 15
-        },
-        Offset = 0
-    };
+            Type = type,
+            Disposition = disposition,
+            FormId = formId,
+            Model = model,
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+            Reparented = reparented
+        };
+    }
+
+    private static ParsedMainRecord MakeMasterRecord(string signature, uint formId, uint flags = 0)
+    {
+        return new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
+            {
+                Signature = signature, DataSize = 0, Flags = flags, FormId = formId,
+                Timestamp = 0, VcsInfo = 0, Version = 15
+            },
+            Offset = 0
+        };
+    }
 }

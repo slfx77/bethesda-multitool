@@ -506,6 +506,10 @@ public sealed class PluginBuilder
                     code: "dialog.info-dedup");
             }
 
+            // User-authorized writer reconstruction must land before condition sanitation so
+            // the producer gate can structurally prove the synthesized write like any capture.
+            DialogueWriterSynthesizer.Apply(dmpRecords.Dialogues, _sink);
+
             SanitizeQuestVariableConditions(
                 dmpRecords,
                 pcRecordsByFormId,
@@ -547,7 +551,7 @@ public sealed class PluginBuilder
             // the option set is empty (the default), so the legacy pipeline runs unchanged.
             BuildPlannerStateIfEnabled(
                 pcRecordsList, dmpRecords, allocator, inputs,
-                cellContexts, pcRecordsByFormId, masterIndex);
+                cellContexts, pcRecordsByFormId, masterIndex, stats);
 
             // PlanWriter bypasses the legacy allocation bookkeeping. Bridge its actual NEW
             // records before any legacy-routed top-level encoder runs, so cross-pipeline refs
@@ -746,9 +750,15 @@ public sealed class PluginBuilder
             // deletion-flag overrides for LoadedReplacement cells.
             _sink.OnPhaseStart("Merging cell children", null);
             var pcRefFormIds = new HashSet<uint>(refToCell.Keys);
+            // When CELL is planner-routed the legacy BuildCellOverrideBundles result is discarded (only
+            // its newNavmEntries output is used), and the planner cell section below writes to the real
+            // stats. Give the legacy call a throwaway ConversionPipelineStats so its considered/emitted/
+            // skipped/drop-reason counters don't double-count against the planner's numbers.
+            var cellPlannerRouted = inputs.Options.PlannerEnabledRecordTypes.Contains("CELL");
             var bundles = BuildCellOverrideBundles(
                 dmpRecords, pcRecordsByFormId, refToCell, masterChildLocations, pcRefFormIds, cellContexts,
-                landsByCell, allocator, grupBytesByType, inputs.Options, stats,
+                landsByCell, allocator, grupBytesByType, inputs.Options,
+                cellPlannerRouted ? new ConversionPipelineStats() : stats,
                 out var newNavmEntries, ct);
             _sink.Info("Merging cell children",
                 $"Built {bundles.Count:N0} cell-override bundle(s); allocated {allocator.NextLocalId - allocator.BaseLocalId:N0} new FormID(s).");
@@ -759,8 +769,8 @@ public sealed class PluginBuilder
             // is planner-routed, BuildCellOverrideBundles still runs (its result isn't used,
             // but it walks the same DMP records) and may populate the legacy list partially.
             // Those entries are stale because the planner allocated different FormIDs. Use
-            // the planner's NavmEntries when CELL is planner-routed, the legacy list otherwise.
-            var cellPlannerRouted = inputs.Options.PlannerEnabledRecordTypes.Contains("CELL");
+            // the planner's NavmEntries when CELL is planner-routed, the legacy list otherwise
+            // (cellPlannerRouted computed above, before the legacy bundle build).
 
             // Planner route: build the cell section FIRST so NAVI rows come from NAVMs that
             // were actually written — a planned NAVM whose bundle got suppressed must not get
@@ -1128,9 +1138,11 @@ public sealed class PluginBuilder
         // combined/deduplicated model that DialogGrupBuilder consumes; raw captured INFO
         // presence is not evidence. This is provisional until the writer returns its
         // actual-emission ledger below.
+        DialogueCombinePlan? dialogueCombinePlan = null;
+        List<DialogueRecord>? preGateDialogues = null;
         if (!skipRecordTypes.Contains("DIAL") && !skipRecordTypes.Contains("INFO"))
         {
-            var dialogueCombinePlan = DialogueCombinePlanner.Build(
+            dialogueCombinePlan = DialogueCombinePlanner.Build(
                 dmpRecords.DialogTopics,
                 dmpRecords.Dialogues,
                 classifier,
@@ -1142,6 +1154,9 @@ public sealed class PluginBuilder
                 freshMappings,
                 formIdAliases);
             producerEvidence.AddRange(dialogueCandidates.Evidence);
+            // The gate removes suppressed consumer INFOs in place, and a writer can also be
+            // a consumer — snapshot the candidate list for the writer-side diagnostic.
+            preGateDialogues = [.. dmpRecords.Dialogues];
         }
 
         var producerGate = QuestVariableProducerGate.Apply(
@@ -1151,6 +1166,25 @@ public sealed class PluginBuilder
             producerEvidence,
             masterRecordsByFormId,
             formIdAliases);
+        if (dialogueCombinePlan is not null
+            && preGateDialogues is not null
+            && producerGate.SuppressedInfoCount + producerGate.SuppressedPackageCount
+               + producerGate.SuppressedTerminalMenuItemCount > 0)
+        {
+            QuestVariableWriterDiagnostics.Report(
+                preGateDialogues,
+                dialogueCombinePlan,
+                freshMappings,
+                producerEvidence,
+                QuestVariableProducerGate.SelectFreshMappings(
+                    producerGate.VariableRecoveryMappings,
+                    producerGate.ScriptVariableAugmentations),
+                producerGate.Diagnostics,
+                formIdAliases,
+                classifier,
+                masterDialogueIndex,
+                _sink);
+        }
         _scriptVariableAugmentations = producerGate.ScriptVariableAugmentations;
         _scriptVariableProducerRequirements = producerGate.ProducerRequirements;
         _scriptVariableProducerMappings = QuestVariableProducerGate.SelectFreshMappings(
@@ -1694,7 +1728,8 @@ public sealed class PluginBuilder
         DmpToEsmInputs inputs,
         IReadOnlyDictionary<uint, PcEsmCellContext> masterCellContexts,
         IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
-        MasterRecordIndex masterIndex)
+        MasterRecordIndex masterIndex,
+        ConversionPipelineStats stats)
     {
         _emitPlan = null;
         _planWriter = null;
@@ -1800,7 +1835,7 @@ public sealed class PluginBuilder
             _emitPlan,
             _scriptVariableProducerRequirements);
 
-        ReportPlannerDiagnostics(_emitPlan, _sink);
+        ReportPlannerDiagnostics(_emitPlan, _sink, stats);
 
         _planWriter = new BethesdaMultitool.Core.Formats.Esm.PlannedWriter.PlanWriter(registry, _sink);
 
@@ -1814,7 +1849,8 @@ public sealed class PluginBuilder
 
     internal static void ReportPlannerDiagnostics(
         BethesdaMultitool.Core.Formats.Esm.Planner.EmitPlan plan,
-        IConversionProgressSink sink)
+        IConversionProgressSink sink,
+        ConversionPipelineStats? stats = null)
     {
         foreach (var diagnostic in plan.Diagnostics)
         {
@@ -1824,11 +1860,15 @@ public sealed class PluginBuilder
                     sink.Warn(diagnostic.Phase, diagnostic.Message,
                         diagnostic.RecordType, diagnostic.FormId, diagnostic.Code,
                         diagnostic.Metadata);
+                    // Aggregate plan-phase drops/decisions into DropReasonCounts so they appear in the
+                    // run summary; without this, planner-routed drops were only per-event sink lines.
+                    stats?.IncrementDropReason(diagnostic.Code);
                     break;
                 case BethesdaMultitool.Core.Formats.Esm.Planner.PlanDiagnosticKind.Decision:
                     sink.Decision(diagnostic.Phase, diagnostic.Message,
                         diagnostic.RecordType, diagnostic.FormId, diagnostic.Code,
                         diagnostic.Metadata);
+                    stats?.IncrementDropReason(diagnostic.Code);
                     break;
                 default:
                     sink.Info(diagnostic.Phase, diagnostic.Message,

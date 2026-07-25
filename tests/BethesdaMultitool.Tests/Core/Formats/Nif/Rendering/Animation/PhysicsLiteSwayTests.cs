@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Tests.Helpers;
@@ -14,12 +15,12 @@ public sealed class PhysicsLiteSwayTests
     {
         var (data, nif) = FnvHavokConstraintParserTests.BuildFixture(
             "bhkLimitedHingeConstraint",
-            FnvHavokConstraintParserTests.BuildLimitedHinge(entityA: 4, entityB: 5));
+            FnvHavokConstraintParserTests.BuildLimitedHinge(4, 5));
         var set = FnvHavokConstraintParser.Parse(data, nif);
         var constraint = Assert.Single(set.Constraints);
 
-        var first = PhysicsLiteSway.CreatePlan(set, constraint, stableSeed: 0x00123456);
-        var second = PhysicsLiteSway.CreatePlan(set, constraint, stableSeed: 0x00123456);
+        var first = PhysicsLiteSway.CreatePlan(set, constraint, 0x00123456);
+        var second = PhysicsLiteSway.CreatePlan(set, constraint, 0x00123456);
 
         Assert.True(first.IsSupported);
         Assert.Equal(4, first.DrivenBodyBlockIndex);
@@ -43,15 +44,15 @@ public sealed class PhysicsLiteSwayTests
     {
         var (data, nif) = FnvHavokConstraintParserTests.BuildFixture(
             "bhkLimitedHingeConstraint",
-            FnvHavokConstraintParserTests.BuildLimitedHinge(entityA: 4, entityB: 5));
+            FnvHavokConstraintParserTests.BuildLimitedHinge(4, 5));
         var set = FnvHavokConstraintParser.Parse(data, nif);
         var constraint = Assert.Single(set.Constraints);
         var pivot = constraint.HingeFrameA!.Value.Pivot;
 
-        var sample = PhysicsLiteSway.CreatePlan(set, constraint, stableSeed: 42).Evaluate(3.75);
+        var sample = PhysicsLiteSway.CreatePlan(set, constraint, 42).Evaluate(3.75);
         var transformedPivot = Vector3.Transform(pivot, sample.Transform);
 
-        VectorAssert.Equal(pivot, transformedPivot, epsilon: 0.0001f);
+        VectorAssert.Equal(pivot, transformedPivot, 0.0001f);
     }
 
     [Fact]
@@ -59,11 +60,11 @@ public sealed class PhysicsLiteSwayTests
     {
         var (data, nif) = FnvHavokConstraintParserTests.BuildFixture(
             "bhkLimitedHingeConstraint",
-            FnvHavokConstraintParserTests.BuildLimitedHinge(entityA: 4, entityB: 5));
+            FnvHavokConstraintParserTests.BuildLimitedHinge(4, 5));
         var set = FnvHavokConstraintParser.Parse(data, nif);
-        var plan = PhysicsLiteSway.CreatePlan(set, Assert.Single(set.Constraints), stableSeed: 7);
+        var plan = PhysicsLiteSway.CreatePlan(set, Assert.Single(set.Constraints), 7);
 
-        var sample = plan.Evaluate(12.5, isAtRest: true);
+        var sample = plan.Evaluate(12.5, true);
 
         Assert.False(sample.Applied);
         Assert.Equal(PhysicsLiteSwaySkipReason.AtRest, sample.SkipReason);
@@ -76,7 +77,7 @@ public sealed class PhysicsLiteSwayTests
     {
         var (data, nif) = FnvHavokConstraintParserTests.BuildFixture(
             "bhkLimitedHingeConstraint",
-            FnvHavokConstraintParserTests.BuildLimitedHinge(entityA: 4, entityB: 5));
+            FnvHavokConstraintParserTests.BuildLimitedHinge(4, 5));
         var set = FnvHavokConstraintParser.Parse(data, nif);
 
         var routes = PhysicsLiteSway.BuildSourceBlockRoutes(set);
@@ -84,10 +85,10 @@ public sealed class PhysicsLiteSwayTests
         Assert.Equal(6, descriptor.ConstraintBlockIndex);
         Assert.Equal(descriptor, routes[0]);
 
-        var first = descriptor.Evaluate(4.25, placedReferenceSeed: 0x10);
-        var repeated = descriptor.Evaluate(4.25, placedReferenceSeed: 0x10);
-        var otherInstance = descriptor.Evaluate(4.25, placedReferenceSeed: 0x20);
-        var atRest = descriptor.Evaluate(4.25, placedReferenceSeed: 0x10, isAtRest: true);
+        var first = descriptor.Evaluate(4.25, 0x10);
+        var repeated = descriptor.Evaluate(4.25, 0x10);
+        var otherInstance = descriptor.Evaluate(4.25, 0x20);
+        var atRest = descriptor.Evaluate(4.25, 0x10, true);
 
         Assert.Equal(first, repeated);
         Assert.NotEqual(first.AngleRadians, otherInstance.AngleRadians);
@@ -102,7 +103,7 @@ public sealed class PhysicsLiteSwayTests
     {
         var (data, nif) = FnvHavokConstraintParserTests.BuildFixture(
             "bhkLimitedHingeConstraint",
-            FnvHavokConstraintParserTests.BuildLimitedHinge(entityA: 4, entityB: 5));
+            FnvHavokConstraintParserTests.BuildLimitedHinge(4, 5));
         var set = FnvHavokConstraintParser.Parse(data, nif);
         var first = Assert.Single(set.Constraints);
         var ambiguous = set with
@@ -121,11 +122,11 @@ public sealed class PhysicsLiteSwayTests
     {
         var (data, nif) = FnvHavokConstraintParserTests.BuildFixture(
             "bhkLimitedHingeConstraint",
-            FnvHavokConstraintParserTests.BuildLimitedHinge(entityA: 4, entityB: 5),
-            includeOrdinaryAnimation: true);
+            FnvHavokConstraintParserTests.BuildLimitedHinge(4, 5),
+            true);
         var set = FnvHavokConstraintParser.Parse(data, nif);
 
-        var plan = PhysicsLiteSway.CreatePlan(set, Assert.Single(set.Constraints), stableSeed: 7);
+        var plan = PhysicsLiteSway.CreatePlan(set, Assert.Single(set.Constraints), 7);
         var sample = plan.Evaluate(12.5);
 
         Assert.False(plan.IsSupported);
@@ -139,10 +140,10 @@ public sealed class PhysicsLiteSwayTests
     {
         var (data, nif) = FnvHavokConstraintParserTests.BuildFixture(
             "bhkHingeConstraint",
-            FnvHavokConstraintParserTests.BuildHinge(entityA: 4, entityB: 5));
+            FnvHavokConstraintParserTests.BuildHinge(4, 5));
         var set = FnvHavokConstraintParser.Parse(data, nif);
 
-        var plan = PhysicsLiteSway.CreatePlan(set, Assert.Single(set.Constraints), stableSeed: 9);
+        var plan = PhysicsLiteSway.CreatePlan(set, Assert.Single(set.Constraints), 9);
         var sample = plan.Evaluate(2.0);
 
         Assert.Equal(PhysicsLiteSwaySkipReason.UnsupportedConstraint, plan.SkipReason);
@@ -155,13 +156,13 @@ public sealed class PhysicsLiteSwayTests
     {
         var (data, nif) = FnvHavokConstraintParserTests.BuildFixture(
             "bhkLimitedHingeConstraint",
-            FnvHavokConstraintParserTests.BuildLimitedHinge(entityA: 4, entityB: 5));
+            FnvHavokConstraintParserTests.BuildLimitedHinge(4, 5));
         var set = FnvHavokConstraintParser.Parse(data, nif);
         var constraint = Assert.Single(set.Constraints);
 
         var unsupported = PhysicsLiteSway.CreatePlan(
-            set with { IsSupportedLayout = false }, constraint, stableSeed: 1).Evaluate(1);
-        var invalidTime = PhysicsLiteSway.CreatePlan(set, constraint, stableSeed: 1)
+            set with { IsSupportedLayout = false }, constraint, 1).Evaluate(1);
+        var invalidTime = PhysicsLiteSway.CreatePlan(set, constraint, 1)
             .Evaluate(double.PositiveInfinity);
 
         Assert.Equal(PhysicsLiteSwaySkipReason.UnsupportedLayout, unsupported.SkipReason);
@@ -175,13 +176,13 @@ public sealed class PhysicsLiteSwayTests
     [Fact]
     public void RagdollPendulum_IntersectsPlaneAndConeLimits()
     {
-        var payload = FnvHavokConstraintParserTests.BuildRagdoll(entityA: 4, entityB: 5);
+        var payload = FnvHavokConstraintParserTests.BuildRagdoll(4, 5);
         // Make the cone tighter than both plane extents: effective interval must be [-0.2,+0.2].
         WriteSingle(payload, 144, 0.2f);
         var (data, nif) = FnvHavokConstraintParserTests.BuildFixture("bhkRagdollConstraint", payload);
         var set = FnvHavokConstraintParser.Parse(data, nif);
         var plan = PhysicsLiteSway.CreatePlan(
-            set, Assert.Single(set.Constraints), stableSeed: 0x89ABCDEF, amplitudeFraction: 1f);
+            set, Assert.Single(set.Constraints), 0x89ABCDEF, 1f);
 
         Assert.True(plan.IsSupported);
         Assert.Equal(-0.2f, plan.MinimumAngle, 5);
@@ -197,11 +198,11 @@ public sealed class PhysicsLiteSwayTests
     {
         var (data, nif) = FnvHavokConstraintParserTests.BuildFixture(
             "bhkLimitedHingeConstraint",
-            FnvHavokConstraintParserTests.BuildLimitedHinge(entityA: 4, entityB: 5));
+            FnvHavokConstraintParserTests.BuildLimitedHinge(4, 5));
         var set = FnvHavokConstraintParser.Parse(data, nif);
         var motorized = Assert.Single(set.Constraints) with { MotorType = 1 };
 
-        var plan = PhysicsLiteSway.CreatePlan(set, motorized, stableSeed: 1);
+        var plan = PhysicsLiteSway.CreatePlan(set, motorized, 1);
 
         Assert.Equal(PhysicsLiteSwaySkipReason.MotorizedConstraint, plan.SkipReason);
         Assert.Equal(Matrix4x4.Identity, plan.Evaluate(1).Transform);
@@ -210,6 +211,6 @@ public sealed class PhysicsLiteSwayTests
     private static void WriteSingle(byte[] data, int offset, float value)
     {
         var bits = BitConverter.SingleToInt32Bits(value);
-        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(offset, 4), bits);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(offset, 4), bits);
     }
 }

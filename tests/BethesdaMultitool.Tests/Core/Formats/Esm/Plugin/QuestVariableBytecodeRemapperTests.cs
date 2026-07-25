@@ -16,7 +16,7 @@ public sealed class QuestVariableBytecodeRemapperTests
     [Fact]
     public void RewriteCompiledData_patches_little_endian_write_and_read_only()
     {
-        var input = BuildExternalSet(isBigEndian: false, Quest, 7, integer: true);
+        var input = BuildExternalSet(false, Quest, 7, true);
         var expected = (byte[])input.Clone();
         expected[12] = 70;
         expected[21] = 70;
@@ -35,7 +35,7 @@ public sealed class QuestVariableBytecodeRemapperTests
     [Fact]
     public void RewriteCompiledData_patches_big_endian_write_and_read_only()
     {
-        var input = BuildExternalSet(isBigEndian: true, Quest, 7, integer: true);
+        var input = BuildExternalSet(true, Quest, 7, true);
         var expected = (byte[])input.Clone();
         expected[13] = 70;
         expected[22] = 70;
@@ -55,7 +55,7 @@ public sealed class QuestVariableBytecodeRemapperTests
     public void RewriteCompiledData_matches_exact_quest_even_when_variable_ids_collide()
     {
         const uint otherQuest = 0x00002000;
-        var input = BuildExternalSet(isBigEndian: false, otherQuest, 7, integer: true);
+        var input = BuildExternalSet(false, otherQuest, 7, true);
 
         var actual = QuestVariableBytecodeRemapper.RewriteCompiledData(
             input,
@@ -72,7 +72,7 @@ public sealed class QuestVariableBytecodeRemapperTests
     public void RewriteCompiledData_resolves_exact_source_to_master_quest_alias()
     {
         const uint prototypeQuest = 0x00101000;
-        var input = BuildExternalSet(isBigEndian: false, prototypeQuest, 7, integer: true);
+        var input = BuildExternalSet(false, prototypeQuest, 7, true);
 
         var actual = QuestVariableBytecodeRemapper.RewriteCompiledData(
             input,
@@ -89,7 +89,7 @@ public sealed class QuestVariableBytecodeRemapperTests
     [Fact]
     public void RewriteCompiledData_rejects_marker_type_mismatch()
     {
-        var input = BuildExternalSet(isBigEndian: false, Quest, 7, integer: false);
+        var input = BuildExternalSet(false, Quest, 7, false);
 
         var error = Assert.Throws<InvalidDataException>(() =>
             QuestVariableBytecodeRemapper.RewriteCompiledData(
@@ -123,7 +123,7 @@ public sealed class QuestVariableBytecodeRemapperTests
     {
         var makeScript = () => new DialogueResultScript
         {
-            CompiledData = BuildExternalSet(false, Quest, 7, integer: true),
+            CompiledData = BuildExternalSet(false, Quest, 7, true),
             ReferencedObjects = [Quest]
         };
         var records = new RecordCollection
@@ -133,7 +133,7 @@ public sealed class QuestVariableBytecodeRemapperTests
                 new ScriptRecord
                 {
                     FormId = 0x01000001,
-                    CompiledData = BuildExternalSet(false, Quest, 7, integer: true),
+                    CompiledData = BuildExternalSet(false, Quest, 7, true),
                     ReferencedObjects = [Quest]
                 }
             ],
@@ -176,7 +176,7 @@ public sealed class QuestVariableBytecodeRemapperTests
                     [
                         new TerminalMenuItem
                         {
-                            CompiledData = BuildExternalSet(false, Quest, 7, integer: true),
+                            CompiledData = BuildExternalSet(false, Quest, 7, true),
                             ReferencedObjects = [Quest]
                         }
                     ]
@@ -213,7 +213,7 @@ public sealed class QuestVariableBytecodeRemapperTests
                 {
                     FormId = 0x01000010,
                     SourceText = "scn Producer\nBegin GameMode\nset TargetQuest.GameScore to 1\nEnd",
-                    CompiledData = BuildExternalSet(false, Quest, 7, integer: true),
+                    CompiledData = BuildExternalSet(false, Quest, 7, true),
                     ReferencedObjects = [Quest]
                 }
             ]
@@ -250,7 +250,7 @@ public sealed class QuestVariableBytecodeRemapperTests
                 new ScriptRecord
                 {
                     FormId = 0x01000013,
-                    CompiledData = BuildExternalSet(false, Quest, 7, integer: true),
+                    CompiledData = BuildExternalSet(false, Quest, 7, true),
                     ReferencedObjects = [Quest]
                 }
             ]
@@ -285,7 +285,7 @@ public sealed class QuestVariableBytecodeRemapperTests
                 {
                     FormId = 0x01000012,
                     SourceText = source,
-                    CompiledData = BuildExternalSet(false, Quest, 7, integer: true),
+                    CompiledData = BuildExternalSet(false, Quest, 7, true),
                     ReferencedObjects = [Quest]
                 }
             ]
@@ -318,7 +318,7 @@ public sealed class QuestVariableBytecodeRemapperTests
     [Fact]
     public void Apply_omits_stale_sctx_when_collision_safe_name_keeps_same_numeric_index()
     {
-        var originalBytes = BuildExternalSet(false, Quest, 10, integer: true);
+        var originalBytes = BuildExternalSet(false, Quest, 10, true);
         var records = new RecordCollection
         {
             Scripts =
@@ -361,8 +361,8 @@ public sealed class QuestVariableBytecodeRemapperTests
     [Fact]
     public void Apply_leaves_master_anchored_script_and_info_bytecode_unchanged()
     {
-        var scriptBytes = BuildExternalSet(false, Quest, 7, integer: true);
-        var infoBytes = BuildExternalSet(false, Quest, 7, integer: true);
+        var scriptBytes = BuildExternalSet(false, Quest, 7, true);
+        var infoBytes = BuildExternalSet(false, Quest, 7, true);
         var records = new RecordCollection
         {
             Scripts =

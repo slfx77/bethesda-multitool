@@ -1,6 +1,6 @@
+using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Minidump;
 using Xunit;
 
@@ -8,6 +8,23 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Runtime;
 
 public sealed class RuntimeMemoryContextTests
 {
+    [Fact]
+    public void ReadValidatedFloat_RejectsSubnormalGarbage_ButKeepsNormalAndZero()
+    {
+        var buffer = new byte[16];
+        // Offset 0: a subnormal float (~3.67e-40) — the misread signature (a pointer's low bytes
+        // decoded as a float when a struct offset is wrong for the captured build).
+        BinaryPrimitives.WriteSingleBigEndian(buffer.AsSpan(0, 4), 3.67348e-40f);
+        // Offset 4: a normal, in-range value. Offset 8: exact zero (a legitimate reading).
+        BinaryPrimitives.WriteSingleBigEndian(buffer.AsSpan(4, 4), 1200f);
+        BinaryPrimitives.WriteSingleBigEndian(buffer.AsSpan(8, 4), 0f);
+
+        Assert.True(float.IsSubnormal(3.67348e-40f));
+        Assert.Equal(0f, RuntimeMemoryContext.ReadValidatedFloat(buffer, 0, 0f, 100000f));
+        Assert.Equal(1200f, RuntimeMemoryContext.ReadValidatedFloat(buffer, 4, 0f, 100000f));
+        Assert.Equal(0f, RuntimeMemoryContext.ReadValidatedFloat(buffer, 8, 0f, 100000f));
+    }
+
     [Fact]
     public void ReadBytesAtVa_StitchesVaContiguousRegionsWithNonContiguousFileOffsets()
     {

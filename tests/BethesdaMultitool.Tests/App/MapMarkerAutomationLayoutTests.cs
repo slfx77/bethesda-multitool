@@ -13,7 +13,7 @@ public sealed class MapMarkerAutomationLayoutTests
 
         var bounds = MapMarkerAutomationLayout.ResolveCanvasBounds(
             0f, 0f, 0.002f, new Vector2(100f, 100f),
-            200f, 200f, metrics, 1f, hasIcon: true);
+            200f, 200f, metrics, 1f, true);
 
         Assert.NotNull(bounds);
         Assert.Equal(24f, bounds.Value.Width, 3);
@@ -27,7 +27,7 @@ public sealed class MapMarkerAutomationLayoutTests
 
         var bounds = MapMarkerAutomationLayout.ResolveCanvasBounds(
             0f, 0f, 0.05f, new Vector2(100f, 100f),
-            200f, 200f, metrics, 1f, hasIcon: true);
+            200f, 200f, metrics, 1f, true);
 
         Assert.NotNull(bounds);
         Assert.Equal(40f, bounds.Value.Width, 3);
@@ -41,7 +41,7 @@ public sealed class MapMarkerAutomationLayoutTests
 
         var bounds = MapMarkerAutomationLayout.ResolveCanvasBounds(
             0f, 0f, 0.05f, new Vector2(100f, 100f),
-            200f, 200f, metrics, 2f, hasIcon: true);
+            200f, 200f, metrics, 2f, true);
 
         Assert.NotNull(bounds);
         Assert.Equal(48f, bounds.Value.Width, 3);
@@ -55,7 +55,7 @@ public sealed class MapMarkerAutomationLayoutTests
 
         var bounds = MapMarkerAutomationLayout.ResolveCanvasBounds(
             100_000f, 100_000f, 0.01f, Vector2.Zero,
-            200f, 200f, metrics, 1f, hasIcon: false);
+            200f, 200f, metrics, 1f, false);
 
         Assert.Null(bounds);
     }

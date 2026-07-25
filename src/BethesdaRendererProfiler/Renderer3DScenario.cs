@@ -1,8 +1,7 @@
-using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core;
-using BethesdaMultitool;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using System.Diagnostics;
+using BethesdaMultitool;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using Microsoft.UI.Dispatching;
 
 namespace BethesdaRendererProfiler;

@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using Xunit;
@@ -95,7 +94,7 @@ public class Tes4HeaderBuilderTests
             new PluginBuildOptions { MasterFileName = "FalloutNV.esm", MasterFileSize = 100 },
             0,
             0x800,
-            overriddenCellChildFormIds: null);
+            null);
 
         // Header flags live at bytes 8–11 (little-endian uint32).
         var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
@@ -116,7 +115,7 @@ public class Tes4HeaderBuilderTests
             },
             0,
             0x800,
-            overriddenCellChildFormIds: [0x0001A1F3u, 0x0001A1F4u]);
+            [0x0001A1F3u, 0x0001A1F4u]);
 
         var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
         Assert.Equal(0x00000001u, flags & 0x00000001u); // master flag set

@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using Xunit;
@@ -25,8 +26,8 @@ public sealed class NifLighting30EmissionPolicyTests
     {
         var nif = ClassicNif();
         var metadata = Metadata(
-            propertyType: "Lighting30ShaderProperty",
-            shaderType: null,
+            "Lighting30ShaderProperty",
+            null,
             glowPath: GlowPath);
 
         Assert.True(NifLighting30EmissionPolicy.IsStandardLighting30(nif, metadata));
@@ -34,7 +35,7 @@ public sealed class NifLighting30EmissionPolicyTests
     }
 
     [Theory]
-    [InlineData(1u << 2)]  // LowDetail
+    [InlineData(1u << 2)] // LowDetail
     [InlineData(1u << 10)] // FaceGen
     [InlineData(1u << 18)] // Hair
     public void SpecializedFlags1RejectLighting30Glow(uint shaderFlags)
@@ -101,7 +102,7 @@ public sealed class NifLighting30EmissionPolicyTests
         {
             PropertyType = "BSShaderPPLightingProperty",
             ShaderType = 1u,
-            TextureSlots = [null, null, GlowPath],
+            TextureSlots = [null, null, GlowPath]
         };
 
         Assert.False(NifLighting30EmissionPolicy.IsStandardLighting30(nif, metadata));
@@ -112,40 +113,45 @@ public sealed class NifLighting30EmissionPolicyTests
     public void ResolvedExternalEmissionReplacesOnlyRgbAndKeepsMaterialMultiplier()
     {
         var selected = NifLighting30EmissionPolicy.SelectEmission(
-            new System.Numerics.Vector3(0.1f, 0.2f, 0.3f),
+            new Vector3(0.1f, 0.2f, 0.3f),
             21f,
-            externalEmittance: true,
-            resolvedExternalColor: new System.Numerics.Vector3(0.8f, 0.6f, 0.4f));
+            true,
+            new Vector3(0.8f, 0.6f, 0.4f));
 
-        Assert.Equal(new System.Numerics.Vector3(0.8f, 0.6f, 0.4f), selected.Color);
+        Assert.Equal(new Vector3(0.8f, 0.6f, 0.4f), selected.Color);
         Assert.Equal(21f, selected.MaterialMultiplier);
     }
 
     [Fact]
     public void UnresolvedExternalEmissionFallsBackToMaterialRgb()
     {
-        var material = new System.Numerics.Vector3(0.1f, 0.2f, 0.3f);
+        var material = new Vector3(0.1f, 0.2f, 0.3f);
         var selected = NifLighting30EmissionPolicy.SelectEmission(
-            material, 2f, externalEmittance: true, resolvedExternalColor: null);
+            material, 2f, true, null);
 
         Assert.Equal(material, selected.Color);
         Assert.Equal(2f, selected.MaterialMultiplier);
     }
 
-    private static NifInfo ClassicNif() => new() { BsVersion = 34u };
+    private static NifInfo ClassicNif()
+    {
+        return new NifInfo { BsVersion = 34u };
+    }
 
     private static NifShaderTextureMetadata Metadata(
         string propertyType = "BSShaderPPLightingProperty",
         uint? shaderType = 1u,
         uint shaderFlags = 0u,
         uint shaderFlags2 = 0u,
-        string? glowPath = null) =>
-        new()
+        string? glowPath = null)
+    {
+        return new NifShaderTextureMetadata
         {
             PropertyType = propertyType,
             ShaderType = shaderType,
             ShaderFlags = shaderFlags,
             ShaderFlags2 = shaderFlags2,
-            TextureSlots = [@"textures\fixture_d.dds", @"textures\fixture_n.dds", glowPath],
+            TextureSlots = [@"textures\fixture_d.dds", @"textures\fixture_n.dds", glowPath]
         };
+    }
 }

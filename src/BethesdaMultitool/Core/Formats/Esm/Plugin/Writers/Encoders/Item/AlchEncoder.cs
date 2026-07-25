@@ -1,6 +1,8 @@
+using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 
@@ -27,9 +29,9 @@ public sealed class AlchEncoder : IRecordEncoder
     {
         ["Value"] = m => m.Value,
         ["Flags"] = m => BitConverter.GetBytes(m.Flags),
-        ["Addiction"] = m => m.AddictionFormId ?? 0u,
+        ["WithdrawalEffect"] = m => m.WithdrawalEffectFormId ?? 0u,
         ["AddictionChance"] = m => m.AddictionChance,
-        ["UseSoundOrWithdrawalEffect"] = m => m.WithdrawalEffectFormId ?? 0u,
+        ["ConsumeSound"] = m => m.ConsumeSoundFormId ?? 0u,
     };
 
     public string RecordType => "ALCH";
@@ -93,12 +95,34 @@ public sealed class AlchEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MICO", alch.MessageIconPath));
         }
 
+        // SCRI/YNAM/ZNAM/ETYP precede DATA in the fopdoc/xEdit ALCH layout.
+        if (alch.ScriptFormId is > 0)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRI", alch.ScriptFormId.Value));
+        }
+
+        if (alch.PickupSoundFormId is > 0)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("YNAM", alch.PickupSoundFormId.Value));
+        }
+
+        if (alch.DropSoundFormId is > 0)
+        {
+            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ZNAM", alch.DropSoundFormId.Value));
+        }
+
+        // ETYP is an int32 enum (FNV: -1..13); emit only when a real equipment type is present.
+        if (alch.EquipmentType != EquipmentType.None)
+        {
+            subs.Add(NewRecordSubrecords.EncodeInt32Subrecord("ETYP", (int)alch.EquipmentType));
+        }
+
         subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "ALCH", 4, alch, DataExtractors));
 
         // ENIT is only emitted when at least one field is non-default; matches the original
         // encoder's gating to avoid round-tripping empty 20-byte blocks for plain consumables.
-        if (alch.Value != 0 || alch.Flags != 0 || alch.AddictionFormId.HasValue
-            || Math.Abs(alch.AddictionChance) > float.Epsilon || alch.WithdrawalEffectFormId.HasValue)
+        if (alch.Value != 0 || alch.Flags != 0 || alch.WithdrawalEffectFormId.HasValue
+            || Math.Abs(alch.AddictionChance) > float.Epsilon || alch.ConsumeSoundFormId.HasValue)
         {
             subs.Add(SchemaModelSerializer.SerializeSubrecord("ENIT", "ALCH", 20, alch, EnitExtractors));
         }
@@ -107,6 +131,10 @@ public sealed class AlchEncoder : IRecordEncoder
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("EFID", effect.EffectFormId));
             subs.Add(new EncodedSubrecord("EFIT", EnchEncoder.BuildEfitSubrecord(effect)));
+            foreach (var condition in effect.Conditions)
+            {
+                subs.Add(new EncodedSubrecord("CTDA", InfoEncoder.BuildCtdaSubrecord(condition)));
+            }
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };

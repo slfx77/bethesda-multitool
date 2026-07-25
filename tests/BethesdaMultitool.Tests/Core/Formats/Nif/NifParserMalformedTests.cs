@@ -25,8 +25,8 @@ public class NifParserMalformedTests
         var bw = new BinaryWriter(ms);
         bw.Write(HeaderLine);
         bw.Write(0x14020007u); // binary version 20.2.0.7
-        bw.Write((byte)1);     // endian: little
-        bw.Write(12u);         // user version
+        bw.Write((byte)1); // endian: little
+        bw.Write(12u); // user version
         bw.Write(blockCount);
         return bw;
     }
@@ -66,7 +66,7 @@ public class NifParserMalformedTests
     public void Parse_BlockCountAbsurd_ReturnsNull()
     {
         using var ms = new MemoryStream();
-        using var bw = StartNif(ms, blockCount: 0x7FFFFFFF);
+        using var bw = StartNif(ms, 0x7FFFFFFF);
 
         Assert.Null(NifParser.Parse(ms.ToArray()));
     }
@@ -78,7 +78,7 @@ public class NifParserMalformedTests
         using var bw = StartNif(ms);
         WriteBsStreamHeaderAndEmptyBlockTypes(bw);
         bw.Write(1_000_000u); // num strings, with no bytes behind the claim
-        bw.Write(0u);         // max string length
+        bw.Write(0u); // max string length
 
         Assert.Null(NifParser.Parse(ms.ToArray()));
     }
@@ -89,8 +89,8 @@ public class NifParserMalformedTests
         using var ms = new MemoryStream();
         using var bw = StartNif(ms);
         WriteBsStreamHeaderAndEmptyBlockTypes(bw);
-        bw.Write(1u);        // num strings
-        bw.Write(0u);        // max string length
+        bw.Write(1u); // num strings
+        bw.Write(0u); // max string length
         bw.Write(0xFFFFFFu); // string length far past EOF (and the 256-byte cap)
 
         Assert.Null(NifParser.Parse(ms.ToArray()));
@@ -135,7 +135,7 @@ public class NifParserMalformedTests
         data[pos++] = 0x02;
         data[pos++] = 0x14;
         data[pos++] = 0x01; // endian: little
-        data[pos] = 0x0C;   // user version 12; everything after stays zero
+        data[pos] = 0x0C; // user version 12; everything after stays zero
 
         Assert.NotNull(NifParser.Parse(data));
     }

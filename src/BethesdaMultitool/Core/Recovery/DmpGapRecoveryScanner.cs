@@ -266,6 +266,15 @@ internal static class DmpGapRecoveryScanner
             return null;
         }
 
+        // Gap buffers are uncovered heap, exactly where garbage that satisfies the scalar header gates
+        // lives. Apply the same first-subrecord plausibility gate as the main dump scanner (one shared
+        // implementation) so this recovery path can't fabricate phantom records — a genuine record's data
+        // begins with a known subrecord signature. Header size is 24 for the FO3/FNV records this scans.
+        if (!RecordValidator.HasPlausibleFirstSubrecord(buffer, offset, 24, buffer.Length, xboxEndian, flags))
+        {
+            return null;
+        }
+
         return new DmpGapRecoveryCandidate
         {
             Kind = DmpGapRecoveryCandidateKind.RawEsmRecord,

@@ -368,8 +368,13 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
                     // PNAM alpha is retained RGBX metadata; JNAM/host opacity owns visibility.
                     var rgb = AtmosphereState.SampleCloudColor(color, gameHour, cloudTiming, game);
                     var pnam = new Vector3(rgb.X, rgb.Y, rgb.Z);
-                    // Existing bounded lighting fallback: modern black PNAM rows do not blacken the sheet.
-                    return pnam.LengthSquared() < 0.0025f ? cloudTint : pnam;
+                    // Bounded lighting fallback for the MODERN generations only: Skyrim+ author
+                    // black placeholder PNAM rows that must not blacken the sheet. TES4/FO3/FNV
+                    // author every band meaningfully — Oblivion's genuinely dark night rows must
+                    // render dark (clamping them to white made night clouds glow).
+                    var blackIsPlaceholder = game is BethesdaGame.Skyrim
+                        or BethesdaGame.Fallout4 or BethesdaGame.Fallout76;
+                    return blackIsPlaceholder && pnam.LengthSquared() < 0.0025f ? cloudTint : pnam;
                 }
 
                 var currentTint = SampleTint(layer.CloudColor);

@@ -21,7 +21,7 @@ public sealed class Tes4RootTransformTests
     [Fact]
     public void Tes4Nif_RootRotation_SurvivesIdentityRootBake()
     {
-        var (data, nif) = BuildSingleRootNif(tes4: true);
+        var (data, nif) = BuildSingleRootNif(true);
         var worldTransforms = new Dictionary<int, Matrix4x4>();
 
         NifSceneGraphWalker.ComputeWorldTransforms(
@@ -40,7 +40,7 @@ public sealed class Tes4RootTransformTests
     [Fact]
     public void Fo3EraNif_RootRotation_IsStillDiscarded()
     {
-        var (data, nif) = BuildSingleRootNif(tes4: false);
+        var (data, nif) = BuildSingleRootNif(false);
         var worldTransforms = new Dictionary<int, Matrix4x4>();
 
         NifSceneGraphWalker.ComputeWorldTransforms(
@@ -54,7 +54,7 @@ public sealed class Tes4RootTransformTests
     public void Tes4Nif_WithoutIdentityRootBake_AppliesRotationToo()
     {
         // The single-NIF / skinned paths (treatRootsAsIdentity: false) must be unchanged.
-        var (data, nif) = BuildSingleRootNif(tes4: true);
+        var (data, nif) = BuildSingleRootNif(true);
         var worldTransforms = new Dictionary<int, Matrix4x4>();
 
         NifSceneGraphWalker.ComputeWorldTransforms(

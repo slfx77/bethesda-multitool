@@ -1,5 +1,5 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using System.Globalization;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
 namespace BethesdaRendererProfiler;
 
@@ -98,8 +98,10 @@ internal sealed record RendererProfilerOptions
     /// <summary>Time-of-day (0..24) for the capture. Default 12 (noon).</summary>
     internal float CaptureHour { get; init; } = 12f;
 
-    /// <summary>Day of the lunar cycle for the capture — drives the moon phase + orbit position
-    /// (Profiler_SetGameDay). Default 0.</summary>
+    /// <summary>
+    ///     Day of the lunar cycle for the capture — drives the moon phase + orbit position
+    ///     (Profiler_SetGameDay). Default 0.
+    /// </summary>
     internal float CaptureDay { get; init; }
 
     /// <summary>
@@ -115,6 +117,13 @@ internal sealed record RendererProfilerOptions
     ///     Optional camera yaw in degrees for the capture. Null preserves the selected scene bookmark's yaw.
     /// </summary>
     internal float? CaptureYawDegrees { get; init; }
+
+    /// <summary>
+    ///     Optional perspective vertical FOV in degrees for the capture (clamped to the viewer's [30,110]
+    ///     range). Null keeps the camera's 60° default. Matches the live FOV slider so a P-key pose
+    ///     reproduces the on-screen zoom instead of silently reframing at 60°.
+    /// </summary>
+    internal float? CaptureFovDegrees { get; init; }
 
     /// <summary>Pixel width of a perspective frame capture. Default 768.</summary>
     internal int CaptureWidth { get; init; } = 768;
@@ -179,6 +188,7 @@ internal sealed record RendererProfilerOptions
                                       Pin UV/particle/tree/cloud/water animation time. Default: 0 seconds.
           --capture-pitch <degrees>   Camera pitch; positive looks up. Default: 80.
           --capture-yaw <degrees>     Camera yaw. Default: preserve the selected scene bookmark yaw.
+          --capture-fov <degrees>     Perspective vertical FOV (30-110). Default: 60 (the camera default).
           --capture-settle-timeout-seconds <n>
                                       Fail unless reference streaming quiesces within n seconds. Default: 60.
           --capture-cells <n>         Top-down capture window size in cells (default 6).
@@ -231,6 +241,7 @@ internal sealed record RendererProfilerOptions
         var captureAnimationTimeSeconds = 0f;
         var capturePitchDegrees = 80f;
         float? captureYawDegrees = null;
+        float? captureFovDegrees = null;
         var captureWidth = 768;
         var captureHeight = 480;
         var captureSettleTimeoutSeconds = 60;
@@ -510,12 +521,23 @@ internal sealed record RendererProfilerOptions
 
                 // Yaw can be negative, so read the value directly rather than via RequireValue.
                 case "--capture-yaw":
-                    if (!TryReadFiniteFloat(args, ref i, arg, "a finite number (degrees)", out var yawDegrees, out error))
+                    if (!TryReadFiniteFloat(args, ref i, arg, "a finite number (degrees)", out var yawDegrees,
+                            out error))
                     {
                         return Fail(out options);
                     }
 
                     captureYawDegrees = yawDegrees;
+                    break;
+
+                case "--capture-fov":
+                    if (!TryReadFiniteFloat(args, ref i, arg, "a finite number (degrees)", out var fovDegrees,
+                            out error))
+                    {
+                        return Fail(out options);
+                    }
+
+                    captureFovDegrees = fovDegrees;
                     break;
 
                 case "--width":
@@ -706,6 +728,7 @@ internal sealed record RendererProfilerOptions
             CaptureAnimationTimeSeconds = captureAnimationTimeSeconds,
             CapturePitchDegrees = capturePitchDegrees,
             CaptureYawDegrees = captureYawDegrees,
+            CaptureFovDegrees = captureFovDegrees,
             CaptureWidth = captureWidth,
             CaptureHeight = captureHeight,
             CaptureSettleTimeoutSeconds = captureSettleTimeoutSeconds,

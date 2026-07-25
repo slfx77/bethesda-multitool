@@ -15,14 +15,14 @@ public sealed class WeatherTransitionSelectionResolverTests
         var snapshot = Snapshot(current.FormId, outgoing.FormId, 0.625f);
 
         var result = WeatherTransitionSelectionResolver.Resolve(
-            selectedWeather: null,
-            isClimateDefaultSelection: true,
-            climateDefaultWeather: Weather(0x10, "Default"),
-            runtimeSnapshot: snapshot,
-            weathersByFormId: new Dictionary<uint, WeatherRecord>
+            null,
+            true,
+            Weather(0x10, "Default"),
+            snapshot,
+            new Dictionary<uint, WeatherRecord>
             {
                 [current.FormId] = current,
-                [outgoing.FormId] = outgoing,
+                [outgoing.FormId] = outgoing
             });
 
         Assert.Same(current, result.CurrentWeather);
@@ -43,12 +43,12 @@ public sealed class WeatherTransitionSelectionResolverTests
 
         var result = WeatherTransitionSelectionResolver.Resolve(
             explicitWeather,
-            isClimateDefaultSelection: false,
-            climateDefaultWeather: Weather(0x10, "Default"),
-            runtimeSnapshot: Snapshot(runtimeCurrent.FormId, 0x40, 0.25f),
-            weathersByFormId: new Dictionary<uint, WeatherRecord>
+            false,
+            Weather(0x10, "Default"),
+            Snapshot(runtimeCurrent.FormId, 0x40, 0.25f),
+            new Dictionary<uint, WeatherRecord>
             {
-                [runtimeCurrent.FormId] = runtimeCurrent,
+                [runtimeCurrent.FormId] = runtimeCurrent
             });
 
         Assert.Same(explicitWeather, result.CurrentWeather);
@@ -63,11 +63,11 @@ public sealed class WeatherTransitionSelectionResolverTests
     {
         var current = Weather(0x30, "Runtime");
         var result = WeatherTransitionSelectionResolver.Resolve(
-            selectedWeather: null,
-            isClimateDefaultSelection: true,
-            climateDefaultWeather: Weather(0x10, "Default"),
-            runtimeSnapshot: Snapshot(current.FormId, 0xDEADBEEF, 0.25f),
-            weathersByFormId: new Dictionary<uint, WeatherRecord> { [current.FormId] = current });
+            null,
+            true,
+            Weather(0x10, "Default"),
+            Snapshot(current.FormId, 0xDEADBEEF, 0.25f),
+            new Dictionary<uint, WeatherRecord> { [current.FormId] = current });
 
         Assert.Same(current, result.CurrentWeather);
         Assert.Null(result.OutgoingWeather);
@@ -83,11 +83,11 @@ public sealed class WeatherTransitionSelectionResolverTests
         var fallback = Weather(0x10, "Default");
         var outgoing = Weather(0x40, "Outgoing");
         var result = WeatherTransitionSelectionResolver.Resolve(
-            selectedWeather: null,
-            isClimateDefaultSelection: true,
-            climateDefaultWeather: fallback,
-            runtimeSnapshot: Snapshot(0xDEADBEEF, outgoing.FormId, 0.25f),
-            weathersByFormId: new Dictionary<uint, WeatherRecord> { [outgoing.FormId] = outgoing });
+            null,
+            true,
+            fallback,
+            Snapshot(0xDEADBEEF, outgoing.FormId, 0.25f),
+            new Dictionary<uint, WeatherRecord> { [outgoing.FormId] = outgoing });
 
         Assert.Same(fallback, result.CurrentWeather);
         Assert.Null(result.OutgoingWeather);
@@ -115,13 +115,13 @@ public sealed class WeatherTransitionSelectionResolverTests
         var current = Weather(0x30, "Current");
         var weatherIndex = new Dictionary<uint, WeatherRecord> { [current.FormId] = current };
         var first = WeatherTransitionSelectionResolver.Resolve(
-            selectedWeather: null, isClimateDefaultSelection: true, climateDefaultWeather: null,
-            runtimeSnapshot: Snapshot(current.FormId, 0xDEAD0001, 0.25f),
-            weathersByFormId: weatherIndex);
+            null, true, null,
+            Snapshot(current.FormId, 0xDEAD0001, 0.25f),
+            weatherIndex);
         var second = WeatherTransitionSelectionResolver.Resolve(
-            selectedWeather: null, isClimateDefaultSelection: true, climateDefaultWeather: null,
-            runtimeSnapshot: Snapshot(current.FormId, 0xDEAD0002, 0.75f),
-            weathersByFormId: weatherIndex);
+            null, true, null,
+            Snapshot(current.FormId, 0xDEAD0002, 0.75f),
+            weatherIndex);
 
         Assert.Equal(0x30u, first.AppliedCurrentWeatherFormId);
         Assert.Null(first.AppliedOutgoingWeatherFormId);
@@ -130,16 +130,20 @@ public sealed class WeatherTransitionSelectionResolverTests
         Assert.Equal(0xDEAD0002u, second.AuthoredOutgoingWeatherFormId);
     }
 
-    private static WeatherRecord Weather(uint formId, string editorId) =>
-        new() { FormId = formId, EditorId = editorId };
+    private static WeatherRecord Weather(uint formId, string editorId)
+    {
+        return new WeatherRecord { FormId = formId, EditorId = editorId };
+    }
 
-    private static WeatherTransitionSnapshot Snapshot(uint? current, uint? outgoing, float weight) =>
-        new(
-            SkyVirtualAddress: 0x40000100,
-            CurrentWeatherPointer: current is null ? null : 0x40000400,
-            CurrentWeatherFormId: current,
-            OutgoingWeatherPointer: outgoing is null ? null : 0x40000440,
-            OutgoingWeatherFormId: outgoing,
-            CurrentWeatherWeight: weight,
-            ModifierElapsedSeconds: null);
+    private static WeatherTransitionSnapshot Snapshot(uint? current, uint? outgoing, float weight)
+    {
+        return new WeatherTransitionSnapshot(
+            0x40000100,
+            current is null ? null : 0x40000400,
+            current,
+            outgoing is null ? null : 0x40000440,
+            outgoing,
+            weight,
+            null);
+    }
 }

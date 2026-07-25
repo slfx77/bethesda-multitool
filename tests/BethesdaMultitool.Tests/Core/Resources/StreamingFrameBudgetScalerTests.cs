@@ -28,8 +28,8 @@ public sealed class StreamingFrameBudgetScalerTests
     public void Scale_GrowsLinearlyWithFrameDuration()
     {
         // A 30fps frame earns exactly 2× the 60fps allowance, 6fps earns 10×.
-        Assert.Equal(2.0, StreamingFrameBudgetScaler.Scale(2.0 / 60.0), precision: 10);
-        Assert.Equal(10.0, StreamingFrameBudgetScaler.Scale(10.0 / 60.0), precision: 10);
+        Assert.Equal(2.0, StreamingFrameBudgetScaler.Scale(2.0 / 60.0), 10);
+        Assert.Equal(10.0, StreamingFrameBudgetScaler.Scale(10.0 / 60.0), 10);
     }
 
     [Fact]

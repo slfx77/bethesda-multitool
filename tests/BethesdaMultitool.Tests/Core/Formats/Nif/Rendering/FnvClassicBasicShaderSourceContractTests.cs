@@ -24,8 +24,8 @@ public sealed class FnvClassicBasicShaderSourceContractTests
             StringComparison.Ordinal);
         Assert.Contains("FnvActiveAdtBasePolicy.ApplyRuntimeFlags", renderer,
             StringComparison.Ordinal);
-        Assert.Equal(1, renderer.Split("ResolveTextureState(sub)", StringSplitOptions.None).Length - 1);
-        Assert.Equal(1, renderer.Split("ResolveTextureState(draw.Submesh)", StringSplitOptions.None).Length - 1);
+        Assert.Equal(1, renderer.Split("ResolveTextureState(sub)").Length - 1);
+        Assert.Equal(1, renderer.Split("ResolveTextureState(draw.Submesh)").Length - 1);
         Assert.DoesNotContain("submesh.TextureState =", renderer, StringComparison.Ordinal);
     }
 
@@ -145,9 +145,12 @@ public sealed class FnvClassicBasicShaderSourceContractTests
         Assert.Contains("submesh.BindPosePositions is not null", policy, StringComparison.Ordinal);
     }
 
-    private static string ReadShader(string fileName) => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders",
-        fileName);
+    private static string ReadShader(string fileName)
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders",
+            fileName);
+    }
 
     private static string Section(string source, string startToken, string endToken)
     {
@@ -156,5 +159,4 @@ public sealed class FnvClassicBasicShaderSourceContractTests
         Assert.True(start >= 0 && end > start);
         return source[start..end];
     }
-
 }

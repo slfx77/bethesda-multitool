@@ -34,16 +34,16 @@ public sealed class LandTextureRewritePlannerTests
                 [
                     new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = ltexSource },
                     new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = masterLtex },
-                    new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = missingLtex },
+                    new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = missingLtex }
                 ],
-                TextureIndices = [ltexSource, masterLtex, missingLtex, 0],
-            },
+                TextureIndices = [ltexSource, masterLtex, missingLtex, 0]
+            }
         };
         var landPlan = Record("LAND", 0x01000830, land);
         var cell = new CellPlan
         {
             CellFormId = 0x01000800,
-            CellRecordPlan = Record("CELL", 0x01000800, model: null),
+            CellRecordPlan = Record("CELL", 0x01000800, null),
             Context = new PcEsmCellContext
             {
                 CellFormId = 0x01000800,
@@ -52,17 +52,17 @@ public sealed class LandTextureRewritePlannerTests
                 BlockGroupType = 4,
                 SubblockGroupType = 5,
                 BlockLabel = [0, 0, 0, 0],
-                SubblockLabel = [0, 0, 0, 0],
+                SubblockLabel = [0, 0, 0, 0]
             },
             PersistentChildren = [],
             VwdChildren = [],
-            TemporaryChildren = [landPlan],
+            TemporaryChildren = [landPlan]
         };
 
         var ltex = new LandscapeTextureRecord
         {
             FormId = ltexSource,
-            GrassFormIds = [grassSource, missingGrass],
+            GrassFormIds = [grassSource, missingGrass]
         };
         var records = ImmutableArray.Create(
             Record("LTEX", ltexEmitted, ltex, ltexSource),
@@ -73,11 +73,11 @@ public sealed class LandTextureRewritePlannerTests
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(cell.CellFormId, cell),
             SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty
                 .Add(ltexSource, ltexEmitted)
-                .Add(grassSource, grassEmitted),
+                .Add(grassSource, grassEmitted)
         };
         var master = new Dictionary<uint, ParsedMainRecord>
         {
-            [masterLtex] = Parsed("LTEX", masterLtex),
+            [masterLtex] = Parsed("LTEX", masterLtex)
         };
 
         var rewritten = LandTextureRewritePlanner.Apply(plan, master);
@@ -97,39 +97,48 @@ public sealed class LandTextureRewritePlannerTests
         Assert.Contains(rewritten.Diagnostics, diagnostic => diagnostic.Code == "land.ltex-grass-dropped");
     }
 
-    private static RecordPlan Record(string type, uint formId, object? model, uint? source = null) => new()
+    private static RecordPlan Record(string type, uint formId, object? model, uint? source = null)
     {
-        Type = type,
-        Disposition = RecordDisposition.New,
-        FormId = formId,
-        SourceFormId = source,
-        Model = model,
-        References = ImmutableArray<ResolvedRef>.Empty,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
-    };
-
-    private static ParsedMainRecord Parsed(string type, uint formId) => new()
-    {
-        Header = new MainRecordHeader
+        return new RecordPlan
         {
-            Signature = type,
+            Type = type,
+            Disposition = RecordDisposition.New,
             FormId = formId,
-            Version = 15,
-        },
-    };
+            SourceFormId = source,
+            Model = model,
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+        };
+    }
 
-    private static EmitPlan EmptyPlan() => new()
+    private static ParsedMainRecord Parsed(string type, uint formId)
     {
-        Records = ImmutableArray<RecordPlan>.Empty,
-        SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-        EmittedFormIds = ImmutableHashSet<uint>.Empty,
-        RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
-        Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-        Meta = new PlanMetadata
+        return new ParsedMainRecord
         {
-            NextObjectId = 0x800,
-            PlannerCoverage = ImmutableHashSet<string>.Empty,
-        },
-    };
+            Header = new MainRecordHeader
+            {
+                Signature = type,
+                FormId = formId,
+                Version = 15
+            }
+        };
+    }
+
+    private static EmitPlan EmptyPlan()
+    {
+        return new EmitPlan
+        {
+            Records = ImmutableArray<RecordPlan>.Empty,
+            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
+            EmittedFormIds = ImmutableHashSet<uint>.Empty,
+            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
+            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
+            Meta = new PlanMetadata
+            {
+                NextObjectId = 0x800,
+                PlannerCoverage = ImmutableHashSet<string>.Empty
+            }
+        };
+    }
 }

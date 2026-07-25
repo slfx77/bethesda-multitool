@@ -33,8 +33,8 @@ public sealed class ParticleRateControllerTests
         Assert.True(success);
         Assert.Equal(ParticleRateInterpolation.Quadratic, interpolation);
         Assert.Equal(2, keys.Count);
-        Assert.Equal(new ParticleRateKey(0f, 2f, Forward: 3f, Backward: 4f), keys[0]);
-        Assert.Equal(new ParticleRateKey(1f, 10f, Forward: 11f, Backward: 12f), keys[1]);
+        Assert.Equal(new ParticleRateKey(0f, 2f, 3f, 4f), keys[0]);
+        Assert.Equal(new ParticleRateKey(1f, 10f, 11f, 12f), keys[1]);
     }
 
     [Theory]
@@ -66,7 +66,7 @@ public sealed class ParticleRateControllerTests
             ControllerTiming = new ParticleControllerTiming(
                 1f, 1f, 0f, 4f, ParticleControllerCycle.Loop),
             Interpolation = ParticleRateInterpolation.Linear,
-            Keys = [new ParticleRateKey(0f, 0f), new ParticleRateKey(4f, 40f)],
+            Keys = [new ParticleRateKey(0f, 0f), new ParticleRateKey(4f, 40f)]
         };
 
         Assert.Equal(5f, controller.Sample(3.5f), 5);
@@ -80,13 +80,13 @@ public sealed class ParticleRateControllerTests
         {
             ControllerTiming = new ParticleControllerTiming(
                 1f, 0f, 1f, 3f, ParticleControllerCycle.Loop),
-            Keys = keys,
+            Keys = keys
         };
         var clamped = new ParticleRateControllerDefinition
         {
             ControllerTiming = new ParticleControllerTiming(
                 1f, 0f, 1f, 3f, ParticleControllerCycle.Clamp),
-            Keys = keys,
+            Keys = keys
         };
 
         // 3.5 wraps to 1.5 for a two-second loop: 25% from 10 to 30 = 15.
@@ -97,20 +97,20 @@ public sealed class ParticleRateControllerTests
     [Fact]
     public void Bake_AdvancingPulsedControllerChangesLiveCountWithoutExceedingCapacity()
     {
-        var def = PulsedSystem(capacity: 3);
+        var def = PulsedSystem(3);
         var quiet = NifParticleBaker.Bake(def, new ParticleBakeOptions
         {
             TimeStep = 0.25f,
             SettleMarginSeconds = 0f,
             SnapshotTimeSeconds = 0.5f,
-            MaxParticles = 100,
+            MaxParticles = 100
         });
         var active = NifParticleBaker.Bake(def, new ParticleBakeOptions
         {
             TimeStep = 0.25f,
             SettleMarginSeconds = 0f,
             SnapshotTimeSeconds = 2f,
-            MaxParticles = 100,
+            MaxParticles = 100
         });
 
         // Quiet replay window [-0.5, 0.5] is clamped to the zero-rate section. The active replay window
@@ -122,13 +122,13 @@ public sealed class ParticleRateControllerTests
     [Fact]
     public void Bake_TimeSampledControllerIsDeterministicForSameSeedAndTimestamp()
     {
-        var def = PulsedSystem(capacity: 19);
+        var def = PulsedSystem(19);
         var options = new ParticleBakeOptions
         {
             TimeStep = 1f / 30f,
             SettleMarginSeconds = 0.25f,
             SnapshotTimeSeconds = 1.75f,
-            MaxParticles = 2048,
+            MaxParticles = 2048
         };
 
         var first = NifParticleBaker.Bake(def, options);
@@ -162,15 +162,15 @@ public sealed class ParticleRateControllerTests
                 [
                     new ParticleRateKey(0f, 0f),
                     new ParticleRateKey(1f, 0f),
-                    new ParticleRateKey(2f, 100f),
-                ],
-            },
+                    new ParticleRateKey(2f, 100f)
+                ]
+            }
         };
         var def = new ParticleSystemDefinition
         {
             BlockIndex = 0x23,
             Capacity = capacity,
-            Emitter = emitter,
+            Emitter = emitter
         };
         def.Modifiers.Add(emitter);
         def.Modifiers.Add(new ParticleModifierDefinition { Kind = ParticleModifierKind.AgeDeath });

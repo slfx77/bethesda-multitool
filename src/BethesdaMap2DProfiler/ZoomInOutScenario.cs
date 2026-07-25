@@ -1,6 +1,5 @@
 using BethesdaMultitool;
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core;
 using Microsoft.UI.Dispatching;
 
 namespace BethesdaMap2DProfiler;

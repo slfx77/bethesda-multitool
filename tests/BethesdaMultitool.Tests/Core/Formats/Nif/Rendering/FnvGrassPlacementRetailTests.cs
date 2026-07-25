@@ -1,5 +1,6 @@
 using System.Numerics;
-using BethesdaMultitool;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Core.Formats.Esm;
@@ -92,7 +93,7 @@ public sealed class FnvGrassPlacementRetailTests(
     }
 
     private static SteepPlacementSample? AssertPlacementHeightsUseFlooredCheckerboardPlanes(
-        BethesdaMultitool.Core.Formats.Esm.Models.Records.World.CellRecord cell,
+        CellRecord cell,
         float[] heights,
         IReadOnlyList<RenderableReference> placements)
     {
@@ -134,22 +135,22 @@ public sealed class FnvGrassPlacementRetailTests(
 
     private static void AssertSteepRetailTransform(
         SteepPlacementSample sample,
-        Dictionary<uint, BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc.GrassRecord> grasses)
+        Dictionary<uint, GrassRecord> grasses)
     {
         Assert.Equal(SteepFixtureCellFormId, sample.CellFormId);
         Assert.Equal(-19, sample.GridX);
         Assert.Equal(12, sample.GridY);
         Assert.Equal(SteepFixtureGrassFormId, sample.Placement.FormId);
-        Assert.Equal("landscape\\grass\\NVGreenGrass03.NIF", sample.Placement.ModelPath, ignoreCase: true);
+        Assert.Equal("landscape\\grass\\NVGreenGrass03.NIF", sample.Placement.ModelPath, true);
         Assert.Equal(new Vector3(-74_576f, 51_445f, 5_245f), sample.Placement.WorldMatrix.Translation);
         Assert.Equal(-0.0402259f, sample.Normal.X, 6);
         Assert.Equal(-0.76429206f, sample.Normal.Y, 6);
         Assert.Equal(0.6436144f, sample.Normal.Z, 6);
         Assert.Equal(49.93813f, MathF.Acos(sample.Normal.Z) * (180f / MathF.PI), 4);
 
-        var grass = Assert.IsType<BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc.GrassRecord>(
+        var grass = Assert.IsType<GrassRecord>(
             grasses[SteepFixtureGrassFormId]);
-        var data = Assert.IsType<BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc.GrassData>(grass.Data);
+        var data = Assert.IsType<GrassData>(grass.Data);
         Assert.Equal(0x06, data.Flags);
         Assert.Equal(0.42f, data.HeightRange);
 
@@ -177,7 +178,7 @@ public sealed class FnvGrassPlacementRetailTests(
             1 => new Vector3(matrix.M11, matrix.M12, matrix.M13),
             2 => new Vector3(matrix.M21, matrix.M22, matrix.M23),
             3 => new Vector3(matrix.M31, matrix.M32, matrix.M33),
-            _ => throw new ArgumentOutOfRangeException(nameof(row)),
+            _ => throw new ArgumentOutOfRangeException(nameof(row))
         };
         Assert.Equal(expected.X, actual.X, 5);
         Assert.Equal(expected.Y, actual.Y, 5);

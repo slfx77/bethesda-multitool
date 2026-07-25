@@ -1,4 +1,3 @@
-using BethesdaMultitool;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Tests.Helpers;
@@ -21,14 +20,17 @@ public class Tes4PersistentDummyCellTests
     private const uint DummyCellFormId = 0x00023776;
     private const uint RealCellFormId = 0x000009BF;
 
-    private static EsmTestFileBuilder.PlacedRefData Ref(uint formId, float x = 0, float y = 0) => new()
+    private static EsmTestFileBuilder.PlacedRefData Ref(uint formId, float x = 0, float y = 0)
     {
-        RecordType = "REFR",
-        FormId = formId,
-        BaseFormId = 0x00001234,
-        X = x,
-        Y = y,
-    };
+        return new EsmTestFileBuilder.PlacedRefData
+        {
+            RecordType = "REFR",
+            FormId = formId,
+            BaseFormId = 0x00001234,
+            X = x,
+            Y = y
+        };
+    }
 
     [Fact]
     public void DummyWithZeroGridXclc_IsPersistentAndGridless_RealCellKeepsGrid()
@@ -43,7 +45,7 @@ public class Tes4PersistentDummyCellTests
                 PersistentCell = new EsmTestFileBuilder.CellData
                 {
                     FormId = DummyCellFormId,
-                    PersistentRefs = [Ref(0x2000), Ref(0x2001), Ref(0x2002)],
+                    PersistentRefs = [Ref(0x2000), Ref(0x2001), Ref(0x2002)]
                 },
                 ExteriorCells =
                 [
@@ -52,9 +54,9 @@ public class Tes4PersistentDummyCellTests
                         FormId = RealCellFormId,
                         GridX = 0,
                         GridY = 0,
-                        TemporaryRefs = [Ref(0x3000)],
-                    },
-                ],
+                        TemporaryRefs = [Ref(0x3000)]
+                    }
+                ]
             })
             .BuildAndAnalyze();
 
@@ -81,7 +83,7 @@ public class Tes4PersistentDummyCellTests
                 PersistentCell = new EsmTestFileBuilder.CellData
                 {
                     FormId = DummyCellFormId,
-                    PersistentRefs = [Ref(0x2000)],
+                    PersistentRefs = [Ref(0x2000)]
                 },
                 ExteriorCells =
                 [
@@ -91,9 +93,9 @@ public class Tes4PersistentDummyCellTests
                         GridX = 0,
                         GridY = 0,
                         OmitXclc = true,
-                        TemporaryRefs = [Ref(0x3000), Ref(0x3001)],
-                    },
-                ],
+                        TemporaryRefs = [Ref(0x3000), Ref(0x3001)]
+                    }
+                ]
             })
             .BuildAndAnalyze();
 
@@ -119,12 +121,12 @@ public class Tes4PersistentDummyCellTests
                 PersistentCell = new EsmTestFileBuilder.CellData
                 {
                     FormId = DummyCellFormId,
-                    PersistentRefs = [Ref(0x2000)],
+                    PersistentRefs = [Ref(0x2000)]
                 },
                 ExteriorCells =
                 [
-                    new EsmTestFileBuilder.CellData { FormId = RealCellFormId, GridX = 3, GridY = -2 },
-                ],
+                    new EsmTestFileBuilder.CellData { FormId = RealCellFormId, GridX = 3, GridY = -2 }
+                ]
             })
             .BuildAndAnalyze();
 
@@ -151,18 +153,18 @@ public class Tes4PersistentDummyCellTests
             IsPersistentCell = true,
             PlacedObjects = Enumerable.Range(0, 50)
                 .Select(i => new PlacedReference { FormId = (uint)(0x4000 + i), RecordType = "REFR" })
-                .ToList(),
+                .ToList()
         };
         var real = new CellRecord
         {
             FormId = RealCellFormId,
             GridX = 0,
             GridY = 0,
-            PlacedObjects = [new PlacedReference { FormId = 0x3000, RecordType = "REFR" }],
+            PlacedObjects = [new PlacedReference { FormId = 0x3000, RecordType = "REFR" }]
         };
 
-        Assert.False(WorldSpatialIndex.PreferGridLookupCell(dummy, existing: real));
-        Assert.True(WorldSpatialIndex.PreferGridLookupCell(real, existing: dummy));
+        Assert.False(WorldSpatialIndex.PreferGridLookupCell(dummy, real));
+        Assert.True(WorldSpatialIndex.PreferGridLookupCell(real, dummy));
     }
 }
 
@@ -198,10 +200,10 @@ public class Tes4PersistentDummyCellIntegrationTests
             "Oblivion.esm not found (set BETHESDA_TEST_DATA_ROOT or install Oblivion).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, cancellationToken: TestContext.Current.CancellationToken);
+            esm!, TestContext.Current.CancellationToken);
 
-        var ws = result.Records.Worldspaces.FirstOrDefault(
-            w => string.Equals(w.EditorId, worldspaceEditorId, StringComparison.OrdinalIgnoreCase));
+        var ws = result.Records.Worldspaces.FirstOrDefault(w =>
+            string.Equals(w.EditorId, worldspaceEditorId, StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(ws);
 
         var cells = result.Records.Cells.Where(c => c.WorldspaceFormId == ws!.FormId).ToList();

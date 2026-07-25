@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Validation;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
@@ -13,7 +12,7 @@ public sealed class ScriptReferenceSemanticValidatorTests
     public void Validate_RejectsNullScroAndReferenceCountMismatch()
     {
         var bytes = BuildPlugin(BuildScpt(
-            0x01002000, declaredReferences: 2,
+            0x01002000, 2,
             ("SCRO", UInt32Bytes(0))));
 
         var result = PluginSemanticValidator.Validate(bytes, new HashSet<uint>());
@@ -30,7 +29,7 @@ public sealed class ScriptReferenceSemanticValidatorTests
         var bytes = BuildPlugin(
             BuildRecord("STAT", emittedTarget),
             BuildScpt(
-                0x01002000, declaredReferences: 3,
+                0x01002000, 3,
                 ("SLSD", SlsdBytes(5)),
                 ("SCRO", UInt32Bytes(emittedTarget)),
                 ("SCRO", UInt32Bytes(0x00000014)),
@@ -47,7 +46,7 @@ public sealed class ScriptReferenceSemanticValidatorTests
     {
         const uint childRef = 0x0010ABCD;
         var bytes = BuildPlugin(BuildScpt(
-            0x01002000, declaredReferences: 1,
+            0x01002000, 1,
             ("SCRO", UInt32Bytes(childRef))));
 
         var result = PluginSemanticValidator.Validate(
@@ -57,7 +56,9 @@ public sealed class ScriptReferenceSemanticValidatorTests
     }
 
     private static byte[] BuildPlugin(params byte[][] records)
-        => [.. BuildRecord("TES4", 0), .. records.SelectMany(static record => record)];
+    {
+        return [.. BuildRecord("TES4", 0), .. records.SelectMany(static record => record)];
+    }
 
     private static byte[] BuildScpt(
         uint formId,

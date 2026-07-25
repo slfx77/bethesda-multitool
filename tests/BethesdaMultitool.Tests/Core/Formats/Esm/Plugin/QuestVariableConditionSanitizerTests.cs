@@ -43,9 +43,9 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_keeps_new_info_when_variable_name_and_id_match_retained_master_script()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(12, "HastingsBribed", 1)],
-            masterVariables: [new ScriptVariableInfo(12, "HastingsBribed", 1)],
-            dialogue: NewDialogue(0x01000001, QuestFormId, 12));
+            [new ScriptVariableInfo(12, "HastingsBribed", 1)],
+            [new ScriptVariableInfo(12, "HastingsBribed", 1)],
+            NewDialogue(0x01000001, QuestFormId, 12));
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
@@ -62,13 +62,12 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_remaps_new_info_by_unique_variable_name_and_type()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(27, "TroopersDead", 1)],
-            masterVariables:
+            [new ScriptVariableInfo(27, "TroopersDead", 1)],
             [
                 new ScriptVariableInfo(27, "DifferentRetailVariable", 1),
                 new ScriptVariableInfo(31, "TroopersDead", 1)
             ],
-            dialogue: NewDialogue(0x01000002, QuestFormId, 27));
+            NewDialogue(0x01000002, QuestFormId, 27));
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
@@ -90,13 +89,12 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_appends_fresh_variable_when_exact_variable_is_absent()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(27, "TroopersDead", 1)],
-            masterVariables:
+            [new ScriptVariableInfo(27, "TroopersDead", 1)],
             [
                 new ScriptVariableInfo(27, "DifferentRetailVariable", 1),
                 new ScriptVariableInfo(31, "RetailMaximum", 1)
             ],
-            dialogue: NewDialogue(0x01000003, QuestFormId, 27));
+            NewDialogue(0x01000003, QuestFormId, 27));
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
@@ -136,9 +134,9 @@ public class QuestVariableConditionSanitizerTests
             ]
         };
         var records = BuildRecords(
-            sourceVariables: [],
-            masterVariables: [new ScriptVariableInfo(4, "RetailState", 1)],
-            dialogue: dialogue);
+            [],
+            [new ScriptVariableInfo(4, "RetailState", 1)],
+            dialogue);
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
@@ -174,12 +172,12 @@ public class QuestVariableConditionSanitizerTests
         var dialogue = NewDialogue(sharedInfo, QuestFormId, 9) with
         {
             PromptText = "Ask about the prototype",
-            Responses = [new DialogueResponse { ResponseNumber = 2, Text = "Cut response." }],
+            Responses = [new DialogueResponse { ResponseNumber = 2, Text = "Cut response." }]
         };
         var records = BuildRecords(
-            sourceVariables: [],
-            masterVariables: [new ScriptVariableInfo(4, "RetailState", 1)],
-            dialogue: dialogue);
+            [],
+            [new ScriptVariableInfo(4, "RetailState", 1)],
+            dialogue);
         records.MasterRecords[sharedInfo] = MasterRecord("INFO", sharedInfo);
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -207,12 +205,12 @@ public class QuestVariableConditionSanitizerTests
         var dialogue = NewDialogue(sharedInfo, QuestFormId, 27) with
         {
             PromptText = "Ask about the prototype",
-            Responses = [new DialogueResponse { ResponseNumber = 2, Text = "Cut response." }],
+            Responses = [new DialogueResponse { ResponseNumber = 2, Text = "Cut response." }]
         };
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(27, "PrototypeState", 1)],
-            masterVariables: [new ScriptVariableInfo(31, "PrototypeState", 1)],
-            dialogue: dialogue);
+            [new ScriptVariableInfo(27, "PrototypeState", 1)],
+            [new ScriptVariableInfo(31, "PrototypeState", 1)],
+            dialogue);
         records.MasterRecords[sharedInfo] = MasterRecord("INFO", sharedInfo);
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -233,8 +231,8 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_augments_and_remaps_new_package_without_widening_it()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(25, "bUlyssesFired", 1)],
-            masterVariables: [new ScriptVariableInfo(7, "ArcadeHired", 1)]);
+            [new ScriptVariableInfo(25, "bUlyssesFired", 1)],
+            [new ScriptVariableInfo(7, "ArcadeHired", 1)]);
         records.Collection.Packages.Add(new PackageRecord
         {
             FormId = 0x01000004,
@@ -264,15 +262,15 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_does_not_require_scpt_for_info_when_dialogue_emission_is_skipped()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(25, "PrototypeDialogueState", 1)],
-            masterVariables: [new ScriptVariableInfo(7, "RetailState", 1)],
-            dialogue: NewDialogue(0x01000030, QuestFormId, 25));
+            [new ScriptVariableInfo(25, "PrototypeDialogueState", 1)],
+            [new ScriptVariableInfo(7, "RetailState", 1)],
+            NewDialogue(0x01000030, QuestFormId, 25));
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
             records.MasterRecords,
             null,
-            sanitizeInfoRecords: false);
+            false);
 
         Assert.Equal(25u, Assert.Single(Assert.Single(records.Collection.Dialogues).Conditions).Parameter2);
         Assert.Equal(0, result.RemappedConditionCount);
@@ -288,8 +286,8 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_does_not_require_scpt_for_package_when_package_emission_is_skipped()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(25, "PrototypePackageState", 1)],
-            masterVariables: [new ScriptVariableInfo(7, "RetailState", 1)]);
+            [new ScriptVariableInfo(25, "PrototypePackageState", 1)],
+            [new ScriptVariableInfo(7, "RetailState", 1)]);
         records.Collection.Packages.Add(NewPackage(0x01000031, QuestFormId, 25));
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -312,20 +310,19 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_excludes_skipped_info_from_enabled_package_augmentation_allocation()
     {
         var records = BuildRecords(
-            sourceVariables:
             [
                 new ScriptVariableInfo(25, "AInfoOnlyState", 1),
                 new ScriptVariableInfo(26, "ZPackageState", 1)
             ],
-            masterVariables: [new ScriptVariableInfo(40, "RetailMaximum", 1)],
-            dialogue: NewDialogue(0x01000032, QuestFormId, 25));
+            [new ScriptVariableInfo(40, "RetailMaximum", 1)],
+            NewDialogue(0x01000032, QuestFormId, 25));
         records.Collection.Packages.Add(NewPackage(0x01000033, QuestFormId, 26));
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
             records.MasterRecords,
             null,
-            sanitizeInfoRecords: false);
+            false);
 
         Assert.Equal(25u, Assert.Single(Assert.Single(records.Collection.Dialogues).Conditions).Parameter2);
         Assert.Equal(41u, Assert.Single(Assert.Single(records.Collection.Packages).Conditions).Parameter2);
@@ -338,13 +335,12 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_excludes_skipped_package_from_enabled_info_augmentation_allocation()
     {
         var records = BuildRecords(
-            sourceVariables:
             [
                 new ScriptVariableInfo(25, "ZInfoState", 1),
                 new ScriptVariableInfo(26, "APackageOnlyState", 1)
             ],
-            masterVariables: [new ScriptVariableInfo(40, "RetailMaximum", 1)],
-            dialogue: NewDialogue(0x01000034, QuestFormId, 25));
+            [new ScriptVariableInfo(40, "RetailMaximum", 1)],
+            NewDialogue(0x01000034, QuestFormId, 25));
         records.Collection.Packages.Add(NewPackage(0x01000035, QuestFormId, 26));
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -369,9 +365,9 @@ public class QuestVariableConditionSanitizerTests
     {
         const uint sharedInfo = 0x00003000;
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(9, "PrototypeOnly", 1)],
-            masterVariables: [],
-            dialogue: NewDialogue(sharedInfo, QuestFormId, 9));
+            [new ScriptVariableInfo(9, "PrototypeOnly", 1)],
+            [],
+            NewDialogue(sharedInfo, QuestFormId, 9));
         records.MasterRecords.Add(sharedInfo, MasterRecord("INFO", sharedInfo));
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -422,7 +418,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeScript\nshort SiriMentionedBrahmin\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             Dialogues = [NewDialogue(0x01000006, sourceQuest, 6)]
@@ -463,7 +459,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeScript\nshort CapturedState\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             RuntimeScripts =
@@ -518,7 +514,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeScript\nshort PrototypeState\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             RuntimeScripts =
@@ -575,7 +571,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeScript\nshort PrototypeOnly\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             Dialogues = [NewDialogue(0x0100000A, QuestFormId, 9)]
@@ -617,7 +613,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeScript\nshort PrototypeState\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             Dialogues = [NewDialogue(0x01000007, newQuest, 3)]
@@ -636,8 +632,8 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_suppresses_only_unsafe_terminal_menu_item()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "KnownState", 1)],
-            masterVariables: [new ScriptVariableInfo(7, "KnownState", 1)]);
+            [new ScriptVariableInfo(7, "KnownState", 1)],
+            [new ScriptVariableInfo(7, "KnownState", 1)]);
         records.Collection.Terminals.Add(new TerminalRecord
         {
             FormId = 0x01000070,
@@ -647,10 +643,10 @@ public class QuestVariableConditionSanitizerTests
                 new TerminalMenuItem
                 {
                     Text = "Unsafe",
-                    Conditions = [QuestVariable(QuestFormId, 99)],
+                    Conditions = [QuestVariable(QuestFormId, 99)]
                 },
-                new TerminalMenuItem { Text = "Safe" },
-            ],
+                new TerminalMenuItem { Text = "Safe" }
+            ]
         });
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -674,8 +670,8 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_remaps_terminal_quest_variable_condition_without_changing_sibling_items()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "KnownState", 1)],
-            masterVariables: [new ScriptVariableInfo(12, "KnownState", 1)]);
+            [new ScriptVariableInfo(7, "KnownState", 1)],
+            [new ScriptVariableInfo(12, "KnownState", 1)]);
         records.Collection.Terminals.Add(new TerminalRecord
         {
             FormId = 0x01000071,
@@ -685,10 +681,10 @@ public class QuestVariableConditionSanitizerTests
                 new TerminalMenuItem
                 {
                     Text = "Conditional",
-                    Conditions = [QuestVariable(QuestFormId, 7)],
+                    Conditions = [QuestVariable(QuestFormId, 7)]
                 },
-                new TerminalMenuItem { Text = "Sibling" },
-            ],
+                new TerminalMenuItem { Text = "Sibling" }
+            ]
         });
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -708,11 +704,10 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_allocates_fresh_append_only_local_for_terminal_only_condition()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(27, "TerminalPrototypeState", 1)],
-            masterVariables:
+            [new ScriptVariableInfo(27, "TerminalPrototypeState", 1)],
             [
                 new ScriptVariableInfo(27, "DifferentRetailVariable", 1),
-                new ScriptVariableInfo(31, "RetailMaximum", 1),
+                new ScriptVariableInfo(31, "RetailMaximum", 1)
             ]);
         records.Collection.Terminals.Add(new TerminalRecord
         {
@@ -723,9 +718,9 @@ public class QuestVariableConditionSanitizerTests
                 new TerminalMenuItem
                 {
                     Text = "Prototype-only state",
-                    Conditions = [QuestVariable(QuestFormId, 27)],
-                },
-            ],
+                    Conditions = [QuestVariable(QuestFormId, 27)]
+                }
+            ]
         });
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -767,14 +762,14 @@ public class QuestVariableConditionSanitizerTests
                                 {
                                     FunctionIndex = QuestVariableConditionSanitizer.GetScriptVariableFunctionIndex,
                                     Parameter1 = 0x0010E70C,
-                                    Parameter2 = 4,
-                                },
-                            ],
+                                    Parameter2 = 4
+                                }
+                            ]
                         },
-                        new TerminalMenuItem { Text = "Safe sibling" },
-                    ],
-                },
-            ],
+                        new TerminalMenuItem { Text = "Safe sibling" }
+                    ]
+                }
+            ]
         };
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -868,7 +863,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeScript\nshort GuardState\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             Dialogues = [NewScriptVariableDialogue(0x01000102, owner, 4)]
@@ -906,7 +901,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeScript\nshort GuardState\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             Packages = [NewScriptVariablePackage(0x01000100, owner, 4)]
@@ -944,7 +939,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeScriptA\nshort GuardState\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 },
                 new ScriptRecord
                 {
@@ -953,8 +948,8 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeScriptB\nlong GuardState\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
-                },
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
+                }
             ],
             Packages = [NewScriptVariablePackage(0x01000101, owner, 4)]
         };
@@ -989,7 +984,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn RuntimeMetadataScript\nshort ExactState",
                     SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             RuntimeScripts =
@@ -1044,7 +1039,7 @@ public class QuestVariableConditionSanitizerTests
                     FormId = script,
                     Variables = [new ScriptVariableInfo(17, "StaleState", 1)],
                     // EnforceCapturedSourceCorrespondence represents rejection by clearing SCTX.
-                    SourceText = null,
+                    SourceText = null
                 }
             ],
             RuntimeScripts =
@@ -1059,7 +1054,7 @@ public class QuestVariableConditionSanitizerTests
                     Variables = [new ScriptVariableInfo(17, "StaleState", 1)],
                     VariableMetadataComplete = true,
                     VariablesComplete = true,
-                    ReferencedObjectsComplete = true,
+                    ReferencedObjectsComplete = true
                 }
             ],
             Packages = [NewScriptVariablePackage(0x01000111, owner, 17)]
@@ -1097,7 +1092,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = source,
                     SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject,
                     SourceTextCorrespondenceStatus =
-                        ScriptSourceCorrespondenceStatus.AcceptedSourceOnly,
+                        ScriptSourceCorrespondenceStatus.AcceptedSourceOnly
                 }
             ],
             RuntimeScripts =
@@ -1111,7 +1106,7 @@ public class QuestVariableConditionSanitizerTests
                     VariablesComplete = true,
                     SourceText = source,
                     SourceTextCorrespondenceStatus =
-                        ScriptSourceCorrespondenceStatus.AcceptedSourceOnly,
+                        ScriptSourceCorrespondenceStatus.AcceptedSourceOnly
                 }
             ],
             Packages = [NewScriptVariablePackage(0x01000112, owner, 17)]
@@ -1145,7 +1140,7 @@ public class QuestVariableConditionSanitizerTests
                 {
                     FormId = script,
                     Variables = [new ScriptVariableInfo(17, "OpaqueState", 1)],
-                    SourceText = null,
+                    SourceText = null
                 }
             ],
             RuntimeScripts =
@@ -1157,7 +1152,7 @@ public class QuestVariableConditionSanitizerTests
                     Variables = [new ScriptVariableInfo(17, "OpaqueState", 1)],
                     VariableMetadataComplete = true,
                     VariablesComplete = true,
-                    ReferencedObjectsComplete = true,
+                    ReferencedObjectsComplete = true
                 }
             ],
             Packages = [NewScriptVariablePackage(0x01000113, owner, 17)]
@@ -1190,7 +1185,7 @@ public class QuestVariableConditionSanitizerTests
                 {
                     FormId = script,
                     Variables = [new ScriptVariableInfo(17, "ExactState", 1)],
-                    SourceText = "scn PrototypeScript\nshort ExactState\nBegin GameMode\nEnd",
+                    SourceText = "scn PrototypeScript\nshort ExactState\nBegin GameMode\nEnd"
                 }
             ],
             RuntimeScripts =
@@ -1231,7 +1226,7 @@ public class QuestVariableConditionSanitizerTests
                 {
                     FormId = script,
                     Variables = [new ScriptVariableInfo(17, "FragmentOnlyState", 1)],
-                    SourceText = "scn PrototypeScript\nshort FragmentOnlyState\nBegin GameMode\nEnd",
+                    SourceText = "scn PrototypeScript\nshort FragmentOnlyState\nBegin GameMode\nEnd"
                 }
             ],
             RuntimeScripts =
@@ -1324,7 +1319,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeScript\nshort GuardState\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             Packages = [NewScriptVariablePackage(0x01000200, owner, 4)]
@@ -1388,7 +1383,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeScript\nshort PrototypeOnly\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             Packages = [NewScriptVariablePackage(0x01000300, owner, 4)]
@@ -1443,7 +1438,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeScript\nshort EnabledState\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             Packages = [NewScriptVariablePackage(0x01000400, owner, 2)]
@@ -1532,7 +1527,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeScript\nshort AliasedState\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             Packages = [NewScriptVariablePackage(0x01000600, sourceOwner, 3)]
@@ -1547,7 +1542,7 @@ public class QuestVariableConditionSanitizerTests
         {
             [sourceOwner] = targetOwner,
             [sourceNpc] = targetNpc,
-            [sourceScript] = targetScript,
+            [sourceScript] = targetScript
         };
 
         var result = QuestVariableConditionSanitizer.Apply(collection, masterRecords, aliases);
@@ -1593,7 +1588,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeScript\nshort PrototypeState\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             RuntimeScripts =
@@ -1626,7 +1621,7 @@ public class QuestVariableConditionSanitizerTests
         {
             [sourceOwner] = targetOwner,
             [sourceNpc] = targetNpc,
-            [sourceScript] = targetScript,
+            [sourceScript] = targetScript
         };
 
         var result = QuestVariableConditionSanitizer.Apply(collection, masterRecords, aliases);
@@ -1650,7 +1645,7 @@ public class QuestVariableConditionSanitizerTests
                 new CellRecord
                 {
                     PlacedObjects =
-                    [new PlacedReference { FormId = owner, RecordType = "ACHR", BaseFormId = npc }]
+                        [new PlacedReference { FormId = owner, RecordType = "ACHR", BaseFormId = npc }]
                 }
             ],
             Npcs = [new NpcRecord { FormId = npc, Script = sourceScript }],
@@ -1663,7 +1658,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeScript\nshort SameName\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             Packages = [NewScriptVariablePackage(0x01000700, owner, 3)]
@@ -1695,7 +1690,7 @@ public class QuestVariableConditionSanitizerTests
                 new CellRecord
                 {
                     PlacedObjects =
-                    [new PlacedReference { FormId = owner, RecordType = "ACHR", BaseFormId = npc }]
+                        [new PlacedReference { FormId = owner, RecordType = "ACHR", BaseFormId = npc }]
                 }
             ],
             Npcs = [new NpcRecord { FormId = npc, Script = sourceScript }],
@@ -1708,7 +1703,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = "scn PrototypeActorScript\nref SharedValue\nBegin GameMode\nEnd",
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             Packages = [NewScriptVariablePackage(0x01000710, owner, 3)]
@@ -1733,13 +1728,12 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_suppresses_when_name_match_is_ambiguous()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(4, "DuplicateName", 1)],
-            masterVariables:
+            [new ScriptVariableInfo(4, "DuplicateName", 1)],
             [
                 new ScriptVariableInfo(7, "DuplicateName", 1),
                 new ScriptVariableInfo(8, "DuplicateName", 1)
             ],
-            dialogue: NewDialogue(0x01000009, QuestFormId, 4),
+            NewDialogue(0x01000009, QuestFormId, 4),
             masterSourceText: "scn RetailScript\nshort DuplicateName\nBegin GameMode\nEnd");
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -1756,13 +1750,12 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_suppresses_when_target_table_has_duplicate_numeric_ids()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "PrototypeState", 1)],
-            masterVariables:
+            [new ScriptVariableInfo(7, "PrototypeState", 1)],
             [
                 new ScriptVariableInfo(7, "PrototypeState", 1),
                 new ScriptVariableInfo(7, "ConflictingRetailState", 1)
             ],
-            dialogue: NewDialogue(0x01000019, QuestFormId, 7));
+            NewDialogue(0x01000019, QuestFormId, 7));
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
@@ -1778,15 +1771,14 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_reuses_exact_case_insensitive_augmentation_and_allocates_in_stable_name_order()
     {
         var records = BuildRecords(
-            sourceVariables:
             [
                 new ScriptVariableInfo(9, "zPrototypeState", 1),
                 new ScriptVariableInfo(10, "ZPROTOTYPESTATE", 1),
                 new ScriptVariableInfo(11, "aPrototypeState", 0)
             ],
-            masterVariables: [new ScriptVariableInfo(40, "RetailMaximum", 1)],
+            [new ScriptVariableInfo(40, "RetailMaximum", 1)],
             sourceText:
-                "scn PrototypeScript\nshort zPrototypeState\nfloat aPrototypeState\nBegin GameMode\nEnd");
+            "scn PrototypeScript\nshort zPrototypeState\nfloat aPrototypeState\nBegin GameMode\nEnd");
         records.Collection.Dialogues.AddRange(
         [
             NewDialogue(0x01000020, QuestFormId, 10),
@@ -1817,13 +1809,12 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_does_not_semantically_match_or_reuse_different_variable_type()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "PrototypeEnabled", 1)],
-            masterVariables:
+            [new ScriptVariableInfo(7, "PrototypeEnabled", 1)],
             [
                 new ScriptVariableInfo(8, "bPrototypeEnabled", 1),
                 new ScriptVariableInfo(9, "PrototypeEnabled", 0)
             ],
-            dialogue: NewDialogue(0x01000023, QuestFormId, 7));
+            NewDialogue(0x01000023, QuestFormId, 7));
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
@@ -1845,11 +1836,11 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_distinguishes_float_and_reference_using_each_scripts_exact_sctx()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "SharedValue", 0)],
-            masterVariables: [new ScriptVariableInfo(8, "SharedValue", 0)],
-            dialogue: NewDialogue(0x01000026, QuestFormId, 7),
-            sourceText: "scn PrototypeScript\nref SharedValue\nBegin GameMode\nEnd",
-            masterSourceText: "scn RetailScript\nfloat SharedValue\nBegin GameMode\nEnd");
+            [new ScriptVariableInfo(7, "SharedValue", 0)],
+            [new ScriptVariableInfo(8, "SharedValue", 0)],
+            NewDialogue(0x01000026, QuestFormId, 7),
+            "scn PrototypeScript\nref SharedValue\nBegin GameMode\nEnd",
+            "scn RetailScript\nfloat SharedValue\nBegin GameMode\nEnd");
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
@@ -1868,11 +1859,11 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_does_not_collapse_distinct_integer_source_keywords()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "SharedState", 1)],
-            masterVariables: [new ScriptVariableInfo(8, "SharedState", 1)],
-            dialogue: NewDialogue(0x0100002A, QuestFormId, 7),
-            sourceText: "scn PrototypeScript\nshort SharedState\nBegin GameMode\nEnd",
-            masterSourceText: "scn RetailScript\nint SharedState\nBegin GameMode\nEnd");
+            [new ScriptVariableInfo(7, "SharedState", 1)],
+            [new ScriptVariableInfo(8, "SharedState", 1)],
+            NewDialogue(0x0100002A, QuestFormId, 7),
+            "scn PrototypeScript\nshort SharedState\nBegin GameMode\nEnd",
+            "scn RetailScript\nint SharedState\nBegin GameMode\nEnd");
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
@@ -1891,11 +1882,11 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_allocates_storage_only_integer_without_reusing_or_inventing_keyword()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "UnknownInteger", 1)],
-            masterVariables: [],
-            dialogue: NewDialogue(0x0100002B, QuestFormId, 7),
-            sourceText: "scn PrototypeScript\nBegin GameMode\nEnd",
-            masterSourceText: "scn RetailScript\nBegin GameMode\nEnd");
+            [new ScriptVariableInfo(7, "UnknownInteger", 1)],
+            [],
+            NewDialogue(0x0100002B, QuestFormId, 7),
+            "scn PrototypeScript\nBegin GameMode\nEnd",
+            "scn RetailScript\nBegin GameMode\nEnd");
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
@@ -1914,11 +1905,11 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_retains_exact_same_serialized_master_slot_without_sctx_keyword()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "OpaqueSameSlot", 1)],
-            masterVariables: [new ScriptVariableInfo(7, "opaquesameslot", 1)],
-            dialogue: NewDialogue(0x0100002F, QuestFormId, 7),
-            sourceText: "scn PrototypeScript\nBegin GameMode\nEnd",
-            masterSourceText: "scn RetailScript\nBegin GameMode\nEnd");
+            [new ScriptVariableInfo(7, "OpaqueSameSlot", 1)],
+            [new ScriptVariableInfo(7, "opaquesameslot", 1)],
+            NewDialogue(0x0100002F, QuestFormId, 7),
+            "scn PrototypeScript\nBegin GameMode\nEnd",
+            "scn RetailScript\nBegin GameMode\nEnd");
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
@@ -1935,11 +1926,11 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_does_not_reuse_target_integer_when_its_exact_keyword_is_unavailable()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "SharedState", 1)],
-            masterVariables: [new ScriptVariableInfo(8, "SharedState", 1)],
-            dialogue: NewDialogue(0x0100002C, QuestFormId, 7),
-            sourceText: "scn PrototypeScript\nshort SharedState\nBegin GameMode\nEnd",
-            masterSourceText: "scn RetailScript\nBegin GameMode\nEnd");
+            [new ScriptVariableInfo(7, "SharedState", 1)],
+            [new ScriptVariableInfo(8, "SharedState", 1)],
+            NewDialogue(0x0100002C, QuestFormId, 7),
+            "scn PrototypeScript\nshort SharedState\nBegin GameMode\nEnd",
+            "scn RetailScript\nBegin GameMode\nEnd");
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
@@ -1958,11 +1949,11 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_suppresses_same_formid_raw_scripts_with_conflicting_declaration_identity()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "SharedState", 1)],
-            masterVariables: [new ScriptVariableInfo(12, "SharedState", 1)],
-            dialogue: NewDialogue(0x0100002D, QuestFormId, 7),
-            sourceText: "scn PrototypeScript\nshort SharedState\nBegin GameMode\nEnd",
-            masterSourceText: "scn RetailScript\nshort SharedState\nBegin GameMode\nEnd");
+            [new ScriptVariableInfo(7, "SharedState", 1)],
+            [new ScriptVariableInfo(12, "SharedState", 1)],
+            NewDialogue(0x0100002D, QuestFormId, 7),
+            "scn PrototypeScript\nshort SharedState\nBegin GameMode\nEnd",
+            "scn RetailScript\nshort SharedState\nBegin GameMode\nEnd");
         records.Collection.Scripts.Add(new ScriptRecord
         {
             FormId = ScriptFormId,
@@ -1970,7 +1961,7 @@ public class QuestVariableConditionSanitizerTests
             SourceText = "scn PrototypeScriptCopy\nlong SharedState\nBegin GameMode\nEnd",
             SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
             SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-            CompiledData = [0x00, 0x1D, 0x00, 0x00],
+            CompiledData = [0x00, 0x1D, 0x00, 0x00]
         });
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -1988,11 +1979,11 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_accepts_same_formid_raw_scripts_when_full_declaration_identity_agrees()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "SharedState", 1)],
-            masterVariables: [new ScriptVariableInfo(12, "SharedState", 1)],
-            dialogue: NewDialogue(0x0100002E, QuestFormId, 7),
-            sourceText: "scn PrototypeScript\nshort SharedState\nBegin GameMode\nEnd",
-            masterSourceText: "scn RetailScript\nshort SharedState\nBegin GameMode\nEnd");
+            [new ScriptVariableInfo(7, "SharedState", 1)],
+            [new ScriptVariableInfo(12, "SharedState", 1)],
+            NewDialogue(0x0100002E, QuestFormId, 7),
+            "scn PrototypeScript\nshort SharedState\nBegin GameMode\nEnd",
+            "scn RetailScript\nshort SharedState\nBegin GameMode\nEnd");
         records.Collection.Scripts.Add(new ScriptRecord
         {
             FormId = ScriptFormId,
@@ -2000,7 +1991,7 @@ public class QuestVariableConditionSanitizerTests
             SourceText = "scn PrototypeScriptCopy\nshort sharedstate\nBegin MenuMode\nEnd",
             SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
             SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-            CompiledData = [0x00, 0x1D, 0x00, 0x00],
+            CompiledData = [0x00, 0x1D, 0x00, 0x00]
         });
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -2017,11 +2008,11 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_remaps_type_zero_only_when_float_declarations_match_exactly()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "ExactFloat", 0)],
-            masterVariables: [new ScriptVariableInfo(12, "ExactFloat", 0)],
-            dialogue: NewDialogue(0x01000027, QuestFormId, 7),
-            sourceText: "scn PrototypeScript\nfloat ExactFloat\nBegin GameMode\nEnd",
-            masterSourceText: "scn RetailScript\nfloat ExactFloat\nBegin GameMode\nEnd");
+            [new ScriptVariableInfo(7, "ExactFloat", 0)],
+            [new ScriptVariableInfo(12, "ExactFloat", 0)],
+            NewDialogue(0x01000027, QuestFormId, 7),
+            "scn PrototypeScript\nfloat ExactFloat\nBegin GameMode\nEnd",
+            "scn RetailScript\nfloat ExactFloat\nBegin GameMode\nEnd");
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
@@ -2037,9 +2028,9 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_allocates_storage_only_type_zero_without_guessing_float_or_reference()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "UnknownKind", 0)],
-            masterVariables: [],
-            dialogue: NewDialogue(0x01000028, QuestFormId, 7));
+            [new ScriptVariableInfo(7, "UnknownKind", 0)],
+            [],
+            NewDialogue(0x01000028, QuestFormId, 7));
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
@@ -2057,10 +2048,10 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_new_dmp_script_keeps_exact_same_table_index_without_sctx()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "CapturedOnly", 1)],
-            masterVariables: [],
-            dialogue: NewDialogue(0x01000029, QuestFormId, 7),
-            sourceText: "scn PrototypeScript\nBegin GameMode\nEnd");
+            [new ScriptVariableInfo(7, "CapturedOnly", 1)],
+            [],
+            NewDialogue(0x01000029, QuestFormId, 7),
+            "scn PrototypeScript\nBegin GameMode\nEnd");
         records.MasterRecords.Clear();
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -2078,9 +2069,9 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_requires_source_metadata_even_when_target_has_the_same_numeric_id()
     {
         var records = BuildRecords(
-            sourceVariables: [],
-            masterVariables: [new ScriptVariableInfo(12, "RetailState", 1)],
-            dialogue: NewDialogue(0x01000024, QuestFormId, 12));
+            [],
+            [new ScriptVariableInfo(12, "RetailState", 1)],
+            NewDialogue(0x01000024, QuestFormId, 12));
 
         var result = QuestVariableConditionSanitizer.Apply(
             records.Collection,
@@ -2096,9 +2087,9 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_rejects_augmentation_when_uint16_scda_variable_range_is_exhausted()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "PrototypeState", 1)],
-            masterVariables: [new ScriptVariableInfo(ushort.MaxValue, "RetailMaximum", 1)],
-            dialogue: NewDialogue(0x01000025, QuestFormId, 7));
+            [new ScriptVariableInfo(7, "PrototypeState", 1)],
+            [new ScriptVariableInfo(ushort.MaxValue, "RetailMaximum", 1)],
+            NewDialogue(0x01000025, QuestFormId, 7));
 
         var error = Assert.Throws<InvalidDataException>(() =>
             QuestVariableConditionSanitizer.Apply(
@@ -2113,14 +2104,14 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_stale_runtime_source_cannot_reuse_retail_but_can_allocate_storage_only_local()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(27, "StaleState", 1)],
-            masterVariables: [new ScriptVariableInfo(31, "StaleState", 1)],
-            dialogue: NewDialogue(0x0100003E, QuestFormId, 27));
+            [new ScriptVariableInfo(27, "StaleState", 1)],
+            [new ScriptVariableInfo(31, "StaleState", 1)],
+            NewDialogue(0x0100003E, QuestFormId, 27));
         records.Collection.Scripts[0] = records.Collection.Scripts[0] with
         {
             // Standalone SCTX/SCDA correspondence rejected this captured source.
             SourceText = null,
-            SourceTextOrigin = ScriptSourceTextOrigin.None,
+            SourceTextOrigin = ScriptSourceTextOrigin.None
         };
         records.Collection.RuntimeScripts.Add(new RuntimeScriptData
         {
@@ -2129,7 +2120,7 @@ public class QuestVariableConditionSanitizerTests
             VariableMetadataComplete = true,
             VariablesComplete = true,
             SourceText = "scn RejectedRuntimeScript\nshort StaleState\nBegin GameMode\nEnd",
-            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Rejected,
+            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Rejected
         });
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -2149,13 +2140,13 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_source_only_text_does_not_prove_keyword_but_table_can_back_storage_only_local()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(27, "SourceOnlyState", 1)],
-            masterVariables: [],
-            dialogue: NewDialogue(0x0100003D, QuestFormId, 27));
+            [new ScriptVariableInfo(27, "SourceOnlyState", 1)],
+            [],
+            NewDialogue(0x0100003D, QuestFormId, 27));
         records.Collection.Scripts[0] = records.Collection.Scripts[0] with
         {
             CompiledData = null,
-            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.AcceptedSourceOnly,
+            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.AcceptedSourceOnly
         };
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -2173,14 +2164,14 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_rejected_runtime_source_does_not_prove_keyword_but_table_can_back_storage_only_local()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(27, "StalePrototypeOnly", 1)],
-            masterVariables: [],
-            dialogue: NewDialogue(0x0100003F, QuestFormId, 27));
+            [new ScriptVariableInfo(27, "StalePrototypeOnly", 1)],
+            [],
+            NewDialogue(0x0100003F, QuestFormId, 27));
         records.Collection.Scripts[0] = records.Collection.Scripts[0] with
         {
             // RuntimeScripts retains raw diagnostic text after the standalone gate clears it.
             SourceText = null,
-            SourceTextOrigin = ScriptSourceTextOrigin.None,
+            SourceTextOrigin = ScriptSourceTextOrigin.None
         };
         records.Collection.RuntimeScripts.Add(new RuntimeScriptData
         {
@@ -2190,7 +2181,7 @@ public class QuestVariableConditionSanitizerTests
             VariablesComplete = true,
             SourceText =
                 "scn RejectedRuntimeScript\nshort StalePrototypeOnly\nBegin GameMode\nEnd",
-            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Rejected,
+            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Rejected
         });
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -2209,10 +2200,10 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_uses_accepted_complete_same_dump_runtime_script_for_exact_source_id_and_name()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(27, "RuntimeName", 1)],
-            masterVariables: [new ScriptVariableInfo(31, "RuntimeName", 1)],
-            dialogue: NewDialogue(0x01000040, QuestFormId, 27),
-            sourceText: "scn PrototypeScript\nshort RuntimeName\nBegin GameMode\nEnd");
+            [new ScriptVariableInfo(27, "RuntimeName", 1)],
+            [new ScriptVariableInfo(31, "RuntimeName", 1)],
+            NewDialogue(0x01000040, QuestFormId, 27),
+            "scn PrototypeScript\nshort RuntimeName\nBegin GameMode\nEnd");
         records.Collection.RuntimeScripts.Add(new RuntimeScriptData
         {
             FormId = ScriptFormId,
@@ -2220,7 +2211,7 @@ public class QuestVariableConditionSanitizerTests
             VariableMetadataComplete = true,
             VariablesComplete = true,
             SourceText = "scn PrototypeScript\nshort RuntimeName\nBegin GameMode\nEnd",
-            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
+            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted
         });
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -2242,10 +2233,10 @@ public class QuestVariableConditionSanitizerTests
         const string acceptedSource =
             "scn PrototypeScript\nshort AcceptedPrototypeOnly\nBegin GameMode\nEnd";
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(27, "AcceptedPrototypeOnly", 1)],
-            masterVariables: [],
-            dialogue: NewDialogue(0x01000045, QuestFormId, 27),
-            sourceText: acceptedSource);
+            [new ScriptVariableInfo(27, "AcceptedPrototypeOnly", 1)],
+            [],
+            NewDialogue(0x01000045, QuestFormId, 27),
+            acceptedSource);
         records.Collection.RuntimeScripts.Add(new RuntimeScriptData
         {
             FormId = ScriptFormId,
@@ -2253,7 +2244,7 @@ public class QuestVariableConditionSanitizerTests
             VariableMetadataComplete = true,
             VariablesComplete = true,
             SourceText = acceptedSource,
-            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
+            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted
         });
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -2276,15 +2267,15 @@ public class QuestVariableConditionSanitizerTests
     {
         const uint sourceRuntimeScript = 0x00102000;
         var records = BuildRecords(
-            sourceVariables: [],
-            masterVariables: [new ScriptVariableInfo(12, "SparseState", 1)],
-            dialogue: NewDialogue(0x01000041, QuestFormId, 7));
+            [],
+            [new ScriptVariableInfo(12, "SparseState", 1)],
+            NewDialogue(0x01000041, QuestFormId, 7));
         records.Collection.Quests[0] = records.Collection.Quests[0] with { Script = sourceRuntimeScript };
         var runtimeVariables = new List<ScriptVariableInfo>
         {
             new(91, "LastInList", 1),
             new(7, "SparseState", 1),
-            new(3, "FirstById", 1),
+            new(3, "FirstById", 1)
         };
         const string runtimeSource =
             "scn PrototypeScript\nshort LastInList\nshort SparseState\nshort FirstById\nBegin GameMode\nEnd";
@@ -2295,7 +2286,7 @@ public class QuestVariableConditionSanitizerTests
             SourceText = runtimeSource,
             SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject,
             SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-            CompiledData = [0x00, 0x1D, 0x00, 0x00],
+            CompiledData = [0x00, 0x1D, 0x00, 0x00]
         });
         records.Collection.RuntimeScripts.Add(new RuntimeScriptData
         {
@@ -2304,11 +2295,11 @@ public class QuestVariableConditionSanitizerTests
             VariableMetadataComplete = true,
             VariablesComplete = true,
             SourceText = runtimeSource,
-            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
+            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted
         });
         var aliases = new Dictionary<uint, uint>
         {
-            [sourceRuntimeScript] = ScriptFormId,
+            [sourceRuntimeScript] = ScriptFormId
         };
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -2326,14 +2317,14 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_fails_closed_instead_of_falling_back_from_incomplete_runtime_metadata()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "PlausibleFragmentName", 1)],
-            masterVariables: [new ScriptVariableInfo(12, "PlausibleFragmentName", 1)],
-            dialogue: NewDialogue(0x01000042, QuestFormId, 7));
+            [new ScriptVariableInfo(7, "PlausibleFragmentName", 1)],
+            [new ScriptVariableInfo(12, "PlausibleFragmentName", 1)],
+            NewDialogue(0x01000042, QuestFormId, 7));
         records.Collection.RuntimeScripts.Add(new RuntimeScriptData
         {
             FormId = ScriptFormId,
             Variables = [new ScriptVariableInfo(7, "PlausibleFragmentName", 1)],
-            VariableMetadataComplete = false,
+            VariableMetadataComplete = false
         });
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -2350,9 +2341,9 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_fails_closed_for_conflicting_same_dump_runtime_script_metadata()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "FirstRuntimeName", 1)],
-            masterVariables: [new ScriptVariableInfo(12, "FirstRuntimeName", 1)],
-            dialogue: NewDialogue(0x01000043, QuestFormId, 7));
+            [new ScriptVariableInfo(7, "FirstRuntimeName", 1)],
+            [new ScriptVariableInfo(12, "FirstRuntimeName", 1)],
+            NewDialogue(0x01000043, QuestFormId, 7));
         records.Collection.RuntimeScripts.AddRange(
         [
             new RuntimeScriptData
@@ -2360,15 +2351,15 @@ public class QuestVariableConditionSanitizerTests
                 FormId = ScriptFormId,
                 Variables = [new ScriptVariableInfo(7, "FirstRuntimeName", 1)],
                 VariableMetadataComplete = true,
-                VariablesComplete = true,
+                VariablesComplete = true
             },
             new RuntimeScriptData
             {
                 FormId = ScriptFormId,
                 Variables = [new ScriptVariableInfo(7, "ConflictingRuntimeName", 1)],
                 VariableMetadataComplete = true,
-                VariablesComplete = true,
-            },
+                VariablesComplete = true
+            }
         ]);
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -2386,10 +2377,10 @@ public class QuestVariableConditionSanitizerTests
     {
         const string source = "scn PrototypeScript\nshort ExactState\nBegin GameMode\nEnd";
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "ExactState", 1)],
-            masterVariables: [new ScriptVariableInfo(12, "ExactState", 1)],
-            dialogue: NewDialogue(0x01000046, QuestFormId, 7),
-            sourceText: source);
+            [new ScriptVariableInfo(7, "ExactState", 1)],
+            [new ScriptVariableInfo(12, "ExactState", 1)],
+            NewDialogue(0x01000046, QuestFormId, 7),
+            source);
         var first = new RuntimeScriptData
         {
             FormId = ScriptFormId,
@@ -2399,12 +2390,12 @@ public class QuestVariableConditionSanitizerTests
             VariableMetadataComplete = true,
             VariablesComplete = true,
             SourceText = source,
-            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
+            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted
         };
         records.Collection.RuntimeScripts.AddRange(
         [
             first,
-            first with { CompiledData = [0x00, 0x1C, 0x00, 0x00] },
+            first with { CompiledData = [0x00, 0x1C, 0x00, 0x00] }
         ]);
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -2422,11 +2413,11 @@ public class QuestVariableConditionSanitizerTests
     public void Apply_uses_runtime_scripts_exact_sctx_to_prove_type_zero_declaration()
     {
         var records = BuildRecords(
-            sourceVariables: [new ScriptVariableInfo(7, "ExactFloat", 0)],
-            masterVariables: [new ScriptVariableInfo(12, "ExactFloat", 0)],
-            dialogue: NewDialogue(0x01000044, QuestFormId, 7),
-            sourceText: "scn PrototypeScript\nfloat ExactFloat\nBegin GameMode\nEnd",
-            masterSourceText: "scn RetailScript\nfloat ExactFloat\nBegin GameMode\nEnd");
+            [new ScriptVariableInfo(7, "ExactFloat", 0)],
+            [new ScriptVariableInfo(12, "ExactFloat", 0)],
+            NewDialogue(0x01000044, QuestFormId, 7),
+            "scn PrototypeScript\nfloat ExactFloat\nBegin GameMode\nEnd",
+            "scn RetailScript\nfloat ExactFloat\nBegin GameMode\nEnd");
         records.Collection.RuntimeScripts.Add(new RuntimeScriptData
         {
             FormId = ScriptFormId,
@@ -2434,7 +2425,7 @@ public class QuestVariableConditionSanitizerTests
             VariableMetadataComplete = true,
             VariablesComplete = true,
             SourceText = "scn PrototypeScript\nfloat ExactFloat\nBegin GameMode\nEnd",
-            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
+            SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted
         });
 
         var result = QuestVariableConditionSanitizer.Apply(
@@ -2468,7 +2459,7 @@ public class QuestVariableConditionSanitizerTests
                     SourceText = sourceText ?? BuildFixtureSource("PrototypeScript", sourceVariables),
                     SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
                     SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
-                    CompiledData = [0x00, 0x1D, 0x00, 0x00],
+                    CompiledData = [0x00, 0x1D, 0x00, 0x00]
                 }
             ],
             Dialogues = dialogue is null ? [] : [dialogue]
@@ -2513,7 +2504,7 @@ public class QuestVariableConditionSanitizerTests
                 {
                     FunctionIndex = QuestVariableConditionSanitizer.GetScriptVariableFunctionIndex,
                     Parameter1 = ownerReferenceFormId,
-                    Parameter2 = variableIndex,
+                    Parameter2 = variableIndex
                 }
             ]
         };
@@ -2533,7 +2524,7 @@ public class QuestVariableConditionSanitizerTests
                 {
                     FunctionIndex = QuestVariableConditionSanitizer.GetScriptVariableFunctionIndex,
                     Parameter1 = ownerReferenceFormId,
-                    Parameter2 = variableIndex,
+                    Parameter2 = variableIndex
                 }
             ]
         };

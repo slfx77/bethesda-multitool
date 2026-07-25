@@ -1,7 +1,7 @@
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Minidump;
-using System.Text;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 using static BethesdaMultitool.Tests.Helpers.BinaryTestWriter;
@@ -126,7 +126,7 @@ public sealed class ScptOffsetReaderTests
         var scriptBuffer = BuildScript(scptFormId, 0,
             1, 0, 0,
             false, false, false,
-            lastVariableId: 7);
+            7);
         WriteUInt32BE(scriptBuffer, VariablesListOffset, VariableVa);
 
         var variableBuffer = new byte[32];
@@ -175,7 +175,7 @@ public sealed class ScptOffsetReaderTests
         var buffer = BuildScript(scptFormId, 0,
             itemCount, 0, 0,
             false, false, false,
-            lastVariableId: 149);
+            149);
         var fixture = RuntimeReaderTestFixture.Default();
         AddVariableList(buffer, fixture, itemCount);
         fixture.WithStruct(buffer, ScptVa);
@@ -199,7 +199,7 @@ public sealed class ScptOffsetReaderTests
         var buffer = BuildScript(scptFormId, 0,
             0, 0, 4,
             true, false, true,
-            lastVariableId: 5);
+            5);
         WriteUInt32BE(buffer, TextPtrOffset, SourceVa);
         WriteUInt32BE(buffer, DataPtrOffset, DataVa);
         var sourceBytes = new byte[4096];
@@ -235,7 +235,7 @@ public sealed class ScptOffsetReaderTests
         var buffer = BuildScript(scptFormId, 0,
             0, 0, 4,
             false, false, true,
-            lastVariableId: 91);
+            91);
         WriteUInt32BE(buffer, DataPtrOffset, DataVa);
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(buffer, ScptVa)
@@ -260,7 +260,7 @@ public sealed class ScptOffsetReaderTests
         var buffer = BuildScript(scptFormId, 0,
             2, 0, 4,
             true, false, true,
-            lastVariableId: 3);
+            3);
         var fixture = RuntimeReaderTestFixture.Default();
         AddVariableList(buffer, fixture, 1);
         fixture.WithStruct(buffer, ScptVa);
@@ -284,9 +284,9 @@ public sealed class ScptOffsetReaderTests
         var buffer = BuildScript(scptFormId, 0,
             0, 0, 4,
             true, false, true,
-            lastVariableId: 3);
+            3);
         var fixture = RuntimeReaderTestFixture.Default();
-        AddVariableList(buffer, fixture, 2, indexSelector: static _ => 3);
+        AddVariableList(buffer, fixture, 2, static _ => 3);
         fixture.WithStruct(buffer, ScptVa);
         var reader = new RuntimeScriptReader(fixture.BuildContext());
 
@@ -314,7 +314,7 @@ public sealed class ScptOffsetReaderTests
         var buffer = BuildScript(scptFormId, 0,
             0, 0, 4,
             true, false, true,
-            lastVariableId: 3);
+            3);
         var fixture = RuntimeReaderTestFixture.Default();
         AddVariableList(
             buffer,
@@ -365,7 +365,7 @@ public sealed class ScptOffsetReaderTests
         var buffer = BuildScript(scptFormId, 0,
             2, 0, 0,
             false, false, false,
-            lastVariableId: 2);
+            2);
         WriteUInt32BE(buffer, VariablesListOffset, VariableVa);
         WriteUInt32BE(buffer, VariablesListOffset + 4, VariableNodeVa);
 
@@ -395,7 +395,7 @@ public sealed class ScptOffsetReaderTests
         var buffer = BuildScript(scptFormId, 0,
             0, 0, 4,
             true, false, true,
-            lastVariableId: 1);
+            1);
         WriteUInt32BE(buffer, VariablesListOffset, VariableVa);
         WriteUInt32BE(buffer, VariablesListOffset + 4, VariableNodeVa);
 
@@ -684,6 +684,7 @@ public sealed class ScptOffsetReaderTests
                 WriteUInt16BE(variableBuffer, 28, (ushort)nameBytes.Length);
                 fixture.WithPointerTarget(nameVa, nameBytes);
             }
+
             fixture.WithPointerTarget(itemVa, variableBuffer);
 
             if (i == 0)

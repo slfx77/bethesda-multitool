@@ -40,7 +40,7 @@ public sealed partial class WorldView3DControl
                 else if (e.Key == VirtualKey.Number9) LightingPanel.SkyboxEnabled = !_showSky;
                 else if (e.Key == VirtualKey.Number0) LightingPanel.FogEnabled = !_showFog;
                 else if (e.Key == VirtualKey.F)
-                    _controller.Mode = _controller.Mode == CameraMode.Walk ? CameraMode.Fly : CameraMode.Walk;
+                    SetCameraMode(_controller.Mode == CameraMode.Walk ? CameraMode.Fly : CameraMode.Walk);
                 else if (e.Key == VirtualKey.PageUp)
                     SetRenderDistance(_renderDistance * RenderDistanceStep);
                 else if (e.Key == VirtualKey.PageDown)
@@ -88,6 +88,16 @@ public sealed partial class WorldView3DControl
         if (e.Key == VirtualKey.Enter)
         {
             if (_toggleKeysDown.Add(e.Key)) WarpToSelectedDoor();
+            e.Handled = true;
+            return;
+        }
+
+        // P copies the current camera pose as ready-to-run profiler --capture-frame arguments —
+        // the bridge from "I can see the bug here" to a headless repro. Guarded so a held key
+        // copies once.
+        if (e.Key == VirtualKey.P)
+        {
+            if (_toggleKeysDown.Add(e.Key)) CopyCameraPoseToClipboard();
             e.Handled = true;
             return;
         }

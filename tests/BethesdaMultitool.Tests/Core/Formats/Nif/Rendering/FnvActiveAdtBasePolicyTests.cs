@@ -95,38 +95,38 @@ public sealed class FnvActiveAdtBasePolicyTests
     {
         var result = FnvActiveAdtBasePolicy.EvaluateSls2000(
             FnvClassicBasicShaderMode.Sls1009,
-            normalMapSample: new Vector3(1f, 0.5f, 0.5f),
-            tangent: new Vector3(2f, 0f, 0f),
-            bitangent: new Vector3(0f, 3f, 0f),
-            vertexNormal: new Vector3(0f, 0f, 4f),
-            lightData: new Vector3(1f, 2f, 0f),
-            ambientRgb: Vector3.Zero,
-            sunRgb: Vector3.One,
-            baseRgb: Vector3.One,
-            vertexRgb: new Vector3(0.1f));
+            new Vector3(1f, 0.5f, 0.5f),
+            new Vector3(2f, 0f, 0f),
+            new Vector3(0f, 3f, 0f),
+            new Vector3(0f, 0f, 4f),
+            new Vector3(1f, 2f, 0f),
+            Vector3.Zero,
+            Vector3.One,
+            Vector3.One,
+            new Vector3(0.1f));
 
         var inverseRootTen = 1f / MathF.Sqrt(10f);
-        VectorAssert.Equal(Vector3.UnitX, result.NormalizedDecodedNormal, 1e-6f);
+        VectorAssert.Equal(Vector3.UnitX, result.NormalizedDecodedNormal);
         VectorAssert.Equal(new Vector3(inverseRootTen, 3f * inverseRootTen, 0f),
-            result.NormalizedTangentSpaceLight, 1e-6f);
+            result.NormalizedTangentSpaceLight);
         Assert.Equal(inverseRootTen, result.RawSignedDot, 6);
-        VectorAssert.Equal(new Vector3(inverseRootTen), result.Shade, 1e-6f);
-        VectorAssert.Equal(result.Shade, result.Rgb, 1e-6f);
+        VectorAssert.Equal(new Vector3(inverseRootTen), result.Shade);
+        VectorAssert.Equal(result.Shade, result.Rgb);
 
         // A decoded normal with twice the signed magnitude has the same result: SLS2000 normalizes it
         // directly and has no separate bump-scale term.
         var halfMagnitude = FnvActiveAdtBasePolicy.EvaluateSls2000(
             FnvClassicBasicShaderMode.Sls1009,
-            normalMapSample: new Vector3(0.75f, 0.5f, 0.5f),
-            tangent: new Vector3(2f, 0f, 0f),
-            bitangent: new Vector3(0f, 3f, 0f),
-            vertexNormal: new Vector3(0f, 0f, 4f),
-            lightData: new Vector3(1f, 2f, 0f),
-            ambientRgb: Vector3.Zero,
-            sunRgb: Vector3.One,
-            baseRgb: Vector3.One,
-            vertexRgb: Vector3.One);
-        VectorAssert.Equal(result.NormalizedDecodedNormal, halfMagnitude.NormalizedDecodedNormal, 1e-6f);
+            new Vector3(0.75f, 0.5f, 0.5f),
+            new Vector3(2f, 0f, 0f),
+            new Vector3(0f, 3f, 0f),
+            new Vector3(0f, 0f, 4f),
+            new Vector3(1f, 2f, 0f),
+            Vector3.Zero,
+            Vector3.One,
+            Vector3.One,
+            Vector3.One);
+        VectorAssert.Equal(result.NormalizedDecodedNormal, halfMagnitude.NormalizedDecodedNormal);
         Assert.Equal(result.RawSignedDot, halfMagnitude.RawSignedDot, 6);
     }
 
@@ -135,19 +135,19 @@ public sealed class FnvActiveAdtBasePolicyTests
     {
         var result = FnvActiveAdtBasePolicy.EvaluateSls2000(
             FnvClassicBasicShaderMode.Sls1009,
-            normalMapSample: new Vector3(0f, 0.5f, 0.5f),
-            tangent: Vector3.UnitX,
-            bitangent: Vector3.UnitY,
-            vertexNormal: Vector3.UnitZ,
-            lightData: Vector3.UnitX,
-            ambientRgb: new Vector3(0.25f, 1.25f, 0.5f),
-            sunRgb: new Vector3(0.5f, 0.5f, 0.25f),
-            baseRgb: new Vector3(0.8f, 0.4f, 0.2f),
-            vertexRgb: new Vector3(0.01f));
+            new Vector3(0f, 0.5f, 0.5f),
+            Vector3.UnitX,
+            Vector3.UnitY,
+            Vector3.UnitZ,
+            Vector3.UnitX,
+            new Vector3(0.25f, 1.25f, 0.5f),
+            new Vector3(0.5f, 0.5f, 0.25f),
+            new Vector3(0.8f, 0.4f, 0.2f),
+            new Vector3(0.01f));
 
         Assert.Equal(-1f, result.RawSignedDot, 6);
-        VectorAssert.Equal(new Vector3(0f, 0.75f, 0.25f), result.Shade, 1e-6f);
-        VectorAssert.Equal(new Vector3(0f, 0.3f, 0.05f), result.Rgb, 1e-6f);
+        VectorAssert.Equal(new Vector3(0f, 0.75f, 0.25f), result.Shade);
+        VectorAssert.Equal(new Vector3(0f, 0.3f, 0.05f), result.Rgb);
     }
 
     [Fact]
@@ -156,10 +156,10 @@ public sealed class FnvActiveAdtBasePolicyTests
         var ordinary = EvaluateAligned(FnvClassicBasicShaderMode.Sls1009);
         var vertexColor = EvaluateAligned(FnvClassicBasicShaderMode.Sls1013VertexColor);
 
-        VectorAssert.Equal(new Vector3(0.15f, 0.075f, 0.225f), ordinary.Rgb, 1e-6f);
-        VectorAssert.Equal(new Vector3(0.12f, 0.03f, 0.045f), vertexColor.Rgb, 1e-6f);
+        VectorAssert.Equal(new Vector3(0.15f, 0.075f, 0.225f), ordinary.Rgb);
+        VectorAssert.Equal(new Vector3(0.12f, 0.03f, 0.045f), vertexColor.Rgb);
         Assert.Equal(ordinary.RawSignedDot, vertexColor.RawSignedDot, 6);
-        VectorAssert.Equal(ordinary.Shade, vertexColor.Shade, 1e-6f);
+        VectorAssert.Equal(ordinary.Shade, vertexColor.Shade);
     }
 
     [Fact]
@@ -179,29 +179,34 @@ public sealed class FnvActiveAdtBasePolicyTests
                 Vector3.One));
     }
 
-    private static FnvActiveAdtBaseEvaluation EvaluateAligned(FnvClassicBasicShaderMode mode) =>
-        FnvActiveAdtBasePolicy.EvaluateSls2000(
+    private static FnvActiveAdtBaseEvaluation EvaluateAligned(FnvClassicBasicShaderMode mode)
+    {
+        return FnvActiveAdtBasePolicy.EvaluateSls2000(
             mode,
-            normalMapSample: new Vector3(0.5f, 0.5f, 1f),
-            tangent: Vector3.UnitX,
-            bitangent: Vector3.UnitY,
-            vertexNormal: Vector3.UnitZ,
-            lightData: new Vector3(0f, 0f, 8f),
-            ambientRgb: new Vector3(0.1f),
-            sunRgb: new Vector3(0.2f),
-            baseRgb: new Vector3(0.5f, 0.25f, 0.75f),
-            vertexRgb: new Vector3(0.8f, 0.4f, 0.2f));
+            new Vector3(0.5f, 0.5f, 1f),
+            Vector3.UnitX,
+            Vector3.UnitY,
+            Vector3.UnitZ,
+            new Vector3(0f, 0f, 8f),
+            new Vector3(0.1f),
+            new Vector3(0.2f),
+            new Vector3(0.5f, 0.25f, 0.75f),
+            new Vector3(0.8f, 0.4f, 0.2f));
+    }
 
     private static FnvActiveAdtBaseEligibility Eligible(
-        FnvClassicBasicShaderMode mode = FnvClassicBasicShaderMode.Sls1009) => new(
-        BethesdaGame.FalloutNewVegas,
-        LightingEnabled: true,
-        PlacedLightCount: 0,
-        HasProjectedSunShadow: false,
-        FogEnabled: false,
-        HasAlphaBlend: false,
-        HasAlphaTest: false,
-        MaterialAlpha: 1f,
-        HasMaterialAlphaController: false,
-        ClassifierMode: mode);
+        FnvClassicBasicShaderMode mode = FnvClassicBasicShaderMode.Sls1009)
+    {
+        return new FnvActiveAdtBaseEligibility(
+            BethesdaGame.FalloutNewVegas,
+            true,
+            0,
+            false,
+            false,
+            false,
+            false,
+            1f,
+            false,
+            mode);
+    }
 }

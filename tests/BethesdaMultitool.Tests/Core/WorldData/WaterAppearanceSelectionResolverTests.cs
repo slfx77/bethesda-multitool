@@ -14,7 +14,7 @@ public sealed class WaterAppearanceSelectionResolverTests
         var worldspace = new WorldspaceRecord
         {
             FormId = 0x20,
-            WaterFormId = worldWater.FormId,
+            WaterFormId = worldWater.FormId
         };
 
         var result = WaterAppearanceSelectionResolver.Resolve(
@@ -39,7 +39,7 @@ public sealed class WaterAppearanceSelectionResolverTests
         var worldspace = new WorldspaceRecord
         {
             FormId = 0x20,
-            WaterFormId = worldWater.FormId,
+            WaterFormId = worldWater.FormId
         };
 
         var result = WaterAppearanceSelectionResolver.Resolve(
@@ -64,9 +64,13 @@ public sealed class WaterAppearanceSelectionResolverTests
         Assert.Equal("unavailable", result.SourceTelemetry);
     }
 
-    private static WaterRecord Water(uint formId, string editorId) =>
-        new() { FormId = formId, EditorId = editorId };
+    private static WaterRecord Water(uint formId, string editorId)
+    {
+        return new WaterRecord { FormId = formId, EditorId = editorId };
+    }
 
-    private static Dictionary<uint, WaterRecord> Index(params WaterRecord[] waters) =>
-        waters.ToDictionary(water => water.FormId);
+    private static Dictionary<uint, WaterRecord> Index(params WaterRecord[] waters)
+    {
+        return waters.ToDictionary(water => water.FormId);
+    }
 }

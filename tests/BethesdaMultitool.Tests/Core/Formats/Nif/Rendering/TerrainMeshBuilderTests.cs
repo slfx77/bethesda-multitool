@@ -158,9 +158,9 @@ public sealed class TerrainMeshBuilderTests
         {
             // VNML stores signed XYZ bytes. Give every vertex a deliberately tilted normal so this
             // cannot be confused with the +Z normal recomputed from the flat synthetic heightmap.
-            normals[i * 3] = unchecked((byte)(sbyte)64);
-            normals[i * 3 + 1] = unchecked((byte)(sbyte)-64);
-            normals[i * 3 + 2] = unchecked((byte)(sbyte)64);
+            normals[i * 3] = unchecked(64);
+            normals[i * 3 + 1] = unchecked((byte)-64);
+            normals[i * 3 + 2] = unchecked(64);
         }
 
         var cell = new CellRecord
@@ -370,18 +370,18 @@ public sealed class TerrainMeshBuilderTests
         Assert.True(TerrainSurfaceTopology.TrySampleTriangle(
             heights,
             33,
-            localX: 32f,
-            localY: 32f,
-            spacing: 128f,
+            32f,
+            32f,
+            128f,
             TerrainTriangleTopology.FixedSouthEastNorthWest,
             out var fixedHeight,
             out var fixedNormal));
         Assert.True(TerrainSurfaceTopology.TrySampleTriangle(
             heights,
             33,
-            localX: 32f,
-            localY: 32f,
-            spacing: 128f,
+            32f,
+            32f,
+            128f,
             TerrainTriangleTopology.AlternatingCheckerboard,
             out var fnvHeight,
             out var fnvNormal));

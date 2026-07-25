@@ -9,7 +9,7 @@ public sealed class FnvClassicBasicRenderTelemetryTests
     [Fact]
     public void WorldRenderStats_SnapshotAndResetPreserveSubmittedRouteCounts()
     {
-        var stats = new global::BethesdaMultitool.WorldRenderStats
+        var stats = new WorldRenderStats
         {
             ReferenceFnvSls1009Draws = 2,
             ReferenceFnvSls1009Instances = 3,
@@ -27,7 +27,7 @@ public sealed class FnvClassicBasicRenderTelemetryTests
             ReferenceFnvActiveAdtBaseEnabled = true,
             ReferenceFnvActiveAdtBaseFallbackDraws = 7,
             ReferenceFnvActiveAdtBaseFallbackInstances = 11,
-            ReferenceFnvActiveAdtBaseFallbackReason = "projected-shadow-permutation-unrecovered",
+            ReferenceFnvActiveAdtBaseFallbackReason = "projected-shadow-permutation-unrecovered"
         };
 
         var snapshot = stats.Snapshot();

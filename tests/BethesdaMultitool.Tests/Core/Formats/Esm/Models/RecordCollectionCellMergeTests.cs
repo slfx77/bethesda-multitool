@@ -16,44 +16,53 @@ public class RecordCollectionCellMergeTests
 {
     private const uint CommonwealthWs = 0x3C;
 
-    private static LandHeightmap Land(float offset = 1000f) => new()
+    private static LandHeightmap Land(float offset = 1000f)
     {
-        HeightOffset = offset,
-        HeightDeltas = new sbyte[33 * 33]
-    };
+        return new LandHeightmap
+        {
+            HeightOffset = offset,
+            HeightDeltas = new sbyte[33 * 33]
+        };
+    }
 
     private static CellRecord Cell(
         uint formId,
         LandHeightmap? land,
-        params PlacedReference[] refs) => new()
+        params PlacedReference[] refs)
     {
-        FormId = formId,
-        WorldspaceFormId = CommonwealthWs,
-        GridX = 1,
-        GridY = 2,
-        Heightmap = land,
-        PlacedObjects = [.. refs]
-    };
+        return new CellRecord
+        {
+            FormId = formId,
+            WorldspaceFormId = CommonwealthWs,
+            GridX = 1,
+            GridY = 2,
+            Heightmap = land,
+            PlacedObjects = [.. refs]
+        };
+    }
 
-    private static PlacedReference Ref(uint formId, uint baseFormId) => new()
+    private static PlacedReference Ref(uint formId, uint baseFormId)
     {
-        FormId = formId,
-        BaseFormId = baseFormId
-    };
+        return new PlacedReference
+        {
+            FormId = formId,
+            BaseFormId = baseFormId
+        };
+    }
 
     [Fact]
     public void MergeWith_LandlessCellOverride_KeepsBaseLandAndRefs()
     {
         // Base cell: terrain + two refs. DLC override: no LAND, one added ref, one re-shipped ref.
         var baseCell = Cell(0x10, Land(), Ref(0x100, 0xA), Ref(0x101, 0xB));
-        var overrideCell = Cell(0x10, land: null, Ref(0x101, 0xBB), Ref(0x900, 0xC));
+        var overrideCell = Cell(0x10, null, Ref(0x101, 0xBB), Ref(0x900, 0xC));
 
         var merged = new RecordCollection { Cells = [baseCell] }
             .MergeWith(new RecordCollection { Cells = [overrideCell] });
 
         var cell = Assert.Single(merged.Cells);
-        Assert.NotNull(cell.Heightmap);                       // base LAND survives
-        Assert.Equal(3, cell.PlacedObjects.Count);            // 0x100 kept, 0x101 overridden, 0x900 added
+        Assert.NotNull(cell.Heightmap); // base LAND survives
+        Assert.Equal(3, cell.PlacedObjects.Count); // 0x100 kept, 0x101 overridden, 0x900 added
         Assert.Equal(0xAu, cell.PlacedObjects.Single(r => r.FormId == 0x100).BaseFormId);
         Assert.Equal(0xBBu, cell.PlacedObjects.Single(r => r.FormId == 0x101).BaseFormId);
         Assert.Contains(cell.PlacedObjects, r => r.FormId == 0x900);
@@ -62,8 +71,8 @@ public class RecordCollectionCellMergeTests
     [Fact]
     public void MergeWith_CellOverrideWithLand_OverrideLandWins()
     {
-        var baseCell = Cell(0x10, Land(offset: 1000f));
-        var overrideCell = Cell(0x10, Land(offset: 2000f));
+        var baseCell = Cell(0x10, Land(1000f));
+        var overrideCell = Cell(0x10, Land(2000f));
 
         var merged = new RecordCollection { Cells = [baseCell] }
             .MergeWith(new RecordCollection { Cells = [overrideCell] });
@@ -79,7 +88,7 @@ public class RecordCollectionCellMergeTests
             EditorId = "BaseCell",
             WaterHeight = 5f,
             WaterFormId = 0x4321,
-            ClimateFormId = 0x1234,
+            ClimateFormId = 0x1234
         };
         var overrideCell = new CellRecord { FormId = 0x10, FullName = "Renamed" };
 
@@ -87,8 +96,8 @@ public class RecordCollectionCellMergeTests
             .MergeWith(new RecordCollection { Cells = [overrideCell] });
 
         var cell = Assert.Single(merged.Cells);
-        Assert.Equal("Renamed", cell.FullName);               // override header field wins
-        Assert.Equal("BaseCell", cell.EditorId);              // absent fields backfill from base
+        Assert.Equal("Renamed", cell.FullName); // override header field wins
+        Assert.Equal("BaseCell", cell.EditorId); // absent fields backfill from base
         Assert.Equal(5f, cell.WaterHeight);
         Assert.Equal(0x4321u, cell.WaterFormId);
         Assert.Equal(0x1234u, cell.ClimateFormId);
@@ -105,7 +114,7 @@ public class RecordCollectionCellMergeTests
         var baseWs = new WorldspaceRecord { FormId = CommonwealthWs, Cells = [baseCell] };
         var baseRc = new RecordCollection { Worldspaces = [baseWs], Cells = [baseCell] };
 
-        var overrideCell = Cell(0x10, land: null);
+        var overrideCell = Cell(0x10, null);
         var overlayWs = new WorldspaceRecord { FormId = CommonwealthWs, Cells = [overrideCell] };
         var overlayRc = new RecordCollection { Worldspaces = [overlayWs], Cells = [overrideCell] };
 
@@ -125,21 +134,26 @@ public class RecordCollectionCellMergeTests
 /// </summary>
 public class Tes4LoadOrderFormIdMapperTests
 {
-    private static RecordCollection CellCollection(uint cellFormId, uint worldspaceFormId) => new()
+    private static RecordCollection CellCollection(uint cellFormId, uint worldspaceFormId)
     {
-        Cells =
-        [
-            new CellRecord
-            {
-                FormId = cellFormId,
-                WorldspaceFormId = worldspaceFormId,
-                PlacedObjects = [new PlacedReference { FormId = cellFormId + 1, BaseFormId = 0x00000A00 }]
-            }
-        ]
-    };
+        return new RecordCollection
+        {
+            Cells =
+            [
+                new CellRecord
+                {
+                    FormId = cellFormId,
+                    WorldspaceFormId = worldspaceFormId,
+                    PlacedObjects = [new PlacedReference { FormId = cellFormId + 1, BaseFormId = 0x00000A00 }]
+                }
+            ]
+        };
+    }
 
-    private static Func<string, IReadOnlyList<string>> Masters(Dictionary<string, string[]> byName) =>
-        path => byName.TryGetValue(Path.GetFileName(path), out var masters) ? masters : [];
+    private static Func<string, IReadOnlyList<string>> Masters(Dictionary<string, string[]> byName)
+    {
+        return path => byName.TryGetValue(Path.GetFileName(path), out var masters) ? masters : [];
+    }
 
     [Fact]
     public void TryCreate_SingleSourceWithoutPrimary_ReturnsNull()
@@ -198,7 +212,7 @@ public class Tes4LoadOrderFormIdMapperTests
 
         var rebased = mapper.Namespaced(nuka, "DLCNukaWorld.esm");
         Assert.NotSame(nuka, rebased);
-        var own = rebased.Cells.Single(c => (c.FormId >> 24) == 0x02);
+        var own = rebased.Cells.Single(c => c.FormId >> 24 == 0x02);
         Assert.Equal(0x02000FEFu, own.FormId);
         Assert.Equal(0x02000FE0u, own.WorldspaceFormId);
         var ownRef = Assert.Single(own.PlacedObjects);
@@ -214,8 +228,8 @@ public class Tes4LoadOrderFormIdMapperTests
         // master reference resolves to the primary's slot 0 — overrides keep folding onto the base.
         var mapper = Tes4LoadOrderFormIdMapper.TryCreate(
             ["DLCCoast.esm"],
-            primaryFileName: "Fallout4.esm",
-            mastersReader: Masters(new Dictionary<string, string[]>
+            "Fallout4.esm",
+            Masters(new Dictionary<string, string[]>
             {
                 ["DLCCoast.esm"] = ["Fallout4.esm"]
             }))!;
@@ -275,8 +289,8 @@ public class Tes4LoadOrderFormIdMapperTests
         var rebased = mapper.Namespaced(records, "X.esm");
         var cell = Assert.Single(rebased.Cells);
         Assert.Equal(0x02001234u, cell.FormId);
-        Assert.Equal(0u, cell.PlacedObjects[0].BaseFormId);          // null ref untouched
-        Assert.Equal(0xFFFFFFFFu, cell.PlacedObjects[1].FormId);     // sentinel untouched
+        Assert.Equal(0u, cell.PlacedObjects[0].BaseFormId); // null ref untouched
+        Assert.Equal(0xFFFFFFFFu, cell.PlacedObjects[1].FormId); // sentinel untouched
         Assert.Equal(0x0200AAAAu, cell.PlacedObjects[1].BaseFormId); // own-record ref moved with the file
     }
 

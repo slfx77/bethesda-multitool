@@ -1,6 +1,5 @@
 using BethesdaMultitool.CLI.Commands.Dmp;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.CLI.Commands.Dmp;

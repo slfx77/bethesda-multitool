@@ -39,7 +39,10 @@ public sealed class FnvWater001SourceContractTests
             "var pso = _pso;", "if (water001)", "pso = _psoFnvWater001DepthSample;",
             "else if (depthSample)", "pso = _psoDepthSample;", "cmd.SetPipelineState(pso);");
         Assert.Contains("water001: false", route, StringComparison.Ordinal);
-        Assert.Contains("(uint)startInstance", route, StringComparison.Ordinal);
+        // The batch slice reaches the VS through the per-draw SRV window, never through
+        // StartInstanceLocation (D3D12 SV_InstanceID excludes it — see
+        // WaterBatchInstanceWindowSourceContractTests).
+        Assert.Contains("FirstElement = (ulong)startInstance", route, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -250,13 +253,19 @@ public sealed class FnvWater001SourceContractTests
             StringComparison.Ordinal);
     }
 
-    private static string ReadRenderer() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
-        "WaterRenderer12.cs");
+    private static string ReadRenderer()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "WaterRenderer12.cs");
+    }
 
-    private static string ReadShader() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders",
-        "water.frag.hlsl");
+    private static string ReadShader()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders",
+            "water.frag.hlsl");
+    }
 
     private static string Extract(string source, string startMarker, string endMarker)
     {

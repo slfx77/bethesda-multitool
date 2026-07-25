@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
@@ -29,14 +28,14 @@ public sealed class DialogueCombineTests
             {
                 FormId = infoId,
                 TopicFormId = firstTopic,
-                RawParentTopicFormIds = [firstTopic],
+                RawParentTopicFormIds = [firstTopic]
             },
             new()
             {
                 FormId = infoId,
                 TopicFormId = secondTopic,
-                RawParentTopicFormIds = [secondTopic],
-            },
+                RawParentTopicFormIds = [secondTopic]
+            }
         };
 
         var collapsed = DialogueCombinePlanner.DeduplicateInPlace(infos);
@@ -199,8 +198,8 @@ public sealed class DialogueCombineTests
     [Fact]
     public void OverlayWriter_PreservesEveryMasterSubrecordExceptMatchedNam1()
     {
-        var firstTrdt = Trdt(responseNumber: 5, fill: 0x35);
-        var secondTrdt = Trdt(responseNumber: 2, fill: 0x72);
+        var firstTrdt = Trdt(5, 0x35);
+        var secondTrdt = Trdt(2, 0x72);
         var master = Record("INFO", 0x0010A1EC, 150,
             Sub("DATA", [0x10, 0x20, 0x30, 0x40]),
             FormSub("QSTI", 0x00104C1C),
@@ -434,13 +433,15 @@ public sealed class DialogueCombineTests
             Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Retail"), GetIsId(speaker));
         var masterIndex = MasterDialogueIndex.Build(
             [retailDial, retailInfo],
-            [new GrupHeaderInfo
-            {
-                Offset = 120,
-                GroupSize = 200,
-                GroupType = 7,
-                Label = BitConverter.GetBytes(dial)
-            }]);
+            [
+                new GrupHeaderInfo
+                {
+                    Offset = 120,
+                    GroupSize = 200,
+                    GroupType = 7,
+                    Label = BitConverter.GetBytes(dial)
+                }
+            ]);
         var source = new DialogueRecord
         {
             FormId = infoId,
@@ -494,6 +495,113 @@ public sealed class DialogueCombineTests
     }
 
     [Fact]
+    public void CombinePlanner_SuppressesByteIdenticalNoOpOverlays()
+    {
+        const uint dial = 0x000000D4;
+        const uint placeholderInfoId = 0x0010B001;
+        const uint identicalInfoId = 0x0010B002;
+        const uint whitespaceInfoId = 0x0010B003;
+        const uint changedInfoId = 0x0010B004;
+        var retailDial = Record("DIAL", dial, 100, TextSub("EDID", "GOODBYE"));
+        var retailInfos = new[]
+        {
+            Record("INFO", placeholderInfoId, 160, Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "See you.")),
+            Record("INFO", identicalInfoId, 180, Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Bye.")),
+            Record("INFO", whitespaceInfoId, 200, Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "So long.")),
+            Record("INFO", changedInfoId, 220, Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "So long."))
+        };
+        var masterIndex = MasterDialogueIndex.Build(
+            [retailDial, .. retailInfos],
+            [
+                new GrupHeaderInfo
+                {
+                    Offset = 120,
+                    GroupSize = 200,
+                    GroupType = 7,
+                    Label = BitConverter.GetBytes(dial)
+                }
+            ]);
+
+        DialogueRecord Capture(uint formId, string? text)
+        {
+            return new DialogueRecord
+            {
+                FormId = formId,
+                TopicFormId = dial,
+                Responses = [new DialogueResponse { ResponseNumber = 1, Text = text }]
+            };
+        }
+
+        var sources = new List<DialogueRecord>
+        {
+            Capture(placeholderInfoId, DialogueTextBackfill.PlaceholderText),
+            Capture(identicalInfoId, "Bye."),
+            Capture(whitespaceInfoId, "   "),
+            Capture(changedInfoId, "So long, courier.")
+        };
+
+        var plan = DialogueCombinePlanner.Build(
+            [], sources,
+            new NewVsOverrideClassifier([dial, placeholderInfoId, identicalInfoId, whitespaceInfoId, changedInfoId]),
+            masterIndex,
+            [dial, placeholderInfoId, identicalInfoId, whitespaceInfoId, changedInfoId]);
+
+        var overlay = Assert.Single(plan.SharedInfoOverlays);
+        Assert.Equal(changedInfoId, overlay.PrototypeInfo.FormId);
+        Assert.Equal(3, plan.NoOpOverlaysSuppressed);
+        Assert.Empty(plan.NewTopics);
+        Assert.Empty(plan.NewInfos);
+    }
+
+    [Fact]
+    public void CombinePlanner_NoOpOverlayStillRehomesExplicitlyPromptedCutSlots()
+    {
+        const uint dial = 0x000000C8;
+        const uint infoId = 0x0010A1EC;
+        const uint quest = 0x00104C1C;
+        const uint speaker = 0x00104C0A;
+        var retailDial = Record("DIAL", dial, 100, TextSub("EDID", "GREETING"));
+        var retailInfo = Record("INFO", infoId, 160,
+            Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Retail"), GetIsId(speaker));
+        var masterIndex = MasterDialogueIndex.Build(
+            [retailDial, retailInfo],
+            [
+                new GrupHeaderInfo
+                {
+                    Offset = 120,
+                    GroupSize = 200,
+                    GroupType = 7,
+                    Label = BitConverter.GetBytes(dial)
+                }
+            ]);
+        var source = new DialogueRecord
+        {
+            FormId = infoId,
+            TopicFormId = dial,
+            QuestFormId = quest,
+            SpeakerFormId = speaker,
+            PromptText = "Ask about the cut tutorial",
+            Responses =
+            [
+                new DialogueResponse { ResponseNumber = 1, Text = "Retail" },
+                new DialogueResponse { ResponseNumber = 7, Text = "Cut response" }
+            ]
+        };
+
+        var plan = DialogueCombinePlanner.Build(
+            [], [source], new NewVsOverrideClassifier([dial, infoId]), masterIndex,
+            [dial, infoId, quest, speaker]);
+
+        Assert.Empty(plan.SharedInfoOverlays);
+        Assert.Equal(1, plan.NoOpOverlaysSuppressed);
+        var cutTopic = Assert.Single(plan.NewTopics);
+        var cutInfo = Assert.Single(plan.NewInfos);
+        Assert.Equal("Ask about the cut tutorial", cutTopic.FullName);
+        Assert.True(cutInfo.IsRehomedCutDialogue);
+        Assert.Equal(1, plan.CutInfosRehomed);
+    }
+
+    [Fact]
     public void DialogueRecord_UsesFnvTopicInfoFlagBits()
     {
         Assert.True(new DialogueRecord { InfoFlags = 0x01 }.IsGoodbye);
@@ -525,13 +633,15 @@ public sealed class DialogueCombineTests
             Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Retail"), GetIsId(masterSpeaker));
         var masterIndex = MasterDialogueIndex.Build(
             [retailDial, retailInfo],
-            [new GrupHeaderInfo
-            {
-                Offset = 120,
-                GroupSize = 200,
-                GroupType = 7,
-                Label = BitConverter.GetBytes(dial)
-            }]);
+            [
+                new GrupHeaderInfo
+                {
+                    Offset = 120,
+                    GroupSize = 200,
+                    GroupType = 7,
+                    Label = BitConverter.GetBytes(dial)
+                }
+            ]);
         var source = new DialogueRecord
         {
             FormId = infoId,
@@ -575,13 +685,15 @@ public sealed class DialogueCombineTests
             Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Retail"), GetIsId(speaker));
         var masterIndex = MasterDialogueIndex.Build(
             [retailDial, retailInfo],
-            [new GrupHeaderInfo
-            {
-                Offset = 120,
-                GroupSize = 200,
-                GroupType = 7,
-                Label = BitConverter.GetBytes(greetingDial)
-            }]);
+            [
+                new GrupHeaderInfo
+                {
+                    Offset = 120,
+                    GroupSize = 200,
+                    GroupType = 7,
+                    Label = BitConverter.GetBytes(greetingDial)
+                }
+            ]);
         var source = new DialogueRecord
         {
             FormId = sourceInfoId,
@@ -617,13 +729,15 @@ public sealed class DialogueCombineTests
             Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Retail"), GetIsId(speaker));
         var masterIndex = MasterDialogueIndex.Build(
             [retailDial, retailInfo],
-            [new GrupHeaderInfo
-            {
-                Offset = 120,
-                GroupSize = 200,
-                GroupType = 7,
-                Label = BitConverter.GetBytes(greetingDial)
-            }]);
+            [
+                new GrupHeaderInfo
+                {
+                    Offset = 120,
+                    GroupSize = 200,
+                    GroupType = 7,
+                    Label = BitConverter.GetBytes(greetingDial)
+                }
+            ]);
         var source = new DialogueRecord
         {
             FormId = sourceInfoId,
@@ -631,11 +745,14 @@ public sealed class DialogueCombineTests
             QuestFormId = quest,
             SpeakerFormId = speaker,
             PromptText = null,
-            Responses = [new DialogueResponse
-            {
-                ResponseNumber = 1,
-                Text = "This is an NPC response, not a player prompt."
-            }]
+            Responses =
+            [
+                new DialogueResponse
+                {
+                    ResponseNumber = 1,
+                    Text = "This is an NPC response, not a player prompt."
+                }
+            ]
         };
 
         var plan = DialogueCombinePlanner.Build(
@@ -660,13 +777,15 @@ public sealed class DialogueCombineTests
             Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Retail greeting"), GetIsId(speaker));
         var masterIndex = MasterDialogueIndex.Build(
             [retailDial, retailInfo],
-            [new GrupHeaderInfo
-            {
-                Offset = 120,
-                GroupSize = 200,
-                GroupType = 7,
-                Label = BitConverter.GetBytes(greetingDial)
-            }]);
+            [
+                new GrupHeaderInfo
+                {
+                    Offset = 120,
+                    GroupSize = 200,
+                    GroupType = 7,
+                    Label = BitConverter.GetBytes(greetingDial)
+                }
+            ]);
         var source = new DialogueRecord
         {
             FormId = sharedInfoId,
@@ -705,13 +824,15 @@ public sealed class DialogueCombineTests
             Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Retail"), GetIsId(speaker));
         var masterIndex = MasterDialogueIndex.Build(
             [retailDial, retailInfo],
-            [new GrupHeaderInfo
-            {
-                Offset = 120,
-                GroupSize = 200,
-                GroupType = 7,
-                Label = BitConverter.GetBytes(greetingDial)
-            }]);
+            [
+                new GrupHeaderInfo
+                {
+                    Offset = 120,
+                    GroupSize = 200,
+                    GroupType = 7,
+                    Label = BitConverter.GetBytes(greetingDial)
+                }
+            ]);
         var source = new DialogueRecord
         {
             FormId = sourceInfoId,
@@ -747,13 +868,15 @@ public sealed class DialogueCombineTests
             Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Retail"), GetIsId(speaker));
         var masterIndex = MasterDialogueIndex.Build(
             [retailDial, retailInfo],
-            [new GrupHeaderInfo
-            {
-                Offset = 120,
-                GroupSize = 200,
-                GroupType = 7,
-                Label = BitConverter.GetBytes(greetingDial)
-            }]);
+            [
+                new GrupHeaderInfo
+                {
+                    Offset = 120,
+                    GroupSize = 200,
+                    GroupType = 7,
+                    Label = BitConverter.GetBytes(greetingDial)
+                }
+            ]);
         var topic = new DialogTopicRecord
         {
             FormId = sourceTopic,
@@ -797,13 +920,15 @@ public sealed class DialogueCombineTests
             Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Retail"), GetIsId(speaker));
         var masterIndex = MasterDialogueIndex.Build(
             [retailDial, retailInfo],
-            [new GrupHeaderInfo
-            {
-                Offset = 120,
-                GroupSize = 200,
-                GroupType = 7,
-                Label = BitConverter.GetBytes(greetingDial)
-            }]);
+            [
+                new GrupHeaderInfo
+                {
+                    Offset = 120,
+                    GroupSize = 200,
+                    GroupType = 7,
+                    Label = BitConverter.GetBytes(greetingDial)
+                }
+            ]);
         var topic = new DialogTopicRecord
         {
             FormId = sourceTopic,
@@ -966,13 +1091,15 @@ public sealed class DialogueCombineTests
 
         var index = MasterDialogueIndex.Build(
             [retailDial, retailInfo],
-            [new GrupHeaderInfo
-            {
-                Offset = 120,
-                GroupSize = 200,
-                GroupType = 7,
-                Label = BitConverter.GetBytes(greetingDial)
-            }]);
+            [
+                new GrupHeaderInfo
+                {
+                    Offset = 120,
+                    GroupSize = 200,
+                    GroupType = 7,
+                    Label = BitConverter.GetBytes(greetingDial)
+                }
+            ]);
 
         Assert.False(index.HasExactGreetingCoverage(speaker));
     }
@@ -989,13 +1116,15 @@ public sealed class DialogueCombineTests
             Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Retail"), GetIsId(speaker));
         var masterIndex = MasterDialogueIndex.Build(
             [retailDial, retailInfo],
-            [new GrupHeaderInfo
-            {
-                Offset = 120,
-                GroupSize = 200,
-                GroupType = 7,
-                Label = BitConverter.GetBytes(greetingDial)
-            }]);
+            [
+                new GrupHeaderInfo
+                {
+                    Offset = 120,
+                    GroupSize = 200,
+                    GroupType = 7,
+                    Label = BitConverter.GetBytes(greetingDial)
+                }
+            ]);
         var source = new DialogueRecord
         {
             FormId = sourceInfoId,
@@ -1072,8 +1201,9 @@ public sealed class DialogueCombineTests
         string signature,
         uint formId,
         long offset,
-        params ParsedSubrecord[] subrecords) =>
-        new()
+        params ParsedSubrecord[] subrecords)
+    {
+        return new ParsedMainRecord
         {
             Header = new MainRecordHeader
             {
@@ -1085,24 +1215,33 @@ public sealed class DialogueCombineTests
             Offset = offset,
             Subrecords = subrecords.ToList()
         };
+    }
 
     private static List<DialogueRecord> DuplicateInfos(
-        params DialogueResultScript[] scripts) =>
-        scripts.Select(script => new DialogueRecord
+        params DialogueResultScript[] scripts)
+    {
+        return scripts.Select(script => new DialogueRecord
         {
             FormId = 0x0010A1EC,
             HasResultScript = true,
             ResultScripts = [script]
         }).ToList();
+    }
 
-    private static ParsedSubrecord Sub(string signature, byte[] data) =>
-        new() { Signature = signature, Data = data };
+    private static ParsedSubrecord Sub(string signature, byte[] data)
+    {
+        return new ParsedSubrecord { Signature = signature, Data = data };
+    }
 
-    private static ParsedSubrecord TextSub(string signature, string text) =>
-        Sub(signature, Encoding.Latin1.GetBytes(text + "\0"));
+    private static ParsedSubrecord TextSub(string signature, string text)
+    {
+        return Sub(signature, Encoding.Latin1.GetBytes(text + "\0"));
+    }
 
-    private static ParsedSubrecord FormSub(string signature, uint formId) =>
-        Sub(signature, BitConverter.GetBytes(formId));
+    private static ParsedSubrecord FormSub(string signature, uint formId)
+    {
+        return Sub(signature, BitConverter.GetBytes(formId));
+    }
 
     private static ParsedSubrecord GetIsId(
         uint speaker,
@@ -1134,7 +1273,7 @@ public sealed class DialogueCombineTests
         byte[] body;
         if ((flags & 0x00040000u) != 0)
         {
-            using var compressed = new MemoryStream(recordBytes, 28, bodySize - 4, writable: false);
+            using var compressed = new MemoryStream(recordBytes, 28, bodySize - 4, false);
             using var zlib = new ZLibStream(compressed, CompressionMode.Decompress);
             using var decompressed = new MemoryStream();
             zlib.CopyTo(decompressed);

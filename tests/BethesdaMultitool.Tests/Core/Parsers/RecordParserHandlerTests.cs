@@ -930,14 +930,14 @@ public class RecordParserHandlerTests
             ("SCTX", NullTermString("scn AmbiguousScript")),
             ("SLSD", ScriptLocal(5, 1)),
             ("SCVR", NullTermString("local")),
-            ("SCRO", scro),
+            ("SCRO", scro)
         };
         subrecords.Add(repeatedSignature switch
         {
             "SCHR" => ("SCHR", new byte[20]),
             "SCTX" => ("SCTX", NullTermString("scn OtherScript")),
             "SCDA" => ("SCDA", new byte[] { 0x1E, 0x00, 0x00, 0x00 }),
-            _ => throw new InvalidOperationException(),
+            _ => throw new InvalidOperationException()
         });
         var recordBytes = BuildRecordBytes(formId, "SCPT", false, [.. subrecords]);
 

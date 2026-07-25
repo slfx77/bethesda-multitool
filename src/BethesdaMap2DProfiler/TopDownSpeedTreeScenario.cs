@@ -1,5 +1,4 @@
 using BethesdaMultitool;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Diagnostics;
 using Microsoft.UI.Dispatching;
 
@@ -48,8 +47,8 @@ internal sealed class TopDownSpeedTreeScenario : TopDownScenarioBase
         LogSnapshot("speedtree-settled", settled);
 
         var speedTreeInstances = settled.SpeedTreeBranchInstances
-            + settled.SpeedTreeLeafInstances
-            + settled.SpeedTreeBillboardInstances;
+                                 + settled.SpeedTreeLeafInstances
+                                 + settled.SpeedTreeBillboardInstances;
         if (speedTreeInstances <= 0)
         {
             throw new InvalidOperationException(

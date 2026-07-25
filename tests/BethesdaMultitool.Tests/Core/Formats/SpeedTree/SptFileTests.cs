@@ -161,18 +161,33 @@ public class SptFileTests
     public void Parse_LodSection_PreservesBranchAndLeafLevelContracts()
     {
         var bytes = new List<byte>(BuildLeafTableOnlySpt((3007u, 0.5f)));
-        static void U32(List<byte> dst, uint value) => dst.AddRange(BitConverter.GetBytes(value));
-        static void F32(List<byte> dst, float value) => dst.AddRange(BitConverter.GetBytes(value));
+
+        static void U32(List<byte> dst, uint value)
+        {
+            dst.AddRange(BitConverter.GetBytes(value));
+        }
+
+        static void F32(List<byte> dst, float value)
+        {
+            dst.AddRange(BitConverter.GetBytes(value));
+        }
 
         U32(bytes, 9000); // outer begin
         U32(bytes, 9005); // branch/leaf LOD contract begin
-        U32(bytes, 9007); U32(bytes, 4);       // branch levels
-        U32(bytes, 9008); F32(bytes, 0.25f);   // branch far keep fraction
-        U32(bytes, 9010); F32(bytes, 0.2f);    // leaf size increase
-        U32(bytes, 9011); U32(bytes, 3);       // leaf levels
-        U32(bytes, 9012); F32(bytes, 0.9f);    // branch near keep fraction
-        U32(bytes, 9013); F32(bytes, -0.1f);
-        U32(bytes, 9014); F32(bytes, 0.075f);
+        U32(bytes, 9007);
+        U32(bytes, 4); // branch levels
+        U32(bytes, 9008);
+        F32(bytes, 0.25f); // branch far keep fraction
+        U32(bytes, 9010);
+        F32(bytes, 0.2f); // leaf size increase
+        U32(bytes, 9011);
+        U32(bytes, 3); // leaf levels
+        U32(bytes, 9012);
+        F32(bytes, 0.9f); // branch near keep fraction
+        U32(bytes, 9013);
+        F32(bytes, -0.1f);
+        U32(bytes, 9014);
+        F32(bytes, 0.075f);
         U32(bytes, 9006); // contract end
         U32(bytes, 9001); // outer end
 
@@ -192,15 +207,27 @@ public class SptFileTests
     public void Parse_LodSection_AuthoredZeroLeafSizeIncreaseUsesSdkFallback()
     {
         var bytes = new List<byte>(BuildLeafTableOnlySpt((3007u, 0.5f)));
-        static void U32(List<byte> dst, uint value) => dst.AddRange(BitConverter.GetBytes(value));
-        static void F32(List<byte> dst, float value) => dst.AddRange(BitConverter.GetBytes(value));
+
+        static void U32(List<byte> dst, uint value)
+        {
+            dst.AddRange(BitConverter.GetBytes(value));
+        }
+
+        static void F32(List<byte> dst, float value)
+        {
+            dst.AddRange(BitConverter.GetBytes(value));
+        }
 
         U32(bytes, 9000);
         U32(bytes, 9005);
-        U32(bytes, 9007); U32(bytes, 2);
-        U32(bytes, 9010); F32(bytes, 0f);
-        U32(bytes, 9011); U32(bytes, 2);
-        U32(bytes, 9012); F32(bytes, 1f);
+        U32(bytes, 9007);
+        U32(bytes, 2);
+        U32(bytes, 9010);
+        F32(bytes, 0f);
+        U32(bytes, 9011);
+        U32(bytes, 2);
+        U32(bytes, 9012);
+        F32(bytes, 1f);
         U32(bytes, 9006);
         U32(bytes, 9001);
 
@@ -225,13 +252,13 @@ public class SptFileTests
         buf.AddRange(BuildLeafTableOnlySpt((3007u, 0.5f)));
         buf.AddRange(BitConverter.GetBytes(13000u));
         buf.AddRange(BitConverter.GetBytes(13002u));
-        buf.AddRange(BitConverter.GetBytes(2u));       // frond level 2
+        buf.AddRange(BitConverter.GetBytes(2u)); // frond level 2
         buf.AddRange(BitConverter.GetBytes(13003u));
-        buf.AddRange(BitConverter.GetBytes(4u));       // skipped int
+        buf.AddRange(BitConverter.GetBytes(4u)); // skipped int
         buf.AddRange(BitConverter.GetBytes(13007u));
-        buf.Add(1);                                    // enabled byte
+        buf.Add(1); // enabled byte
         buf.AddRange(BitConverter.GetBytes(13010u));
-        buf.AddRange(BitConverter.GetBytes(0.25f));    // skipped float
+        buf.AddRange(BitConverter.GetBytes(0.25f)); // skipped float
         buf.AddRange(BitConverter.GetBytes(13001u));
 
         var model = SptFile.Parse([.. buf]);

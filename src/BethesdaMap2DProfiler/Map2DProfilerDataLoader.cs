@@ -1,9 +1,8 @@
+using BethesdaMultitool;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.FileFormat;
-using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool;
 using BethesdaMultitool.Core.Semantic;
+
 namespace BethesdaMap2DProfiler;
 
 internal static class Map2DProfilerDataLoader

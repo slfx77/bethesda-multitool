@@ -25,7 +25,7 @@ public sealed class NifParticleBakerTests
             LifeSpan = 2f, LifeSpanVariation = 0.5f,
             InitialRadius = 4f,
             InitialColor = new Vector4(1f, 0.5f, 0.2f, 1f),
-            EmissionAxis = Vector3.UnitZ,
+            EmissionAxis = Vector3.UnitZ
         };
         var def = new ParticleSystemDefinition { BlockIndex = 7, WorldSpace = false, Capacity = 200 };
         def.Modifiers.Add(emitter);
@@ -56,7 +56,7 @@ public sealed class NifParticleBakerTests
     {
         var grow = new GrowFadeModifierDefinition
         {
-            Kind = ParticleModifierKind.GrowFade, GrowTime = 0.3f, FadeTime = 0.5f, BaseScale = 0f,
+            Kind = ParticleModifierKind.GrowFade, GrowTime = 0.3f, FadeTime = 0.5f, BaseScale = 0f
         };
         var baked = NifParticleBaker.Bake(BoxSystem(grow));
 
@@ -88,7 +88,7 @@ public sealed class NifParticleBakerTests
             VelocityType = velocityType,
             MeshVertices = vertices,
             MeshNormals = vertices.Select(_ => Vector3.UnitZ).ToArray(),
-            MeshTriangles = triangles,
+            MeshTriangles = triangles
         };
         var def = new ParticleSystemDefinition { BlockIndex = 9, WorldSpace = false, Capacity = 400 };
         def.Modifiers.Add(emitter);
@@ -103,7 +103,7 @@ public sealed class NifParticleBakerTests
     {
         Vector3[] vertices =
         [
-            new(-50f, -3f, 0f), new(50f, -3f, 0f), new(50f, 3f, 0f), new(-50f, 3f, 0f),
+            new(-50f, -3f, 0f), new(50f, -3f, 0f), new(50f, 3f, 0f), new(-50f, 3f, 0f)
         ];
         int[] triangles = [0, 1, 2, 0, 2, 3];
         var baked = NifParticleBaker.Bake(MeshSystem(vertices, triangles));
@@ -163,7 +163,7 @@ public sealed class NifParticleBakerTests
             FadeTime = 10f,
             BaseScale = 0f,
             GrowGeneration = 0,
-            FadeGeneration = 0,
+            FadeGeneration = 0
         }));
         var generationOne = NifParticleBaker.Bake(BoxSystem(new GrowFadeModifierDefinition
         {
@@ -172,7 +172,7 @@ public sealed class NifParticleBakerTests
             FadeTime = 10f,
             BaseScale = 0f,
             GrowGeneration = 1,
-            FadeGeneration = 1,
+            FadeGeneration = 1
         }));
 
         Assert.NotEmpty(generationZero);
@@ -188,10 +188,10 @@ public sealed class NifParticleBakerTests
         {
             Kind = ParticleModifierKind.Rotation,
             RotationSpeed = 1f,
-            RotationAngle = 0.25f,
+            RotationAngle = 0.25f
         });
         def.SubtextureOffsets = Enumerable.Range(0, 16)
-            .Select(i => new Vector4((i % 4) * 0.25f, (i / 4) * 0.25f, 0.25f, 0.25f)).ToArray();
+            .Select(i => new Vector4(i % 4 * 0.25f, i / 4 * 0.25f, 0.25f, 0.25f)).ToArray();
         def.AspectRatio = 2f;
 
         var baked = NifParticleBaker.Bake(def);
@@ -216,7 +216,7 @@ public sealed class NifParticleBakerTests
             Shape = ParticleEmitterShape.Box,
             LifeSpan = dt,
             BirthRate = 30f,
-            InitialRadius = 1f,
+            InitialRadius = 1f
         };
         var def = new ParticleSystemDefinition { BlockIndex = 17, Capacity = 1, Emitter = emitter };
         def.Modifiers.Add(emitter);
@@ -225,20 +225,20 @@ public sealed class NifParticleBakerTests
         {
             Kind = ParticleModifierKind.Rotation,
             RotationAngle = 0.25f,
-            RotationSpeed = 1f,
+            RotationSpeed = 1f
         });
         def.Modifiers.Add(new RotationModifierDefinition
         {
             Kind = ParticleModifierKind.Rotation,
             RotationAngle = 0.5f,
-            RotationSpeed = 2f,
+            RotationSpeed = 2f
         });
 
         var particle = Assert.Single(NifParticleBaker.Bake(def, new ParticleBakeOptions
         {
             TimeStep = dt,
             SettleMarginSeconds = 0f,
-            MaxParticles = 1,
+            MaxParticles = 1
         }));
 
         Assert.Equal(0.75f + 3f * dt, particle.Rotation, 5);
@@ -257,7 +257,7 @@ public sealed class NifParticleBakerTests
             GravityObjectTransform = Matrix4x4.Identity,
             GravityAxis = Vector3.UnitX,
             Strength = 100f,
-            ForceType = 0,
+            ForceType = 0
         };
         forceBeforePosition.Modifiers.Add(gravity);
         forceBeforePosition.Modifiers.Add(position);
@@ -296,7 +296,7 @@ public sealed class NifParticleBakerTests
             DragAxis = Vector3.UnitZ,
             Percentage = 0.5f,
             Range = 1e30f,
-            RangeFalloff = 1e30f,
+            RangeFalloff = 1e30f
         };
 
         // Compare the cloud centroid, not its maximum: a freshly emitted particle can begin at the
@@ -320,7 +320,7 @@ public sealed class NifParticleBakerTests
             DragAxis = Vector3.UnitZ,
             Percentage = 0.5f,
             Range = 1e30f,
-            RangeFalloff = 1e30f,
+            RangeFalloff = 1e30f
         };
 
         var maxZNoDrag = NifParticleBaker.Bake(BoxSystem()).Max(p => p.Position.Z);
@@ -338,7 +338,7 @@ public sealed class NifParticleBakerTests
         {
             Kind = ParticleModifierKind.Spawn,
             NumSpawnGenerations = 1, PercentageSpawned = 1f, MinToSpawn = 4, MaxToSpawn = 4,
-            LifeSpan = 1f,
+            LifeSpan = 1f
         };
 
         var withoutSpawn = NifParticleBaker.Bake(BoxSystem());
@@ -356,7 +356,7 @@ public sealed class NifParticleBakerTests
         var spawn = new SpawnModifierDefinition
         {
             Kind = ParticleModifierKind.Spawn,
-            NumSpawnGenerations = 0, PercentageSpawned = 1f, MinToSpawn = 4, MaxToSpawn = 4,
+            NumSpawnGenerations = 0, PercentageSpawned = 1f, MinToSpawn = 4, MaxToSpawn = 4
         };
 
         var withoutSpawn = NifParticleBaker.Bake(BoxSystem());
@@ -374,9 +374,9 @@ public sealed class NifParticleBakerTests
         {
             Kind = ParticleModifierKind.Bomb,
             DeltaV = 200f,
-            DecayType = 0,        // no decay → constant outward push
-            SymmetryType = 0,     // spherical
-            BombAxis = Vector3.UnitZ,
+            DecayType = 0, // no decay → constant outward push
+            SymmetryType = 0, // spherical
+            BombAxis = Vector3.UnitZ
         };
 
         var withoutBomb = NifParticleBaker.Bake(BoxSystem());
@@ -398,7 +398,7 @@ public sealed class NifParticleBakerTests
             HasGravityObject = true,
             GravityObjectTransform = Matrix4x4.Identity,
             ForceType = 1,
-            Strength = 10f,
+            Strength = 10f
         };
 
         var force = NifParticleBaker.GravityForce(gravity, new Vector3(4f, 0f, 0f), Vector3.Zero);
@@ -419,7 +419,7 @@ public sealed class NifParticleBakerTests
             Strength = 10f,
             Decay = 0.5f,
             Turbulence = 0.2f,
-            TurbulenceScale = 2f,
+            TurbulenceScale = 2f
         };
         var turbulenceSample = new Vector3(1f, -0.5f, 0.25f);
 
@@ -440,7 +440,7 @@ public sealed class NifParticleBakerTests
             Kind = ParticleModifierKind.Gravity,
             HasGravityObject = false,
             Strength = 100f,
-            Turbulence = 1f,
+            Turbulence = 1f
         };
 
         Assert.Equal(

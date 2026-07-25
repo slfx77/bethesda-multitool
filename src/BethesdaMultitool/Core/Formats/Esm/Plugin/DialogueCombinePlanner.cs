@@ -17,7 +17,8 @@ internal sealed record DialogueCombinePlan(
     int DuplicateInfosCollapsed,
     int SystemInfosSuppressed,
     int CutInfosRehomed,
-    IReadOnlyList<DialogueTopicIdentity> TopicIdentities);
+    IReadOnlyList<DialogueTopicIdentity> TopicIdentities,
+    int NoOpOverlaysSuppressed = 0);
 
 /// <summary>
 ///     Classifies prototype dialogue before FormID allocation. Shared INFOs become
@@ -79,6 +80,7 @@ internal static class DialogueCombinePlanner
         var editorIdCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var suppressed = 0;
         var rehomed = 0;
+        var noOpOverlaysSuppressed = 0;
 
         foreach (var info in deduplicatedInfos)
         {
@@ -91,7 +93,17 @@ internal static class DialogueCombinePlanner
                     continue;
                 }
 
-                overlays.Add(new SharedDialogueInfoOverlay(info, masterInfo));
+                // A no-op overlay (no prototype text delta) would be a byte-identical ITM
+                // override whose only effect is perturbing engine INFO registration order —
+                // shared system topics like GOODBYE then shadow later speaker-bound INFOs.
+                if (DialogueInfoOverlayWriter.WouldChangeMasterText(masterInfo.Record, info))
+                {
+                    overlays.Add(new SharedDialogueInfoOverlay(info, masterInfo));
+                }
+                else
+                {
+                    noOpOverlaysSuppressed++;
+                }
                 // Never append unmatched prototype slots to the retail INFO itself. A cut
                 // slot may be rehomed only when it independently satisfies the strict cut-
                 // topic gate below, including an explicit player-facing PromptText. This
@@ -163,7 +175,8 @@ internal static class DialogueCombinePlanner
             duplicateInfosCollapsed,
             suppressed,
             rehomed,
-            topicIdentities);
+            topicIdentities,
+            noOpOverlaysSuppressed);
     }
 
     /// <summary>

@@ -15,7 +15,7 @@ public class CellCaptureUnionerTests
         {
             HeightOffset = 125f,
             HeightDeltas = new sbyte[33 * 33],
-            SourceParentCellFormId = first.FormId,
+            SourceParentCellFormId = first.FormId
         };
         var second = first with { CapturedLandHeightmap = captured };
 

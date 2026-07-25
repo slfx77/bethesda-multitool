@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Records;
@@ -54,7 +53,7 @@ internal sealed class EsmTestFileBuilder
             EsmFileAnalyzer.BuildAllMaps(parsedRecords, grupHeaders);
 
         var scanResult = EsmDataExtractor.ConvertToScanResult(
-            parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo, landToCell)
+                parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo, landToCell)
             with
             {
                 PersistentCellContainerFormIds = EsmFileAnalyzer.BuildPersistentCellContainerSet(

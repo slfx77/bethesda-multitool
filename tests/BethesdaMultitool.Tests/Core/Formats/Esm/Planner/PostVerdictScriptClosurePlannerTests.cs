@@ -23,16 +23,16 @@ public sealed class PostVerdictScriptClosurePlannerTests
             Model = new ScriptRecord
             {
                 FormId = scriptSource,
-                EditorId = "DroppedTargetScript",
+                EditorId = "DroppedTargetScript"
             },
             References =
             [
                 new ResolvedRef
                 {
                     FieldPath = "SCRO[0]", OriginalFormId = refSource,
-                    Action = ResolvedRefAction.Resolved, FinalFormId = refEmitted,
-                },
-            ],
+                    Action = ResolvedRefAction.Resolved, FinalFormId = refEmitted
+                }
+            ]
         };
         var child = Plan("REFR", refEmitted, refSource);
         var anchor = Plan("CELL", cell, cell);
@@ -47,7 +47,7 @@ public sealed class PostVerdictScriptClosurePlannerTests
             Emits = true,
             RefDecisions = ImmutableDictionary<uint, PlacedRefDecision>.Empty.Add(
                 refEmitted,
-                new PlacedRefDecision { Verdict = PlacedRefEmitVerdict.Drop }),
+                new PlacedRefDecision { Verdict = PlacedRefEmitVerdict.Drop })
         };
         var plan = new EmitPlan
         {
@@ -63,9 +63,9 @@ public sealed class PostVerdictScriptClosurePlannerTests
             Meta = new PlanMetadata
             {
                 NextObjectId = 0x803,
-                PlannerCoverage = ImmutableHashSet<string>.Empty,
+                PlannerCoverage = ImmutableHashSet<string>.Empty
             },
-            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(cell, cellPlan),
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(cell, cellPlan)
         };
 
         var result = PostVerdictScriptClosurePlanner.Apply(plan, []);
@@ -102,7 +102,7 @@ public sealed class PostVerdictScriptClosurePlannerTests
             Records =
             [
                 Plan("DIAL", duplicateFormId, 0x00100001),
-                Plan("DIAL", duplicateFormId, 0x00100002),
+                Plan("DIAL", duplicateFormId, 0x00100002)
             ],
             SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty
                 .Add(0x00100001, duplicateFormId)
@@ -113,8 +113,8 @@ public sealed class PostVerdictScriptClosurePlannerTests
             Meta = new PlanMetadata
             {
                 NextObjectId = 0x800,
-                PlannerCoverage = ImmutableHashSet<string>.Empty,
-            },
+                PlannerCoverage = ImmutableHashSet<string>.Empty
+            }
         };
 
         var result = PostVerdictScriptClosurePlanner.Apply(plan, []);
@@ -131,7 +131,7 @@ public sealed class PostVerdictScriptClosurePlannerTests
         var skipped = Plan("SCPT", emitted, source) with
         {
             Disposition = RecordDisposition.Skip,
-            Model = new ScriptRecord { FormId = source },
+            Model = new ScriptRecord { FormId = source }
         };
         var plan = new EmitPlan
         {
@@ -144,8 +144,8 @@ public sealed class PostVerdictScriptClosurePlannerTests
             Meta = new PlanMetadata
             {
                 NextObjectId = 0x801,
-                PlannerCoverage = ImmutableHashSet<string>.Empty,
-            },
+                PlannerCoverage = ImmutableHashSet<string>.Empty
+            }
         };
 
         var result = PostVerdictScriptClosurePlanner.Apply(plan, []);
@@ -155,14 +155,17 @@ public sealed class PostVerdictScriptClosurePlannerTests
         Assert.DoesNotContain(source, result.SourceToEmittedFormId.Keys);
     }
 
-    private static RecordPlan Plan(string type, uint emitted, uint source) => new()
+    private static RecordPlan Plan(string type, uint emitted, uint source)
     {
-        Type = type,
-        Disposition = RecordDisposition.New,
-        FormId = emitted,
-        SourceFormId = source,
-        References = ImmutableArray<ResolvedRef>.Empty,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
-    };
+        return new RecordPlan
+        {
+            Type = type,
+            Disposition = RecordDisposition.New,
+            FormId = emitted,
+            SourceFormId = source,
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+        };
+    }
 }

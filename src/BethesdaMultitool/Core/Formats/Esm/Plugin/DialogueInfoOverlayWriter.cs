@@ -120,6 +120,45 @@ internal static class DialogueInfoOverlayWriter
             recordStream.ToArray(), emittedResponses, sourceResponseNumbers, replaced);
     }
 
+    /// <summary>
+    ///     Predicts whether <see cref="Build" /> would replace at least one master NAM1 with
+    ///     different prototype text. Must mirror Build's TRDT/NAM1 walk exactly: a false
+    ///     result means the overlay is a pure no-op override of the master record (identical
+    ///     or non-meaningful prototype text), which changes nothing except engine-visible
+    ///     INFO registration and must not be emitted.
+    /// </summary>
+    public static bool WouldChangeMasterText(ParsedMainRecord masterInfo, DialogueRecord prototypeInfo)
+    {
+        var prototypeByResponse = IndexPrototypeResponses(prototypeInfo.Responses);
+        if (prototypeByResponse.Count == 0)
+        {
+            return false;
+        }
+
+        var ordinal = 0;
+        byte currentResponseNumber = 0;
+        foreach (var subrecord in masterInfo.Subrecords)
+        {
+            if (subrecord.Signature == "TRDT")
+            {
+                ordinal++;
+                currentResponseNumber = GetResponseNumber(subrecord.Data, ordinal);
+                continue;
+            }
+
+            if (subrecord.Signature == "NAM1"
+                && currentResponseNumber != 0
+                && prototypeByResponse.TryGetValue(currentResponseNumber, out var prototypeResponse)
+                && IsMeaningfulText(prototypeResponse.Text)
+                && !string.Equals(prototypeResponse.Text, subrecord.DataAsString, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     internal static Dictionary<byte, DialogueResponse> IndexPrototypeResponses(
         IReadOnlyList<DialogueResponse> responses)
     {

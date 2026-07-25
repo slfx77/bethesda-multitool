@@ -39,7 +39,7 @@ public sealed class NifClassicParallaxPolicyTests
     public void HasUsableGeometry_RequiresUvAndAtLeastOneFiniteNondegenerateTbn()
     {
         Assert.True(NifClassicParallaxPolicy.HasUsableGeometry(Submesh()));
-        Assert.False(NifClassicParallaxPolicy.HasUsableGeometry(Submesh(includeUvs: false)));
+        Assert.False(NifClassicParallaxPolicy.HasUsableGeometry(Submesh(false)));
         Assert.False(NifClassicParallaxPolicy.HasUsableGeometry(Submesh(includeTangents: false)));
         Assert.False(NifClassicParallaxPolicy.HasUsableGeometry(Submesh(
             tangents: [0f, 0f, 0f])));
@@ -83,20 +83,23 @@ public sealed class NifClassicParallaxPolicyTests
     private static NifShaderTextureMetadata Metadata(
         uint flags,
         string? heightPath,
-        string propertyType = "BSShaderPPLightingProperty") =>
-        new()
+        string propertyType = "BSShaderPPLightingProperty")
+    {
+        return new NifShaderTextureMetadata
         {
             PropertyType = propertyType,
             ShaderFlags = flags,
             TextureSlots = [null, null, null, heightPath, null, null, null, null]
         };
+    }
 
     private static RenderableSubmesh Submesh(
         bool includeUvs = true,
         bool includeTangents = true,
         float[]? tangents = null,
-        float[]? bitangents = null) =>
-        new()
+        float[]? bitangents = null)
+    {
+        return new RenderableSubmesh
         {
             Positions = [0f, 0f, 0f],
             Triangles = [],
@@ -105,4 +108,5 @@ public sealed class NifClassicParallaxPolicyTests
             Tangents = includeTangents ? tangents ?? [1f, 0f, 0f] : null,
             Bitangents = bitangents ?? [0f, 1f, 0f]
         };
+    }
 }

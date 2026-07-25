@@ -19,12 +19,13 @@ public sealed class ExportTileStitcherTests
             tile[i + 2] = b;
             tile[i + 3] = a;
         }
+
         return tile;
     }
 
     private static (byte R, byte G, byte B, byte A) PixelAt(byte[] image, int imageWidth, int x, int y)
     {
-        var i = ((y * imageWidth) + x) * 4;
+        var i = (y * imageWidth + x) * 4;
         return (image[i], image[i + 1], image[i + 2], image[i + 3]);
     }
 
@@ -62,7 +63,7 @@ public sealed class ExportTileStitcherTests
         {
             for (var x = 0; x < tileW; x++)
             {
-                var i = ((y * tileW) + x) * 4;
+                var i = (y * tileW + x) * 4;
                 tile[i] = (byte)x;
                 tile[i + 1] = (byte)y;
                 tile[i + 2] = 200;
@@ -83,6 +84,7 @@ public sealed class ExportTileStitcherTests
                     PixelAt(image, imageW, tileW + x, tileH + y));
             }
         }
+
         // Slots outside the copied tile stay untouched (pre-cleared transparent).
         Assert.Equal(((byte)0, (byte)0, (byte)0, (byte)0), PixelAt(image, imageW, 0, 0));
     }
@@ -92,7 +94,6 @@ public sealed class ExportTileStitcherTests
     {
         var image = new byte[4 * 4 * 4];
         var tile = SolidTile(2, 2, 1, 2, 3, 4);
-        Assert.Throws<ArgumentException>(
-            () => ExportTileStitcher.CopyTile(tile, 2, 2, image, 4, 4, tileCol: 2, tileRow: 0));
+        Assert.Throws<ArgumentException>(() => ExportTileStitcher.CopyTile(tile, 2, 2, image, 4, 4, 2, 0));
     }
 }

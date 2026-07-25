@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using BethesdaMultitool;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Diagnostics;
 using Microsoft.UI.Dispatching;
 
@@ -47,13 +46,15 @@ internal abstract class TopDownScenarioBase : Map2DScenario
         await UiAsync(queue, () => control.Profiler_ShowRenderedObjects = true);
     }
 
-    protected static bool IsConverged(TopDownProfilerSnapshot snapshot) =>
-        snapshot.ProviderReady
-        && snapshot.Enabled
-        && snapshot.OverlayPresent
-        && snapshot.CoversViewport
-        && snapshot.RenderComplete
-        && snapshot.Settled;
+    protected static bool IsConverged(TopDownProfilerSnapshot snapshot)
+    {
+        return snapshot.ProviderReady
+               && snapshot.Enabled
+               && snapshot.OverlayPresent
+               && snapshot.CoversViewport
+               && snapshot.RenderComplete
+               && snapshot.Settled;
+    }
 
     protected void AssertNonempty(TopDownProfilerSnapshot snapshot, string phase)
     {
@@ -146,7 +147,7 @@ internal abstract class TopDownScenarioBase : Map2DScenario
         return await WaitForQuiescentAsync(
             control, queue,
             snapshot => IsConverged(snapshot)
-                && snapshot.OverlayRequestId > baseline.OverlayRequestId,
+                        && snapshot.OverlayRequestId > baseline.OverlayRequestId,
             ConvergenceTimeout,
             $"{description} convergence");
     }
@@ -180,6 +181,7 @@ internal abstract class TopDownScenarioBase : Map2DScenario
                 $"{_scenarioName}: timed out after {timeout.TotalSeconds:F0}s waiting for {description}. " +
                 Describe(last));
         }
+
         return last;
     }
 
@@ -216,8 +218,10 @@ internal abstract class TopDownScenarioBase : Map2DScenario
 
     protected static Task<TopDownProfilerSnapshot> SnapshotAsync(
         WorldMapControl control,
-        DispatcherQueue queue) =>
-        UiAsync(queue, control.Profiler_TopDownSnapshot);
+        DispatcherQueue queue)
+    {
+        return UiAsync(queue, control.Profiler_TopDownSnapshot);
+    }
 
     protected void LogSnapshot(string phase, TopDownProfilerSnapshot snapshot)
     {
@@ -230,12 +234,14 @@ internal abstract class TopDownScenarioBase : Map2DScenario
             snapshot.SpeedTreeLeafInstances, snapshot.SpeedTreeBillboardInstances);
     }
 
-    protected static string Describe(TopDownProfilerSnapshot snapshot) =>
-        $"provider={snapshot.ProviderReady} enabled={snapshot.Enabled} overlay={snapshot.OverlayPresent} " +
-        $"covered={snapshot.CoversViewport} settled={snapshot.Settled} inFlight={snapshot.InFlight} " +
-        $"pending={snapshot.Pending} incomplete={snapshot.Incomplete} " +
-        $"requests=start:{snapshot.RequestsStarted}/complete:{snapshot.RequestsCompleted} " +
-        $"overlayId={snapshot.OverlayRequestId} complete={snapshot.RenderComplete} " +
-        $"fullySettled={snapshot.RenderFullySettled} pixels={snapshot.NonTransparentPixels}/{snapshot.PixelCount} " +
-        $"hash=0x{snapshot.PixelHash:X16}";
+    protected static string Describe(TopDownProfilerSnapshot snapshot)
+    {
+        return $"provider={snapshot.ProviderReady} enabled={snapshot.Enabled} overlay={snapshot.OverlayPresent} " +
+               $"covered={snapshot.CoversViewport} settled={snapshot.Settled} inFlight={snapshot.InFlight} " +
+               $"pending={snapshot.Pending} incomplete={snapshot.Incomplete} " +
+               $"requests=start:{snapshot.RequestsStarted}/complete:{snapshot.RequestsCompleted} " +
+               $"overlayId={snapshot.OverlayRequestId} complete={snapshot.RenderComplete} " +
+               $"fullySettled={snapshot.RenderFullySettled} pixels={snapshot.NonTransparentPixels}/{snapshot.PixelCount} " +
+               $"hash=0x{snapshot.PixelHash:X16}";
+    }
 }

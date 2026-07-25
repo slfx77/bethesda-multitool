@@ -218,9 +218,10 @@ internal sealed class RuntimeItemLayouts
     internal int AmmoMessageIconPathOffset => 108 + _s; // BGSMessageIcon.Icon (PDB 124), TESIcon→BSStringT
     internal int AmmoValueOffset => 124 + _s;
     internal int AmmoClipRoundsOffset => 132 + _s; // TESAmmo.cClipRounds (uint8)
-    internal int AmmoSpeedOffset => 168 + _s; // AMMO_DATA.fSpeed (float32, first field)
-    internal int AmmoFlagsOffset => 172 + _s; // AMMO_DATA.iFlags (uint32, after speed)
-    internal int AmmoProjectilePtrOffset => 176 + _s; // AMMO_DATA_NV.pProjectile (BGSProjectile*)
+    // Fallback AMMO_DATA start (fSpeed) used only when RuntimeAmmoDataProbe finds no confident per-DMP
+    // offset — the block drifts per build (172/184/188 observed), so the reader normally uses the probed
+    // start and derives iFlags at +4 and pProjectile (AMMO_DATA_NV) at +8 from it.
+    internal int AmmoSpeedOffset => 168 + _s;
 
     #endregion
 

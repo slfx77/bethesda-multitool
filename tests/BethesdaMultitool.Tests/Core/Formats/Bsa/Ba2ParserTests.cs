@@ -67,7 +67,7 @@ public class Ba2ParserTests
     {
         var path = WriteGnrlBa2();
         var outputDir = Path.Combine(Path.GetTempPath(), $"ba2extract_{Guid.NewGuid():N}");
-        using var progress = new RendezvousProgress(participants: 2);
+        using var progress = new RendezvousProgress(2);
         try
         {
             using var extractor = new Ba2Extractor(path);
@@ -262,15 +262,19 @@ public class Ba2ParserTests
         IProgress<(int current, int total, string fileName)>, IDisposable
     {
         private readonly Barrier _barrier = new(participants);
-        private readonly List<(int current, int total, string fileName)> _seen = [];
 
-        public List<(int current, int total, string fileName)> Seen => _seen;
+        public List<(int current, int total, string fileName)> Seen { get; } = [];
+
+        public void Dispose()
+        {
+            _barrier.Dispose();
+        }
 
         public void Report((int current, int total, string fileName) value)
         {
-            lock (_seen)
+            lock (Seen)
             {
-                _seen.Add(value);
+                Seen.Add(value);
             }
 
             if (!_barrier.SignalAndWait(TimeSpan.FromSeconds(10)))
@@ -278,7 +282,5 @@ public class Ba2ParserTests
                 throw new TimeoutException("BA2 extraction workers did not rendezvous.");
             }
         }
-
-        public void Dispose() => _barrier.Dispose();
     }
 }

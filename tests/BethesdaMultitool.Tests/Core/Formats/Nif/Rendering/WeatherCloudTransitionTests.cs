@@ -45,8 +45,8 @@ public sealed class WeatherCloudTransitionTests
         Assert.Equal(expectedV, result.ScrollVelocity.Y, 6);
         Assert.Equal(
             new Vector2(
-                Wrap(0.998f + (expectedU * 2f)),
-                Wrap(0.999f + (expectedV * 2f))),
+                Wrap(0.998f + expectedU * 2f),
+                Wrap(0.999f + expectedV * 2f)),
             offset);
     }
 
@@ -152,15 +152,15 @@ public sealed class WeatherCloudTransitionTests
         float currentWeatherWeight,
         float expectedVelocity)
     {
-        var current = LegacyWeather(speedByte: 255, windByte: 255);
-        var outgoing = LegacyWeather(speedByte: 0, windByte: 0);
+        var current = LegacyWeather(255, 255);
+        var outgoing = LegacyWeather(0, 0);
 
         var result = WeatherCloudTransitionResolver.Resolve(
             current,
             outgoing,
-            sourceLayerIndex: 0,
-            currentWeatherWeight: currentWeatherWeight,
-            game: BethesdaGame.FalloutNewVegas);
+            0,
+            currentWeatherWeight,
+            BethesdaGame.FalloutNewVegas);
 
         // PC retail Clouds::Update / Sky::UpdateWind oracle:
         // .1 * lerp(0, 1, w) * lerp(0, 1, w). At w=.5 this is .025 UV/s;
@@ -172,47 +172,56 @@ public sealed class WeatherCloudTransitionTests
     [Fact]
     public void Resolve_FnvStaticWeatherKeepsRecoveredEndpointRate()
     {
-        var current = LegacyWeather(speedByte: 65, windByte: 50);
+        var current = LegacyWeather(65, 50);
 
         var result = WeatherCloudTransitionResolver.Resolve(
             current,
-            outgoingWeather: null,
-            sourceLayerIndex: 0,
-            currentWeatherWeight: 0.25f,
-            game: BethesdaGame.FalloutNewVegas);
+            null,
+            0,
+            0.25f,
+            BethesdaGame.FalloutNewVegas);
 
         Assert.Equal(0.004998078f, result.ScrollVelocity.X, 7);
         Assert.Equal(1f, result.CurrentWeatherWeight);
     }
 
-    private static WeatherRecord Weather(int sourceIndex, string texture, float u, float v) => new()
+    private static WeatherRecord Weather(int sourceIndex, string texture, float u, float v)
     {
-        CloudLayers =
-        [
-            new WeatherCloudLayer
-            {
-                SourceIndex = sourceIndex,
-                Texture = texture,
-                SpeedU = u,
-                SpeedV = v,
-            },
-        ],
-    };
+        return new WeatherRecord
+        {
+            CloudLayers =
+            [
+                new WeatherCloudLayer
+                {
+                    SourceIndex = sourceIndex,
+                    Texture = texture,
+                    SpeedU = u,
+                    SpeedV = v
+                }
+            ]
+        };
+    }
 
-    private static WeatherRecord LegacyWeather(byte speedByte, byte windByte) => new()
+    private static WeatherRecord LegacyWeather(byte speedByte, byte windByte)
     {
-        Data = new WeatherData { WindSpeed = windByte },
-        CloudSpeedsX = [speedByte / 255f],
-        CloudLayers =
-        [
-            new WeatherCloudLayer
-            {
-                SourceIndex = 0,
-                Texture = @"sky\clouds.dds",
-                SpeedU = speedByte / 255f,
-            },
-        ],
-    };
+        return new WeatherRecord
+        {
+            Data = new WeatherData { WindSpeed = windByte },
+            CloudSpeedsX = [speedByte / 255f],
+            CloudLayers =
+            [
+                new WeatherCloudLayer
+                {
+                    SourceIndex = 0,
+                    Texture = @"sky\clouds.dds",
+                    SpeedU = speedByte / 255f
+                }
+            ]
+        };
+    }
 
-    private static float Wrap(float value) => value - MathF.Floor(value);
+    private static float Wrap(float value)
+    {
+        return value - MathF.Floor(value);
+    }
 }

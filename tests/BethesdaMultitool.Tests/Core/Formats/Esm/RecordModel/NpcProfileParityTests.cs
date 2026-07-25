@@ -44,7 +44,7 @@ public class NpcProfileParityTests
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, cancellationToken: TestContext.Current.CancellationToken);
+            esm!, TestContext.Current.CancellationToken);
 
         // One resolver instance for both sides — parity is about the profile reproducing the builder, not
         // about resolver content, so identical resolver use cancels out.
@@ -68,7 +68,8 @@ public class NpcProfileParityTests
             compared++;
             if (typed != profiled && mismatches.Count < 5)
             {
-                mismatches.Add($"NPC 0x{formId:X8} ({npc.EditorId}):\n--- typed ---\n{typed}\n--- profile ---\n{profiled}");
+                mismatches.Add(
+                    $"NPC 0x{formId:X8} ({npc.EditorId}):\n--- typed ---\n{typed}\n--- profile ---\n{profiled}");
             }
         }
 

@@ -259,6 +259,9 @@ internal static class HavokCollisionExtractor
                         triangles, visited, depth + 1);
                     break;
                 }
+                case "bhkNiTriStripsShape":
+                    AppendNiTriStripsShape(data, nif, block, be, toWorld, accumScale, positions, triangles);
+                    break;
                 case "bhkConvexVerticesShape":
                     AppendConvexVertices(data, block, be, toWorld, accumScale, positions, triangles);
                     break;
@@ -278,6 +281,67 @@ internal static class HavokCollisionExtractor
             // This is a recursion-stack guard, not a global de-duplicator: a shared child referenced by
             // two differently transformed wrappers must be emitted twice.
             visited.Remove(shapeIdx);
+        }
+    }
+
+    /// <summary>
+    ///     <c>bhkNiTriStripsShape</c> — TES4-era clutter/architecture collision (the Ayleid ring walls,
+    ///     stone pedestals). Its geometry is plain <c>NiTriStripsData</c> in MODEL units — retail
+    ///     arringouterwall01's collision vertices span the same range as its visual mesh — so unlike the
+    ///     packed/convex/primitive shapes there is NO ×7 Havok scale on the vertices (the rigid body's
+    ///     translation stays Havok-scaled as usual). Layout: Material@0, Radius@4, Unused[20]@8,
+    ///     GrowBy@28, Scale Vector4 @32 (since 10.1.0.0), Num Strips Data, then the data refs.
+    /// </summary>
+    private static void AppendNiTriStripsShape(byte[] data, NifInfo nif, BlockInfo block, bool be,
+        Matrix4x4 toWorld, Vector3 accumScale, List<Vector3> positions, List<int> triangles)
+    {
+        var hasScaleField = nif.BinaryVersion >= NifVersions.Gamebryo10100;
+        var scale = Vector3.One;
+        if (hasScaleField)
+        {
+            var sx = TryReadFloat(data, block, 32, be) ?? 1f;
+            var sy = TryReadFloat(data, block, 36, be) ?? 1f;
+            var sz = TryReadFloat(data, block, 40, be) ?? 1f;
+            if (float.IsFinite(sx) && float.IsFinite(sy) && float.IsFinite(sz) &&
+                MathF.Abs(sx) > 1e-8f && MathF.Abs(sy) > 1e-8f && MathF.Abs(sz) > 1e-8f)
+            {
+                scale = new Vector3(sx, sy, sz);
+            }
+        }
+
+        var numOffset = hasScaleField ? 48 : 32;
+        if (!TryReadUInt32(data, block, numOffset, be, out var numStrips)) return;
+        var cap = Math.Min((int)Math.Min(numStrips, int.MaxValue),
+            Math.Max(0, (block.Size - numOffset - 4) / 4));
+        var meshScale = scale * accumScale;
+        for (var s = 0; s < cap; s++)
+        {
+            if (!TryReadInt32(data, block, numOffset + 4 + s * 4, be, out var dataRef)) break;
+            if (dataRef < 0 || dataRef >= nif.Blocks.Count) continue;
+            var dataBlock = nif.Blocks[dataRef];
+            if (dataBlock.TypeName != "NiTriStripsData") continue;
+
+            var submesh = NifBlockParsers.ExtractTriStripsData(data, dataBlock, be, nif.BsVersion,
+                nif.BinaryVersion, Matrix4x4.Identity);
+            if (submesh is null || submesh.Positions.Length < 9 || submesh.Triangles.Length < 3) continue;
+
+            var baseIndex = positions.Count;
+            for (var i = 0; i + 2 < submesh.Positions.Length; i += 3)
+            {
+                var p = new Vector3(submesh.Positions[i], submesh.Positions[i + 1],
+                    submesh.Positions[i + 2]) * meshScale;
+                positions.Add(Vector3.Transform(p, toWorld));
+            }
+
+            var vertexCount = submesh.Positions.Length / 3;
+            for (var i = 0; i + 2 < submesh.Triangles.Length; i += 3)
+            {
+                int a = submesh.Triangles[i], b = submesh.Triangles[i + 1], c = submesh.Triangles[i + 2];
+                if (a >= vertexCount || b >= vertexCount || c >= vertexCount) continue;
+                triangles.Add(baseIndex + a);
+                triangles.Add(baseIndex + b);
+                triangles.Add(baseIndex + c);
+            }
         }
     }
 

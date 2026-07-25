@@ -11,11 +11,25 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime;
 /// </summary>
 internal sealed class RuntimeProbeResults
 {
+    /// <summary>
+    ///     REFR field-shift (early/final) probe result. Surfaced so <c>dmp probe-shifts</c> can report
+    ///     the winner's score/margin/samples — a thin margin flags an outlier dump whose shift pick is
+    ///     low-confidence, which now also governs the heap-sweep recovery (it reuses this shift).
+    /// </summary>
+    public RuntimeLayoutProbeResult<bool>? RefrLayout { get; init; }
+
     public RuntimeNpcLayoutProbeResult? NpcLayout { get; init; }
     public RuntimeWorldCellLayoutProbeResult? WorldCellLayout { get; init; }
     public RuntimeLayoutProbeResult<int[]>? RaceLayout { get; init; }
     public RuntimeLayoutProbeResult<int[]>? EffectLayout { get; init; }
     public RuntimeWeaponSoundProbeResult? WeaponSoundLayout { get; init; }
+
+    /// <summary>
+    ///     Probed AMMO_DATA start offset (fSpeed/iFlags/pProjectile). The block drifts per build (172/184/188
+    ///     observed) while the PDB-derived default 184 is correct only for late-April Beta, so this is probed
+    ///     per DMP. Surfaced so <c>dmp probe-shifts</c> can report the winner's score/margin/samples.
+    /// </summary>
+    public RuntimeLayoutProbeResult<int>? AmmoDataLayout { get; init; }
 
     /// <summary>
     ///     Per-FormType uniform shift for the generic PDB reader.

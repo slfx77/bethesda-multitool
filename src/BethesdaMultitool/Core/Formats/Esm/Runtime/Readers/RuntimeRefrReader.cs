@@ -154,6 +154,18 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
         RuntimeMemoryContext context,
         IReadOnlyList<RuntimeEditorIdEntry> refrEntries)
     {
+        return ProbeRefrLayout(context, refrEntries).Winner.Layout;
+    }
+
+    /// <summary>
+    ///     Probes the REFR field-shift layout and returns the full result (winner plus
+    ///     score/runner-up/margin/sample-count) so callers can surface probe confidence.
+    ///     <see cref="ProbeIsEarlyBuild" /> is the bool-only view of the same probe.
+    /// </summary>
+    public static RuntimeLayoutProbeResult<bool> ProbeRefrLayout(
+        RuntimeMemoryContext context,
+        IReadOnlyList<RuntimeEditorIdEntry> refrEntries)
+    {
         // Sample up to 20 REFR/ACHR/ACRE entries (FormType 0x3A-0x3C), excluding Player (0x14)
         var samples = refrEntries
             .Where(e => e.FormType is >= 0x3A and <= 0x3C && e.FormId != 0x14)
@@ -162,7 +174,9 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
 
         if (samples.Count == 0)
         {
-            return false; // No REFRs to probe -> default to final layout
+            // No REFRs to probe -> default to final layout with zero confidence.
+            return new RuntimeLayoutProbeResult<bool>(
+                new RuntimeLayoutProbeCandidate<bool>("Final", false), 0, 0, 0, []);
         }
 
         var earlyReader = new RuntimeRefrReader(context, true);
@@ -173,7 +187,7 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
             new("Early", true)
         };
 
-        var result = RuntimeLayoutProbeEngine.Probe(
+        return RuntimeLayoutProbeEngine.Probe(
             samples,
             candidates,
             (entry, candidate) =>
@@ -182,8 +196,6 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
                 return new RuntimeLayoutProbeScore(reader.ReadRuntimeRefr(entry) != null ? 1 : 0, 1);
             },
             "REFR Probe");
-
-        return result.Winner.Layout;
     }
 
     /// <summary>

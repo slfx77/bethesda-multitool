@@ -11,17 +11,19 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class FnvLighting30EmissionRetailTests
 {
+    private const string MeshesBsaRelative =
+        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+
+    private const string ProspectorNeonPath =
+        @"meshes\architecture\goodsprings\NV_ProspectorSaloon-Neon_Lights.NIF";
+
+    private const string ProspectorGlowPath =
+        @"textures\architecture\goodsprings\NV_ProspectorSaloon-Neon_g.dds";
+
     public FnvLighting30EmissionRetailTests()
     {
         BucketBTestGuard.SkipUnlessEnabled();
     }
-
-    private const string MeshesBsaRelative =
-        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
-    private const string ProspectorNeonPath =
-        @"meshes\architecture\goodsprings\NV_ProspectorSaloon-Neon_Lights.NIF";
-    private const string ProspectorGlowPath =
-        @"textures\architecture\goodsprings\NV_ProspectorSaloon-Neon_g.dds";
 
     [Fact]
     public void ProspectorNeon_SeparatesLighting30GlowFromNoLightingControls()
@@ -107,6 +109,6 @@ public sealed class FnvLighting30EmissionRetailTests
     {
         var bsaPath = SampleFileFixture.FindSamplePath(MeshesBsaRelative);
         Assert.SkipWhen(bsaPath is null, "FNV PC-final meshes BSA not available");
-        return MeshArchiveSet.Open(bsaPath!, null, enableFuzzy: false, includeLooseFiles: false);
+        return MeshArchiveSet.Open(bsaPath!, null, false, false);
     }
 }

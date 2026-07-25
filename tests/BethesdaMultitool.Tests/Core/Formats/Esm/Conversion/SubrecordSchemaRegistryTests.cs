@@ -140,6 +140,22 @@ public class SubrecordSchemaRegistryTests
         Assert.Same(SubrecordSchema.ByteArray, schema);
     }
 
+    [Theory]
+    [InlineData("CAMS", 36, 9)] // truncated CAMS: no TargetPctBetweenActors
+    [InlineData("IPDS", 36, 9)] // truncated IPDS: 9 material FormIDs
+    [InlineData("IPDS", 40, 10)]
+    [InlineData("IPDS", 44, 11)]
+    public void GetSchema_TruncatedCamsIpdsData_ReturnsTypedSchemaNotFloatArrayFallback(
+        string recordType, int dataLength, int expectedFieldCount)
+    {
+        // Truncated CAMS/IPDS DATA lengths must resolve to their registered prefix schema, NOT the
+        // generic DATA->FloatArray fallback (which reads only the first element and mistypes the rest).
+        var schema = SubrecordSchemaRegistry.GetSchema("DATA", recordType, dataLength);
+        Assert.NotNull(schema);
+        Assert.NotSame(SubrecordSchema.FloatArray, schema);
+        Assert.Equal(expectedFieldCount, schema!.Fields.Length);
+    }
+
     #endregion
 
     #region WTHR *IAD Subrecords

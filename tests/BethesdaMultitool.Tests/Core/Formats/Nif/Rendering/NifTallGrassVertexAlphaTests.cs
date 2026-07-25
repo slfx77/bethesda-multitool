@@ -14,7 +14,7 @@ public sealed class NifTallGrassVertexAlphaTests
     {
         var metadata = new NifShaderTextureMetadata
         {
-            PropertyType = "TallGrassShaderProperty",
+            PropertyType = "TallGrassShaderProperty"
         };
         Assert.False(NifVertexColorPolicy.UsesAlphaForOpacity(metadata));
 
@@ -25,14 +25,14 @@ public sealed class NifTallGrassVertexAlphaTests
             Triangles = [],
             VertexColors = authoredColors,
             UseVertexColors = true,
-            UseVertexAlphaForOpacity = false,
+            UseVertexAlphaForOpacity = false
         };
 
         var effective = NifVertexColorPolicy.Read(submesh, 0);
         var gpuVertex = Assert.Single(GpuMeshUploader.BuildVertices(submesh));
         var referenceWindVertex = Assert.Single(GpuMeshUploader.BuildVertices(
             submesh,
-            preserveAuthoredVertexAlpha: true));
+            true));
 
         Assert.Equal((byte)43, authoredColors[3]);
         Assert.Equal(((byte)32, (byte)64, (byte)96, byte.MaxValue), effective);
@@ -46,17 +46,17 @@ public sealed class NifTallGrassVertexAlphaTests
         Assert.False(NifVertexColorPolicy.UsesAlphaForOpacity(new NifShaderTextureMetadata
         {
             PropertyType = "BSLightingShaderProperty",
-            ShaderFlags = 0u,
+            ShaderFlags = 0u
         }));
         Assert.True(NifVertexColorPolicy.UsesAlphaForOpacity(new NifShaderTextureMetadata
         {
             PropertyType = "BSLightingShaderProperty",
-            ShaderFlags = 0x8u,
+            ShaderFlags = 0x8u
         }));
         Assert.True(NifVertexColorPolicy.UsesAlphaForOpacity(new NifShaderTextureMetadata
         {
             PropertyType = "BSShaderPPLightingProperty",
-            ShaderFlags = 0u,
+            ShaderFlags = 0u
         }));
     }
 
@@ -74,7 +74,7 @@ public sealed class NifTallGrassVertexAlphaTests
         {
             Path.Combine(assetRoot, "nvgreengrass01.nif"),
             Path.Combine(assetRoot, "nvgreengrass02.nif"),
-            Path.Combine(assetRoot, "nvgreengrass03.nif"),
+            Path.Combine(assetRoot, "nvgreengrass03.nif")
         };
         Assert.SkipUnless(paths.All(File.Exists),
             "Extracted FNV NVGreenGrass retail NIFs are not present (dev-machine-only asset gate).");
@@ -106,7 +106,7 @@ public sealed class NifTallGrassVertexAlphaTests
                 vertex => Assert.Equal(1f, vertex.VertexColor.W));
             var referenceVertices = GpuMeshUploader.BuildVertices(
                 submesh,
-                preserveAuthoredVertexAlpha: true);
+                true);
             Assert.Contains(referenceVertices, vertex => vertex.VertexColor.W < 1f);
             Assert.Equal(
                 submesh.VertexColors!.Where((_, index) => (index & 3) == 3).Select(alpha => alpha / 255f),

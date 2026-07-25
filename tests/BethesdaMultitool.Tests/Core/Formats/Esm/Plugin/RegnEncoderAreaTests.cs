@@ -22,10 +22,10 @@ public sealed class RegnEncoderAreaTests
                     [
                         new RegionPoint(10f, 20f),
                         new RegionPoint(30f, 20f),
-                        new RegionPoint(30f, 40f),
-                    ]),
+                        new RegionPoint(30f, 40f)
+                    ])
             ],
-            DataBlocks = [new RegionDataBlock(3, 0x00006401, [])],
+            DataBlocks = [new RegionDataBlock(3, 0x00006401, [])]
         };
 
         var encoded = RegnEncoder.EncodeNew(region);

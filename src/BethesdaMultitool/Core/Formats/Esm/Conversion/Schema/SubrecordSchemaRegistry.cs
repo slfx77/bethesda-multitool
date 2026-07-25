@@ -20,6 +20,10 @@ public static class SubrecordSchemaRegistry
             FallbackType), int>
         _fallbackUsage = new();
 
+    private static readonly ConcurrentDictionary<(string Signature, string RecordType, int DataLength),
+            IReadOnlyDictionary<int, LeFieldKind>?>
+        _fixedLeLayoutCache = new();
+
     /// <summary>
     ///     Whether fallback logging is enabled.
     /// </summary>
@@ -103,6 +107,124 @@ public static class SubrecordSchemaRegistry
         }
 
         return null;
+    }
+
+    /// <summary>
+    ///     Byte offsets within a subrecord whose fields are stored little-endian even on big-endian
+    ///     Xbox 360 — the hybrid-endianness cases this conversion schema already models. A big-endian
+    ///     schema decoder consults this map to skip its default byte-swap for exactly those fields,
+    ///     keeping the fixed-LE knowledge in one place (here) rather than duplicating it into the read
+    ///     authorities. Returns <c>null</c> when the resolved schema has no fixed-LE field (the common
+    ///     case), so the caller does nothing. Results are static, so they are cached per key.
+    /// </summary>
+    /// <param name="signature">Subrecord signature (e.g. "DATA", "INDX", "BPND").</param>
+    /// <param name="recordType">Parent record signature (e.g. "RGDL", "QUST", "BPTD").</param>
+    /// <param name="dataLength">The framed subrecord's byte length (selects a length-specific variant).</param>
+    public static IReadOnlyDictionary<int, LeFieldKind>? GetFixedLeLayout(
+        string signature, string recordType, int dataLength)
+    {
+        return _fixedLeLayoutCache.GetOrAdd((signature, recordType, dataLength),
+            static key => ComputeFixedLeLayout(key.Signature, key.RecordType, key.DataLength));
+    }
+
+    private static IReadOnlyDictionary<int, LeFieldKind>? ComputeFixedLeLayout(
+        string signature, string recordType, int dataLength)
+    {
+        var schema = ResolveExplicitSchema(signature, recordType, dataLength);
+        if (schema is null)
+        {
+            return null;
+        }
+
+        Dictionary<int, LeFieldKind>? map = null;
+        var offset = 0;
+        foreach (var field in schema.Fields)
+        {
+            if (MapFixedLeKind(field.Type) is { } k)
+            {
+                (map ??= new Dictionary<int, LeFieldKind>())[offset] = k;
+            }
+
+            offset += field.EffectiveSize;
+        }
+
+        return map;
+    }
+
+    /// <summary>
+    ///     The <see cref="LeFieldKind" /> for a field type that is little-endian even on big-endian
+    ///     Xbox 360, or null for the types that follow the record's endianness normally.
+    /// </summary>
+    private static LeFieldKind? MapFixedLeKind(SubrecordFieldType type) => type switch
+    {
+        SubrecordFieldType.FormIdLittleEndian => LeFieldKind.LittleEndian,
+        SubrecordFieldType.UInt16LittleEndian => LeFieldKind.LittleEndian,
+        SubrecordFieldType.Int32LittleEndian => LeFieldKind.LittleEndian,
+        SubrecordFieldType.UInt32WordSwapped => LeFieldKind.WordSwapped,
+        _ => null
+    };
+
+    /// <summary>One registered subrecord field that is stored little-endian on Xbox 360.</summary>
+    /// <param name="Signature">Subrecord signature.</param>
+    /// <param name="RecordType">Parent record type, or null when the schema applies to any record.</param>
+    /// <param name="DataLength">The registration's length key, or null when length-agnostic.</param>
+    /// <param name="Offset">Cumulative byte offset of the field within the subrecord.</param>
+    /// <param name="Width">Field width in bytes.</param>
+    /// <param name="Kind">How the field must be read on a big-endian record.</param>
+    /// <param name="Type">The underlying conversion field type.</param>
+    /// <param name="FieldName">The field's schema name.</param>
+    public readonly record struct FixedLeFieldInfo(
+        string Signature, string? RecordType, int? DataLength, int Offset, int Width, LeFieldKind Kind,
+        SubrecordFieldType Type, string FieldName);
+
+    /// <summary>
+    ///     Enumerates every registered subrecord field that is stored little-endian on big-endian Xbox 360
+    ///     — the authoritative list the decode-time overlay derives from. Used by the read authorities and
+    ///     by the drift-guard test that pins the generated schemas to this one source of truth.
+    /// </summary>
+    public static IEnumerable<FixedLeFieldInfo> EnumerateFixedLeFields()
+    {
+        foreach (var (key, schema) in _schemas)
+        {
+            var offset = 0;
+            foreach (var field in schema.Fields)
+            {
+                if (MapFixedLeKind(field.Type) is { } kind)
+                {
+                    yield return new FixedLeFieldInfo(
+                        key.Signature, key.RecordType, key.DataLength, offset, field.EffectiveSize, kind,
+                        field.Type, field.Name);
+                }
+
+                offset += field.EffectiveSize;
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Resolves only an explicitly registered schema via the same 4-level priority as
+    ///     <see cref="GetSchema" />, but WITHOUT the DATA/WTHR/IMAD synthetic fallbacks or their logging
+    ///     side effects — fixed-LE fields only ever live in explicit registrations, so the fallbacks are
+    ///     irrelevant here and must not pollute the fallback log during a read.
+    /// </summary>
+    private static SubrecordSchema? ResolveExplicitSchema(string signature, string recordType, int dataLength)
+    {
+        if (_schemas.TryGetValue(new SchemaKey(signature, recordType, dataLength), out var schema))
+        {
+            return schema;
+        }
+
+        if (_schemas.TryGetValue(new SchemaKey(signature, recordType), out schema))
+        {
+            return schema;
+        }
+
+        if (_schemas.TryGetValue(new SchemaKey(signature, null, dataLength), out schema))
+        {
+            return schema;
+        }
+
+        return _schemas.TryGetValue(new SchemaKey(signature), out schema) ? schema : null;
     }
 
     /// <summary>

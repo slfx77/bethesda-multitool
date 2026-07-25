@@ -1,4 +1,4 @@
-using BethesdaMultitool.Core.Formats.Esm;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
@@ -44,11 +44,14 @@ public sealed class InfoResponseTextExtractorTests
         Assert.Equal("Second", responses[2]);
     }
 
-    private static ParsedMainRecord Info(params ParsedSubrecord[] subrecords) => new()
+    private static ParsedMainRecord Info(params ParsedSubrecord[] subrecords)
     {
-        Header = new MainRecordHeader { Signature = "INFO", FormId = 0x0010656E },
-        Subrecords = [..subrecords]
-    };
+        return new ParsedMainRecord
+        {
+            Header = new MainRecordHeader { Signature = "INFO", FormId = 0x0010656E },
+            Subrecords = [..subrecords]
+        };
+    }
 
     private static ParsedSubrecord Trdt(byte responseNumber)
     {
@@ -57,9 +60,12 @@ public sealed class InfoResponseTextExtractorTests
         return new ParsedSubrecord { Signature = "TRDT", Data = data };
     }
 
-    private static ParsedSubrecord Text(string value) => new()
+    private static ParsedSubrecord Text(string value)
     {
-        Signature = "NAM1",
-        Data = System.Text.Encoding.Latin1.GetBytes(value + "\0")
-    };
+        return new ParsedSubrecord
+        {
+            Signature = "NAM1",
+            Data = Encoding.Latin1.GetBytes(value + "\0")
+        };
+    }
 }

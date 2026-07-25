@@ -1,8 +1,9 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.Numerics;
+using BethesdaMultitool;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
-using BethesdaMultitool;
-using BethesdaMultitool.Core;
-using System.Globalization;
 using Windows.Graphics;
 using Windows.UI;
 using Microsoft.UI.Dispatching;
@@ -21,9 +22,9 @@ internal sealed partial class MainWindow : Window, IDisposable
     private readonly ProgressBar _progressBar;
     private readonly TextBlock _statusText;
     private readonly WorldView3DControl _worldView;
+    private CancellationTokenSource? _acceptanceScenarioCancellation;
     private bool _disposed;
     private bool _exiting;
-    private CancellationTokenSource? _acceptanceScenarioCancellation;
     private Renderer3DScenario? _scenario;
     private bool _started;
     private DispatcherQueueTimer? _timedExitTimer;
@@ -175,14 +176,14 @@ internal sealed partial class MainWindow : Window, IDisposable
 
             if (!TrySelectCaptureInterior(data))
             {
-                ExitProfiler("capture-bad-interior", exitCode: 2);
+                ExitProfiler("capture-bad-interior", 2);
                 return;
             }
 
             if (!await WaitForProfileSceneReadyAsync())
             {
                 Log.Error("Renderer profiler scene did not become ready before the 30-second timeout.");
-                ExitProfiler("scene-ready-timeout", exitCode: 1);
+                ExitProfiler("scene-ready-timeout", 1);
                 return;
             }
 
@@ -221,7 +222,7 @@ internal sealed partial class MainWindow : Window, IDisposable
                 var aimPose = _worldView.Profiler_CameraPose;
                 var aimZ = _options.CaptureZ ?? aimPose.Position.Z;
                 _worldView.Profiler_SetCameraPose(
-                    aimPose with { Position = new System.Numerics.Vector3(profileAimX, profileAimY, aimZ) });
+                    aimPose with { Position = new Vector3(profileAimX, profileAimY, aimZ) });
                 Log.Info("Profiler: camera aimed at ({0:0}, {1:0}, {2:0}).", profileAimX, profileAimY, aimZ);
             }
 
@@ -234,7 +235,7 @@ internal sealed partial class MainWindow : Window, IDisposable
             _progressBar.IsIndeterminate = false;
             SetStatus($"Failed: {ex.GetType().Name}: {ex.Message}");
             Log.Error("Renderer profiler startup failed: {0}", ex);
-            ExitProfiler("startup-exception", exitCode: 1);
+            ExitProfiler("startup-exception", 1);
         }
     }
 
@@ -261,7 +262,7 @@ internal sealed partial class MainWindow : Window, IDisposable
             {
                 Log.Warn("Capture: top-down provider unavailable (D3D12 down or no Meshes BSA).");
                 Console.WriteLine("[Capture] UNAVAILABLE: top-down provider not ready (no D3D12 / no Meshes BSA).");
-                ExitProfiler("capture-unavailable", exitCode: 1);
+                ExitProfiler("capture-unavailable", 1);
                 return;
             }
 
@@ -283,7 +284,7 @@ internal sealed partial class MainWindow : Window, IDisposable
                 {
                     Console.WriteLine(
                         $"[Capture] UNAVAILABLE: worldspace index {wsIdx} out of range / empty (count={_worldView.Profiler_ExteriorWorldspaceCount}).");
-                    ExitProfiler("capture-bad-worldspace", exitCode: 2);
+                    ExitProfiler("capture-bad-worldspace", 2);
                     return;
                 }
 
@@ -347,7 +348,7 @@ internal sealed partial class MainWindow : Window, IDisposable
             if (render is null)
             {
                 Console.WriteLine("[Capture] FAILED: render returned null.");
-                ExitProfiler("capture-null", exitCode: 1);
+                ExitProfiler("capture-null", 1);
                 return;
             }
 
@@ -367,7 +368,7 @@ internal sealed partial class MainWindow : Window, IDisposable
         {
             Log.Error("Capture failed: {0}", ex);
             Console.Error.WriteLine($"[Capture] EXCEPTION: {ex.GetType().Name}: {ex.Message}");
-            ExitProfiler("capture-exception", exitCode: 1);
+            ExitProfiler("capture-exception", 1);
         }
         finally
         {
@@ -385,7 +386,7 @@ internal sealed partial class MainWindow : Window, IDisposable
             if (!_worldView.CanRenderProjectionExport)
             {
                 Console.WriteLine("[Capture] UNAVAILABLE: D3D12 scene renderer not ready (no GPU / no Meshes BSA).");
-                ExitProfiler("capture-unavailable", exitCode: 1);
+                ExitProfiler("capture-unavailable", 1);
                 return;
             }
 
@@ -400,7 +401,7 @@ internal sealed partial class MainWindow : Window, IDisposable
             if (!await WaitForProfileSceneReadyAsync())
             {
                 Console.WriteLine("[Capture] FAILED: selected scene did not become ready within 30 seconds.");
-                ExitProfiler("capture-scene-ready-timeout", exitCode: 1);
+                ExitProfiler("capture-scene-ready-timeout", 1);
                 return;
             }
 
@@ -446,7 +447,7 @@ internal sealed partial class MainWindow : Window, IDisposable
                 var aimPose = _worldView.Profiler_CameraPose;
                 var aimZ = _options.CaptureZ ?? aimPose.Position.Z;
                 _worldView.Profiler_SetCameraPose(
-                    aimPose with { Position = new System.Numerics.Vector3(aimX, aimY, aimZ) });
+                    aimPose with { Position = new Vector3(aimX, aimY, aimZ) });
                 movedCamera = true;
             }
 
@@ -460,7 +461,7 @@ internal sealed partial class MainWindow : Window, IDisposable
             await Task.Delay(movedCamera ? 7000 : 3000);
             // Pure delay-polling is valid here because the scenario keeps driving frames (stats only
             // advance when frames render). Time-boxed: a permanently-missing asset can pin the counter.
-            var quiesceTimer = System.Diagnostics.Stopwatch.StartNew();
+            var quiesceTimer = Stopwatch.StartNew();
             var settleTimeout = TimeSpan.FromSeconds(_options.CaptureSettleTimeoutSeconds);
             var quiesced = await StreamingQuiescence.PollAsync(
                 () => _worldView.Profiler_IsReferenceStreamingQuiesced,
@@ -485,7 +486,7 @@ internal sealed partial class MainWindow : Window, IDisposable
                     ["requestedWeather"] = _options.CaptureWeatherName,
                     ["actualWeather"] = _worldView.Profiler_ActiveWeatherEditorId
                 });
-                ExitProfiler("capture-streaming-timeout", exitCode: 1);
+                ExitProfiler("capture-streaming-timeout", 1);
                 return;
             }
 
@@ -514,6 +515,13 @@ internal sealed partial class MainWindow : Window, IDisposable
                 ? yawDegrees * (MathF.PI / 180f)
                 : pose.Yaw;
             _worldView.Profiler_SetCameraPose(pose with { Pitch = pitchRadians, Yaw = yawRadians });
+            // FOV is not part of the pose record; apply it explicitly so a P-key pose reproduces the live
+            // zoom (a non-default live FOV otherwise renders at the camera's 60° default → wrong framing).
+            if (_options.CaptureFovDegrees is float captureFov)
+            {
+                _worldView.Profiler_SetCameraFov(captureFov);
+            }
+
             var capturePose = _worldView.Profiler_CameraPose;
 
             // Collapse the live view so the capture frame doesn't share the command recorder with a live one.
@@ -525,7 +533,7 @@ internal sealed partial class MainWindow : Window, IDisposable
             if (bgra is null)
             {
                 Console.WriteLine("[Capture] FAILED: capture returned null.");
-                ExitProfiler("capture-null", exitCode: 1);
+                ExitProfiler("capture-null", 1);
                 return;
             }
 
@@ -536,7 +544,7 @@ internal sealed partial class MainWindow : Window, IDisposable
                                 $"a {px}×{pyh} BGRA frame; expected {expectedByteCount:N0}.";
                 Log.Error(sizeError);
                 Console.Error.WriteLine(sizeError);
-                ExitProfiler("capture-size-mismatch", exitCode: 1);
+                ExitProfiler("capture-size-mismatch", 1);
                 return;
             }
 
@@ -587,7 +595,7 @@ internal sealed partial class MainWindow : Window, IDisposable
         {
             Log.Error("Scene capture failed: {0}", ex);
             Console.Error.WriteLine($"[Capture] EXCEPTION: {ex.GetType().Name}: {ex.Message}");
-            ExitProfiler("capture-exception", exitCode: 1);
+            ExitProfiler("capture-exception", 1);
         }
         finally
         {
@@ -610,7 +618,7 @@ internal sealed partial class MainWindow : Window, IDisposable
             ["requested"] = requested,
             ["actual"] = actual
         });
-        ExitProfiler($"capture-{selectorKind}-mismatch", exitCode: 2);
+        ExitProfiler($"capture-{selectorKind}-mismatch", 2);
         return false;
     }
 

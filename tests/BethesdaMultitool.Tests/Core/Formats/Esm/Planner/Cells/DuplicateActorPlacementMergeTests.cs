@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
@@ -30,7 +29,7 @@ public sealed class DuplicateActorPlacementMergeTests
     {
         var cells = Apply(
             MakeCell(NewActor(ProtoAchrId, NpcBaseId)),
-            masterAchrs: [(MasterAchrId, NpcBaseId)]);
+            [(MasterAchrId, NpcBaseId)]);
 
         var child = Assert.Single(cells[CellId].TemporaryChildren);
         Assert.Equal(RecordDisposition.Override, child.Disposition);
@@ -44,7 +43,7 @@ public sealed class DuplicateActorPlacementMergeTests
     {
         var cells = Apply(
             MakeCell(NewActor(ProtoAchrId, NpcBaseId)),
-            masterAchrs: [(MasterAchrId, NpcBaseId), (0x000B1001, NpcBaseId)]);
+            [(MasterAchrId, NpcBaseId), (0x000B1001, NpcBaseId)]);
 
         var child = Assert.Single(cells[CellId].TemporaryChildren);
         Assert.Equal(RecordDisposition.New, child.Disposition);
@@ -54,7 +53,7 @@ public sealed class DuplicateActorPlacementMergeTests
     [Fact]
     public void Base_Without_Master_Placement_Stays_New()
     {
-        var cells = Apply(MakeCell(NewActor(ProtoAchrId, NpcBaseId)), masterAchrs: []);
+        var cells = Apply(MakeCell(NewActor(ProtoAchrId, NpcBaseId)), []);
 
         var child = Assert.Single(cells[CellId].TemporaryChildren);
         Assert.Equal(RecordDisposition.New, child.Disposition);
@@ -88,7 +87,7 @@ public sealed class DuplicateActorPlacementMergeTests
         // placement must drop, not convert into a second override of the same FormID.
         var capturedOverride = NewActor(MasterAchrId, NpcBaseId) with
         {
-            Disposition = RecordDisposition.Override,
+            Disposition = RecordDisposition.Override
         };
         var cellA = MakeCell(capturedOverride);
         var cellB = MakeCell(NewActor(ProtoAchrId, NpcBaseId)) with { CellFormId = CellId + 1 };
@@ -108,7 +107,7 @@ public sealed class DuplicateActorPlacementMergeTests
     public void Non_Actor_Child_Is_Untouched()
     {
         var refr = NewActor(ProtoAchrId, NpcBaseId) with { Type = "REFR" };
-        var cells = Apply(MakeCell(refr), masterAchrs: [(MasterAchrId, NpcBaseId)]);
+        var cells = Apply(MakeCell(refr), [(MasterAchrId, NpcBaseId)]);
 
         var child = Assert.Single(cells[CellId].TemporaryChildren);
         Assert.Equal(RecordDisposition.New, child.Disposition);
@@ -146,48 +145,54 @@ public sealed class DuplicateActorPlacementMergeTests
         return masterByFormId;
     }
 
-    private static CellPlan MakeCell(params RecordPlan[] temporary) => new()
+    private static CellPlan MakeCell(params RecordPlan[] temporary)
     {
-        CellFormId = CellId,
-        CellRecordPlan = new RecordPlan
+        return new CellPlan
         {
-            Type = "CELL",
+            CellFormId = CellId,
+            CellRecordPlan = new RecordPlan
+            {
+                Type = "CELL",
+                Disposition = RecordDisposition.New,
+                FormId = CellId,
+                Model = new CellRecord { FormId = CellId },
+                Master = null,
+                References = ImmutableArray<ResolvedRef>.Empty,
+                ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+            },
+            Context = new PcEsmCellContext
+            {
+                CellFormId = CellId,
+                IsInterior = false,
+                WorldspaceFormId = 0x000DA726,
+                BlockGroupType = 4,
+                SubblockGroupType = 5,
+                BlockLabel = null,
+                SubblockLabel = null
+            },
+            PersistentChildren = ImmutableArray<RecordPlan>.Empty,
+            VwdChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = [.. temporary],
+            ParentWorldspaceFormId = 0x000DA726,
+            Mode = CellMergeMode.LoadedReplacement
+        };
+    }
+
+    private static RecordPlan NewActor(uint formId, uint baseFormId)
+    {
+        return new RecordPlan
+        {
+            Type = "ACHR",
             Disposition = RecordDisposition.New,
-            FormId = CellId,
-            Model = new CellRecord { FormId = CellId },
-            Master = null,
+            FormId = formId,
+            Model = new PlacedReference
+            {
+                FormId = formId, BaseFormId = baseFormId, RecordType = "ACHR", IsPersistent = true
+            },
             References = ImmutableArray<ResolvedRef>.Empty,
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
             Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
-        },
-        Context = new PcEsmCellContext
-        {
-            CellFormId = CellId,
-            IsInterior = false,
-            WorldspaceFormId = 0x000DA726,
-            BlockGroupType = 4,
-            SubblockGroupType = 5,
-            BlockLabel = null,
-            SubblockLabel = null,
-        },
-        PersistentChildren = ImmutableArray<RecordPlan>.Empty,
-        VwdChildren = ImmutableArray<RecordPlan>.Empty,
-        TemporaryChildren = [.. temporary],
-        ParentWorldspaceFormId = 0x000DA726,
-        Mode = CellMergeMode.LoadedReplacement,
-    };
-
-    private static RecordPlan NewActor(uint formId, uint baseFormId) => new()
-    {
-        Type = "ACHR",
-        Disposition = RecordDisposition.New,
-        FormId = formId,
-        Model = new PlacedReference
-        {
-            FormId = formId, BaseFormId = baseFormId, RecordType = "ACHR", IsPersistent = true
-        },
-        References = ImmutableArray<ResolvedRef>.Empty,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
-    };
+        };
+    }
 }

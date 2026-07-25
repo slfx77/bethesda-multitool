@@ -24,7 +24,7 @@ public sealed class LegacyWaterAnimationTests
     public void TwelveFpsSelectionLoopsAcrossAllThirtyTwoFrames(float elapsedSeconds, int expected)
     {
         Assert.Equal(expected, LegacyWaterAnimation.SelectFrame(
-            elapsedSeconds, framesPerSecond: 12f, LegacyWaterAnimation.FrameCount));
+            elapsedSeconds, 12f, LegacyWaterAnimation.FrameCount));
     }
 
     [Theory]

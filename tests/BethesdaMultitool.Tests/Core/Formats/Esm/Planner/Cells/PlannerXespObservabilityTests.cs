@@ -117,7 +117,7 @@ public sealed class PlannerXespObservabilityTests
             FormId = sourceParent,
             BaseFormId = 0x0000001F,
             RecordType = "REFR",
-            IsPersistent = true,
+            IsPersistent = true
         };
         var parentPlan = MakeRecordPlan(
             "REFR", RecordDisposition.New, emittedParent, parent, sourceParent);
@@ -126,29 +126,29 @@ public sealed class PlannerXespObservabilityTests
             {
                 Verdict = verdict,
                 FinalBaseFormId = parent.BaseFormId,
-                TargetGroupType = 8,
+                TargetGroupType = 8
             }
             : new PlacedRefDecision
             {
                 Verdict = verdict,
-                DropReason = "refr.diagnostic-skip-new",
+                DropReason = "refr.diagnostic-skip-new"
             };
         var cellPlan = new CellPlan
         {
             CellFormId = cellFormId,
             CellRecordPlan = MakeRecordPlan(
-                "CELL", RecordDisposition.Override, cellFormId, model: null),
+                "CELL", RecordDisposition.Override, cellFormId, null),
             Context = new PcEsmCellContext
             {
                 CellFormId = cellFormId,
-                IsInterior = true,
+                IsInterior = true
             },
             PersistentChildren = [parentPlan],
             VwdChildren = ImmutableArray<RecordPlan>.Empty,
             TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
             Emits = true,
             RefDecisions = ImmutableDictionary<uint, PlacedRefDecision>.Empty
-                .Add(emittedParent, decision),
+                .Add(emittedParent, decision)
         };
 
         return MakeEmptyPlan() with
@@ -156,7 +156,7 @@ public sealed class PlannerXespObservabilityTests
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(cellFormId, cellPlan),
             SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty
                 .Add(sourceParent, emittedParent),
-            EmittedFormIds = ImmutableHashSet.Create(emittedParent),
+            EmittedFormIds = ImmutableHashSet.Create(emittedParent)
         };
     }
 
@@ -165,29 +165,35 @@ public sealed class PlannerXespObservabilityTests
         RecordDisposition disposition,
         uint formId,
         object? model,
-        uint? sourceFormId = null) => new()
+        uint? sourceFormId = null)
     {
-        Type = type,
-        Disposition = disposition,
-        FormId = formId,
-        SourceFormId = sourceFormId,
-        Model = model,
-        References = ImmutableArray<ResolvedRef>.Empty,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
-    };
-
-    private static EmitPlan MakeEmptyPlan() => new()
-    {
-        Records = ImmutableArray<RecordPlan>.Empty,
-        SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-        EmittedFormIds = ImmutableHashSet<uint>.Empty,
-        RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
-        Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-        Meta = new PlanMetadata
+        return new RecordPlan
         {
-            NextObjectId = 0x800,
-            PlannerCoverage = ImmutableHashSet<string>.Empty,
-        },
-    };
+            Type = type,
+            Disposition = disposition,
+            FormId = formId,
+            SourceFormId = sourceFormId,
+            Model = model,
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+        };
+    }
+
+    private static EmitPlan MakeEmptyPlan()
+    {
+        return new EmitPlan
+        {
+            Records = ImmutableArray<RecordPlan>.Empty,
+            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
+            EmittedFormIds = ImmutableHashSet<uint>.Empty,
+            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
+            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
+            Meta = new PlanMetadata
+            {
+                NextObjectId = 0x800,
+                PlannerCoverage = ImmutableHashSet<string>.Empty
+            }
+        };
+    }
 }

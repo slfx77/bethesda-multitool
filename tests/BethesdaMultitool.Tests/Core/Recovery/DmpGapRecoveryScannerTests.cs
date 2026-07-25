@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
@@ -21,6 +20,7 @@ public sealed class DmpGapRecoveryScannerTests
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(4, 4), 4);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(8, 4), 0);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(12, 4), 0x01001234);
+        WriteAscii(data, 24, "LNAM"); // data begins with a real FLST subrecord (first-subrecord gate)
 
         var result = Scan(data);
 
@@ -41,6 +41,7 @@ public sealed class DmpGapRecoveryScannerTests
         BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(4, 4), 4);
         BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(8, 4), 0);
         BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(12, 4), 0x01004567);
+        WriteAscii(data, 24, "ATAD"); // Xbox-reversed "DATA" — a real RGDL subrecord
 
         var result = Scan(data);
 
@@ -50,6 +51,23 @@ public sealed class DmpGapRecoveryScannerTests
         Assert.Equal(0x01004567u, candidate.FormId);
         Assert.True(candidate.IsBigEndian);
         Assert.Equal(DmpGapRecoveryDisposition.PromoteRawRecord, candidate.Disposition);
+    }
+
+    [Fact]
+    public void Scan_RejectsRawRecordWhoseDataIsNotAKnownSubrecord()
+    {
+        // Valid scalar header (signature/size/flags/FormID) but the "data" is heap garbage that does not
+        // begin with a known subrecord signature — exactly the phantom-record shape found in DMP gaps.
+        var data = new byte[64];
+        WriteAscii(data, 0, "FLST");
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(4, 4), 4);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(8, 4), 0);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(12, 4), 0x01001234);
+        WriteAscii(data, 24, "zzzz"); // not a registered subrecord signature
+
+        var result = Scan(data);
+
+        Assert.Empty(result.Candidates);
     }
 
     [Fact]

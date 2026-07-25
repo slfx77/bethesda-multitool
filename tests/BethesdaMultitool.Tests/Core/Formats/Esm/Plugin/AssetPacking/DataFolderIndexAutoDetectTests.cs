@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using Xunit;
 

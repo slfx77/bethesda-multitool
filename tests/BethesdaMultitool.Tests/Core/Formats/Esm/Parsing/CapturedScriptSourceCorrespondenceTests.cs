@@ -18,6 +18,12 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
         Logger.SetOutput(_output);
     }
 
+    public void Dispose()
+    {
+        Logger.Instance.Reset();
+        _output.Dispose();
+    }
+
     [Fact]
     public void Enforce_ExactCompiledSourcePairPreservesSctx()
     {
@@ -98,7 +104,7 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
         {
             FormId = 0x00123457,
             SourceText = "scn SourceOnlyRecovery\nshort recovered",
-            SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject,
+            SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject
         };
 
         var result = ScriptRecordHandler.EnforceCapturedSourceCorrespondence(script);
@@ -120,7 +126,7 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
             IsCompiled = true,
             SourceText = "scn MalformedHeaderOnly",
             SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject,
-            DecompiledText = "; Unknown opcode 0xFF",
+            DecompiledText = "; Unknown opcode 0xFF"
         };
 
         var result = ScriptRecordHandler.EnforceCapturedSourceCorrespondence(script);
@@ -144,7 +150,7 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
             {
                 EditorId = "CapturedScript",
                 VariableCount = 1,
-                Variables = [new ScriptVariableInfo(1, "LocalState", 0)],
+                Variables = [new ScriptVariableInfo(1, "LocalState", 0)]
             });
 
         Assert.Null(decision.SourceIssue);
@@ -172,7 +178,7 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
             CompleteStandalone(text, text) with
             {
                 VariableCount = 1,
-                Variables = [new ScriptVariableInfo(1, "localstate", 0)],
+                Variables = [new ScriptVariableInfo(1, "localstate", 0)]
             });
 
         Assert.Null(decision.Script.SourceText);
@@ -187,7 +193,7 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
             CompleteStandalone(text, text) with
             {
                 VariableCount = 1,
-                Variables = [new ScriptVariableInfo(1, "targetref", 0)],
+                Variables = [new ScriptVariableInfo(1, "targetref", 0)]
             });
 
         Assert.Null(decision.SourceIssue);
@@ -199,14 +205,14 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
     {
         const string source = "float lOcAlStAtE\nBegin GameMode\nEnd";
         var decision = CapturedScriptEmissionContract.EvaluateInline(
-            isDmpDerived: true,
+            true,
             ScriptSourceTextOrigin.DmpFragment,
             [0x00, 0x1D, 0x00, 0x00],
             source,
             "Begin GameMode\nEnd",
             [new ScriptVariableInfo(1, "LocalState", 0)],
             [],
-            isBigEndian: true);
+            true);
 
         Assert.True(decision.ExecutableBundleSafe);
         Assert.Null(decision.SourceIssue);
@@ -222,14 +228,14 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
         string expectedIssue)
     {
         var decision = CapturedScriptEmissionContract.EvaluateInline(
-            isDmpDerived: true,
+            true,
             ScriptSourceTextOrigin.DmpFragment,
             [0x00, 0x1D, 0x00, 0x00],
             source,
             "Begin GameMode\nEnd",
             [new ScriptVariableInfo(1, "ExactLocal", 0)],
             [],
-            isBigEndian: true);
+            true);
 
         Assert.True(decision.ExecutableBundleSafe);
         Assert.Null(decision.BundleIssue);
@@ -242,17 +248,17 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
     {
         const string source = "float ExactLocal\nfloat OtherLocal\nBegin GameMode\nEnd";
         var decision = CapturedScriptEmissionContract.EvaluateInline(
-            isDmpDerived: true,
+            true,
             ScriptSourceTextOrigin.DmpFragment,
             [0x00, 0x1D, 0x00, 0x00],
             source,
             "Begin GameMode\nEnd",
             [
                 new ScriptVariableInfo(1, "ExactLocal", 0),
-                new ScriptVariableInfo(2, "ExactLocal", 0),
+                new ScriptVariableInfo(2, "ExactLocal", 0)
             ],
             [],
-            isBigEndian: true);
+            true);
 
         Assert.True(decision.ExecutableBundleSafe);
         Assert.Null(decision.BundleIssue);
@@ -283,7 +289,7 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
             {
                 HasSerializedHeader = !malformedHeader,
                 HasMalformedSerializedHeader = malformedHeader,
-                CompiledSize = compiledSize,
+                CompiledSize = compiledSize
             });
 
         Assert.NotNull(decision.BundleIssue);
@@ -309,7 +315,7 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
             EditorId = "SourceOnly",
             IsCompiled = false,
             SourceText = "scn SourceOnly",
-            SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
+            SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment
         });
 
         Assert.Equal("scn SourceOnly", decision.Script.SourceText);
@@ -317,37 +323,37 @@ public sealed class CapturedScriptSourceCorrespondenceTests : IDisposable
         Assert.False(decision.Script.IsIncompleteExecutableBundle);
     }
 
-    public void Dispose()
+    private static ScriptRecord CompiledSource(string source, string decompiled)
     {
-        Logger.Instance.Reset();
-        _output.Dispose();
+        return new ScriptRecord
+        {
+            FormId = 0x00123456,
+            EditorId = "DebugBCHostageScript",
+            CompiledData = [0x00, 0x1D, 0x00, 0x00],
+            IsBigEndian = true,
+            IsCompiled = true,
+            SourceText = source,
+            SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject,
+            DecompiledText = decompiled
+        };
     }
 
-    private static ScriptRecord CompiledSource(string source, string decompiled) => new()
+    private static ScriptRecord CompleteStandalone(string? source, string? decompiled)
     {
-        FormId = 0x00123456,
-        EditorId = "DebugBCHostageScript",
-        CompiledData = [0x00, 0x1D, 0x00, 0x00],
-        IsBigEndian = true,
-        IsCompiled = true,
-        SourceText = source,
-        SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject,
-        DecompiledText = decompiled,
-    };
-
-    private static ScriptRecord CompleteStandalone(string? source, string? decompiled) => new()
-    {
-        FormId = 0x00123460,
-        EditorId = "CapturedScript",
-        HasSerializedHeader = true,
-        CompiledSize = 4,
-        CompiledData = [0x00, 0x1D, 0x00, 0x00],
-        IsBigEndian = true,
-        IsCompiled = true,
-        SourceText = source,
-        SourceTextOrigin = source is null
-            ? ScriptSourceTextOrigin.None
-            : ScriptSourceTextOrigin.DmpFragment,
-        DecompiledText = decompiled,
-    };
+        return new ScriptRecord
+        {
+            FormId = 0x00123460,
+            EditorId = "CapturedScript",
+            HasSerializedHeader = true,
+            CompiledSize = 4,
+            CompiledData = [0x00, 0x1D, 0x00, 0x00],
+            IsBigEndian = true,
+            IsCompiled = true,
+            SourceText = source,
+            SourceTextOrigin = source is null
+                ? ScriptSourceTextOrigin.None
+                : ScriptSourceTextOrigin.DmpFragment,
+            DecompiledText = decompiled
+        };
+    }
 }

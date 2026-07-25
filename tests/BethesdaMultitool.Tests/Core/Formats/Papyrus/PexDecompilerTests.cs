@@ -25,9 +25,9 @@ public sealed class PexDecompilerTests
                 Instruction(PexOpCode.Return, new PexNoneValue())
             ]);
         var file = File(Object(
-            variables: [backingVariable],
-            properties: [property],
-            states: [new PexState(Ref(""), [function])]));
+            [backingVariable],
+            [property],
+            [new PexState(Ref(""), [function])]));
 
         var source = PexDecompiler.Decompile(file);
 
@@ -147,49 +147,71 @@ public sealed class PexDecompilerTests
         Assert.DoesNotContain("JUMPF Condition 3", listing, StringComparison.Ordinal);
     }
 
-    private static PexFile File(PexObject obj) => new(
-        new PexHeader(PexEndianness.Big, 3, 2, PexGameId.Skyrim, 0,
-            "ExampleScript.psc", "user", "computer"),
-        ImmutableArray<string>.Empty,
-        null,
-        ImmutableArray<PexUserFlag>.Empty,
-        [obj],
-        0);
+    private static PexFile File(PexObject obj)
+    {
+        return new PexFile(
+            new PexHeader(PexEndianness.Big, 3, 2, PexGameId.Skyrim, 0,
+                "ExampleScript.psc", "user", "computer"),
+            ImmutableArray<string>.Empty,
+            null,
+            ImmutableArray<PexUserFlag>.Empty,
+            [obj],
+            0);
+    }
 
     private static PexObject Object(
         ImmutableArray<PexVariable> variables = default,
         ImmutableArray<PexProperty> properties = default,
-        ImmutableArray<PexState> states = default) => new(
-        Ref("ExampleScript"),
-        0,
-        Ref("Quest"),
-        Ref(""),
-        false,
-        0,
-        Ref(""),
-        ImmutableArray<PexStruct>.Empty,
-        variables.IsDefault ? [] : variables,
-        properties.IsDefault ? [] : properties,
-        states.IsDefault ? [] : states);
+        ImmutableArray<PexState> states = default)
+    {
+        return new PexObject(
+            Ref("ExampleScript"),
+            0,
+            Ref("Quest"),
+            Ref(""),
+            false,
+            0,
+            Ref(""),
+            ImmutableArray<PexStruct>.Empty,
+            variables.IsDefault ? [] : variables,
+            properties.IsDefault ? [] : properties,
+            states.IsDefault ? [] : states);
+    }
 
     private static PexFunction Function(
         string name,
         string returnType,
         ImmutableArray<PexTypedName> locals,
-        ImmutableArray<PexInstruction> instructions) => new(
-        Ref(name),
-        Ref(returnType),
-        Ref(""),
-        0,
-        PexFunctionFlags.None,
-        ImmutableArray<PexTypedName>.Empty,
-        locals,
-        instructions);
+        ImmutableArray<PexInstruction> instructions)
+    {
+        return new PexFunction(
+            Ref(name),
+            Ref(returnType),
+            Ref(""),
+            0,
+            PexFunctionFlags.None,
+            ImmutableArray<PexTypedName>.Empty,
+            locals,
+            instructions);
+    }
 
     private static PexInstruction Instruction(PexOpCode opcode, params PexValue[] arguments)
-        => new(opcode, [.. arguments], ImmutableArray<PexValue>.Empty);
+    {
+        return new PexInstruction(opcode, [.. arguments], ImmutableArray<PexValue>.Empty);
+    }
 
-    private static PexIdentifierValue Id(string value) => new(Ref(value));
-    private static PexIntegerValue Int(int value) => new(value);
-    private static PexStringReference Ref(string value) => new(0, value);
+    private static PexIdentifierValue Id(string value)
+    {
+        return new PexIdentifierValue(Ref(value));
+    }
+
+    private static PexIntegerValue Int(int value)
+    {
+        return new PexIntegerValue(value);
+    }
+
+    private static PexStringReference Ref(string value)
+    {
+        return new PexStringReference(0, value);
+    }
 }

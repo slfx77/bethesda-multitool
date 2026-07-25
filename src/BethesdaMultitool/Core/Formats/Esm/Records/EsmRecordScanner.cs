@@ -319,6 +319,14 @@ internal static class EsmRecordScanner
             return null;
         }
 
+        // Reject heap garbage that passes the scalar header gates but is not a real record: a genuine
+        // record's data begins with a known subrecord signature, while a fabricated header (e.g. the
+        // heap string "PACKAGE\0" whose bytes satisfy the signature/size/FormID checks) does not.
+        if (!RecordValidator.HasPlausibleFirstSubrecord(data, i, headerSize, dataLength, isBigEndian, flags))
+        {
+            return null;
+        }
+
         return new DetectedMainRecord(recordType, dataSize, flags, formId, i, isBigEndian)
         {
             HeaderSize = headerSize, // 20 for Oblivion (TES4 w/o version trailer), 24 for FO3/FNV/Skyrim+

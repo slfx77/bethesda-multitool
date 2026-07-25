@@ -19,7 +19,7 @@ public sealed class NavmDoorLinkPlannerTests
     [Fact]
     public void Build_MapsClonedDoorAndKeepsMasterAndCloneLive()
     {
-        var plan = MakePlan(new RecordPlan[] { MakeDoorClone(EmittedDoorRef) });
+        var plan = MakePlan(MakeDoorClone(EmittedDoorRef));
         var master = MakeMasterRecords();
 
         var result = NavmDoorLinkPlanner.Build(plan, master);
@@ -41,8 +41,8 @@ public sealed class NavmDoorLinkPlannerTests
                 {
                     Verdict = PlacedRefEmitVerdict.Drop,
                     DropReason = "test",
-                    TargetGroupType = 9,
-                }),
+                    TargetGroupType = 9
+                })
         };
         var plan = MakePlan(cell);
 
@@ -56,86 +56,97 @@ public sealed class NavmDoorLinkPlannerTests
     [Fact]
     public void Build_AmbiguousDuplicateCloneFails()
     {
-        var plan = MakePlan(new RecordPlan[]
-        {
-            MakeDoorClone(EmittedDoorRef),
-            MakeDoorClone(EmittedDoorRef + 1),
-        });
+        var plan = MakePlan(MakeDoorClone(EmittedDoorRef), MakeDoorClone(EmittedDoorRef + 1));
 
-        var error = Assert.Throws<InvalidOperationException>(
-            () => NavmDoorLinkPlanner.Build(plan, MakeMasterRecords()));
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            NavmDoorLinkPlanner.Build(plan, MakeMasterRecords()));
 
         Assert.Contains($"0x{SourceDoorRef:X8}", error.Message);
     }
 
-    private static EmitPlan MakePlan(params RecordPlan[] children) => MakePlan(MakeCell(children));
-
-    private static EmitPlan MakePlan(CellPlan cell) => new()
+    private static EmitPlan MakePlan(params RecordPlan[] children)
     {
-        Records = ImmutableArray<RecordPlan>.Empty,
-        SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-        EmittedFormIds = ImmutableHashSet<uint>.Empty,
-        RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
-        Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-        Meta = new PlanMetadata
-        {
-            MasterPath = "master.esm",
-            NextObjectId = 0x800,
-            PlannerCoverage = ImmutableHashSet<string>.Empty,
-        },
-        CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(cell.CellFormId, cell),
-    };
+        return MakePlan(MakeCell(children));
+    }
 
-    private static CellPlan MakeCell(IReadOnlyList<RecordPlan> children) => new()
+    private static EmitPlan MakePlan(CellPlan cell)
     {
-        CellFormId = 0x01000300,
-        CellRecordPlan = new RecordPlan
+        return new EmitPlan
         {
-            Type = "CELL",
-            Disposition = RecordDisposition.New,
-            FormId = 0x01000300,
-            References = ImmutableArray<ResolvedRef>.Empty,
-            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
-        },
-        Context = new PcEsmCellContext
+            Records = ImmutableArray<RecordPlan>.Empty,
+            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
+            EmittedFormIds = ImmutableHashSet<uint>.Empty,
+            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
+            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
+            Meta = new PlanMetadata
+            {
+                MasterPath = "master.esm",
+                NextObjectId = 0x800,
+                PlannerCoverage = ImmutableHashSet<string>.Empty
+            },
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(cell.CellFormId, cell)
+        };
+    }
+
+    private static CellPlan MakeCell(IReadOnlyList<RecordPlan> children)
+    {
+        return new CellPlan
         {
             CellFormId = 0x01000300,
-            IsInterior = false,
-            WorldspaceFormId = 0x01000200,
-            BlockGroupType = 4,
-            SubblockGroupType = 5,
-            BlockLabel = [0, 0, 0, 0],
-            SubblockLabel = [0, 0, 0, 0],
-        },
-        PersistentChildren = ImmutableArray<RecordPlan>.Empty,
-        VwdChildren = ImmutableArray<RecordPlan>.Empty,
-        TemporaryChildren = [.. children],
-        Emits = true,
-    };
+            CellRecordPlan = new RecordPlan
+            {
+                Type = "CELL",
+                Disposition = RecordDisposition.New,
+                FormId = 0x01000300,
+                References = ImmutableArray<ResolvedRef>.Empty,
+                ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+            },
+            Context = new PcEsmCellContext
+            {
+                CellFormId = 0x01000300,
+                IsInterior = false,
+                WorldspaceFormId = 0x01000200,
+                BlockGroupType = 4,
+                SubblockGroupType = 5,
+                BlockLabel = [0, 0, 0, 0],
+                SubblockLabel = [0, 0, 0, 0]
+            },
+            PersistentChildren = ImmutableArray<RecordPlan>.Empty,
+            VwdChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = [.. children],
+            Emits = true
+        };
+    }
 
-    private static RecordPlan MakeDoorClone(uint emittedFormId) => new()
+    private static RecordPlan MakeDoorClone(uint emittedFormId)
     {
-        Type = "REFR",
-        Disposition = RecordDisposition.New,
-        FormId = emittedFormId,
-        SourceFormId = SourceDoorRef,
-        Model = new PlacedReference
+        return new RecordPlan
         {
-            FormId = SourceDoorRef,
-            BaseFormId = DoorBase,
-            RecordType = "REFR",
-        },
-        References = ImmutableArray<ResolvedRef>.Empty,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "OverrideDoorCloning", Reason = "test" },
-    };
+            Type = "REFR",
+            Disposition = RecordDisposition.New,
+            FormId = emittedFormId,
+            SourceFormId = SourceDoorRef,
+            Model = new PlacedReference
+            {
+                FormId = SourceDoorRef,
+                BaseFormId = DoorBase,
+                RecordType = "REFR"
+            },
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "OverrideDoorCloning", Reason = "test" }
+        };
+    }
 
-    private static Dictionary<uint, ParsedMainRecord> MakeMasterRecords() => new()
+    private static Dictionary<uint, ParsedMainRecord> MakeMasterRecords()
     {
-        [DoorBase] = MakeRecord("DOOR", DoorBase),
-        [SourceDoorRef] = MakeRecord("REFR", SourceDoorRef, DoorBase),
-    };
+        return new Dictionary<uint, ParsedMainRecord>
+        {
+            [DoorBase] = MakeRecord("DOOR", DoorBase),
+            [SourceDoorRef] = MakeRecord("REFR", SourceDoorRef, DoorBase)
+        };
+    }
 
     private static ParsedMainRecord MakeRecord(string signature, uint formId, uint? baseFormId = null)
     {
@@ -157,10 +168,10 @@ public sealed class NavmDoorLinkPlannerTests
                 FormId = formId,
                 Timestamp = 0,
                 VcsInfo = 0,
-                Version = 15,
+                Version = 15
             },
             Offset = 0,
-            Subrecords = subrecords,
+            Subrecords = subrecords
         };
     }
 }

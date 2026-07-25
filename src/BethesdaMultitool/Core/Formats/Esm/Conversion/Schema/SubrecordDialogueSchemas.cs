@@ -282,6 +282,23 @@ internal static class SubrecordDialogueSchemas
             Description = "Camera Shot Data"
         };
 
+        // DATA - CAMS (36 bytes) - truncated form (xEdit: TargetPctBetweenActors is optional from
+        // element 7, so records without it are 36 bytes). Registering the prefix explicitly stops the
+        // DATA→FloatArray fallback, which would read only the first float and mistype the u32 fields.
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "CAMS", 36)] = new SubrecordSchema(
+            F.UInt32("Action"),
+            F.UInt32("Location"),
+            F.UInt32("Target"),
+            F.UInt32("Flags"),
+            F.Float("PlayerTimeMult"),
+            F.Float("TargetTimeMult"),
+            F.Float("GlobalTimeMult"),
+            F.Float("MaxTime"),
+            F.Float("MinTime"))
+        {
+            Description = "Camera Shot Data (truncated, no TargetPctBetweenActors)"
+        };
+
         // ANAM - CPTH (8 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("ANAM", "CPTH", 8)] = new SubrecordSchema(
             F.FormId("Parent"),

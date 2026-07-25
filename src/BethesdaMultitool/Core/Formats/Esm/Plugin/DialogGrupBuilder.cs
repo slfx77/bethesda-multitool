@@ -813,7 +813,8 @@ internal static class DialogGrupBuilder
             $"Emitted {emittedDials:N0} new DIAL + {emittedMasterDialAnchors:N0} master DIAL anchor(s) " +
             $"+ {emittedInfos - emittedSharedInfoOverlays:N0} new INFO record(s) + " +
             $"{emittedSharedInfoOverlays:N0} retail INFO overlay(s) " +
-            $"({overlaidResponseTexts:N0} NAM1 replacement(s); all other retail bytes preserved). " +
+            $"({overlaidResponseTexts:N0} NAM1 replacement(s); all other retail bytes preserved; " +
+            $"{combinePlan.NoOpOverlaysSuppressed:N0} no-op overlay(s) with no text delta suppressed). " +
             $"Collapsed {combinePlan.DuplicateInfosCollapsed:N0} duplicate INFO capture(s), rehomed " +
             $"{combinePlan.CutInfosRehomed:N0} safe cut INFO(s), and suppressed " +
             $"{combinePlan.SystemInfosSuppressed:N0} unsafe/colliding system INFO(s). " +

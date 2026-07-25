@@ -32,7 +32,7 @@ public sealed class CollisionWireframeGeometryCacheTests
             [
                 new Vector3(0, 0, 0), new Vector3(1, 0, 0),
                 new Vector3(1, 0, 0), new Vector3(0, 1, 0),
-                new Vector3(0, 1, 0), new Vector3(0, 0, 0),
+                new Vector3(0, 1, 0), new Vector3(0, 0, 0)
             ],
             harness.UploadedVertices[0]);
     }
@@ -134,13 +134,13 @@ public sealed class CollisionWireframeGeometryCacheTests
     public void Resolve_VertexCap_StopsAtWholeTriangleAndIgnoresNonRenderedTail()
     {
         var harness = new BufferHarness();
-        using var cache = harness.CreateCache(maxLineVertices: 8); // effective whole-triangle cap = 6
+        using var cache = harness.CreateCache(8); // effective whole-triangle cap = 6
         var firstMesh = TriangleMesh();
         var cappedTail = TriangleMesh();
         CollisionWireframeInstance[] instances =
         [
             new(firstMesh, Matrix4x4.Identity),
-            new(cappedTail, Matrix4x4.CreateTranslation(5, 0, 0)),
+            new(cappedTail, Matrix4x4.CreateTranslation(5, 0, 0))
         ];
 
         var first = cache.Resolve(instances);
@@ -154,9 +154,11 @@ public sealed class CollisionWireframeGeometryCacheTests
     }
 
     private static CollisionMesh TriangleMesh()
-        => new(
+    {
+        return new CollisionMesh(
             [new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0, 1, 0)],
             [0, 1, 2]);
+    }
 
     private sealed class BufferHarness
     {
@@ -166,7 +168,9 @@ public sealed class CollisionWireframeGeometryCacheTests
         public List<FakeBuffer> Buffers { get; } = [];
 
         public CollisionWireframeGeometryCache<FakeBuffer> CreateCache(int maxLineVertices = 500_000)
-            => new(Upload, Retire, maxLineVertices);
+        {
+            return new CollisionWireframeGeometryCache<FakeBuffer>(Upload, Retire, maxLineVertices);
+        }
 
         private FakeBuffer Upload(Vector3[] vertices, int count)
         {

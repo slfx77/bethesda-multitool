@@ -201,15 +201,15 @@ public class EsmWorldExtractorLandDiagnosticsTests
         var captured = new LandHeightmap
         {
             HeightOffset = 10f,
-            HeightDeltas = new sbyte[33 * 33],
+            HeightDeltas = new sbyte[33 * 33]
         };
         var mesh = new RuntimeTerrainMesh
         {
-            Vertices = Enumerable.Repeat(1f, 33 * 33 * 3).ToArray(),
+            Vertices = Enumerable.Repeat(1f, 33 * 33 * 3).ToArray()
         };
         var visualData = new LandVisualData
         {
-            VertexColors = new byte[33 * 33 * 3],
+            VertexColors = new byte[33 * 33 * 3]
         };
         var scanResult = new EsmRecordScanResult
         {
@@ -225,9 +225,9 @@ public class EsmWorldExtractorLandDiagnosticsTests
                     Heightmap = captured,
                     ParsedHeightmap = captured,
                     VisualData = visualData,
-                    RuntimeTerrainMesh = mesh,
-                },
-            ],
+                    RuntimeTerrainMesh = mesh
+                }
+            ]
         };
         var cells = new List<CellRecord>
         {
@@ -236,15 +236,15 @@ public class EsmWorldExtractorLandDiagnosticsTests
                 FormId = parentCellFormId,
                 WorldspaceFormId = 0x00002000,
                 GridX = 2,
-                GridY = 3,
+                GridY = 3
             },
             new()
             {
                 FormId = 0x00006001,
                 WorldspaceFormId = 0x00002000,
                 GridX = 2,
-                GridY = 3,
-            },
+                GridY = 3
+            }
         };
 
         CellRecordHandler.AttachTerrainDataFromLandRecords(cells, scanResult);

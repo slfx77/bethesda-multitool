@@ -120,7 +120,7 @@ public sealed class ScriptReferenceSafetyPlannerTests
         {
             FormId = 0x00100000,
             SourceText = "scn ExactSourceOnlyName\nshort recovered",
-            SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject,
+            SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject
         });
 
         var plan = BuildPlanner().Build(

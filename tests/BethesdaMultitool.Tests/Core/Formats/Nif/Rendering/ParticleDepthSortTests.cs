@@ -13,7 +13,7 @@ public sealed class ParticleDepthSortTests
         [
             new(0f, 0f, 2f),
             new(0f, 0f, 8f),
-            new(0f, 0f, 5f),
+            new(0f, 0f, 5f)
         ];
         var world = Matrix4x4.CreateTranslation(0f, 0f, 10f);
         var scratch = new ParticleDepthSort.Entry[centers.Length];
@@ -26,7 +26,7 @@ public sealed class ParticleDepthSortTests
         [
             4, 5, 6, 4, 6, 7,
             8, 9, 10, 8, 10, 11,
-            0, 1, 2, 0, 2, 3,
+            0, 1, 2, 0, 2, 3
         ], indices);
     }
 
@@ -44,7 +44,7 @@ public sealed class ParticleDepthSortTests
         [
             0, 1, 2, 0, 2, 3,
             4, 5, 6, 4, 6, 7,
-            8, 9, 10, 8, 10, 11,
+            8, 9, 10, 8, 10, 11
         ], indices);
     }
 }

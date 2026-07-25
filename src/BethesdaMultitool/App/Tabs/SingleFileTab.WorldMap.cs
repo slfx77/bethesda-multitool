@@ -852,14 +852,30 @@ public sealed partial class SingleFileTab
         WorldSettingsPresenter.Content = show3D
             ? (UIElement)WorldView3DControl.SettingsPanel
             : WorldMapControl.SettingsPanel;
+
+        // The Export tab is 3D-only: seed it with the 3D viewer's export panel and hide the tab in 2D.
+        // If it was the selected tab when leaving 3D, fall back to Settings.
+        WorldExportPresenter.Content = show3D ? WorldView3DControl.ExportPanel : null;
+        WorldPanelExportItem.Visibility = show3D ? Visibility.Visible : Visibility.Collapsed;
+        if (!show3D && WorldPanelSelector.SelectedItem == WorldPanelExportItem)
+        {
+            WorldPanelSelector.SelectedItem = WorldPanelSettingsItem;
+        }
+        if (show3D) WorldView3DControl.RefreshExportBounds();
     }
 
-    /// <summary>Settings ↔ Inspection tab switch for the world-map right panel (SelectorBar).</summary>
+    /// <summary>Settings / Inspection / Export tab switch for the world-map right panel (SelectorBar).</summary>
     private void WorldPanelSelector_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
         var settings = sender.SelectedItem == WorldPanelSettingsItem;
+        var export = sender.SelectedItem == WorldPanelExportItem;
         WorldSettingsHost.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
-        WorldInspectionHost.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
+        WorldExportHost.Visibility = export ? Visibility.Visible : Visibility.Collapsed;
+        WorldInspectionHost.Visibility = !settings && !export ? Visibility.Visible : Visibility.Collapsed;
+        // Only draw the export framing overlay while its tab is up; refresh bounds/output-size on open
+        // so they reflect the current worldspace (covers a worldspace/interior change since last open).
+        WorldView3DControl.SetExportFramingActive(export);
+        if (export) WorldView3DControl.RefreshExportBounds();
     }
 }
 

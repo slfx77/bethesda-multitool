@@ -477,6 +477,24 @@ internal static class SubrecordEffectSchemas
             Description = "Impact Data Set - Material Impact References"
         };
 
+        // DATA - IPDS truncated forms. xEdit marks the last three materials (HollowMetal, OrganicBug,
+        // OrganicGlow) optional from element 9, so a record can be 36/40/44 bytes (9/10/11 FormIDs).
+        // Registering the prefixes explicitly stops the DATA→FloatArray fallback, which would read only
+        // the first FormID as a float and drop the rest.
+        var ipdsMaterials = new[]
+        {
+            "Stone", "Dirt", "Grass", "Glass", "Metal", "Wood", "Organic", "Cloth", "Water",
+            "HollowMetal", "OrganicBug"
+        };
+        foreach (var formIdCount in new[] { 9, 10, 11 })
+        {
+            schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "IPDS", formIdCount * 4)] =
+                new SubrecordSchema(ipdsMaterials.Take(formIdCount).Select(F.FormId).ToArray())
+                {
+                    Description = $"Impact Data Set (truncated, {formIdCount} materials)"
+                };
+        }
+
         schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "IPCT", 4)] = SubrecordSchema.Simple4Byte("Impact Data");
         schemas[new SubrecordSchemaRegistry.SchemaKey("NAM1", "IPCT", 4)] =
             SubrecordSchema.Simple4Byte("Secondary Effect FormID");

@@ -26,7 +26,7 @@ public sealed class TruncatedSlsdParserTests
         { "PACK", 23 },
         { "TERM", 16 },
         { "TERM", 17 },
-        { "TERM", 23 },
+        { "TERM", 23 }
     };
 
     public static TheoryData<string, string, uint?> MalformedSerializedLocalCases
@@ -192,57 +192,59 @@ public sealed class TruncatedSlsdParserTests
         }
     }
 
-    private static List<(string Signature, byte[] Data)> MalformedLocalSubrecords(string malformedCase) =>
-        malformedCase switch
+    private static List<(string Signature, byte[] Data)> MalformedLocalSubrecords(string malformedCase)
+    {
+        return malformedCase switch
         {
             "orphan-slsd" =>
             [
                 ("SLSD", ScriptLocal(9, 0)),
                 ("SLSD", ScriptLocal(10, 1)),
-                ("SCVR", NullTermString("valid10")),
+                ("SCVR", NullTermString("valid10"))
             ],
             "trailing-slsd" =>
             [
                 ("SLSD", ScriptLocal(10, 1)),
                 ("SCVR", NullTermString("valid10")),
-                ("SLSD", ScriptLocal(9, 0)),
+                ("SLSD", ScriptLocal(9, 0))
             ],
             "nonadjacent-slsd" =>
             [
                 ("SLSD", ScriptLocal(9, 0)),
                 ("XXXX", []),
-                ("SCVR", NullTermString("mustNotBeRecovered")),
+                ("SCVR", NullTermString("mustNotBeRecovered"))
             ],
             "orphan-scvr" => [("SCVR", NullTermString("mustNotBeRecovered"))],
             "zero-id" =>
             [
                 ("SLSD", ScriptLocal(0, 0)),
-                ("SCVR", NullTermString("mustNotBeRecovered")),
+                ("SCVR", NullTermString("mustNotBeRecovered"))
             ],
             "duplicate-id" =>
             [
                 ("SLSD", ScriptLocal(9, 0)),
                 ("SCVR", NullTermString("valid9")),
                 ("SLSD", ScriptLocal(9, 1)),
-                ("SCVR", NullTermString("mustNotBeRecovered")),
+                ("SCVR", NullTermString("mustNotBeRecovered"))
             ],
             "invalid-raw-type" =>
             [
                 ("SLSD", ScriptLocal(9, 2)),
-                ("SCVR", NullTermString("mustNotBeRecovered")),
+                ("SCVR", NullTermString("mustNotBeRecovered"))
             ],
             "empty-name" =>
             [
                 ("SLSD", ScriptLocal(9, 0)),
-                ("SCVR", NullTermString("")),
+                ("SCVR", NullTermString(""))
             ],
             "whitespace-name" =>
             [
                 ("SLSD", ScriptLocal(9, 0)),
-                ("SCVR", NullTermString("   ")),
+                ("SCVR", NullTermString("   "))
             ],
-            _ => throw new ArgumentOutOfRangeException(nameof(malformedCase), malformedCase, null),
+            _ => throw new ArgumentOutOfRangeException(nameof(malformedCase), malformedCase, null)
         };
+    }
 
     private static byte[] ScriptLocal(uint variableId, byte rawType)
     {
@@ -268,10 +270,35 @@ public sealed class TruncatedSlsdParserTests
         return new ParserFixture(recordBytes, mainRecord);
     }
 
+    private static List<(string Signature, byte[] Data)> OwnerPrefix(string ownerType)
+    {
+        return ownerType switch
+        {
+            "SCPT" => [("EDID", NullTermString("TruncatedLocalScript"))],
+            "INFO" =>
+            [
+                ("EDID", NullTermString("TruncatedLocalInfo")),
+                ("TRDT", new byte[24]),
+                ("NAM1", NullTermString("Test response"))
+            ],
+            "PACK" =>
+            [
+                ("EDID", NullTermString("TruncatedLocalPackage")),
+                ("POBA", [])
+            ],
+            "TERM" =>
+            [
+                ("EDID", NullTermString("TruncatedLocalTerminal")),
+                ("ITXT", NullTermString("Run test"))
+            ],
+            _ => throw new ArgumentOutOfRangeException(nameof(ownerType), ownerType, null)
+        };
+    }
+
     private sealed class ParserFixture : IDisposable
     {
-        private readonly MemoryMappedFile _mmf;
         private readonly MemoryMappedViewAccessor _accessor;
+        private readonly MemoryMappedFile _mmf;
 
         internal ParserFixture(byte[] recordBytes, DetectedMainRecord mainRecord)
         {
@@ -292,27 +319,4 @@ public sealed class TruncatedSlsdParserTests
             _mmf.Dispose();
         }
     }
-
-    private static List<(string Signature, byte[] Data)> OwnerPrefix(string ownerType) =>
-        ownerType switch
-        {
-            "SCPT" => [("EDID", NullTermString("TruncatedLocalScript"))],
-            "INFO" =>
-            [
-                ("EDID", NullTermString("TruncatedLocalInfo")),
-                ("TRDT", new byte[24]),
-                ("NAM1", NullTermString("Test response")),
-            ],
-            "PACK" =>
-            [
-                ("EDID", NullTermString("TruncatedLocalPackage")),
-                ("POBA", []),
-            ],
-            "TERM" =>
-            [
-                ("EDID", NullTermString("TruncatedLocalTerminal")),
-                ("ITXT", NullTermString("Run test")),
-            ],
-            _ => throw new ArgumentOutOfRangeException(nameof(ownerType), ownerType, null),
-        };
 }

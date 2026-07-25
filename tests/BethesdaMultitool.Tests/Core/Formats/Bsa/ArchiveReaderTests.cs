@@ -1,6 +1,6 @@
 using System.Text;
-using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Bsa;
+using BethesdaMultitool.Core.Formats.Bsa.Index;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Bsa;

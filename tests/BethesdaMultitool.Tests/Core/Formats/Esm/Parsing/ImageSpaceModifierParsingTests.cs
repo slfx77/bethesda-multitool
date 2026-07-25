@@ -33,7 +33,7 @@ public sealed class ImageSpaceModifierParsingTests
             ImageSpaceModifierParameter.CinematicSaturation,
             ImageSpaceModifierParameter.CinematicContrastAvgLum,
             ImageSpaceModifierParameter.CinematicContrast,
-            ImageSpaceModifierParameter.CinematicBrightness,
+            ImageSpaceModifierParameter.CinematicBrightness
         ];
 
         Assert.Equal(Enumerable.Range(0, 21), expected.Select(value => (int)value));

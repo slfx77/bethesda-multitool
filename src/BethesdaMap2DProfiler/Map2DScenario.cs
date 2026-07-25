@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core;
 using BethesdaMultitool;
 using Microsoft.UI.Dispatching;
 

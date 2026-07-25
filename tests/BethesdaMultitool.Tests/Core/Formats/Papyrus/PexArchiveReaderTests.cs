@@ -25,7 +25,7 @@ public sealed class PexArchiveReaderTests
 
             Assert.False(archive.IsBa2);
             var entry = Assert.Single(archive.Entries);
-            Assert.Equal("scripts\\Example.pex", entry.VirtualPath, ignoreCase: true);
+            Assert.Equal("scripts\\Example.pex", entry.VirtualPath, true);
             Assert.Same(entry, archive.Find("scripts/Example.pex"));
             Assert.Same(entry, archive.Find("example"));
 

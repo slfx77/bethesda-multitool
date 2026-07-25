@@ -14,8 +14,9 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 /// </summary>
 public class NifSkinBlockParserVersionTests
 {
-    private const uint Morrowind = 0x04000002;  // 4.0.0.2
-    private const uint Modern = 0x14020007;     // 20.2.0.7 (FO3+)
+    private const uint Morrowind = 0x04000002; // 4.0.0.2
+    private const uint Tes4 = 0x14000005; // 20.0.0.5 (Oblivion; 20.0.0.4 shares the gates)
+    private const uint Modern = 0x14020007; // 20.2.0.7 (FO3+)
 
     private static readonly int[] ExpectedBoneRefs = [3, 5];
 
@@ -32,7 +33,7 @@ public class NifSkinBlockParserVersionTests
         var data = bytes.ToArray();
 
         var parsed = NifSkinBlockParser.ParseNiSkinInstance(
-            data, Block(data), be: false, Morrowind);
+            data, Block(data), false, Morrowind);
 
         Assert.NotNull(parsed);
         Assert.Equal(7, parsed.DataRef);
@@ -55,7 +56,31 @@ public class NifSkinBlockParserVersionTests
         var data = bytes.ToArray();
 
         var parsed = NifSkinBlockParser.ParseNiSkinInstance(
-            data, Block(data), be: false, Modern);
+            data, Block(data), false, Modern);
+
+        Assert.NotNull(parsed);
+        Assert.Equal(7, parsed.DataRef);
+        Assert.Equal(9, parsed.SkinPartitionRef);
+        Assert.Equal(1, parsed.SkeletonRootRef);
+        Assert.Equal(ExpectedBoneRefs, parsed.BoneRefs);
+    }
+
+    [Fact]
+    public void ParseNiSkinInstance_Tes4Layout_ReadsPartitionRefLikeModern()
+    {
+        // 20.0.0.5 carries the instance-side partition ref (since 10.1.0.101) and no data-side
+        // ref — the arena-spectator diagnosis leaned on this parse being byte-exact.
+        var bytes = new List<byte>();
+        AppendInt(bytes, 7);
+        AppendInt(bytes, 9);
+        AppendInt(bytes, 1);
+        AppendInt(bytes, 2);
+        AppendInt(bytes, 3);
+        AppendInt(bytes, 5);
+        var data = bytes.ToArray();
+
+        var parsed = NifSkinBlockParser.ParseNiSkinInstance(
+            data, Block(data), false, Tes4);
 
         Assert.NotNull(parsed);
         Assert.Equal(7, parsed.DataRef);
@@ -66,12 +91,13 @@ public class NifSkinBlockParserVersionTests
 
     [Theory]
     [InlineData(Morrowind)]
+    [InlineData(Tes4)]
     [InlineData(Modern)]
     public void ParseNiSkinData_BothEraLayouts_YieldTheSameBonesAndWeights(uint version)
     {
         var data = BuildSkinData(version);
 
-        var parsed = NifSkinBlockParser.ParseNiSkinData(data, Block(data), be: false, version);
+        var parsed = NifSkinBlockParser.ParseNiSkinData(data, Block(data), false, version);
 
         Assert.NotNull(parsed);
         Assert.True(parsed.HasVertexWeights); // Morrowind implies it; modern reads the byte
@@ -92,12 +118,14 @@ public class NifSkinBlockParserVersionTests
         Assert.Equal(1.0f, single.Weight, 3);
     }
 
-    /// <summary>Same skin content in each era's byte layout: overall transform + 2 bones with
-    /// distinct bind translations and small weight lists.</summary>
+    /// <summary>
+    ///     Same skin content in each era's byte layout: overall transform + 2 bones with
+    ///     distinct bind translations and small weight lists.
+    /// </summary>
     private static byte[] BuildSkinData(uint version)
     {
         var bytes = new List<byte>();
-        AppendTransform(bytes, tz: 0f);
+        AppendTransform(bytes, 0f);
         AppendInt(bytes, 2); // num bones
         if (version is >= 0x04000002 and <= 0x0A010000)
         {
@@ -110,28 +138,34 @@ public class NifSkinBlockParserVersionTests
         }
 
         // Bone 0: bind translation Z -30.7, two weights.
-        AppendTransform(bytes, tz: -30.7f);
+        AppendTransform(bytes, -30.7f);
         AppendBoundingSphere(bytes);
         AppendUShort(bytes, 2);
-        AppendUShort(bytes, 0); AppendFloat(bytes, 0.75f);
-        AppendUShort(bytes, 1); AppendFloat(bytes, 0.25f);
+        AppendUShort(bytes, 0);
+        AppendFloat(bytes, 0.75f);
+        AppendUShort(bytes, 1);
+        AppendFloat(bytes, 0.25f);
 
         // Bone 1: bind translation Z -41.0, one weight.
-        AppendTransform(bytes, tz: -41.0f);
+        AppendTransform(bytes, -41.0f);
         AppendBoundingSphere(bytes);
         AppendUShort(bytes, 1);
-        AppendUShort(bytes, 1); AppendFloat(bytes, 1.0f);
+        AppendUShort(bytes, 1);
+        AppendFloat(bytes, 1.0f);
 
         return bytes.ToArray();
     }
 
-    private static BlockInfo Block(byte[] data) => new()
+    private static BlockInfo Block(byte[] data)
     {
-        Index = 0,
-        TypeName = "NiSkinData",
-        DataOffset = 0,
-        Size = data.Length
-    };
+        return new BlockInfo
+        {
+            Index = 0,
+            TypeName = "NiSkinData",
+            DataOffset = 0,
+            Size = data.Length
+        };
+    }
 
     private static void AppendTransform(List<byte> bytes, float tz)
     {
@@ -146,7 +180,10 @@ public class NifSkinBlockParserVersionTests
 
     private static void AppendBoundingSphere(List<byte> bytes)
     {
-        AppendFloat(bytes, 0f); AppendFloat(bytes, 0f); AppendFloat(bytes, 0f); AppendFloat(bytes, 1f);
+        AppendFloat(bytes, 0f);
+        AppendFloat(bytes, 0f);
+        AppendFloat(bytes, 0f);
+        AppendFloat(bytes, 1f);
     }
 
     private static void AppendInt(List<byte> bytes, int value)

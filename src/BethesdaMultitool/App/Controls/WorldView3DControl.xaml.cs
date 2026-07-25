@@ -95,6 +95,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // Debug overlay: per-ref walk-mode collision mesh (Havok bhk* where present, else visual fallback)
     // drawn as a green wireframe so the user can compare collision against the rendered meshes.
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.CollisionDebugRenderer12? _collisionDebug;
+    // Export-tab framing preview: the captured world bounds + a view-direction gizmo, drawn as a
+    // wireframe overlay when the Export tab is up and its "Show framing" toggle is on.
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.ExportFramingOverlay? _exportFraming;
     // Placed-object (REFR) rendering pipeline. Parallel to the terrain pipeline; owns separate
     // CPU NIF texture metadata and D3D12 GPU texture payload resolvers.
     private MeshArchiveSet? _meshArchives;
@@ -234,6 +237,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         Justification = "InitializeComponent() fires the toggle handlers during construction; they read " +
                         "_initializing before the constructor sets it false, so the initializer is load-bearing.")]
     private bool _initializing = true;
+    // Guards the draw-distance slider↔SetRenderDistance round trip (funnel reseats the slider).
+    private bool _syncingDrawDistance;
     private bool _showWireframe;
     private bool _showTerrain = true;
     private bool _showWater = true;
@@ -286,11 +291,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // no engine HDR stage there). Read per-frame by ResolveTonemapSettings, so flipping them is
     // free (no pipeline rebuild): HDR off = LegacyClamp passthrough (the pre-HDR look — the float
     // scene target itself stays; only the static FALLOUT_VIEWER_HDR=0 env kill-switch reverts it),
-    // bloom off = skip the BrightPassBlur chain, imagespace off = neutral cinematic (no golden
-    // desert filter) while the eye-adapt exposure stays.
+    // bloom off = skip the BrightPassBlur chain. Imagespace is a three-way selection: Automatic
+    // follows the cell/worldspace resolution, None renders a neutral cinematic (no golden desert
+    // filter) while the eye-adapt exposure stays, Explicit forces one IMGS record by FormID.
     private bool _hdrEnabled = true;
     private bool _bloomEnabled = true;
-    private bool _imagespaceModifiersEnabled = true;
+    private ImagespaceSelectionMode _imagespaceMode = ImagespaceSelectionMode.Automatic;
+    private uint _imagespaceExplicitFormId;
 
     // Active worldspace's cell-edge size in world units (4096 Fallout-family, 8192 Morrowind). Set from
     // WorldViewData.CellWorldSize on every cell-grid build; drives camera framing, picking, render
@@ -325,8 +332,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // NavMeshCheckBox resolve through it), so standalone hosts (profiler apps) work with no
         // SingleFileTab attached — the host merely DISPLAYS SettingsPanel in its Settings tab.
         SettingsPanel = new WorldView3DSettingsPanel();
+        ExportPanel = new WorldView3DExportPanel(); // shown in the host's right-panel Export tab
         InitializeComponent();
         WireSettingsPanel(); // subscribe while _initializing still gates the handlers
+        WireExportPanel();
         _initializing = false; // XAML load done — settings-panel toggle handlers may now run for real.
         // The interior browser is the shared CellListControl; in 3D a cell loads only on a real click.
         CellList.Activation = CellListControl.ActivationMode.ItemClick;
@@ -504,6 +513,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // Weather dropdown: "(Climate default)" + all weathers. Built once here; the worldspace
         // selection below refreshes the climate default + timing it resolves against.
         PopulateWeatherDropdown();
+
+        // Imagespace dropdown: "(Automatic)" + "(None)" + every IMGS record; resets to Automatic.
+        PopulateImagespaceDropdown();
 
         if (WorldspaceComboBox.Items.Count > 0)
         {

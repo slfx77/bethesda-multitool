@@ -87,13 +87,13 @@ public sealed class TerminalReferenceWalkerTests
                         {
                             FunctionIndex = 79, // GetQuestVariable
                             Parameter1 = 0x000A0020,
-                            Parameter2 = 7,
+                            Parameter2 = 7
                         },
                         new DialogueCondition
                         {
                             FunctionIndex = 53, // GetScriptVariable
                             Parameter1 = 0x000A0021,
-                            Parameter2 = 8,
+                            Parameter2 = 8
                         }
                     ]
                 }

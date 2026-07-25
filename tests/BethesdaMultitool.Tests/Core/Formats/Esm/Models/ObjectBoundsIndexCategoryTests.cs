@@ -14,8 +14,10 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Models;
 /// </summary>
 public sealed class ObjectBoundsIndexCategoryTests
 {
-    private static Dictionary<uint, PlacedObjectCategory> Categorize(RecordCollection records) =>
-        ObjectBoundsIndex.BuildCombined(records).Categories;
+    private static Dictionary<uint, PlacedObjectCategory> Categorize(RecordCollection records)
+    {
+        return ObjectBoundsIndex.BuildCombined(records).Categories;
+    }
 
     [Fact]
     public void TreeRecord_WithBareSptModl_CategorizesAsTree()
@@ -27,9 +29,9 @@ public sealed class ObjectBoundsIndexCategoryTests
             [
                 new GenericEsmRecord
                 {
-                    FormId = 0x1234, RecordType = "TREE", ModelPath = "\\WastelandShrub01.spt",
-                },
-            ],
+                    FormId = 0x1234, RecordType = "TREE", ModelPath = "\\WastelandShrub01.spt"
+                }
+            ]
         };
         Assert.Equal(PlacedObjectCategory.Tree, Categorize(records)[0x1234]);
     }
@@ -43,8 +45,8 @@ public sealed class ObjectBoundsIndexCategoryTests
         {
             Statics =
             [
-                new StaticRecord { FormId = 0x2345, ModelPath = "meshes\\landscape\\trees\\treepineforest01.nif" },
-            ],
+                new StaticRecord { FormId = 0x2345, ModelPath = "meshes\\landscape\\trees\\treepineforest01.nif" }
+            ]
         };
         Assert.Equal(PlacedObjectCategory.Tree, Categorize(records)[0x2345]);
     }
@@ -59,7 +61,7 @@ public sealed class ObjectBoundsIndexCategoryTests
             ("meshes/landscape/trees/treeblasted01.nif", PlacedObjectCategory.Tree),
             ("architecture\\treehouse.nif", PlacedObjectCategory.Architecture), // whole-segment only
             ("plants\\shrub.nif", PlacedObjectCategory.Plants), // other vegetation stays Plants
-            ("landscape\\rock01.nif", PlacedObjectCategory.Landscape),
+            ("landscape\\rock01.nif", PlacedObjectCategory.Landscape)
         ];
         foreach (var (modelPath, expected) in cases)
         {

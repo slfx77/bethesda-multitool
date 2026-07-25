@@ -63,18 +63,26 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         var capturedHeightmapByGrid = new Dictionary<(uint, int, int), LandHeightmap>();
         var visualDataByGrid = new Dictionary<(uint, int, int), LandVisualData>();
         var terrainMeshByGrid = new Dictionary<(uint, int, int), RuntimeTerrainMesh>();
-        // TES4-era: 29 of retail Oblivion.esm's 31,823 LANDs are pre-release relics — uncompressed,
-        // carrying the legacy VTEX texture grid and NO shipped BTXT/ATXT/VTXT layers (all of them in
-        // city child worldspaces, e.g. AnvilWorld (-45,-8)'s stale sculpt). The engine ignores them:
-        // in-game those cells show the PARENT worldspace's textured terrain (user-verified in-game
-        // A/B, 2026-07-21). Skip attaching them so the parent-terrain inheritance pass
-        // (CellLinkageHandler.InheritTerrainFromParentWorldspaces) fills the slot the way the
-        // engine does. Later games always author layer subrecords, so the gate is TES4-era only.
-        var skipRelicLands = !GameProfiles.For(Context.Game).HasWorldspaceDefaultWaterHeight;
+        // TES4-era: 579 of retail Oblivion.esm's 31,823 LANDs are pre-release relics — UNCOMPRESSED
+        // and carrying NO shipped BTXT/ATXT/VTXT layers (29 with the legacy VTEX grid, 550 bare
+        // VHGT/VNML sculpts), all in the 22 Tamriel-parented city/IC/test child worldspaces. The
+        // engine ignores every one of them: Anvil (-45,-8) shows the parent's terrain (user-verified
+        // in-game A/B 2026-07-21); ICMarketDistrict's flora is planted ~500 units ABOVE its relic
+        // sculpts at the parent platform heights; Chorrol's relics would float +26,900 units. Skip
+        // attaching them so the parent-terrain inheritance pass
+        // (CellLinkageHandler.InheritTerrainFromParentWorldspaces) fills the slot the way the engine
+        // does. The !IsCompressed condition is load-bearing: retail's 9,338 COMPRESSED layer-less
+        // LANDs (Tamriel/SEWorld ocean + plane cells rendered with the engine-default texture) are
+        // genuine and must attach — release-era CS re-saves compress LAND; the relics never were.
+        // The gate DROPS data, so it requires an AFFIRMATIVE game identity — only Oblivion authors
+        // these relics. "Not FO3+" would also sweep Unknown-game scans (synthetic fixtures, partial
+        // DMP carves whose LANDs are decompressed in memory and often layer-less) into losing
+        // terrain they legitimately own.
+        var skipRelicLands = Context.Game == BethesdaGame.Oblivion;
         foreach (var land in Context.ScanResult.LandRecords)
         {
-            if (skipRelicLands &&
-                land.VtexCount > 0 && land.BtxtCount == 0 && land.AtxtCount == 0 && land.VtxtCount == 0)
+            if (skipRelicLands && !land.Header.IsCompressed &&
+                land.BtxtCount == 0 && land.AtxtCount == 0 && land.VtxtCount == 0)
             {
                 continue;
             }
@@ -723,13 +731,14 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         var visualDataByGrid = new Dictionary<(uint, int, int), LandVisualData>();
         var terrainMeshByGrid = new Dictionary<(uint, int, int), RuntimeTerrainMesh>();
 
-        // Same TES4-era pre-release-relic gate as the instance attach loop in ParseCells (VTEX-only
-        // LANDs the engine ignores; the parent-terrain inheritance pass fills the slot instead).
-        var skipRelicLands = !GameProfiles.For(scanResult.Game).HasWorldspaceDefaultWaterHeight;
+        // Same pre-release-relic gate as the instance attach loop in ParseCells (uncompressed +
+        // layer-less LANDs the engine ignores; the parent-terrain inheritance pass fills the slot
+        // instead — see the full rationale there, incl. why the DROP needs an affirmative game).
+        var skipRelicLands = scanResult.Game == BethesdaGame.Oblivion;
         foreach (var land in scanResult.LandRecords)
         {
-            if (skipRelicLands &&
-                land.VtexCount > 0 && land.BtxtCount == 0 && land.AtxtCount == 0 && land.VtxtCount == 0)
+            if (skipRelicLands && !land.Header.IsCompressed &&
+                land.BtxtCount == 0 && land.AtxtCount == 0 && land.VtxtCount == 0)
             {
                 continue;
             }

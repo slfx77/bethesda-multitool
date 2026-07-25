@@ -27,8 +27,8 @@ public sealed class ClassicSpecularLodTests
         Assert.Equal(300f, fnv.FadeRange);
         Assert.Equal(800f, fnv.EndFade);
         Assert.Equal(1f, fnv.LodAdjust);
-        Assert.Equal(new Vector4(500f, 800f, 1f, 1f), fnv.ShaderParameters(specularEligible: true));
-        Assert.Equal(0f, fnv.ShaderParameters(specularEligible: false).W);
+        Assert.Equal(new Vector4(500f, 800f, 1f, 1f), fnv.ShaderParameters(true));
+        Assert.Equal(0f, fnv.ShaderParameters(false).W);
     }
 
     [Theory]
@@ -54,13 +54,13 @@ public sealed class ClassicSpecularLodTests
     {
         var fnv = ClassicSpecularLodProfile.ForGame(BethesdaGame.FalloutNewVegas);
         Assert.Equal(1f, ClassicSpecularLodFade.ComputeFromCameraDistance(
-            in fnv, centerDistance: 5f, worldRadius: 10f));
+            in fnv, 5f, 10f));
 
         var zeroRange = new ClassicSpecularLodProfile(true, 500f, 0f, 1f);
         Assert.Equal(1f, ClassicSpecularLodFade.ComputeFromCameraDistance(
-            in zeroRange, centerDistance: 509f, worldRadius: 10f));
+            in zeroRange, 509f, 10f));
         Assert.Equal(0f, ClassicSpecularLodFade.ComputeFromCameraDistance(
-            in zeroRange, centerDistance: 510f, worldRadius: 10f));
+            in zeroRange, 510f, 10f));
     }
 
     [Fact]
@@ -69,7 +69,7 @@ public sealed class ClassicSpecularLodTests
         var profile = new ClassicSpecularLodProfile(true, 500f, 300f, 2f);
 
         Assert.Equal(0f, ClassicSpecularLodFade.ComputeFromCameraDistance(
-            in profile, centerDistance: 410f, worldRadius: 10f));
+            in profile, 410f, 10f));
     }
 
     [Fact]
@@ -182,8 +182,10 @@ public sealed class ClassicSpecularLodTests
         Assert.DoesNotContain("input.vSpecular.rgb", directSunSpecular, StringComparison.Ordinal);
     }
 
-    private static int CountOccurrences(string source, string value) =>
-        source.Split(value, StringSplitOptions.None).Length - 1;
+    private static int CountOccurrences(string source, string value)
+    {
+        return source.Split(value).Length - 1;
+    }
 
     private static int RecordFieldOffset(Type type, string propertyName)
     {

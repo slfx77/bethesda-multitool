@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
@@ -77,7 +76,7 @@ public sealed class PersistentCellReparentingTests
             PersistentChildren = ImmutableArray<RecordPlan>.Empty,
             VwdChildren = ImmutableArray<RecordPlan>.Empty,
             TemporaryChildren = [NewMarker("REFR", NewActorRefId)],
-            Mode = CellMergeMode.LoadedReplacement,
+            Mode = CellMergeMode.LoadedReplacement
         };
 
         var cells = Apply(grid);
@@ -108,8 +107,8 @@ public sealed class PersistentCellReparentingTests
     public void Orphan_Bucket_Actors_Rescued_And_Bucket_Removed()
     {
         var bucket = MakeOrphanBucketPlan(
-            persistent: [OverrideChild("ACHR", MasterRefId), NewChild("ACHR", NewActorRefId)],
-            temporary: [OverrideChild("ACHR", 0x000B0003)]);
+            [OverrideChild("ACHR", MasterRefId), NewChild("ACHR", NewActorRefId)],
+            [OverrideChild("ACHR", 0x000B0003)]);
 
         var cells = Apply(bucket);
 
@@ -127,7 +126,7 @@ public sealed class PersistentCellReparentingTests
         // A synthesized bucket cell (invented "[Virtual x,y]" EditorId) must never emit,
         // even when its worldspace has no master container to rescue children into.
         var bucket = MakeOrphanBucketPlan(
-            persistent: [OverrideChild("ACHR", MasterRefId)],
+            [OverrideChild("ACHR", MasterRefId)],
             worldspaceId: 0x00DEAD00);
 
         var cells = Apply(bucket);
@@ -159,10 +158,10 @@ public sealed class PersistentCellReparentingTests
         // actor persistent (header 0x400), the move applies from any bucket.
         var grid = MakeGridCellPlan() with
         {
-            TemporaryChildren = [OverrideChild("ACHR", MasterRefId)],
+            TemporaryChildren = [OverrideChild("ACHR", MasterRefId)]
         };
 
-        var cells = Apply([grid], masterPersistentRefs: [MasterRefId]);
+        var cells = Apply([grid], [MasterRefId]);
 
         Assert.Empty(cells[GridCellId].TemporaryChildren);
         var moved = Assert.Single(cells[ContainerCellId].PersistentChildren, c => c.FormId == MasterRefId);
@@ -178,10 +177,10 @@ public sealed class PersistentCellReparentingTests
         const uint protoContainerId = 0x01000200;
         const uint protoGridId = 0x01000201;
 
-        var container = MakeNewWorldspaceCellPlan(protoContainerId, protoWs, isPersistentCell: true);
-        var grid = MakeNewWorldspaceCellPlan(protoGridId, protoWs, isPersistentCell: false) with
+        var container = MakeNewWorldspaceCellPlan(protoContainerId, protoWs, true);
+        var grid = MakeNewWorldspaceCellPlan(protoGridId, protoWs, false) with
         {
-            PersistentChildren = [OverrideChild("ACHR", MasterRefId)],
+            PersistentChildren = [OverrideChild("ACHR", MasterRefId)]
         };
 
         var cells = Apply(container, grid);
@@ -196,9 +195,9 @@ public sealed class PersistentCellReparentingTests
     {
         const uint protoWs = 0x0010B96F;
         const uint protoGridId = 0x01000201;
-        var grid = MakeNewWorldspaceCellPlan(protoGridId, protoWs, isPersistentCell: false) with
+        var grid = MakeNewWorldspaceCellPlan(protoGridId, protoWs, false) with
         {
-            PersistentChildren = [NewChild("ACHR", NewActorRefId)],
+            PersistentChildren = [NewChild("ACHR", NewActorRefId)]
         };
 
         var cells = Apply([grid], allocator: new FormIdAllocator());
@@ -226,7 +225,7 @@ public sealed class PersistentCellReparentingTests
             Model = new PlacedReference
             {
                 FormId = markerSourceId, BaseFormId = 0x000A3001, RecordType = "REFR", IsPersistent = false
-            },
+            }
         };
         var light = MakeChild("REFR", 0x01002001, RecordDisposition.New) with
         {
@@ -234,11 +233,11 @@ public sealed class PersistentCellReparentingTests
             {
                 FormId = 0x01002001, BaseFormId = 0x000A3002, RecordType = "REFR",
                 EnableParentFormId = markerSourceId
-            },
+            }
         };
         var grid = MakeCellPlan(GridCellId, MakeExteriorContext(GridCellId), []) with
         {
-            TemporaryChildren = [marker, light],
+            TemporaryChildren = [marker, light]
         };
 
         var cells = Apply(grid);
@@ -278,8 +277,10 @@ public sealed class PersistentCellReparentingTests
 
     // ---- fixture plumbing ----------------------------------------------------------
 
-    private static ImmutableDictionary<uint, CellPlan> Apply(params CellPlan[] plans) =>
-        Apply(plans, masterPersistentRefs: null, allocator: null);
+    private static ImmutableDictionary<uint, CellPlan> Apply(params CellPlan[] plans)
+    {
+        return Apply(plans, null, null);
+    }
 
     private static ImmutableDictionary<uint, CellPlan> Apply(
         CellPlan[] plans,
@@ -290,17 +291,17 @@ public sealed class PersistentCellReparentingTests
         {
             [ContainerCellId] = MakeContainerContext(),
             [GridCellId] = MakeExteriorContext(GridCellId),
-            [InteriorCellId] = MakeInteriorContext(InteriorCellId),
+            [InteriorCellId] = MakeInteriorContext(InteriorCellId)
         };
         var masterByFormId = new Dictionary<uint, ParsedMainRecord>
         {
             [ContainerCellId] = MakeMasterRecord("CELL", ContainerCellId),
             [GridCellId] = MakeMasterRecord("CELL", GridCellId),
-            [InteriorCellId] = MakeMasterRecord("CELL", InteriorCellId),
+            [InteriorCellId] = MakeMasterRecord("CELL", InteriorCellId)
         };
         foreach (var refId in masterPersistentRefs ?? [])
         {
-            masterByFormId[refId] = MakeMasterRecord("ACHR", refId, flags: 0x00000400u);
+            masterByFormId[refId] = MakeMasterRecord("ACHR", refId, 0x00000400u);
         }
 
         var cells = ImmutableDictionary.CreateBuilder<uint, CellPlan>();
@@ -312,8 +313,10 @@ public sealed class PersistentCellReparentingTests
         return PersistentCellReparenting.Apply(cells.ToImmutable(), masterContexts, masterByFormId, allocator);
     }
 
-    private static CellPlan MakeGridCellPlan(params RecordPlan[] persistentChildren) =>
-        MakeCellPlan(GridCellId, MakeExteriorContext(GridCellId), persistentChildren);
+    private static CellPlan MakeGridCellPlan(params RecordPlan[] persistentChildren)
+    {
+        return MakeCellPlan(GridCellId, MakeExteriorContext(GridCellId), persistentChildren);
+    }
 
     /// <summary>
     ///     Parse-side orphan bucket: a synthesized exterior cell (IsVirtual model, no master
@@ -332,7 +335,7 @@ public sealed class PersistentCellReparentingTests
             BlockGroupType = 4,
             SubblockGroupType = 5,
             BlockLabel = null,
-            SubblockLabel = null,
+            SubblockLabel = null
         };
         return new CellPlan
         {
@@ -356,112 +359,143 @@ public sealed class PersistentCellReparentingTests
             VwdChildren = ImmutableArray<RecordPlan>.Empty,
             TemporaryChildren = temporary is null ? ImmutableArray<RecordPlan>.Empty : [.. temporary],
             ParentWorldspaceFormId = worldspaceId,
-            Mode = CellMergeMode.LoadedReplacement,
+            Mode = CellMergeMode.LoadedReplacement
         };
     }
 
     private static CellPlan MakeCellPlan(
-        uint cellFormId, PcEsmCellContext context, RecordPlan[] persistentChildren) => new()
+        uint cellFormId, PcEsmCellContext context, RecordPlan[] persistentChildren)
     {
-        CellFormId = cellFormId,
-        CellRecordPlan = new RecordPlan
+        return new CellPlan
         {
-            Type = "CELL",
-            Disposition = RecordDisposition.Override,
-            FormId = cellFormId,
-            Model = new CellRecord { FormId = cellFormId },
-            Master = MakeMasterRecord("CELL", cellFormId),
+            CellFormId = cellFormId,
+            CellRecordPlan = new RecordPlan
+            {
+                Type = "CELL",
+                Disposition = RecordDisposition.Override,
+                FormId = cellFormId,
+                Model = new CellRecord { FormId = cellFormId },
+                Master = MakeMasterRecord("CELL", cellFormId),
+                References = ImmutableArray<ResolvedRef>.Empty,
+                ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+            },
+            Context = context,
+            PersistentChildren = [.. persistentChildren],
+            VwdChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
+            ParentWorldspaceFormId = context.WorldspaceFormId,
+            Mode = CellMergeMode.PersistentOnly
+        };
+    }
+
+    private static RecordPlan NewChild(string type, uint formId)
+    {
+        return MakeChild(type, formId, RecordDisposition.New);
+    }
+
+    private static RecordPlan OverrideChild(string type, uint formId)
+    {
+        return MakeChild(type, formId, RecordDisposition.Override);
+    }
+
+    private static RecordPlan MakeChild(string type, uint formId, RecordDisposition disposition)
+    {
+        return new RecordPlan
+        {
+            Type = type,
+            Disposition = disposition,
+            FormId = formId,
+            Model = new PlacedReference
+            {
+                FormId = formId, BaseFormId = 0x000A3001, RecordType = type, IsPersistent = true
+            },
             References = ImmutableArray<ResolvedRef>.Empty,
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
             Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
-        },
-        Context = context,
-        PersistentChildren = [.. persistentChildren],
-        VwdChildren = ImmutableArray<RecordPlan>.Empty,
-        TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
-        ParentWorldspaceFormId = context.WorldspaceFormId,
-        Mode = CellMergeMode.PersistentOnly,
-    };
+        };
+    }
 
-    private static RecordPlan NewChild(string type, uint formId) =>
-        MakeChild(type, formId, RecordDisposition.New);
-
-    private static RecordPlan OverrideChild(string type, uint formId) =>
-        MakeChild(type, formId, RecordDisposition.Override);
-
-    private static RecordPlan MakeChild(string type, uint formId, RecordDisposition disposition) => new()
+    private static RecordPlan NewMarker(string type, uint formId)
     {
-        Type = type,
-        Disposition = disposition,
-        FormId = formId,
-        Model = new PlacedReference
+        return MakeMarker(type, formId, RecordDisposition.New);
+    }
+
+    private static RecordPlan OverrideMarker(string type, uint formId)
+    {
+        return MakeMarker(type, formId, RecordDisposition.Override);
+    }
+
+    private static RecordPlan MakeMarker(string type, uint formId, RecordDisposition disposition)
+    {
+        return new RecordPlan
         {
-            FormId = formId, BaseFormId = 0x000A3001, RecordType = type, IsPersistent = true
-        },
-        References = ImmutableArray<ResolvedRef>.Empty,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
-    };
+            Type = type,
+            Disposition = disposition,
+            FormId = formId,
+            Model = new PlacedReference
+            {
+                FormId = formId, BaseFormId = 0x00000010, RecordType = type, IsMapMarker = true
+            },
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+        };
+    }
 
-    private static RecordPlan NewMarker(string type, uint formId) => MakeMarker(type, formId, RecordDisposition.New);
-
-    private static RecordPlan OverrideMarker(string type, uint formId) => MakeMarker(type, formId, RecordDisposition.Override);
-
-    private static RecordPlan MakeMarker(string type, uint formId, RecordDisposition disposition) => new()
+    private static PcEsmCellContext MakeContainerContext()
     {
-        Type = type,
-        Disposition = disposition,
-        FormId = formId,
-        Model = new PlacedReference
+        return new PcEsmCellContext
         {
-            FormId = formId, BaseFormId = 0x00000010, RecordType = type, IsMapMarker = true
-        },
-        References = ImmutableArray<ResolvedRef>.Empty,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
-    };
+            CellFormId = ContainerCellId,
+            IsInterior = false,
+            WorldspaceFormId = WorldspaceId,
+            BlockGroupType = 0,
+            SubblockGroupType = 0,
+            BlockLabel = null,
+            SubblockLabel = null
+        };
+    }
 
-    private static PcEsmCellContext MakeContainerContext() => new()
+    private static PcEsmCellContext MakeExteriorContext(uint cellFormId)
     {
-        CellFormId = ContainerCellId,
-        IsInterior = false,
-        WorldspaceFormId = WorldspaceId,
-        BlockGroupType = 0,
-        SubblockGroupType = 0,
-        BlockLabel = null,
-        SubblockLabel = null,
-    };
-
-    private static PcEsmCellContext MakeExteriorContext(uint cellFormId) => new()
-    {
-        CellFormId = cellFormId,
-        IsInterior = false,
-        WorldspaceFormId = WorldspaceId,
-        BlockGroupType = 4,
-        SubblockGroupType = 5,
-        BlockLabel = [0, 0, 0, 0],
-        SubblockLabel = [0, 0, 0, 0],
-    };
-
-    private static PcEsmCellContext MakeInteriorContext(uint cellFormId) => new()
-    {
-        CellFormId = cellFormId,
-        IsInterior = true,
-        BlockGroupType = 2,
-        SubblockGroupType = 3,
-        BlockLabel = [1, 0, 0, 0],
-        SubblockLabel = [2, 0, 0, 0],
-    };
-
-    private static ParsedMainRecord MakeMasterRecord(string signature, uint formId, uint flags = 0) => new()
-    {
-        Header = new MainRecordHeader
+        return new PcEsmCellContext
         {
-            Signature = signature, DataSize = 0, Flags = flags, FormId = formId,
-            Timestamp = 0, VcsInfo = 0, Version = 15
-        },
-        Offset = 0
-    };
+            CellFormId = cellFormId,
+            IsInterior = false,
+            WorldspaceFormId = WorldspaceId,
+            BlockGroupType = 4,
+            SubblockGroupType = 5,
+            BlockLabel = [0, 0, 0, 0],
+            SubblockLabel = [0, 0, 0, 0]
+        };
+    }
+
+    private static PcEsmCellContext MakeInteriorContext(uint cellFormId)
+    {
+        return new PcEsmCellContext
+        {
+            CellFormId = cellFormId,
+            IsInterior = true,
+            BlockGroupType = 2,
+            SubblockGroupType = 3,
+            BlockLabel = [1, 0, 0, 0],
+            SubblockLabel = [2, 0, 0, 0]
+        };
+    }
+
+    private static ParsedMainRecord MakeMasterRecord(string signature, uint formId, uint flags = 0)
+    {
+        return new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
+            {
+                Signature = signature, DataSize = 0, Flags = flags, FormId = formId,
+                Timestamp = 0, VcsInfo = 0, Version = 15
+            },
+            Offset = 0
+        };
+    }
 
     /// <summary>Cell plan of a proto (new) worldspace: no master anchor, synthesized-shape context.</summary>
     private static CellPlan MakeNewWorldspaceCellPlan(uint cellFormId, uint worldspaceId, bool isPersistentCell)
@@ -474,7 +508,7 @@ public sealed class PersistentCellReparentingTests
             BlockGroupType = 4,
             SubblockGroupType = 5,
             BlockLabel = null,
-            SubblockLabel = null,
+            SubblockLabel = null
         };
         return new CellPlan
         {
@@ -498,7 +532,7 @@ public sealed class PersistentCellReparentingTests
             VwdChildren = ImmutableArray<RecordPlan>.Empty,
             TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
             ParentWorldspaceFormId = worldspaceId,
-            Mode = CellMergeMode.LoadedReplacement,
+            Mode = CellMergeMode.LoadedReplacement
         };
     }
 }

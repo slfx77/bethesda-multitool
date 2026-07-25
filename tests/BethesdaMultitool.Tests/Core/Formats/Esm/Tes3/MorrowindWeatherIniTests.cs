@@ -12,45 +12,45 @@ namespace BethesdaMultitool.Tests.Core.Formats.Tes3;
 public sealed class MorrowindWeatherIniTests
 {
     private const string SampleIni = """
-        [Weather]
-        Sunrise Time=6
-        Sunset Time=18
-        Sunrise Duration=2
-        Sunset Duration=2
-        [Weather Clear]
-        Sky Sunrise Color=117,141,164
-        Sky Day Color=095,135,203
-        Sky Sunset Color=056,089,129
-        Sky Night Color=009,010,011
-        Fog Sunrise Color=255,189,157
-        Fog Day Color=206,227,255
-        Fog Sunset Color=255,189,157
-        Fog Night Color=009,010,011
-        Ambient Sunrise Color=047,066,096
-        Ambient Day Color=137,140,160
-        Ambient Sunset Color=068,075,096
-        Ambient Night Color=032,035,042
-        Sun Sunrise Color=242,159,119
-        Sun Day Color=255,252,238
-        Sun Sunset Color=255,114,079
-        Sun Night Color=059,097,176
-        Sun Disc Sunset Color=255,189,157
-        Land Fog Day Depth=.69
-        Land Fog Night Depth=.69
-        Wind Speed=.1
-        Glare View=1
-        Cloud Texture=Tx_Sky_Clear.tga
-        [Weather Ashstorm]
-        Sky Day Color=124,073,058
-        Fog Day Color=124,073,058
-        Ambient Day Color=075,049,041
-        Sun Day Color=228,139,114
-        Land Fog Day Depth=1.1
-        Land Fog Night Depth=1.2
-        Wind Speed=.8
-        Glare View=0
-        Cloud Texture=Tx_Sky_Ashstorm.tga
-        """;
+                                     [Weather]
+                                     Sunrise Time=6
+                                     Sunset Time=18
+                                     Sunrise Duration=2
+                                     Sunset Duration=2
+                                     [Weather Clear]
+                                     Sky Sunrise Color=117,141,164
+                                     Sky Day Color=095,135,203
+                                     Sky Sunset Color=056,089,129
+                                     Sky Night Color=009,010,011
+                                     Fog Sunrise Color=255,189,157
+                                     Fog Day Color=206,227,255
+                                     Fog Sunset Color=255,189,157
+                                     Fog Night Color=009,010,011
+                                     Ambient Sunrise Color=047,066,096
+                                     Ambient Day Color=137,140,160
+                                     Ambient Sunset Color=068,075,096
+                                     Ambient Night Color=032,035,042
+                                     Sun Sunrise Color=242,159,119
+                                     Sun Day Color=255,252,238
+                                     Sun Sunset Color=255,114,079
+                                     Sun Night Color=059,097,176
+                                     Sun Disc Sunset Color=255,189,157
+                                     Land Fog Day Depth=.69
+                                     Land Fog Night Depth=.69
+                                     Wind Speed=.1
+                                     Glare View=1
+                                     Cloud Texture=Tx_Sky_Clear.tga
+                                     [Weather Ashstorm]
+                                     Sky Day Color=124,073,058
+                                     Fog Day Color=124,073,058
+                                     Ambient Day Color=075,049,041
+                                     Sun Day Color=228,139,114
+                                     Land Fog Day Depth=1.1
+                                     Land Fog Night Depth=1.2
+                                     Wind Speed=.8
+                                     Glare View=0
+                                     Cloud Texture=Tx_Sky_Ashstorm.tga
+                                     """;
 
     [Fact]
     public void SynthesizesWeathers_WithKeyframesMappedToNam0Bands()

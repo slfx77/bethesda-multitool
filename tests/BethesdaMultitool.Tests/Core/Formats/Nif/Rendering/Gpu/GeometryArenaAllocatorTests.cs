@@ -164,6 +164,79 @@ public sealed class GeometryArenaAllocatorTests
         AssertPairwiseNonOverlapping(live);
     }
 
+    [Fact]
+    public void AllocationIds_AreUniqueAndMonotonic()
+    {
+        var arena = new GeometryArenaAllocator(256);
+
+        var a = arena.Allocate(16);
+        var b = arena.Allocate(16);
+        var c = arena.Allocate(16);
+
+        Assert.True(a.AllocationId > 0);
+        Assert.True(b.AllocationId > a.AllocationId);
+        Assert.True(c.AllocationId > b.AllocationId);
+    }
+
+    [Fact]
+    public void StrictFree_SecondFreeOfSameAllocation_Throws()
+    {
+        var arena = new GeometryArenaAllocator(256) { StrictValidation = true };
+        var a = arena.Allocate(16);
+
+        arena.Free(a);
+        Assert.Throws<InvalidOperationException>(() => arena.Free(a));
+    }
+
+    [Fact]
+    public void StrictFree_OfARecycledRange_Throws()
+    {
+        var arena = new GeometryArenaAllocator(256) { StrictValidation = true };
+        var a = arena.Allocate(16); // [0,16) id=1
+        arena.Free(a);
+        var b = arena.Allocate(16); // first-fit reuses [0,16) with a NEW id
+
+        // Freeing the stale `a` handle (same offset, old id) must be rejected, not silently
+        // corrupt `b`'s live range.
+        Assert.NotEqual(a.AllocationId, b.AllocationId);
+        Assert.Throws<InvalidOperationException>(() => arena.Free(a));
+    }
+
+    [Fact]
+    public void QueryLiveness_ReportsLiveFreedAndRecycled()
+    {
+        var arena = new GeometryArenaAllocator(256) { StrictValidation = true };
+        var a = arena.Allocate(16); // [0,16)
+        Assert.Equal(ArenaLiveness.Live, arena.QueryLiveness(a));
+
+        arena.Free(a);
+        Assert.Equal(ArenaLiveness.NotLive, arena.QueryLiveness(a));
+
+        var b = arena.Allocate(16); // reuses [0,16) with a new id
+        Assert.Equal(ArenaLiveness.Live, arena.QueryLiveness(b));
+        Assert.Equal(ArenaLiveness.Recycled, arena.QueryLiveness(a)); // old handle now points at b's bytes
+    }
+
+    [Fact]
+    public void QueryLiveness_IsUntracked_WhenStrictModeIsOff()
+    {
+        var arena = new GeometryArenaAllocator(256); // strict off (default)
+        var a = arena.Allocate(16);
+        Assert.Equal(ArenaLiveness.Untracked, arena.QueryLiveness(a));
+    }
+
+    [Fact]
+    public void StrictModeOff_FreeBehaviorUnchanged()
+    {
+        // Regression guard: with strict off, a repeated free of an already-freed range still
+        // returns to the free-list without throwing (the pre-existing behavior).
+        var arena = new GeometryArenaAllocator(256);
+        var a = arena.Allocate(16);
+        arena.Free(a);
+        var ex = Record.Exception(() => arena.Free(a));
+        Assert.Null(ex);
+    }
+
     private static void AssertPairwiseNonOverlapping(List<ArenaAllocation> live)
     {
         for (var i = 0; i < live.Count; i++)

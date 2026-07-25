@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
@@ -22,10 +23,10 @@ public sealed class PlannedLandEncoderParityTests
             Heightmap = new LandHeightmap
             {
                 HeightOffset = 100f,
-                HeightDeltas = Enumerable.Repeat((sbyte)4, 33 * 33).ToArray(),
+                HeightDeltas = Enumerable.Repeat((sbyte)4, 33 * 33).ToArray()
             },
             HeightSource = CellLandHeightSource.CapturedHeightmap,
-            MasterLandFormId = 0x000ABC01,
+            MasterLandFormId = 0x000ABC01
         };
         var plan = new RecordPlan
         {
@@ -35,14 +36,14 @@ public sealed class PlannedLandEncoderParityTests
             Model = land,
             References = ImmutableArray<ResolvedRef>.Empty,
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
 
         var bytes = PlannedLandEncoder.EncodeRecord(
             plan, new PluginBuildOptions { CompressRecords = false });
 
         Assert.NotNull(bytes);
-        Assert.Equal("LAND", System.Text.Encoding.ASCII.GetString(bytes!, 0, 4));
+        Assert.Equal("LAND", Encoding.ASCII.GetString(bytes!, 0, 4));
         Assert.Equal(0x000ABC01u, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(12, 4)));
     }
 

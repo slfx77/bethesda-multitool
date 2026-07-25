@@ -1,15 +1,16 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
 namespace BethesdaRendererProfiler;
 
 internal sealed class RendererProfilerScenarioTraceSink : IRendererProfilerScenarioEventSink
 {
-    private readonly string _runId = Guid.NewGuid().ToString("N");
     private long _sequence;
 
-    internal string RunId => _runId;
+    internal string RunId { get; } = Guid.NewGuid().ToString("N");
 
-    public void ScenarioStarted(RendererProfilerScenarioPlan plan, string outputDirectory) =>
+    public void ScenarioStarted(RendererProfilerScenarioPlan plan, string outputDirectory)
+    {
         Emit("scenario-start", new Dictionary<string, object?>
         {
             ["scenario"] = plan.Name,
@@ -37,14 +38,17 @@ internal sealed class RendererProfilerScenarioTraceSink : IRendererProfilerScena
             ["syntheticWaterGrid"] = plan.SyntheticWaterFixture is { } waterGridFixture
                 ? new[] { waterGridFixture.GridX, waterGridFixture.GridY }
                 : null,
-            ["syntheticWaterPlaneHeight"] = plan.SyntheticWaterFixture?.PlaneHeight,
+            ["syntheticWaterPlaneHeight"] = plan.SyntheticWaterFixture?.PlaneHeight
         });
+    }
 
     public void StepStarted(
         RendererProfilerScenarioStep step,
         int stepIndex,
-        long elapsedMilliseconds) =>
+        long elapsedMilliseconds)
+    {
         Emit("scenario-step", StepFields(step, stepIndex, "start", elapsedMilliseconds));
+    }
 
     public void StepCompleted(
         RendererProfilerScenarioStepResult result,
@@ -78,7 +82,7 @@ internal sealed class RendererProfilerScenarioTraceSink : IRendererProfilerScena
             ["medianGreen"] = region.MedianGreen,
             ["medianBlue"] = region.MedianBlue,
             ["medianLuminance"] = region.MedianLuminance,
-            ["meanLuminance"] = region.MeanLuminance,
+            ["meanLuminance"] = region.MeanLuminance
         }).ToArray() ?? [];
         fields["worldspace"] = result.Snapshot.WorldspaceEditorId;
         fields["weather"] = result.Snapshot.WeatherEditorId;
@@ -165,7 +169,8 @@ internal sealed class RendererProfilerScenarioTraceSink : IRendererProfilerScena
 
     public void AssertionCompleted(
         RendererProfilerScenarioAssertion assertion,
-        long elapsedMilliseconds) =>
+        long elapsedMilliseconds)
+    {
         Emit("scenario-assertion", new Dictionary<string, object?>
         {
             ["elapsedMilliseconds"] = elapsedMilliseconds,
@@ -175,10 +180,12 @@ internal sealed class RendererProfilerScenarioTraceSink : IRendererProfilerScena
             ["passed"] = assertion.Passed,
             ["expected"] = assertion.Expected,
             ["actual"] = assertion.Actual,
-            ["details"] = assertion.Details,
+            ["details"] = assertion.Details
         });
+    }
 
-    public void ScenarioCompleted(RendererProfilerScenarioRunResult result, long elapsedMilliseconds) =>
+    public void ScenarioCompleted(RendererProfilerScenarioRunResult result, long elapsedMilliseconds)
+    {
         Emit("scenario-complete", new Dictionary<string, object?>
         {
             ["elapsedMilliseconds"] = elapsedMilliseconds,
@@ -187,12 +194,13 @@ internal sealed class RendererProfilerScenarioTraceSink : IRendererProfilerScena
             ["assertionCount"] = result.AssertionCount,
             ["failedAssertionCount"] = result.FailedAssertionCount,
             ["exitCode"] = result.ExitCode,
-            ["reason"] = result.Reason,
+            ["reason"] = result.Reason
         });
+    }
 
     private void Emit(string eventType, Dictionary<string, object?> fields)
     {
-        fields["runId"] = _runId;
+        fields["runId"] = RunId;
         fields["sequence"] = Interlocked.Increment(ref _sequence);
         RendererProfilerTrace.Event(eventType, fields);
     }
@@ -201,51 +209,64 @@ internal sealed class RendererProfilerScenarioTraceSink : IRendererProfilerScena
         RendererProfilerScenarioStep step,
         int stepIndex,
         string phase,
-        long elapsedMilliseconds) => new()
+        long elapsedMilliseconds)
     {
-        ["elapsedMilliseconds"] = elapsedMilliseconds,
-        ["stepIndex"] = stepIndex,
-        ["stepId"] = step.Id,
-        ["phase"] = phase,
-        ["weather"] = step.WeatherEditorId,
-        ["gameHour"] = step.GameHour,
-        ["gameDay"] = step.GameDay,
-        ["animationClockSeconds"] = step.AnimationTimeSeconds,
-        ["cameraX"] = step.CameraPosition.X,
-        ["cameraY"] = step.CameraPosition.Y,
-        ["cameraZ"] = step.CameraPosition.Z,
-        ["cameraPitchDegrees"] = step.CameraPitchDegrees,
-        ["cameraYawDegrees"] = step.CameraYawDegrees,
-        ["requestedHdrEnabled"] = step.PostProcessSettings?.HdrEnabled,
-        ["requestedBloomEnabled"] = step.PostProcessSettings?.BloomEnabled,
-        ["requestedImagespaceEnabled"] = step.PostProcessSettings?.ImagespaceEnabled,
-        ["requestedFogEnabled"] = step.PostProcessSettings?.FogEnabled,
-        ["requestedShadowsEnabled"] = step.PostProcessSettings?.ShadowsEnabled,
-        ["clearAdaptedLightBeforeCapture"] = step.ClearAdaptedLightBeforeCapture,
-    };
+        return new Dictionary<string, object?>
+        {
+            ["elapsedMilliseconds"] = elapsedMilliseconds,
+            ["stepIndex"] = stepIndex,
+            ["stepId"] = step.Id,
+            ["phase"] = phase,
+            ["weather"] = step.WeatherEditorId,
+            ["gameHour"] = step.GameHour,
+            ["gameDay"] = step.GameDay,
+            ["animationClockSeconds"] = step.AnimationTimeSeconds,
+            ["cameraX"] = step.CameraPosition.X,
+            ["cameraY"] = step.CameraPosition.Y,
+            ["cameraZ"] = step.CameraPosition.Z,
+            ["cameraPitchDegrees"] = step.CameraPitchDegrees,
+            ["cameraYawDegrees"] = step.CameraYawDegrees,
+            ["requestedHdrEnabled"] = step.PostProcessSettings?.HdrEnabled,
+            ["requestedBloomEnabled"] = step.PostProcessSettings?.BloomEnabled,
+            ["requestedImagespaceEnabled"] = step.PostProcessSettings?.ImagespaceEnabled,
+            ["requestedFogEnabled"] = step.PostProcessSettings?.FogEnabled,
+            ["requestedShadowsEnabled"] = step.PostProcessSettings?.ShadowsEnabled,
+            ["clearAdaptedLightBeforeCapture"] = step.ClearAdaptedLightBeforeCapture
+        };
+    }
 
-    private static float[] Vec3(System.Numerics.Vector3 value) => [value.X, value.Y, value.Z];
+    private static float[] Vec3(Vector3 value)
+    {
+        return [value.X, value.Y, value.Z];
+    }
 
-    private static float[] TonemapTint(RendererProfilerTonemapSnapshot tonemap) =>
-        [tonemap.TintR, tonemap.TintG, tonemap.TintB, tonemap.TintAmount];
+    private static float[] TonemapTint(RendererProfilerTonemapSnapshot tonemap)
+    {
+        return [tonemap.TintR, tonemap.TintG, tonemap.TintB, tonemap.TintAmount];
+    }
 
     private static Dictionary<string, object?> AtmosphericColorBand(
-        RendererProfilerAtmosphericColorBandSnapshot band) => new()
+        RendererProfilerAtmosphericColorBandSnapshot band)
     {
-        ["fromBand"] = band.FromBand,
-        ["toBand"] = band.ToBand,
-        ["toWeight"] = band.ToWeight,
-    };
+        return new Dictionary<string, object?>
+        {
+            ["fromBand"] = band.FromBand,
+            ["toBand"] = band.ToBand,
+            ["toWeight"] = band.ToWeight
+        };
+    }
 
     private static Dictionary<string, object?>[] WeatherImageSpaceContributions(
-        IReadOnlyList<RendererProfilerWeatherImageSpaceContributionSnapshot> contributions) =>
-        contributions.Select(static contribution => new Dictionary<string, object?>
+        IReadOnlyList<RendererProfilerWeatherImageSpaceContributionSnapshot> contributions)
+    {
+        return contributions.Select(static contribution => new Dictionary<string, object?>
         {
             ["band"] = contribution.Band,
             ["modifierFormId"] = contribution.ModifierFormId,
             ["modifierFormIdHex"] = $"0x{contribution.ModifierFormId:X8}",
             ["modifierEditorId"] = contribution.ModifierEditorId,
             ["weight"] = contribution.Weight,
-            ["timelineTime"] = contribution.TimelineTime,
+            ["timelineTime"] = contribution.TimelineTime
         }).ToArray();
+    }
 }

@@ -143,14 +143,14 @@ public sealed class DmpScriptAuditCommandTests
     public void Build_ScriptNamePrefixOfIncompleteScdaIsNotCalledAProvenStub()
     {
         var script = CompleteRuntime(
-            0x01000009,
-            0x10,
-            "scn Partial\nBegin GameMode\nEnd",
-            ScriptNameOnlyBigEndian(),
-            []) with
-        {
-            DataSize = 20
-        };
+                0x01000009,
+                0x10,
+                "scn Partial\nBegin GameMode\nEnd",
+                ScriptNameOnlyBigEndian(),
+                []) with
+            {
+                DataSize = 20
+            };
 
         var row = Assert.Single(DmpScriptAuditAnalyzer.Build(
             new RecordCollection { RuntimeScripts = [script] }).Rows);
@@ -164,19 +164,20 @@ public sealed class DmpScriptAuditCommandTests
     public void Build_CompleteFlagContradictingEffectiveVariableCountIsHard()
     {
         var script = CompleteRuntime(
-            0x01000005,
-            0x10,
-            "scn Counts\nshort Flag",
-            ScriptNameOnlyBigEndian(),
-            [new ScriptVariableInfo(1, "Flag", 1)]) with
-        {
-            VariableCount = 2
-        };
+                0x01000005,
+                0x10,
+                "scn Counts\nshort Flag",
+                ScriptNameOnlyBigEndian(),
+                [new ScriptVariableInfo(1, "Flag", 1)]) with
+            {
+                VariableCount = 2
+            };
 
         var row = Assert.Single(DmpScriptAuditAnalyzer.Build(
             new RecordCollection { RuntimeScripts = [script] }).Rows);
 
-        Assert.Contains("variables-complete-effective-count-mismatch", row.HardContradictions, StringComparison.Ordinal);
+        Assert.Contains("variables-complete-effective-count-mismatch", row.HardContradictions,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -265,7 +266,7 @@ public sealed class DmpScriptAuditCommandTests
         {
             if (Directory.Exists(directory))
             {
-                Directory.Delete(directory, recursive: true);
+                Directory.Delete(directory, true);
             }
         }
     }
@@ -275,25 +276,31 @@ public sealed class DmpScriptAuditCommandTests
         long offset,
         string source,
         byte[] scda,
-        List<ScriptVariableInfo> variables) => new()
+        List<ScriptVariableInfo> variables)
     {
-        FormId = formId,
-        EditorId = $"Script{formId:X8}",
-        HeaderVariableCount = (uint)variables.Count,
-        VariableCount = (uint)variables.Count,
-        RefObjectCount = 0,
-        DataSize = (uint)scda.Length,
-        LastVariableId = variables.Count == 0 ? 0 : variables.Max(static variable => variable.Index),
-        IsCompiled = true,
-        SourceText = source,
-        CompiledData = scda,
-        Variables = variables,
-        ReferencedObjects = [],
-        VariableMetadataComplete = true,
-        VariablesComplete = true,
-        ReferencedObjectsComplete = true,
-        DumpOffset = offset
-    };
+        return new RuntimeScriptData
+        {
+            FormId = formId,
+            EditorId = $"Script{formId:X8}",
+            HeaderVariableCount = (uint)variables.Count,
+            VariableCount = (uint)variables.Count,
+            RefObjectCount = 0,
+            DataSize = (uint)scda.Length,
+            LastVariableId = variables.Count == 0 ? 0 : variables.Max(static variable => variable.Index),
+            IsCompiled = true,
+            SourceText = source,
+            CompiledData = scda,
+            Variables = variables,
+            ReferencedObjects = [],
+            VariableMetadataComplete = true,
+            VariablesComplete = true,
+            ReferencedObjectsComplete = true,
+            DumpOffset = offset
+        };
+    }
 
-    private static byte[] ScriptNameOnlyBigEndian() => [0x00, 0x1D, 0x00, 0x00];
+    private static byte[] ScriptNameOnlyBigEndian()
+    {
+        return [0x00, 0x1D, 0x00, 0x00];
+    }
 }

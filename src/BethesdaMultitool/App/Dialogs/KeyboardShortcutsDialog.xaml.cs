@@ -33,6 +33,23 @@ public sealed partial class KeyboardShortcutsDialog : ContentDialog
         new("Navigation", "Alt+Left", "Previously viewed tab"),
         new("Navigation", "Alt+Right", "Next tab in history"),
 
+        // The 3D world viewer's shortcuts use direct KeyDown handling (WorldView3DControl.Input),
+        // not KeyboardAccelerators — keep this group in sync with OnRenderPanelKeyDown.
+        new("World Viewer — 3D", "W / A / S / D", "Move camera"),
+        new("World Viewer — 3D", "Q / E", "Descend / climb (fly mode)"),
+        new("World Viewer — 3D", "Shift / Ctrl", "Move faster / slower"),
+        new("World Viewer — 3D", "Mouse drag", "Look around"),
+        new("World Viewer — 3D", "Mouse wheel", "Adjust move speed"),
+        new("World Viewer — 3D", "F", "Toggle fly / walk camera"),
+        new("World Viewer — 3D", "Page Up / Page Down", "Increase / decrease draw distance"),
+        new("World Viewer — 3D", "1–7", "Toggle layers (cell grid, terrain, water, vertex colors, meshes, nav mesh, disabled objects)"),
+        new("World Viewer — 3D", "8 / 9 / 0", "Toggle lighting / skybox / fog"),
+        new("World Viewer — 3D", "E (walk mode)", "Select object at crosshair"),
+        new("World Viewer — 3D", "Q (walk mode)", "Reselect previous pick"),
+        new("World Viewer — 3D", "Enter", "Warp through the selected door"),
+        new("World Viewer — 3D", "P", "Copy camera pose as headless-capture arguments"),
+        new("World Viewer — 3D", "Esc", "Clear selection"),
+
         new("Help", "F1", "Show this keyboard shortcuts dialog")
     ];
 

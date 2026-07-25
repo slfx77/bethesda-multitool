@@ -19,21 +19,32 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 ///     v3 parity — D3D12 navmesh overlay. The 3D analog of the 2D
 ///     <c>WorldMapNavMeshOverlayRenderer</c>: draws every visible cell's NAVM triangles as a
 ///     translucent green fill plus a brighter wireframe edge pass. Geometry is parsed once per
-///     <see cref="NavMeshRecord" /> via the shared <see cref="NavMeshGeometry" /> and the combined
-///     per-cell mesh is cached in an LRU keyed by grid coordinate (static data, built once).
+///     cell via the shared <see cref="NavMeshGeometry" /> and memoized in a CPU-side LRU; the
+///     visible set is concatenated into ONE combined vertex/index buffer pair that is rebuilt only
+///     when the visible cell-key set changes (cell-boundary crossings, toggles, worldspace switch).
+///     Oblivion authors a pathgrid in nearly every exterior cell, so the old per-cell draw path
+///     issued 1–2k tiny draws per frame and its GPU LRU (cap 1024) thrashed create/destroy work
+///     every frame once the visible set outgrew it — this path draws twice per frame total.
 ///     <para>
 ///         Reuses the <c>cellgrid</c> shaders (position-only vertex + viewProj/color CB at b0,
-///         passthrough fragment). Two PSOs share the cached vertex/index buffers: a solid fill
-///         (alpha-blended, depth-disabled so the diagnostic remains visible through terrain and
-///         references) and a wireframe edge pass. R32 indices because a cell's combined navmesh
-///         vertex count can exceed 65 535.
+///         passthrough fragment). Fill + edge PSOs exist in a scene-target flavor (HDR/MSAA — the
+///         export path composites there) and an LDR flavor drawn AFTER the tonemap resolve so the
+///         diagnostic is not eye-adapted, bloomed, or tonemapped with the scene. R32 indices
+///         because the combined vertex count far exceeds 65 535.
 ///     </para>
 /// </summary>
 internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
 {
     private const uint UniformsByteSize = 80; // float4x4 viewProj (64) + float4 color (16)
     private const uint VertexStride = 12;      // sizeof(Vector3)
-    private const int CacheCapacity = 1024;
+    private const int CacheCapacity = 8192;    // CPU geometry (~10 KB/cell), not GPU buffers
+
+    /// <summary>
+    ///     Combined-buffer ceiling (~24 MB VB at 12 B/vertex). Cells beyond it are dropped for the
+    ///     frame set — like <c>CollisionDebugRenderer12.MaxLineVertices</c>, a debug overlay bound;
+    ///     move closer or lower the render distance to see the remainder.
+    /// </summary>
+    private const int MaxCombinedVertices = 2_000_000;
 
     // Match the 2D overlay's colors (Win2D ARGB → RGBA float).
     private static readonly Vector4 FillColor = new(80f / 255f, 220f / 255f, 120f / 255f, 70f / 255f);
@@ -46,11 +57,22 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
     private readonly GpuDeletionQueue12 _deletionQueue;
     private readonly ID3D12PipelineState _fillPso;
     private readonly ID3D12PipelineState _edgePso;
+    private readonly ID3D12PipelineState _ldrFillPso;
+    private readonly ID3D12PipelineState _ldrEdgePso;
 
-    private LruCache<(int gx, int gy), CachedNavMesh12> _meshCache = CreateMeshCache();
+    private LruCache<(int gx, int gy), CellNavGeometry> _meshCache = CreateMeshCache();
     private readonly HashSet<(int gx, int gy)> _knownUnusableCells = new();
     private readonly List<global::BethesdaMultitool.WorldSpatialCell> _candidateScratch = new();
-    private readonly List<CachedNavMesh12> _visibleScratch = new();
+    private readonly List<(int gx, int gy)> _visibleKeyScratch = new();
+    private readonly List<CellNavGeometry> _visibleGeometryScratch = new();
+    private readonly HashSet<(int gx, int gy)> _lastVisibleKeys = new();
+    private readonly List<Vector3> _combineVertexScratch = new();
+    private readonly List<uint> _combineIndexScratch = new();
+
+    private ID3D12Resource? _combinedVertexBuffer;
+    private ID3D12Resource? _combinedIndexBuffer;
+    private uint _combinedIndexCount;
+    private int _combinedCellCount;
 
     private IReadOnlyDictionary<uint, List<NavMeshRecord>>? _navMeshesByCell;
     private Dictionary<(int gx, int gy), CellRecord>? _cells;
@@ -103,15 +125,17 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
             RenderTargetWriteMask = D12.ColorWriteEnable.All,
         };
 
-        _fillPso = CreatePso(vsBytecode, psBytecode, inputElements, depth, blend, D12.FillMode.Solid);
-        _edgePso = CreatePso(vsBytecode, psBytecode, inputElements, depth, blend, D12.FillMode.Wireframe);
+        _fillPso = CreatePso(vsBytecode, psBytecode, inputElements, depth, blend, D12.FillMode.Solid, ldr: false);
+        _edgePso = CreatePso(vsBytecode, psBytecode, inputElements, depth, blend, D12.FillMode.Wireframe, ldr: false);
+        _ldrFillPso = CreatePso(vsBytecode, psBytecode, inputElements, depth, blend, D12.FillMode.Solid, ldr: true);
+        _ldrEdgePso = CreatePso(vsBytecode, psBytecode, inputElements, depth, blend, D12.FillMode.Wireframe, ldr: true);
     }
 
     private ID3D12PipelineState CreatePso(
         byte[] vs, byte[] ps, InputElementDescription[] inputElements,
-        D12.DepthStencilDescription depth, D12.BlendDescription blend, D12.FillMode fillMode)
+        D12.DepthStencilDescription depth, D12.BlendDescription blend, D12.FillMode fillMode, bool ldr)
     {
-        var msaa = _gpu.SceneSampleCount > 1;
+        var msaa = !ldr && _gpu.SceneSampleCount > 1;
         var rasterizer = new D12.RasterizerDescription
         {
             FillMode = fillMode,
@@ -130,6 +154,8 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
             AntialiasedLineEnable = !msaa && fillMode == D12.FillMode.Wireframe,
         };
 
+        // The LDR flavor draws into the post-tonemap back buffer after ResolveTo (same pattern as
+        // CollisionDebugRenderer12): single-sample LDR format, no depth buffer bound.
         var psoDesc = new GraphicsPipelineStateDescription
         {
             RootSignature = _rootSignature.RootSignature,
@@ -140,9 +166,12 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
             DepthStencilState = depth,
             InputLayout = new InputLayoutDescription(inputElements),
             PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
-            RenderTargetFormats = new[] { Gpu.D3D12.GpuSceneFormats.SceneColor },
-            DepthStencilFormat = Format.D32_Float,
-            SampleDescription = new SampleDescription((uint)_gpu.SceneSampleCount, 0),
+            RenderTargetFormats = new[]
+            {
+                ldr ? Gpu.D3D12.GpuSceneFormats.LdrOutput : Gpu.D3D12.GpuSceneFormats.SceneColor
+            },
+            DepthStencilFormat = ldr ? Format.Unknown : Format.D32_Float,
+            SampleDescription = new SampleDescription(ldr ? 1u : (uint)_gpu.SceneSampleCount, 0),
             SampleMask = uint.MaxValue,
         };
         return _gpu.Device.CreateGraphicsPipelineState(psoDesc);
@@ -153,18 +182,32 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
         if (_disposed) return;
         _disposed = true;
         _meshCache.Dispose();
+        ReleaseCombinedBuffers();
         _fillPso.Dispose();
         _edgePso.Dispose();
+        _ldrFillPso.Dispose();
+        _ldrEdgePso.Dispose();
     }
 
-    /// <summary>Render-thread-only LRU of per-cell navmesh geometry; evicted entries are disposed.</summary>
-    private static LruCache<(int gx, int gy), CachedNavMesh12> CreateMeshCache() =>
-        new LruCache<(int gx, int gy), CachedNavMesh12>(
+    /// <summary>Render-thread-only LRU of per-cell CPU navmesh geometry (managed arrays; eviction
+    /// only costs a cheap re-parse at the next visible-set rebuild).</summary>
+    private static LruCache<(int gx, int gy), CellNavGeometry> CreateMeshCache() =>
+        new LruCache<(int gx, int gy), CellNavGeometry>(
                 "CellMeshLru",
-                ResourceCategory.GpuResident,
-                maxEntries: CacheCapacity,
-                onEvicted: static (_, mesh) => mesh.Dispose())
+                ResourceCategory.CpuCache,
+                maxEntries: CacheCapacity)
             .RegisterWith(ResourceRegistry.Instance, "navmesh-cells");
+
+    private void ReleaseCombinedBuffers()
+    {
+        if (_combinedVertexBuffer is not null) _deletionQueue.EnqueueDispose(_combinedVertexBuffer);
+        if (_combinedIndexBuffer is not null) _deletionQueue.EnqueueDispose(_combinedIndexBuffer);
+        _combinedVertexBuffer = null;
+        _combinedIndexBuffer = null;
+        _combinedIndexCount = 0;
+        _combinedCellCount = 0;
+        _lastVisibleKeys.Clear();
+    }
 
     public global::BethesdaMultitool.WorldRenderStats LastStats { get; } = new();
     public bool DetailedProfilingEnabled { get; set; }
@@ -177,12 +220,16 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
         _meshCache.Dispose();
         _meshCache = CreateMeshCache();
         _knownUnusableCells.Clear();
+        ReleaseCombinedBuffers();
         _navMeshesByCell = navMeshesByCell;
         _cells = cells;
         _spatialIndex = spatialIndex;
     }
 
-    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
+    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder) =>
+        Render(viewProj, cylinder, ldrTarget: false);
+
+    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder, bool ldrTarget)
     {
         LastStats.Reset();
         if (_navMeshesByCell is null || _navMeshesByCell.Count == 0) return 0;
@@ -191,25 +238,52 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
         var cmd = _recorder.CommandList;
         var frameIndex = _recorder.FrameIndex;
 
-        // Gather visible cells that have a usable (built) navmesh.
-        _visibleScratch.Clear();
+        // Gather visible cells that have usable navmesh geometry (CPU memo; no GPU work here).
+        _visibleKeyScratch.Clear();
+        _visibleGeometryScratch.Clear();
         GatherVisible(cylinder);
-        if (_visibleScratch.Count == 0)
+        if (_visibleKeyScratch.Count == 0)
+        {
+            LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
+            return 0;
+        }
+
+        // Rebuild the combined buffers only when the visible KEY set changed; a stationary camera
+        // (or one moving inside the same cell) draws with zero build work.
+        if (VisibleSetChanged())
+        {
+            RebuildCombinedBuffers(cmd);
+        }
+
+        if (_combinedIndexCount == 0 || _combinedVertexBuffer is null || _combinedIndexBuffer is null)
         {
             LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
             return 0;
         }
 
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        cmd.IASetVertexBuffers(0, new VertexBufferView
+        {
+            BufferLocation = _combinedVertexBuffer.GPUVirtualAddress,
+            SizeInBytes = (uint)_combinedVertexBuffer.Description.Width,
+            StrideInBytes = VertexStride,
+        });
+        cmd.IASetIndexBuffer(new IndexBufferView
+        {
+            BufferLocation = _combinedIndexBuffer.GPUVirtualAddress,
+            SizeInBytes = (uint)_combinedIndexBuffer.Description.Width,
+            Format = Format.R32_UInt,
+        });
 
-        // Two passes share the cached buffers: solid fill, then wireframe edges. One CB per pass
-        // (viewProj + color) bound at b0; per-pass PSO bound once.
-        DrawPass(cmd, frameIndex, viewProj, FillColor, _fillPso);
-        DrawPass(cmd, frameIndex, viewProj, EdgeColor, _edgePso);
+        // Two passes share the combined buffers: solid fill, then wireframe edges. One CB per pass
+        // (viewProj + color) bound at b0; ONE draw per pass regardless of visible cell count.
+        DrawPass(cmd, frameIndex, viewProj, FillColor, ldrTarget ? _ldrFillPso : _fillPso);
+        DrawPass(cmd, frameIndex, viewProj, EdgeColor, ldrTarget ? _ldrEdgePso : _edgePso);
 
-        LastStats.WireframeDraws = _visibleScratch.Count;
+        // The HUD's nav count keeps its established meaning: visible navmesh-bearing cells.
+        LastStats.WireframeDraws = _combinedCellCount;
         LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
-        return _visibleScratch.Count;
+        return _combinedCellCount;
     }
 
     private void DrawPass(
@@ -224,23 +298,65 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
 
         cmd.SetPipelineState(pso);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, cbAlloc.GpuAddress);
+        cmd.DrawIndexedInstanced(_combinedIndexCount, 1, 0, 0, 0);
+    }
 
-        foreach (var mesh in _visibleScratch)
+    private bool VisibleSetChanged()
+    {
+        if (_visibleKeyScratch.Count != _lastVisibleKeys.Count) return true;
+        foreach (var key in _visibleKeyScratch)
         {
-            cmd.IASetVertexBuffers(0, new VertexBufferView
-            {
-                BufferLocation = mesh.VertexBuffer.GPUVirtualAddress,
-                SizeInBytes = (uint)mesh.VertexBuffer.Description.Width,
-                StrideInBytes = VertexStride,
-            });
-            cmd.IASetIndexBuffer(new IndexBufferView
-            {
-                BufferLocation = mesh.IndexBuffer.GPUVirtualAddress,
-                SizeInBytes = (uint)mesh.IndexBuffer.Description.Width,
-                Format = Format.R32_UInt,
-            });
-            cmd.DrawIndexedInstanced(mesh.IndexCount, 1, 0, 0, 0);
+            if (!_lastVisibleKeys.Contains(key)) return true;
         }
+
+        return false;
+    }
+
+    private void RebuildCombinedBuffers(ID3D12GraphicsCommandList cmd)
+    {
+        _lastVisibleKeys.Clear();
+        foreach (var key in _visibleKeyScratch)
+        {
+            _lastVisibleKeys.Add(key);
+        }
+
+        if (_combinedVertexBuffer is not null) _deletionQueue.EnqueueDispose(_combinedVertexBuffer);
+        if (_combinedIndexBuffer is not null) _deletionQueue.EnqueueDispose(_combinedIndexBuffer);
+        _combinedVertexBuffer = null;
+        _combinedIndexBuffer = null;
+        _combinedIndexCount = 0;
+        _combinedCellCount = 0;
+
+        _combineVertexScratch.Clear();
+        _combineIndexScratch.Clear();
+        foreach (var geometry in _visibleGeometryScratch)
+        {
+            if (_combineVertexScratch.Count + geometry.Vertices.Length > MaxCombinedVertices) break;
+            var baseIndex = (uint)_combineVertexScratch.Count;
+            _combineVertexScratch.AddRange(geometry.Vertices);
+            foreach (var index in geometry.Indices)
+            {
+                _combineIndexScratch.Add(baseIndex + index);
+            }
+
+            _combinedCellCount++;
+        }
+
+        if (_combineVertexScratch.Count == 0 || _combineIndexScratch.Count == 0)
+        {
+            _combinedCellCount = 0;
+            return;
+        }
+
+        _combinedVertexBuffer = GpuMeshBufferFactory12.CreateDefaultBuffer<Vector3>(
+            _gpu, cmd, _deletionQueue,
+            System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_combineVertexScratch),
+            ResourceStates.VertexAndConstantBuffer);
+        _combinedIndexBuffer = GpuMeshBufferFactory12.CreateDefaultBuffer<uint>(
+            _gpu, cmd, _deletionQueue,
+            System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_combineIndexScratch),
+            ResourceStates.IndexBuffer);
+        _combinedIndexCount = (uint)_combineIndexScratch.Count;
     }
 
     private void GatherVisible(VisibilityCylinder cylinder)
@@ -267,21 +383,23 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
         if (_knownUnusableCells.Contains(key)) return;
         if (_meshCache.TryGet(key, out var cached))
         {
-            _visibleScratch.Add(cached);
+            _visibleKeyScratch.Add(key);
+            _visibleGeometryScratch.Add(cached);
             return;
         }
 
-        var built = TryBuildCellMesh(cell);
+        var built = TryBuildCellGeometry(cell);
         if (built is null)
         {
             _knownUnusableCells.Add(key);
             return;
         }
         _meshCache.Set(key, built);
-        _visibleScratch.Add(built);
+        _visibleKeyScratch.Add(key);
+        _visibleGeometryScratch.Add(built);
     }
 
-    private CachedNavMesh12? TryBuildCellMesh(CellRecord cell)
+    private CellNavGeometry? TryBuildCellGeometry(CellRecord cell)
     {
         if (_navMeshesByCell is null || !_navMeshesByCell.TryGetValue(cell.FormId, out var list) || list.Count == 0)
         {
@@ -307,20 +425,10 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
 
         if (verts.Count == 0 || indices.Count == 0) return null;
 
-        var cmd = _recorder.CommandList;
-        var vb = GpuMeshBufferFactory12.CreateDefaultBuffer<Vector3>(
-            _gpu, cmd, _deletionQueue, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(verts),
-            ResourceStates.VertexAndConstantBuffer);
-        var ib = GpuMeshBufferFactory12.CreateDefaultBuffer<uint>(
-            _gpu, cmd, _deletionQueue, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(indices),
-            ResourceStates.IndexBuffer);
-
-        return new CachedNavMesh12
+        return new CellNavGeometry
         {
-            VertexBuffer = vb,
-            IndexBuffer = ib,
-            IndexCount = (uint)indices.Count,
-            DeletionQueue = _deletionQueue,
+            Vertices = [.. verts],
+            Indices = [.. indices],
         };
     }
 
@@ -363,18 +471,11 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
         public Vector4 Color;
     }
 
-    private sealed class CachedNavMesh12 : IDisposable
+    /// <summary>One cell's parsed navmesh geometry (managed arrays; ~10 KB for a typical pathgrid cell).</summary>
+    private sealed class CellNavGeometry
     {
-        public required ID3D12Resource VertexBuffer { get; init; }
-        public required ID3D12Resource IndexBuffer { get; init; }
-        public required uint IndexCount { get; init; }
-        public required GpuDeletionQueue12 DeletionQueue { get; init; }
-
-        public void Dispose()
-        {
-            DeletionQueue.EnqueueDispose(VertexBuffer);
-            DeletionQueue.EnqueueDispose(IndexBuffer);
-        }
+        public required Vector3[] Vertices { get; init; }
+        public required uint[] Indices { get; init; }
     }
 }
 #endif

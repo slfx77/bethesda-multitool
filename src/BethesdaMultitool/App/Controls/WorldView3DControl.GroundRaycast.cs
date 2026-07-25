@@ -88,16 +88,13 @@ public sealed partial class WorldView3DControl
 
             var placement = candidate.Placement;
             if (placement.Bounds is not { } bounds) continue;
-            var scale = placement.Scale > 0f ? placement.Scale : 1f;
-            _horizontalCollisionInstances.Add(WalkCollisionInstance.FromAxisAlignedBox(
-                new Vector3(
-                    placement.X + bounds.X1 * scale,
-                    placement.Y + bounds.Y1 * scale,
-                    placement.Z + bounds.Z1 * scale),
-                new Vector3(
-                    placement.X + bounds.X2 * scale,
-                    placement.Y + bounds.Y2 * scale,
-                    placement.Z + bounds.Z2 * scale)));
+            // Full placement transform (rotation + scale ride candidate.World): the unrotated
+            // OBND offset-box walled walkable space beside yaw-rotated long pieces — the
+            // road-to-median phantom wall.
+            _horizontalCollisionInstances.Add(WalkCollisionInstance.FromPlacedBounds(
+                new Vector3(bounds.X1, bounds.Y1, bounds.Z1),
+                new Vector3(bounds.X2, bounds.Y2, bounds.Z2),
+                candidate.World));
         }
 
         var bodyMinZ = eyePosition.Z - _controller.EyeHeight + WalkStepHeight;
@@ -148,7 +145,8 @@ public sealed partial class WorldView3DControl
     /// <summary>
     ///     Single-point ground sample = max(terrain height, highest placed-object surface no more than
     ///     one step above the feet). Warm meshes raycast against real collision triangles
-    ///     (rotation/scale exact); cold meshes fall back to the rotation-ignoring OBND box top. Terrain
+    ///     (rotation/scale exact); cold meshes slab-raycast the placed OBND box through the same
+    ///     placement transform (rotation/scale honored; the surface is the box's entry face). Terrain
     ///     remains independent of the placed-object step window so landscape slopes and seams retain
     ///     their existing behavior.
     /// </summary>
@@ -180,17 +178,21 @@ public sealed partial class WorldView3DControl
             }
             else
             {
-                var p = c.Placement;
-                var b = p.Bounds!; // cold candidates are only admitted with bounds
-                var scale = p.Scale > 0f ? p.Scale : 1f;
-                if (worldX < p.X + b.X1 * scale || worldX > p.X + b.X2 * scale ||
-                    worldY < p.Y + b.Y1 * scale || worldY > p.Y + b.Y2 * scale)
-                {
-                    continue;
-                }
-
-                var top = p.Z + b.Z2 * scale;
-                hit = probe.AllowsPlacedSurface(top) ? top : null;
+                var b = c.Placement.Bounds!; // cold candidates are only admitted with bounds
+                // Rotation-aware fallback: slab-raycast the placed OBND box through the placement
+                // transform (scale rides the matrix). The old unrotated offset-rectangle offered
+                // ground beside rotated pieces and none on top of them.
+                hit = WalkColdBoundsProbe.TryRaycastDownToTop(
+                    new Vector3(b.X1, b.Y1, b.Z1),
+                    new Vector3(b.X2, b.Y2, b.Z2),
+                    c.World,
+                    c.InverseWorld,
+                    worldX,
+                    worldY,
+                    probe.RayOriginZ,
+                    out var top)
+                    ? top
+                    : null;
             }
 
             if (hit is { } h && probe.AllowsPlacedSurface(h) &&
@@ -350,11 +352,16 @@ public sealed partial class WorldView3DControl
             {
                 continue;
             }
+            // Cold candidates carry the real placement transform so the OBND fallback (ground
+            // slab probe + horizontal footprint quad) honors rotation and scale.
+            var coldWorld = PlacedReferenceTransform.ComposeWorldMatrix(
+                p.X, p.Y, p.Z, p.RotX, p.RotY, p.RotZ, p.Scale);
+            if (!Matrix4x4.Invert(coldWorld, out var coldInverse)) continue;
             into.Add(new GroundCandidate(
                 p,
                 null,
-                Matrix4x4.Identity,
-                Matrix4x4.Identity));
+                coldWorld,
+                coldInverse));
         }
     }
 

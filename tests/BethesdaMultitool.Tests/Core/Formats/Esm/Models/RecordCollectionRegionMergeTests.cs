@@ -27,7 +27,7 @@ public sealed class RecordCollectionRegionMergeTests
             DataBlockCount = 1,
             DataBlocks = [dataBlock],
             WeatherTypes = [weatherType],
-            GrassFormIds = [0x50],
+            GrassFormIds = [0x50]
         };
         var runtimeRegion = new RegionRecord
         {
@@ -35,7 +35,7 @@ public sealed class RecordCollectionRegionMergeTests
             EditorId = "RuntimeRegion",
             WorldspaceFormId = staticRegion.WorldspaceFormId,
             EmittanceColorR = 200,
-            IsRuntimeOnly = true,
+            IsRuntimeOnly = true
         };
 
         var merged = new RecordCollection { Regions = [staticRegion] }
@@ -62,9 +62,9 @@ public sealed class RecordCollectionRegionMergeTests
             [
                 new RegionArea(
                     0,
-                    [new RegionPoint(0, 0), new RegionPoint(100, 0), new RegionPoint(0, 100)]),
+                    [new RegionPoint(0, 0), new RegionPoint(100, 0), new RegionPoint(0, 100)])
             ],
-            WeatherTypes = [new RegionWeatherType(0x40, 100, 0)],
+            WeatherTypes = [new RegionWeatherType(0x40, 100, 0)]
         };
         var pluginOverride = new RegionRecord
         {
@@ -72,7 +72,7 @@ public sealed class RecordCollectionRegionMergeTests
             EditorId = "PluginOverride",
             Areas = [],
             WeatherTypes = [],
-            IsRuntimeOnly = false,
+            IsRuntimeOnly = false
         };
 
         var merged = new RecordCollection { Regions = [staticRegion] }

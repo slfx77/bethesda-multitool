@@ -19,7 +19,7 @@ public sealed class RecordParserProgressTests
         var context = new RecordParserContext(
             scan, null, new ByteArrayMemoryAccessor(new byte[148]), 148, null);
         var progress = new SynchronousProgress();
-        var reporter = new RecordParseProgressReporter(progress, scan.MainRecords, schemaPrimary: false);
+        var reporter = new RecordParseProgressReporter(progress, scan.MainRecords, false);
 
         // The preliminary display-name scan uses the same central read seam, but tracking has not
         // started yet and therefore cannot consume the typed-pass progress range.
@@ -56,7 +56,7 @@ public sealed class RecordParserProgressTests
         var context = new RecordParserContext(
             scan, null, new ByteArrayMemoryAccessor(new byte[148]), 148, null);
         var progress = new SynchronousProgress();
-        var reporter = new RecordParseProgressReporter(progress, scan.MainRecords, schemaPrimary: true);
+        var reporter = new RecordParseProgressReporter(progress, scan.MainRecords, true);
 
         reporter.SchemaProgress.Report((0, "Decoding Skyrim records (schema-driven)..."));
         reporter.SchemaProgress.Report((50, "Decoding records..."));
@@ -98,7 +98,7 @@ public sealed class RecordParserProgressTests
             ("MODL", NullTermString("meshes\\test-b.nif")));
         var fileBytes = firstBytes.Concat(secondBytes).ToArray();
 
-        var withoutProgress = Parse(fileBytes, firstBytes.Length, progress: null);
+        var withoutProgress = Parse(fileBytes, firstBytes.Length, null);
         var progress = new SynchronousProgress();
         var withProgress = Parse(fileBytes, firstBytes.Length, progress);
 

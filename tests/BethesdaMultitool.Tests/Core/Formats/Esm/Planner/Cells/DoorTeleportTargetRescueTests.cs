@@ -28,12 +28,12 @@ public sealed class DoorTeleportTargetRescueTests
     [Fact]
     public void Captured_Door_Counterpart_Is_Cloned_And_Reciprocal_Xtels_Are_Rewritten()
     {
-        var source = DoorChild(SourceDoorRef, TargetDoorRef, teleportFlags: 3);
-        var target = DoorChild(TargetDoorRef, SourceDoorRef, teleportFlags: 7);
+        var source = DoorChild(SourceDoorRef, TargetDoorRef, 3);
+        var target = DoorChild(TargetDoorRef, SourceDoorRef, 7);
         var cells = ImmutableDictionary<uint, CellPlan>.Empty
-            .Add(ProtoCell, Cell(ProtoCell, ProtoWorldspace, isInterior: false, master: null, source))
-            .Add(InteriorCell, Cell(InteriorCell, 0, isInterior: true,
-                master: Record("CELL", InteriorCell), target));
+            .Add(ProtoCell, Cell(ProtoCell, ProtoWorldspace, false, null, source))
+            .Add(InteriorCell, Cell(InteriorCell, 0, true,
+                Record("CELL", InteriorCell), target));
 
         var result = OverrideDoorCloning.Apply(
             cells, MasterContexts(), MasterRecords(), MasterRefToCell(), new FormIdAllocator(),
@@ -64,9 +64,9 @@ public sealed class DoorTeleportTargetRescueTests
     [Fact]
     public void Missing_Captured_Counterpart_Drops_Incompatible_Xtel_With_Diagnostic()
     {
-        var source = DoorChild(SourceDoorRef, TargetDoorRef, teleportFlags: 3);
+        var source = DoorChild(SourceDoorRef, TargetDoorRef, 3);
         var cells = ImmutableDictionary<uint, CellPlan>.Empty
-            .Add(ProtoCell, Cell(ProtoCell, ProtoWorldspace, isInterior: false, master: null, source));
+            .Add(ProtoCell, Cell(ProtoCell, ProtoWorldspace, false, null, source));
 
         var result = OverrideDoorCloning.Apply(
             cells, MasterContexts(), MasterRecords(), MasterRefToCell(), new FormIdAllocator(),
@@ -87,88 +87,103 @@ public sealed class DoorTeleportTargetRescueTests
         uint worldspace,
         bool isInterior,
         ParsedMainRecord? master,
-        params RecordPlan[] temporary) => new()
+        params RecordPlan[] temporary)
     {
-        CellFormId = formId,
-        CellRecordPlan = new RecordPlan
-        {
-            Type = "CELL",
-            Disposition = master is null ? RecordDisposition.New : RecordDisposition.Override,
-            FormId = formId,
-            Model = new CellRecord { FormId = formId },
-            Master = master,
-            References = ImmutableArray<ResolvedRef>.Empty,
-            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = Provenance(),
-        },
-        Context = new PcEsmCellContext
+        return new CellPlan
         {
             CellFormId = formId,
-            IsInterior = isInterior,
-            WorldspaceFormId = worldspace,
-            BlockGroupType = isInterior ? 2 : 4,
-            SubblockGroupType = isInterior ? 3 : 5,
-        },
-        PersistentChildren = ImmutableArray<RecordPlan>.Empty,
-        VwdChildren = ImmutableArray<RecordPlan>.Empty,
-        TemporaryChildren = [.. temporary],
-        ParentWorldspaceFormId = worldspace,
-        Mode = CellMergeMode.LoadedReplacement,
-    };
+            CellRecordPlan = new RecordPlan
+            {
+                Type = "CELL",
+                Disposition = master is null ? RecordDisposition.New : RecordDisposition.Override,
+                FormId = formId,
+                Model = new CellRecord { FormId = formId },
+                Master = master,
+                References = ImmutableArray<ResolvedRef>.Empty,
+                ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+                Provenance = Provenance()
+            },
+            Context = new PcEsmCellContext
+            {
+                CellFormId = formId,
+                IsInterior = isInterior,
+                WorldspaceFormId = worldspace,
+                BlockGroupType = isInterior ? 2 : 4,
+                SubblockGroupType = isInterior ? 3 : 5
+            },
+            PersistentChildren = ImmutableArray<RecordPlan>.Empty,
+            VwdChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = [.. temporary],
+            ParentWorldspaceFormId = worldspace,
+            Mode = CellMergeMode.LoadedReplacement
+        };
+    }
 
-    private static RecordPlan DoorChild(uint formId, uint destination, byte teleportFlags) => new()
+    private static RecordPlan DoorChild(uint formId, uint destination, byte teleportFlags)
     {
-        Type = "REFR",
-        Disposition = RecordDisposition.Override,
-        FormId = formId,
-        Model = new PlacedReference
+        return new RecordPlan
         {
+            Type = "REFR",
+            Disposition = RecordDisposition.Override,
             FormId = formId,
-            BaseFormId = DoorBase,
-            RecordType = "REFR",
-            DestinationDoorFormId = destination,
-            TeleportFlags = teleportFlags,
-            X = formId == SourceDoorRef ? 100f : 200f,
-        },
-        References = ImmutableArray<ResolvedRef>.Empty,
-        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = Provenance(),
-    };
+            Model = new PlacedReference
+            {
+                FormId = formId,
+                BaseFormId = DoorBase,
+                RecordType = "REFR",
+                DestinationDoorFormId = destination,
+                TeleportFlags = teleportFlags,
+                X = formId == SourceDoorRef ? 100f : 200f
+            },
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = Provenance()
+        };
+    }
 
-    private static Dictionary<uint, PcEsmCellContext> MasterContexts() => new()
+    private static Dictionary<uint, PcEsmCellContext> MasterContexts()
     {
-        [RetailExteriorCell] = new PcEsmCellContext
+        return new Dictionary<uint, PcEsmCellContext>
         {
-            CellFormId = RetailExteriorCell,
-            IsInterior = false,
-            WorldspaceFormId = RetailWorldspace,
-            BlockGroupType = 4,
-            SubblockGroupType = 5,
-        },
-        [InteriorCell] = new PcEsmCellContext
+            [RetailExteriorCell] = new PcEsmCellContext
+            {
+                CellFormId = RetailExteriorCell,
+                IsInterior = false,
+                WorldspaceFormId = RetailWorldspace,
+                BlockGroupType = 4,
+                SubblockGroupType = 5
+            },
+            [InteriorCell] = new PcEsmCellContext
+            {
+                CellFormId = InteriorCell,
+                IsInterior = true,
+                BlockGroupType = 2,
+                SubblockGroupType = 3
+            }
+        };
+    }
+
+    private static Dictionary<uint, uint> MasterRefToCell()
+    {
+        return new Dictionary<uint, uint>
         {
-            CellFormId = InteriorCell,
-            IsInterior = true,
-            BlockGroupType = 2,
-            SubblockGroupType = 3,
-        },
-    };
+            [SourceDoorRef] = RetailExteriorCell,
+            [TargetDoorRef] = InteriorCell
+        };
+    }
 
-    private static Dictionary<uint, uint> MasterRefToCell() => new()
+    private static Dictionary<uint, ParsedMainRecord> MasterRecords()
     {
-        [SourceDoorRef] = RetailExteriorCell,
-        [TargetDoorRef] = InteriorCell,
-    };
-
-    private static Dictionary<uint, ParsedMainRecord> MasterRecords() => new()
-    {
-        [DoorBase] = Record("DOOR", DoorBase),
-        [StaticBase] = Record("STAT", StaticBase),
-        [RetailExteriorCell] = Record("CELL", RetailExteriorCell),
-        [InteriorCell] = Record("CELL", InteriorCell),
-        [SourceDoorRef] = Record("REFR", SourceDoorRef, DoorBase, x: 5000f),
-        [TargetDoorRef] = Record("REFR", TargetDoorRef, StaticBase, x: 200f),
-    };
+        return new Dictionary<uint, ParsedMainRecord>
+        {
+            [DoorBase] = Record("DOOR", DoorBase),
+            [StaticBase] = Record("STAT", StaticBase),
+            [RetailExteriorCell] = Record("CELL", RetailExteriorCell),
+            [InteriorCell] = Record("CELL", InteriorCell),
+            [SourceDoorRef] = Record("REFR", SourceDoorRef, DoorBase, 5000f),
+            [TargetDoorRef] = Record("REFR", TargetDoorRef, StaticBase, 200f)
+        };
+    }
 
     private static ParsedMainRecord Record(
         string signature,
@@ -194,13 +209,18 @@ public sealed class DoorTeleportTargetRescueTests
         return new ParsedMainRecord
         {
             Header = new MainRecordHeader { Signature = signature, FormId = formId },
-            Subrecords = subrecords,
+            Subrecords = subrecords
         };
     }
 
-    private static uint ReadName(ParsedMainRecord record) =>
-        BinaryPrimitives.ReadUInt32LittleEndian(
+    private static uint ReadName(ParsedMainRecord record)
+    {
+        return BinaryPrimitives.ReadUInt32LittleEndian(
             Assert.Single(record.Subrecords, subrecord => subrecord.Signature == "NAME").Data);
+    }
 
-    private static PlanProvenance Provenance() => new() { PolicyId = "test", Reason = "test" };
+    private static PlanProvenance Provenance()
+    {
+        return new PlanProvenance { PolicyId = "test", Reason = "test" };
+    }
 }

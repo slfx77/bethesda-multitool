@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Validation;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
@@ -212,5 +211,8 @@ public class PluginSemanticValidatorTests
         return bytes;
     }
 
-    private static byte[] NullTermString(string value) => Encoding.ASCII.GetBytes(value + '\0');
+    private static byte[] NullTermString(string value)
+    {
+        return Encoding.ASCII.GetBytes(value + '\0');
+    }
 }

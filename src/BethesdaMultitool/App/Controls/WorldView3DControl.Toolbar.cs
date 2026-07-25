@@ -1,4 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.WorldData;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -36,6 +38,9 @@ public sealed partial class WorldView3DControl
     private RadioButtons ProjectionModeRadios => SettingsPanel.ProjectionModeRadios;
     private Slider FovSlider => SettingsPanel.FovSlider;
     private TextBlock FovLabel => SettingsPanel.FovLabel;
+    private ToggleSwitch FlyModeToggle => SettingsPanel.FlyModeToggle;
+    private Slider DrawDistanceSlider => SettingsPanel.DrawDistanceSlider;
+    private TextBlock DrawDistanceValueLabel => SettingsPanel.DrawDistanceValueLabel;
 
     /// <summary>
     ///     Subscribes every settings-panel control to its handler. Runs in the ctor while
@@ -60,7 +65,7 @@ public sealed partial class WorldView3DControl
         p.PlacedLightsToggle.Toggled += PlacedLightsToggle_Changed;
         p.HdrToggle.Toggled += HdrToggle_Changed;
         p.BloomToggle.Toggled += BloomToggle_Changed;
-        p.ImagespaceToggle.Toggled += ImagespaceToggle_Changed;
+        p.ImagespaceComboBox.SelectionChanged += ImagespaceComboBox_SelectionChanged;
 
         Wire(p.CellsCheckBox, CellsCheckBox_Changed);
         Wire(p.TerrainTexturesToggle, TerrainTexturesToggle_Changed);
@@ -81,6 +86,8 @@ public sealed partial class WorldView3DControl
 
         p.ProjectionModeRadios.SelectionChanged += ProjectionModeRadios_SelectionChanged;
         p.FovSlider.ValueChanged += FovSlider_ValueChanged;
+        p.FlyModeToggle.Toggled += FlyModeToggle_Changed;
+        p.DrawDistanceSlider.ValueChanged += DrawDistanceSlider_ValueChanged;
 
         static void Wire(CheckBox box, RoutedEventHandler handler)
         {
@@ -107,10 +114,71 @@ public sealed partial class WorldView3DControl
         _bloomEnabled = SettingsPanel.BloomToggle.IsOn;
     }
 
-    private void ImagespaceToggle_Changed(object sender, RoutedEventArgs e)
+    private void ImagespaceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_initializing) return;
-        _imagespaceModifiersEnabled = SettingsPanel.ImagespaceToggle.IsOn;
+        if (_initializing || _suppressImagespaceSelectionEvent) return;
+        if (SettingsPanel.ImagespaceComboBox.SelectedItem is not ImagespaceDropdownItem item) return;
+        _imagespaceMode = item.Mode;
+        _imagespaceExplicitFormId = item.FormId;
+    }
+
+    /// <summary>
+    ///     Builds the imagespace dropdown once per load: "(Automatic)" (the cell/worldspace
+    ///     resolution — today's behavior, the default), "(None)" (neutral grade), then every IMGS
+    ///     record sorted by EditorID. Selection is restored to Automatic on reload so a stale
+    ///     explicit FormID from another ESM can never leak across loads.
+    /// </summary>
+    private void PopulateImagespaceDropdown()
+    {
+        var items = new List<ImagespaceDropdownItem>
+        {
+            new("(Automatic)", ImagespaceSelectionMode.Automatic, 0),
+            new("(None)", ImagespaceSelectionMode.None, 0),
+        };
+        if (_data is not null)
+        {
+            foreach (var imgs in _data.ImageSpacesByFormId.Values
+                         .OrderBy(static i => i.EditorId ?? $"0x{i.FormId:X8}", StringComparer.OrdinalIgnoreCase))
+            {
+                var label = string.IsNullOrEmpty(imgs.EditorId)
+                    ? $"0x{imgs.FormId:X8}"
+                    : $"{imgs.EditorId} (0x{imgs.FormId:X8})";
+                items.Add(new ImagespaceDropdownItem(label, ImagespaceSelectionMode.Explicit, imgs.FormId));
+            }
+        }
+
+        _suppressImagespaceSelectionEvent = true;
+        SettingsPanel.ImagespaceComboBox.ItemsSource = items;
+        SettingsPanel.ImagespaceComboBox.SelectedIndex = 0;
+        _suppressImagespaceSelectionEvent = false;
+        _imagespaceMode = ImagespaceSelectionMode.Automatic;
+        _imagespaceExplicitFormId = 0;
+    }
+
+    /// <summary>Programmatic selection (profiler scenarios): Automatic or None only.</summary>
+    private void SetImagespaceSelection(ImagespaceSelectionMode mode)
+    {
+        _imagespaceMode = mode;
+        _imagespaceExplicitFormId = 0;
+        if (SettingsPanel.ImagespaceComboBox.ItemsSource is List<ImagespaceDropdownItem> items)
+        {
+            var index = items.FindIndex(i => i.Mode == mode);
+            if (index >= 0)
+            {
+                _suppressImagespaceSelectionEvent = true;
+                SettingsPanel.ImagespaceComboBox.SelectedIndex = index;
+                _suppressImagespaceSelectionEvent = false;
+            }
+        }
+    }
+
+    private bool _suppressImagespaceSelectionEvent;
+
+    /// <summary>One imagespace dropdown entry; <see cref="ToString" /> drives the display.
+    /// <see cref="FormId" /> is meaningful only for <see cref="ImagespaceSelectionMode.Explicit" />.</summary>
+    private sealed record ImagespaceDropdownItem(string Label, ImagespaceSelectionMode Mode, uint FormId)
+    {
+        public override string ToString() => Label;
     }
 
     // Settings-panel checkboxes mirror the 2D viewer. Handlers are subscribed programmatically in
@@ -252,10 +320,60 @@ public sealed partial class WorldView3DControl
         SetShowEffects(EffectsCheckBox.IsChecked == true);
     }
 
+    /// <summary>Single funnel for every draw-distance change (PageUp/PageDown, the settings-panel
+    /// slider, and worldspace/cell-size switches) so field, camera, slider, and label stay in sync.</summary>
     private void SetRenderDistance(float distance)
     {
         _renderDistance = Math.Clamp(distance, MinRenderDistanceCells * _cellSize, MaxRenderDistance);
         _camera.FarPlane = _renderDistance;
+        SyncDrawDistanceSlider();
+    }
+
+    private void SyncDrawDistanceSlider()
+    {
+        var cells = _renderDistance / _cellSize;
+        var sliderValue = RenderDistanceScale.SliderFromCells(cells);
+        _syncingDrawDistance = true;
+        try
+        {
+            // Only reseat on a real difference to avoid float ping-pong with ValueChanged.
+            if (Math.Abs(DrawDistanceSlider.Value - sliderValue) > 0.005)
+            {
+                DrawDistanceSlider.Value = sliderValue;
+            }
+
+            DrawDistanceValueLabel.Text = $"{cells:0.#} c";
+        }
+        finally
+        {
+            _syncingDrawDistance = false;
+        }
+    }
+
+    private void DrawDistanceSlider_ValueChanged(
+        object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        if (_initializing || _syncingDrawDistance) return;
+        SetRenderDistance(RenderDistanceScale.CellsFromSlider(e.NewValue) * _cellSize);
+    }
+
+    /// <summary>Single funnel for fly/walk (keyboard F + the settings-panel toggle) so the
+    /// controller mode and the ToggleSwitch stay in sync (the controller setter early-returns on
+    /// no-change, killing feedback loops).</summary>
+    private void SetCameraMode(CameraMode mode)
+    {
+        _controller.Mode = mode;
+        var isFly = mode == CameraMode.Fly;
+        if (FlyModeToggle.IsOn != isFly)
+        {
+            FlyModeToggle.IsOn = isFly;
+        }
+    }
+
+    private void FlyModeToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        SetCameraMode(FlyModeToggle.IsOn ? CameraMode.Fly : CameraMode.Walk);
     }
 
     /// <summary>Single point for the navmesh-layer toggle (keyboard key 6 + the toolbar
@@ -399,4 +517,17 @@ public sealed partial class WorldView3DControl
             EffectsCheckBox.IsChecked = on;
         }
     }
+}
+
+/// <summary>
+///     The viewer's imagespace grading source. <see cref="Automatic" /> follows the engine's
+///     cell/worldspace resolution (XCIM → WRLD INAM → shipped defaults); <see cref="None" /> renders
+///     a neutral grade (eye-adapt exposure stays); <see cref="Explicit" /> forces one IMGS record
+///     chosen in the settings-panel dropdown.
+/// </summary>
+internal enum ImagespaceSelectionMode
+{
+    Automatic,
+    None,
+    Explicit,
 }

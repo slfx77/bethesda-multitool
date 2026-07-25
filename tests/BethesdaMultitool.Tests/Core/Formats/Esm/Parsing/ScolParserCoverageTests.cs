@@ -90,8 +90,10 @@ public class ScolParserCoverageTests
     [Fact]
     public void ParseStaticCollections_UnknownSubrecord_IsSilentlyDroppedWithoutCrashing()
     {
-        // Inject an unexpected signature (XXXX, 4 bytes of garbage) between MODL and ONAM.
+        // Inject an unexpected signature (ZZZZ, 4 bytes of garbage) between MODL and ONAM.
         // The parser logs a debug message and continues — verifies the no-surprise guard.
+        // (Deliberately NOT "XXXX" — that is the reserved extended-size marker, which the subrecord
+        //  iterator legitimately consumes as the true length of the following subrecord.)
         var edid = NullTermString("FutureScol");
         var modl = NullTermString("m.nif");
         var onam = new byte[4];
@@ -102,7 +104,7 @@ public class ScolParserCoverageTests
         var scolBytes = BuildRecordBytes(0x00050200, "SCOL", false,
             ("EDID", edid),
             ("MODL", modl),
-            ("XXXX", unknown),
+            ("ZZZZ", unknown),
             ("ONAM", onam),
             ("DATA", data));
 

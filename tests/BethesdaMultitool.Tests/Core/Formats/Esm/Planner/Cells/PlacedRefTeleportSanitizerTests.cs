@@ -4,7 +4,6 @@ using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
@@ -23,7 +22,7 @@ public sealed class PlacedRefTeleportSanitizerTests
         var master = new Dictionary<uint, ParsedMainRecord>
         {
             [TargetRef] = Record("REFR", TargetRef, TargetBase),
-            [TargetBase] = Record("STAT", TargetBase),
+            [TargetBase] = Record("STAT", TargetBase)
         };
         var stats = new ConversionPipelineStats();
 
@@ -40,7 +39,7 @@ public sealed class PlacedRefTeleportSanitizerTests
         var master = new Dictionary<uint, ParsedMainRecord>
         {
             [TargetRef] = Record("REFR", TargetRef, TargetBase),
-            [TargetBase] = Record("DOOR", TargetBase),
+            [TargetBase] = Record("DOOR", TargetBase)
         };
 
         var sanitized = PlacedRefTeleportSanitizer.Sanitize(
@@ -63,8 +62,8 @@ public sealed class PlacedRefTeleportSanitizerTests
             Meta = new PlanMetadata
             {
                 NextObjectId = 0x800,
-                PlannerCoverage = ImmutableHashSet<string>.Empty,
-            },
+                PlannerCoverage = ImmutableHashSet<string>.Empty
+            }
         };
         var masterRefs = new HashSet<uint> { TargetRef };
         return new CellChildEncodeContext(
@@ -99,7 +98,7 @@ public sealed class PlacedRefTeleportSanitizerTests
         return new ParsedMainRecord
         {
             Header = new MainRecordHeader { Signature = signature, FormId = formId },
-            Subrecords = subrecords,
+            Subrecords = subrecords
         };
     }
 }

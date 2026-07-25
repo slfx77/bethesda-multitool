@@ -1,11 +1,10 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
@@ -31,37 +30,41 @@ public sealed class DialogGrupBuilderTests
         var sink = new RecordingSink();
 
         var result = DialogGrupBuilder.BuildDialogSection(
-            [new DialogTopicRecord
-            {
-                FormId = sourceTopic,
-                EditorId = "OwnerLivenessTopic",
-                QuestFormId = ProducerQuest,
-                TopicType = 0,
-            }],
-            [new DialogueRecord
-            {
-                FormId = sourceInfo,
-                TopicFormId = sourceTopic,
-                QuestFormId = ProducerQuest,
-                Conditions =
-                [
-                    new DialogueCondition
-                    {
-                        FunctionIndex = QuestVariableConditionSanitizer.GetScriptVariableFunctionIndex,
-                        Parameter1 = sourceOwner,
-                        Parameter2 = 1,
-                    },
-                ],
-                Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Unsafe line." }],
-            }],
+            [
+                new DialogTopicRecord
+                {
+                    FormId = sourceTopic,
+                    EditorId = "OwnerLivenessTopic",
+                    QuestFormId = ProducerQuest,
+                    TopicType = 0
+                }
+            ],
+            [
+                new DialogueRecord
+                {
+                    FormId = sourceInfo,
+                    TopicFormId = sourceTopic,
+                    QuestFormId = ProducerQuest,
+                    Conditions =
+                    [
+                        new DialogueCondition
+                        {
+                            FunctionIndex = QuestVariableConditionSanitizer.GetScriptVariableFunctionIndex,
+                            Parameter1 = sourceOwner,
+                            Parameter2 = 1
+                        }
+                    ],
+                    Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Unsafe line." }]
+                }
+            ],
             new NewVsOverrideClassifier([ProducerQuest]),
             new FormIdAllocator(),
             [ProducerQuest],
             new Dictionary<uint, ParsedMainRecord>(),
             stats,
             sink,
-            remapTable: new Dictionary<uint, uint> { [sourceOwner] = allocatedButUnemittedOwner },
-            additionalValidFormIds: [allocatedButUnemittedOwner],
+            new Dictionary<uint, uint> { [sourceOwner] = allocatedButUnemittedOwner },
+            [allocatedButUnemittedOwner],
             liveScriptVariableOwnerFormIds: new HashSet<uint>());
 
         Assert.DoesNotContain(sourceInfo, result.NewInfoSourceToAllocated.Keys);
@@ -85,37 +88,41 @@ public sealed class DialogGrupBuilderTests
         var stats = new ConversionPipelineStats();
 
         var result = DialogGrupBuilder.BuildDialogSection(
-            [new DialogTopicRecord
-            {
-                FormId = sourceTopic,
-                EditorId = "OwnerLivenessTopic",
-                QuestFormId = ProducerQuest,
-                TopicType = 0,
-            }],
-            [new DialogueRecord
-            {
-                FormId = sourceInfo,
-                TopicFormId = sourceTopic,
-                QuestFormId = ProducerQuest,
-                Conditions =
-                [
-                    new DialogueCondition
-                    {
-                        FunctionIndex = QuestVariableConditionSanitizer.GetScriptVariableFunctionIndex,
-                        Parameter1 = sourceOwner,
-                        Parameter2 = 1,
-                    },
-                ],
-                Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Safe line." }],
-            }],
+            [
+                new DialogTopicRecord
+                {
+                    FormId = sourceTopic,
+                    EditorId = "OwnerLivenessTopic",
+                    QuestFormId = ProducerQuest,
+                    TopicType = 0
+                }
+            ],
+            [
+                new DialogueRecord
+                {
+                    FormId = sourceInfo,
+                    TopicFormId = sourceTopic,
+                    QuestFormId = ProducerQuest,
+                    Conditions =
+                    [
+                        new DialogueCondition
+                        {
+                            FunctionIndex = QuestVariableConditionSanitizer.GetScriptVariableFunctionIndex,
+                            Parameter1 = sourceOwner,
+                            Parameter2 = 1
+                        }
+                    ],
+                    Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Safe line." }]
+                }
+            ],
             new NewVsOverrideClassifier([ProducerQuest]),
             new FormIdAllocator(),
             [ProducerQuest],
             new Dictionary<uint, ParsedMainRecord>(),
             stats,
             NullConversionProgressSink.Instance,
-            remapTable: new Dictionary<uint, uint> { [sourceOwner] = emittedOwner },
-            additionalValidFormIds: [emittedOwner],
+            new Dictionary<uint, uint> { [sourceOwner] = emittedOwner },
+            [emittedOwner],
             liveScriptVariableOwnerFormIds: new HashSet<uint> { emittedOwner });
 
         Assert.True(result.NewInfoSourceToAllocated.ContainsKey(sourceInfo));
@@ -135,41 +142,45 @@ public sealed class DialogGrupBuilderTests
         var stats = new ConversionPipelineStats();
 
         var result = DialogGrupBuilder.BuildDialogSection(
-            [new DialogTopicRecord
-            {
-                FormId = sourceTopic,
-                EditorId = "ChainedOwnerLivenessTopic",
-                QuestFormId = ProducerQuest,
-                TopicType = 0,
-            }],
-            [new DialogueRecord
-            {
-                FormId = sourceInfo,
-                TopicFormId = sourceTopic,
-                QuestFormId = ProducerQuest,
-                Conditions =
-                [
-                    new DialogueCondition
-                    {
-                        FunctionIndex = QuestVariableConditionSanitizer.GetScriptVariableFunctionIndex,
-                        Parameter1 = sourceOwner,
-                        Parameter2 = 1,
-                    },
-                ],
-                Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Safe chained line." }],
-            }],
+            [
+                new DialogTopicRecord
+                {
+                    FormId = sourceTopic,
+                    EditorId = "ChainedOwnerLivenessTopic",
+                    QuestFormId = ProducerQuest,
+                    TopicType = 0
+                }
+            ],
+            [
+                new DialogueRecord
+                {
+                    FormId = sourceInfo,
+                    TopicFormId = sourceTopic,
+                    QuestFormId = ProducerQuest,
+                    Conditions =
+                    [
+                        new DialogueCondition
+                        {
+                            FunctionIndex = QuestVariableConditionSanitizer.GetScriptVariableFunctionIndex,
+                            Parameter1 = sourceOwner,
+                            Parameter2 = 1
+                        }
+                    ],
+                    Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Safe chained line." }]
+                }
+            ],
             new NewVsOverrideClassifier([ProducerQuest]),
             new FormIdAllocator(),
             [ProducerQuest],
             new Dictionary<uint, ParsedMainRecord>(),
             stats,
             NullConversionProgressSink.Instance,
-            remapTable: new Dictionary<uint, uint>
+            new Dictionary<uint, uint>
             {
                 [sourceOwner] = intermediateOwner,
-                [intermediateOwner] = emittedOwner,
+                [intermediateOwner] = emittedOwner
             },
-            additionalValidFormIds: [emittedOwner],
+            [emittedOwner],
             liveScriptVariableOwnerFormIds: new HashSet<uint> { emittedOwner });
 
         Assert.True(result.NewInfoSourceToAllocated.ContainsKey(sourceInfo));
@@ -188,41 +199,45 @@ public sealed class DialogGrupBuilderTests
         var stats = new ConversionPipelineStats();
 
         var result = DialogGrupBuilder.BuildDialogSection(
-            [new DialogTopicRecord
-            {
-                FormId = sourceTopic,
-                EditorId = "DroppedChainedOwnerTopic",
-                QuestFormId = ProducerQuest,
-                TopicType = 0,
-            }],
-            [new DialogueRecord
-            {
-                FormId = sourceInfo,
-                TopicFormId = sourceTopic,
-                QuestFormId = ProducerQuest,
-                Conditions =
-                [
-                    new DialogueCondition
-                    {
-                        FunctionIndex = QuestVariableConditionSanitizer.GetScriptVariableFunctionIndex,
-                        Parameter1 = sourceOwner,
-                        Parameter2 = 1,
-                    },
-                ],
-                Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Unsafe dropped line." }],
-            }],
+            [
+                new DialogTopicRecord
+                {
+                    FormId = sourceTopic,
+                    EditorId = "DroppedChainedOwnerTopic",
+                    QuestFormId = ProducerQuest,
+                    TopicType = 0
+                }
+            ],
+            [
+                new DialogueRecord
+                {
+                    FormId = sourceInfo,
+                    TopicFormId = sourceTopic,
+                    QuestFormId = ProducerQuest,
+                    Conditions =
+                    [
+                        new DialogueCondition
+                        {
+                            FunctionIndex = QuestVariableConditionSanitizer.GetScriptVariableFunctionIndex,
+                            Parameter1 = sourceOwner,
+                            Parameter2 = 1
+                        }
+                    ],
+                    Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Unsafe dropped line." }]
+                }
+            ],
             new NewVsOverrideClassifier([ProducerQuest]),
             new FormIdAllocator(),
             [ProducerQuest],
             new Dictionary<uint, ParsedMainRecord>(),
             stats,
             NullConversionProgressSink.Instance,
-            remapTable: new Dictionary<uint, uint>
+            new Dictionary<uint, uint>
             {
                 [sourceOwner] = intermediateOwner,
-                [intermediateOwner] = 0,
+                [intermediateOwner] = 0
             },
-            additionalValidFormIds: [sourceOwner],
+            [sourceOwner],
             liveScriptVariableOwnerFormIds: new HashSet<uint> { sourceOwner });
 
         Assert.DoesNotContain(sourceInfo, result.NewInfoSourceToAllocated.Keys);
@@ -297,13 +312,15 @@ public sealed class DialogGrupBuilderTests
         var info = ProducerInfo(sourceInfo, sourceTopic, CompiledProducerScript(70));
 
         var result = DialogGrupBuilder.BuildDialogSection(
-            [new DialogTopicRecord
-            {
-                FormId = sourceTopic,
-                EditorId = "RecoveredProducerTopic",
-                QuestFormId = ProducerQuest,
-                TopicType = 0
-            }],
+            [
+                new DialogTopicRecord
+                {
+                    FormId = sourceTopic,
+                    EditorId = "RecoveredProducerTopic",
+                    QuestFormId = ProducerQuest,
+                    TopicType = 0
+                }
+            ],
             [info],
             new NewVsOverrideClassifier([]),
             new FormIdAllocator(),
@@ -333,13 +350,15 @@ public sealed class DialogGrupBuilderTests
             new DialogueResultScript { IsIncompleteExecutableBundle = true });
 
         var result = DialogGrupBuilder.BuildDialogSection(
-            [new DialogTopicRecord
-            {
-                FormId = sourceTopic,
-                EditorId = "UnsafeProducerTopic",
-                QuestFormId = ProducerQuest,
-                TopicType = 0
-            }],
+            [
+                new DialogTopicRecord
+                {
+                    FormId = sourceTopic,
+                    EditorId = "UnsafeProducerTopic",
+                    QuestFormId = ProducerQuest,
+                    TopicType = 0
+                }
+            ],
             [info],
             new NewVsOverrideClassifier([]),
             new FormIdAllocator(),
@@ -366,13 +385,15 @@ public sealed class DialogGrupBuilderTests
             CompiledProducerScript(70));
 
         var result = DialogGrupBuilder.BuildDialogSection(
-            [new DialogTopicRecord
-            {
-                FormId = sourceTopic,
-                EditorId = "SurplusProducerTopic",
-                QuestFormId = ProducerQuest,
-                TopicType = 0
-            }],
+            [
+                new DialogTopicRecord
+                {
+                    FormId = sourceTopic,
+                    EditorId = "SurplusProducerTopic",
+                    QuestFormId = ProducerQuest,
+                    TopicType = 0
+                }
+            ],
             [info],
             new NewVsOverrideClassifier([]),
             new FormIdAllocator(),
@@ -403,7 +424,7 @@ public sealed class DialogGrupBuilderTests
             evidence,
             "Bounded telemetry fixture.")
         {
-            Conflicts = conflicts,
+            Conflicts = conflicts
         };
         var sink = new RecordingSink();
 
@@ -482,6 +503,112 @@ public sealed class DialogGrupBuilderTests
         Assert.Equal(1, stats.EmittedByType["INFO"]);
         Assert.Equal(1, stats.OverridesEmitted);
         Assert.Equal(1, stats.NewRecordsEmitted);
+    }
+
+    [Fact]
+    public void BuildDialogSection_SpeakerBoundNewGoodbyeNotShadowedByNoOpOverlays()
+    {
+        // The v136 Ulysses regression shape: a captured retail generic goodbye with no text
+        // delta must NOT emit as a byte-identical overlay ahead of a new speaker-bound
+        // goodbye, while a text-carrying overlay still emits (in retail order, before news).
+        const uint masterGoodbyeDial = 0x000000D4;
+        const uint noOpGenericInfoId = 0x0010BEE1;
+        const uint changedGenericInfoId = 0x0010BEE2;
+        const uint newGoodbyeSourceId = 0x00133FCB;
+        const uint masterQuest = 0x0001F93C;
+        const uint speaker = 0x00104C0A;
+        var trdt = new byte[16];
+        trdt[12] = 1;
+        var masterDial = ParsedRecordAt("DIAL", masterGoodbyeDial, 100,
+            new ParsedSubrecord { Signature = "EDID", Data = Encoding.Latin1.GetBytes("GOODBYE\0") });
+        var noOpGeneric = ParsedRecordAt("INFO", noOpGenericInfoId, 160,
+            new ParsedSubrecord { Signature = "TRDT", Data = trdt },
+            new ParsedSubrecord { Signature = "NAM1", Data = Encoding.Latin1.GetBytes("See you.\0") });
+        var changedGeneric = ParsedRecordAt("INFO", changedGenericInfoId, 200,
+            new ParsedSubrecord { Signature = "TRDT", Data = trdt },
+            new ParsedSubrecord { Signature = "NAM1", Data = Encoding.Latin1.GetBytes("Bye.\0") });
+        var masters = new Dictionary<uint, ParsedMainRecord>
+        {
+            [masterGoodbyeDial] = masterDial,
+            [noOpGenericInfoId] = noOpGeneric,
+            [changedGenericInfoId] = changedGeneric
+        };
+        var masterIndex = MasterDialogueIndex.Build(
+            [masterDial, noOpGeneric, changedGeneric],
+            [
+                new GrupHeaderInfo
+                {
+                    Offset = 120,
+                    GroupSize = 300,
+                    GroupType = 7,
+                    Label = BitConverter.GetBytes(masterGoodbyeDial)
+                }
+            ]);
+        var noOpCapture = new DialogueRecord
+        {
+            FormId = noOpGenericInfoId,
+            TopicFormId = masterGoodbyeDial,
+            Responses = [new DialogueResponse { ResponseNumber = 1, Text = "See you." }]
+        };
+        var changedCapture = new DialogueRecord
+        {
+            FormId = changedGenericInfoId,
+            TopicFormId = masterGoodbyeDial,
+            Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Bye now, courier." }]
+        };
+        var newGoodbye = new DialogueRecord
+        {
+            FormId = newGoodbyeSourceId,
+            TopicFormId = masterGoodbyeDial,
+            QuestFormId = masterQuest,
+            Conditions =
+            [
+                new DialogueCondition
+                {
+                    FunctionIndex = 72,
+                    Parameter1 = speaker,
+                    ComparisonValue = 1f
+                }
+            ],
+            Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Custom goodbye." }]
+        };
+        var stats = new ConversionPipelineStats();
+
+        var result = DialogGrupBuilder.BuildDialogSection(
+            [],
+            [noOpCapture, changedCapture, newGoodbye],
+            new NewVsOverrideClassifier(masters.Keys),
+            new FormIdAllocator(),
+            new HashSet<uint> { masterGoodbyeDial, noOpGenericInfoId, changedGenericInfoId, masterQuest, speaker },
+            masters,
+            stats,
+            NullConversionProgressSink.Instance,
+            masterDialogueIndex: masterIndex);
+
+        // No-op overlay absent; text-carrying overlay + new speaker-bound INFO emitted.
+        Assert.Equal(2, stats.EmittedByType["INFO"]);
+        Assert.Equal(-1, FindInfoRecordOffset(result.DialogSection, noOpGenericInfoId));
+        var overlayOffset = FindInfoRecordOffset(result.DialogSection, changedGenericInfoId);
+        var allocatedNewInfoId = result.NewInfoSourceToAllocated[newGoodbyeSourceId];
+        var newInfoOffset = FindInfoRecordOffset(result.DialogSection, allocatedNewInfoId);
+        Assert.True(overlayOffset >= 0, "text-carrying overlay must emit");
+        Assert.True(newInfoOffset >= 0, "speaker-bound new goodbye must emit");
+        Assert.True(overlayOffset < newInfoOffset,
+            "overlays emit first in retail order; new INFOs follow");
+    }
+
+    private static int FindInfoRecordOffset(ReadOnlySpan<byte> bytes, uint formId)
+    {
+        for (var i = 0; i <= bytes.Length - 24; i++)
+        {
+            if (bytes.Slice(i, 4).SequenceEqual("INFO"u8) &&
+                BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(i + 12, 4)) == formId)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     [Fact]
@@ -1082,7 +1209,7 @@ public sealed class DialogGrupBuilderTests
             new DialogTopicRecord
             {
                 FormId = collidingExitDial, EditorId = "NeverMindTopic", QuestFormId = sourceQuest
-            },
+            }
         };
         var rootGreeting = new DialogueRecord
         {
@@ -1112,7 +1239,7 @@ public sealed class DialogGrupBuilderTests
             new Dictionary<uint, ParsedMainRecord>
             {
                 [masterGreeting] = greetingDial,
-                [collidingExitDial] = exitDial,
+                [collidingExitDial] = exitDial
             },
             stats,
             NullConversionProgressSink.Instance);
@@ -1132,8 +1259,8 @@ public sealed class DialogGrupBuilderTests
         const uint otherSpeaker = 0x00031111;
         const uint masterGreeting = 0x000000C8;
         const uint sourceRootTopic = 0x00100010;
-        const uint otherNpcExitDial = 0x00120000;  // lower FormID, passes only for otherSpeaker
-        const uint speakerExitDial = 0x00129455;   // higher FormID, goodbye INFO for sourceSpeaker
+        const uint otherNpcExitDial = 0x00120000; // lower FormID, passes only for otherSpeaker
+        const uint speakerExitDial = 0x00129455; // higher FormID, goodbye INFO for sourceSpeaker
         var master = new Dictionary<uint, ParsedMainRecord>
         {
             [masterGreeting] = ParsedRecord("DIAL", masterGreeting,
@@ -1141,17 +1268,17 @@ public sealed class DialogGrupBuilderTests
             [otherNpcExitDial] = ParsedRecordAt("DIAL", otherNpcExitDial, 100,
                 new ParsedSubrecord { Signature = "DATA", Data = [0x00] },
                 new ParsedSubrecord { Signature = "QSTI", Data = BitConverter.GetBytes(sourceQuest) }),
-            [0x00120001] = MasterInfoAt(0x00120001, 110, otherSpeaker, goodbye: true),
+            [0x00120001] = MasterInfoAt(0x00120001, 110, otherSpeaker, true),
             [speakerExitDial] = ParsedRecordAt("DIAL", speakerExitDial, 200,
                 new ParsedSubrecord { Signature = "DATA", Data = [0x00] },
                 new ParsedSubrecord { Signature = "QSTI", Data = BitConverter.GetBytes(sourceQuest) }),
-            [0x00129456] = MasterInfoAt(0x00129456, 210, sourceSpeaker, goodbye: true),
+            [0x00129456] = MasterInfoAt(0x00129456, 210, sourceSpeaker, true)
         };
         var topics = new[]
         {
             new DialogTopicRecord { FormId = sourceRootTopic, EditorId = "RootTopic", QuestFormId = sourceQuest },
             new DialogTopicRecord { FormId = otherNpcExitDial, EditorId = "OtherExit", QuestFormId = sourceQuest },
-            new DialogTopicRecord { FormId = speakerExitDial, EditorId = "SpeakerExit", QuestFormId = sourceQuest },
+            new DialogTopicRecord { FormId = speakerExitDial, EditorId = "SpeakerExit", QuestFormId = sourceQuest }
         };
         var rootGreeting = new DialogueRecord
         {
@@ -1443,38 +1570,47 @@ public sealed class DialogGrupBuilderTests
     private static DialogueRecord ProducerInfo(
         uint formId,
         uint topicFormId,
-        params DialogueResultScript[] scripts) => new()
+        params DialogueResultScript[] scripts)
     {
-        FormId = formId,
-        EditorId = $"ProducerInfo_{formId:X8}",
-        TopicFormId = topicFormId,
-        QuestFormId = ProducerQuest,
-        Responses =
-        [
-            new DialogueResponse
-            {
-                Text = "Producer line.",
-                ResponseNumber = 1
-            }
-        ],
-        ResultScripts = [.. scripts]
-    };
+        return new DialogueRecord
+        {
+            FormId = formId,
+            EditorId = $"ProducerInfo_{formId:X8}",
+            TopicFormId = topicFormId,
+            QuestFormId = ProducerQuest,
+            Responses =
+            [
+                new DialogueResponse
+                {
+                    Text = "Producer line.",
+                    ResponseNumber = 1
+                }
+            ],
+            ResultScripts = [.. scripts]
+        };
+    }
 
-    private static DialogueResultScript CompiledProducerScript(ushort variableIndex) => new()
+    private static DialogueResultScript CompiledProducerScript(ushort variableIndex)
     {
-        CompiledData = BuildExternalSet(variableIndex),
-        ReferencedObjects = [ProducerQuest]
-    };
+        return new DialogueResultScript
+        {
+            CompiledData = BuildExternalSet(variableIndex),
+            ReferencedObjects = [ProducerQuest]
+        };
+    }
 
     private static QuestVariableRecoveryMapping ProducerMapping(
         uint sourceVariable,
-        uint targetVariable) => new(
-        ProducerQuest,
-        ProducerQuest,
-        ProducerTargetScript,
-        new ScriptVariableInfo(sourceVariable, "RecoveredState", 1),
-        new ScriptVariableInfo(targetVariable, "RecoveredState", 1),
-        ScriptVariableDeclarationKind.Short);
+        uint targetVariable)
+    {
+        return new QuestVariableRecoveryMapping(
+            ProducerQuest,
+            ProducerQuest,
+            ProducerTargetScript,
+            new ScriptVariableInfo(sourceVariable, "RecoveredState", 1),
+            new ScriptVariableInfo(targetVariable, "RecoveredState", 1),
+            ScriptVariableDeclarationKind.Short);
+    }
 
     private static byte[] BuildExternalSet(ushort variableIndex)
     {
@@ -1538,8 +1674,8 @@ public sealed class DialogGrupBuilderTests
         data[2] = goodbye ? (byte)0x01 : (byte)0x00;
         var ctda = new byte[28];
         BinaryPrimitives.WriteSingleLittleEndian(ctda.AsSpan(4, 4), 1f);
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(ctda.AsSpan(8, 2), 72); // GetIsID
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(ctda.AsSpan(12, 4), getIsIdSpeaker);
+        BinaryPrimitives.WriteUInt16LittleEndian(ctda.AsSpan(8, 2), 72); // GetIsID
+        BinaryPrimitives.WriteUInt32LittleEndian(ctda.AsSpan(12, 4), getIsIdSpeaker);
         return ParsedRecordAt("INFO", formId, offset,
             new ParsedSubrecord { Signature = "DATA", Data = data },
             new ParsedSubrecord { Signature = "CTDA", Data = ctda });
@@ -1610,9 +1746,21 @@ public sealed class DialogGrupBuilderTests
     {
         public List<ConversionProgressEvent> Events { get; } = [];
 
-        public void OnPhaseStart(string phase, int? totalItems) { }
-        public void OnEvent(ConversionProgressEvent evt) => Events.Add(evt);
-        public void OnPhaseEnd(string phase, ConversionPipelineStats partialStats) { }
-        public void OnComplete(ConversionPipelineStats stats) { }
+        public void OnPhaseStart(string phase, int? totalItems)
+        {
+        }
+
+        public void OnEvent(ConversionProgressEvent evt)
+        {
+            Events.Add(evt);
+        }
+
+        public void OnPhaseEnd(string phase, ConversionPipelineStats partialStats)
+        {
+        }
+
+        public void OnComplete(ConversionPipelineStats stats)
+        {
+        }
     }
 }

@@ -12,10 +12,13 @@ public sealed class FnvClassicEnvironmentMapRetailTests
 {
     private const string MeshesBsaRelative =
         @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+
     private const string HeliosReflectorPath =
         @"meshes\architecture\helios_one\heliosone_solarreflector_row.nif";
+
     private const string GoodspringsGeneralStorePath =
         @"meshes\architecture\goodsprings\nv_generalstore.nif";
+
     private const string EyeFixturePath = @"meshes\characters\hair\shades.nif";
 
     [Fact]
@@ -67,13 +70,16 @@ public sealed class FnvClassicEnvironmentMapRetailTests
         Assert.NotNull(withoutMask);
         Assert.Null(withoutMask.Value.MaskTexturePath);
 
-        NifShaderTextureMetadata WithFlags(uint flags) => new()
+        NifShaderTextureMetadata WithFlags(uint flags)
         {
-            PropertyType = metadata.PropertyType,
-            ShaderFlags = flags,
-            EnvMapScale = metadata.EnvMapScale,
-            TextureSlots = metadata.TextureSlots
-        };
+            return new NifShaderTextureMetadata
+            {
+                PropertyType = metadata.PropertyType,
+                ShaderFlags = flags,
+                EnvMapScale = metadata.EnvMapScale,
+                TextureSlots = metadata.TextureSlots
+            };
+        }
     }
 
     [Fact]
@@ -183,7 +189,7 @@ public sealed class FnvClassicEnvironmentMapRetailTests
             try
             {
                 data = archive.Extract(entry);
-                nif = NifParser.Parse(data) as NifInfo;
+                nif = NifParser.Parse(data);
             }
             catch
             {
@@ -220,11 +226,13 @@ public sealed class FnvClassicEnvironmentMapRetailTests
                     windowProperties++;
                     meshHasWindowEnvironment = true;
                 }
+
                 if ((flags & (1u << 17)) != 0)
                 {
                     eyeProperties++;
                     bit7EyeProperties++;
                 }
+
                 var hasCube = !string.IsNullOrWhiteSpace(metadata.EnvironmentMapPath);
                 var hasMask = !string.IsNullOrWhiteSpace(metadata.EnvironmentMaskPath);
                 if (hasCube) slot4Cubes++;
@@ -250,8 +258,10 @@ public sealed class FnvClassicEnvironmentMapRetailTests
         Assert.Equal(23, bit7EyeProperties);
     }
 
-    private static MeshArchiveSet OpenRetailMeshes() =>
-        MeshArchiveSet.Open(FindRetailMeshesPath(), null, enableFuzzy: false, includeLooseFiles: false);
+    private static MeshArchiveSet OpenRetailMeshes()
+    {
+        return MeshArchiveSet.Open(FindRetailMeshesPath(), null, false);
+    }
 
     private static string FindRetailMeshesPath()
     {

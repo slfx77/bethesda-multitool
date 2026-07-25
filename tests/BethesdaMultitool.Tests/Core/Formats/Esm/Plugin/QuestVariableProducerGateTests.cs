@@ -68,6 +68,52 @@ public sealed class QuestVariableProducerGateTests
     }
 
     [Fact]
+    public void Combined_dialogue_ledger_ignores_overlays_so_no_op_suppression_cannot_disturb_evidence()
+    {
+        // A1 (no-op overlay suppression) removes SharedInfoOverlays entries at plan time.
+        // Producer evidence must be sourced from NewInfos ONLY, so an overlay that carries a
+        // writer result script contributes nothing — with or without suppression.
+        var mapping = Mapping(7, 70);
+        var writerInfo = new DialogueRecord
+        {
+            FormId = 0x01000002,
+            EditorId = "InfoOnlyProducer",
+            Conditions = [QuestVariable(70)],
+            ResultScripts = [CompiledScript(7)]
+        };
+        var overlayPrototype = new DialogueRecord
+        {
+            FormId = 0x00100050,
+            EditorId = "OverlayWriterNeverCounts",
+            ResultScripts = [CompiledScript(7)]
+        };
+        var overlay = new SharedDialogueInfoOverlay(
+            overlayPrototype,
+            new MasterDialogueInfo(
+                new ParsedMainRecord
+                {
+                    Header = new MainRecordHeader { Signature = "INFO", FormId = 0x00100050 },
+                    Offset = 0
+                },
+                0x000000D4,
+                0,
+                new HashSet<uint>()));
+        var planWithOverlay = CombinedOutput([writerInfo]) with { SharedInfoOverlays = [overlay] };
+        var planWithoutOverlay = CombinedOutput([writerInfo]);
+
+        var evidenceWithOverlay = DialogueProducerLedger.FromCombinedOutput(
+            planWithOverlay, [mapping], null).Evidence;
+        var evidenceWithoutOverlay = DialogueProducerLedger.FromCombinedOutput(
+            planWithoutOverlay, [mapping], null).Evidence;
+
+        Assert.Single(evidenceWithOverlay);
+        Assert.Single(evidenceWithoutOverlay);
+        Assert.Equal(
+            evidenceWithoutOverlay.Single().Owner,
+            evidenceWithOverlay.Single().Owner);
+    }
+
+    [Fact]
     public void VerifyFinalOutput_rejects_info_candidate_that_was_not_emitted()
     {
         var mapping = Mapping(7, 70);
@@ -118,7 +164,7 @@ public sealed class QuestVariableProducerGateTests
     [Fact]
     public void PlanWriter_records_exact_pack_script_owner_after_record_serialization()
     {
-        var plan = PlanWithPackProducer(incompleteExecutableBundle: false);
+        var plan = PlanWithPackProducer(false);
         var writer = new PlanWriter(PlannedEncoders.BuildRegistry());
         var owner = new QuestVariableProducerOwner(
             "PACK",
@@ -149,7 +195,7 @@ public sealed class QuestVariableProducerGateTests
     [Fact]
     public void VerifyFinalOutput_rejects_pack_that_late_declines_serialization()
     {
-        var plan = PlanWithPackProducer(incompleteExecutableBundle: true);
+        var plan = PlanWithPackProducer(true);
         var writer = new PlanWriter(PlannedEncoders.BuildRegistry());
         var owner = new QuestVariableProducerOwner(
             "PACK",
@@ -239,7 +285,8 @@ public sealed class QuestVariableProducerGateTests
         Assert.Equal(0, result.SuppressedInfoCount);
         Assert.Equal(augmentation, Assert.Single(result.ScriptVariableAugmentations));
         Assert.Equal(mapping, Assert.Single(result.VariableRecoveryMappings));
-        Assert.Equal(SourceScript, Assert.Single(Assert.Single(result.ProducerRequirements).CandidateOwners).SourceFormId);
+        Assert.Equal(SourceScript,
+            Assert.Single(Assert.Single(result.ProducerRequirements).CandidateOwners).SourceFormId);
     }
 
     [Fact]
@@ -327,7 +374,7 @@ public sealed class QuestVariableProducerGateTests
         };
         var masterRecords = new Dictionary<uint, ParsedMainRecord>
         {
-            [masterInfo] = new ParsedMainRecord
+            [masterInfo] = new()
             {
                 Header = new MainRecordHeader { Signature = "INFO", FormId = masterInfo }
             }
@@ -412,15 +459,15 @@ public sealed class QuestVariableProducerGateTests
                     Text = "Removed producer A",
                     Conditions = [QuestVariable(72)],
                     CompiledData = BuildExternalSet(7),
-                    ReferencedObjects = [Quest],
+                    ReferencedObjects = [Quest]
                 },
                 new TerminalMenuItem
                 {
                     Text = "Surviving producer B",
                     CompiledData = BuildExternalSet(8),
-                    ReferencedObjects = [Quest],
-                },
-            ],
+                    ReferencedObjects = [Quest]
+                }
+            ]
         };
         var records = new RecordCollection
         {
@@ -431,15 +478,15 @@ public sealed class QuestVariableProducerGateTests
                 {
                     FormId = 0x01000031,
                     EditorId = "ConsumesA",
-                    Conditions = [QuestVariable(70)],
+                    Conditions = [QuestVariable(70)]
                 },
                 new DialogueRecord
                 {
                     FormId = 0x01000032,
                     EditorId = "ConsumesB",
-                    Conditions = [QuestVariable(71)],
-                },
-            ],
+                    Conditions = [QuestVariable(71)]
+                }
+            ]
         };
         var evidence = FindEvidence(records, [mappingA, mappingB, mappingC], "TERM");
 
@@ -494,19 +541,19 @@ public sealed class QuestVariableProducerGateTests
                         {
                             CompiledData = BuildExternalSet(7),
                             ReferencedObjects = [Quest],
-                            IsIncompleteExecutableBundle = true,
-                        },
-                    ],
-                },
+                            IsIncompleteExecutableBundle = true
+                        }
+                    ]
+                }
             ],
             Dialogues =
             [
                 new DialogueRecord
                 {
                     FormId = 0x01000041,
-                    Conditions = [QuestVariable(70)],
-                },
-            ],
+                    Conditions = [QuestVariable(70)]
+                }
+            ]
         };
 
         var evidence = FindEvidence(records, [mapping], "TERM");
@@ -577,8 +624,9 @@ public sealed class QuestVariableProducerGateTests
             new HashSet<string>(plannerTypes, StringComparer.Ordinal));
     }
 
-    private static DialogueCombinePlan CombinedOutput(IReadOnlyList<DialogueRecord> infos) =>
-        new(
+    private static DialogueCombinePlan CombinedOutput(IReadOnlyList<DialogueRecord> infos)
+    {
+        return new DialogueCombinePlan(
             [],
             infos,
             [],
@@ -587,6 +635,7 @@ public sealed class QuestVariableProducerGateTests
             0,
             0,
             []);
+    }
 
     private static RecordCollection RecordsWithScptWriter(uint sourceVariable, uint targetVariable)
     {
@@ -613,37 +662,48 @@ public sealed class QuestVariableProducerGateTests
         };
     }
 
-    private static DialogueResultScript CompiledScript(uint sourceVariable) => new()
+    private static DialogueResultScript CompiledScript(uint sourceVariable)
     {
-        CompiledData = BuildExternalSet(checked((ushort)sourceVariable)),
-        ReferencedObjects = [Quest]
-    };
+        return new DialogueResultScript
+        {
+            CompiledData = BuildExternalSet(checked((ushort)sourceVariable)),
+            ReferencedObjects = [Quest]
+        };
+    }
 
-    private static DialogueCondition QuestVariable(uint targetVariable) => new()
+    private static DialogueCondition QuestVariable(uint targetVariable)
     {
-        FunctionIndex = QuestVariableConditionSanitizer.GetQuestVariableFunctionIndex,
-        Parameter1 = Quest,
-        Parameter2 = targetVariable
-    };
+        return new DialogueCondition
+        {
+            FunctionIndex = QuestVariableConditionSanitizer.GetQuestVariableFunctionIndex,
+            Parameter1 = Quest,
+            Parameter2 = targetVariable
+        };
+    }
 
     private static QuestVariableRecoveryMapping Mapping(
         uint sourceVariable,
         uint targetVariable,
-        string name = "RecoveredState") => new(
-        Quest,
-        Quest,
-        TargetScript,
-        new ScriptVariableInfo(sourceVariable, name, 1),
-        new ScriptVariableInfo(targetVariable, name, 1),
-        ScriptVariableDeclarationKind.Short);
+        string name = "RecoveredState")
+    {
+        return new QuestVariableRecoveryMapping(
+            Quest,
+            Quest,
+            TargetScript,
+            new ScriptVariableInfo(sourceVariable, name, 1),
+            new ScriptVariableInfo(targetVariable, name, 1),
+            ScriptVariableDeclarationKind.Short);
+    }
 
     private static ScriptVariableAugmentation Augmentation(
         uint targetVariable,
-        string name = "RecoveredState") =>
-        new(
+        string name = "RecoveredState")
+    {
+        return new ScriptVariableAugmentation(
             TargetScript,
             new ScriptVariableInfo(targetVariable, name, 1),
             ScriptVariableDeclarationKind.Short);
+    }
 
     private static EmitPlan PlanWithProducer(uint sourceFormId)
     {
@@ -735,7 +795,7 @@ public sealed class QuestVariableProducerGateTests
             Model = terminal,
             References = ImmutableArray<ResolvedRef>.Empty,
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test producer" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test producer" }
         };
         return new EmitPlan
         {
@@ -748,24 +808,27 @@ public sealed class QuestVariableProducerGateTests
             Meta = new PlanMetadata
             {
                 NextObjectId = 0x801,
-                PlannerCoverage = ImmutableHashSet.Create("TERM"),
-            },
+                PlannerCoverage = ImmutableHashSet.Create("TERM")
+            }
         };
     }
 
-    private static EmitPlan EmptyPlan() => new()
+    private static EmitPlan EmptyPlan()
     {
-        Records = ImmutableArray<RecordPlan>.Empty,
-        SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-        EmittedFormIds = ImmutableHashSet<uint>.Empty,
-        RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
-        Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-        Meta = new PlanMetadata
+        return new EmitPlan
         {
-            NextObjectId = 0x800,
-            PlannerCoverage = ImmutableHashSet<string>.Empty
-        }
-    };
+            Records = ImmutableArray<RecordPlan>.Empty,
+            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
+            EmittedFormIds = ImmutableHashSet<uint>.Empty,
+            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
+            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
+            Meta = new PlanMetadata
+            {
+                NextObjectId = 0x800,
+                PlannerCoverage = ImmutableHashSet<string>.Empty
+            }
+        };
+    }
 
     private static byte[] BuildExternalSet(ushort variableIndex)
     {

@@ -114,6 +114,11 @@ internal sealed class RuntimeObjectScanner(RuntimeMemoryContext context)
             var chunk = _context.ReadBytes(fileOffset, readSize);
             if (chunk == null)
             {
+                // A null read here means a truncated/faulted region chunk that is silently skipped —
+                // any structs it held are not scanned. Surface it so a partial capture is diagnosable.
+                Logger.Instance.Debug(
+                    "  [RuntimeObjectScanner] skipped {0}-byte chunk at file offset 0x{1:X} (read failed/truncated)",
+                    readSize, fileOffset);
                 continue;
             }
 
@@ -159,6 +164,9 @@ internal sealed class RuntimeObjectScanner(RuntimeMemoryContext context)
             var chunk = _context.ReadBytes(chunkStart, readSize);
             if (chunk == null)
             {
+                Logger.Instance.Debug(
+                    "  [RuntimeObjectScanner] skipped {0}-byte chunk at file offset 0x{1:X} (read failed/truncated)",
+                    readSize, chunkStart);
                 continue;
             }
 

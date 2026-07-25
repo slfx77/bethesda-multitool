@@ -10,13 +10,16 @@ namespace BethesdaMultitool.Tests.Core.WorldData;
 /// </summary>
 public sealed class StreamingQuiescenceTests
 {
-    private static WorldRenderStats Quiet() => new();
+    private static WorldRenderStats Quiet()
+    {
+        return new WorldRenderStats();
+    }
 
     [Fact]
     public void QuietStats_AreQuiescedInBothModes()
     {
-        Assert.True(StreamingQuiescence.IsQuiesced(Quiet(), Quiet(), strict: false));
-        Assert.True(StreamingQuiescence.IsQuiesced(Quiet(), Quiet(), strict: true));
+        Assert.True(StreamingQuiescence.IsQuiesced(Quiet(), Quiet(), false));
+        Assert.True(StreamingQuiescence.IsQuiesced(Quiet(), Quiet(), true));
     }
 
     [Theory]
@@ -36,8 +39,9 @@ public sealed class StreamingQuiescenceTests
             case "pendingResolves": r.ReferenceTexturePendingResolves = 1; break;
             case "pendingUploads": r.ReferenceTexturePendingUploads = 1; break;
         }
-        Assert.False(StreamingQuiescence.IsQuiesced(r, null, strict: false));
-        Assert.False(StreamingQuiescence.IsQuiesced(r, null, strict: true));
+
+        Assert.False(StreamingQuiescence.IsQuiesced(r, null, false));
+        Assert.False(StreamingQuiescence.IsQuiesced(r, null, true));
     }
 
     [Fact]
@@ -48,8 +52,8 @@ public sealed class StreamingQuiescenceTests
         // reaches zero in regions with permanently-missing textures).
         var r = Quiet();
         r.ReferenceTexturePending = 3;
-        Assert.True(StreamingQuiescence.IsQuiesced(r, null, strict: false));
-        Assert.False(StreamingQuiescence.IsQuiesced(r, null, strict: true));
+        Assert.True(StreamingQuiescence.IsQuiesced(r, null, false));
+        Assert.False(StreamingQuiescence.IsQuiesced(r, null, true));
     }
 
     [Fact]
@@ -58,8 +62,8 @@ public sealed class StreamingQuiescenceTests
         // 10-28k permanently-unresolvable meshes at dense spots — any gate on this deadlocks.
         var r = Quiet();
         r.ReferenceMeshMissing = 28_000;
-        Assert.True(StreamingQuiescence.IsQuiesced(r, null, strict: false));
-        Assert.True(StreamingQuiescence.IsQuiesced(r, null, strict: true));
+        Assert.True(StreamingQuiescence.IsQuiesced(r, null, false));
+        Assert.True(StreamingQuiescence.IsQuiesced(r, null, true));
     }
 
     [Fact]
@@ -67,9 +71,9 @@ public sealed class StreamingQuiescenceTests
     {
         var t = Quiet();
         t.NewUploads = 2;
-        Assert.False(StreamingQuiescence.IsQuiesced(Quiet(), t, strict: false));
+        Assert.False(StreamingQuiescence.IsQuiesced(Quiet(), t, false));
         // Null = the layer wasn't rendered this frame (stale stats) — imposes no requirement.
-        Assert.True(StreamingQuiescence.IsQuiesced(Quiet(), null, strict: false));
+        Assert.True(StreamingQuiescence.IsQuiesced(Quiet(), null, false));
     }
 
     [Fact]
@@ -77,8 +81,8 @@ public sealed class StreamingQuiescenceTests
     {
         // Layer-not-rendered convention: a terrain-only export must be able to settle.
         var t = Quiet();
-        Assert.True(StreamingQuiescence.IsQuiesced(null, t, strict: true));
-        Assert.True(StreamingQuiescence.IsQuiesced(null, null, strict: true));
+        Assert.True(StreamingQuiescence.IsQuiesced(null, t, true));
+        Assert.True(StreamingQuiescence.IsQuiesced(null, null, true));
     }
 
     [Fact]
@@ -86,8 +90,12 @@ public sealed class StreamingQuiescenceTests
     {
         var calls = 0;
         var settled = await StreamingQuiescence.PollAsync(
-            () => { calls++; return true; },
-            timeout: TimeSpan.FromSeconds(5), interval: TimeSpan.FromMilliseconds(10),
+            () =>
+            {
+                calls++;
+                return true;
+            },
+            TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(10),
             TestContext.Current.CancellationToken);
         Assert.True(settled);
         Assert.Equal(1, calls);
@@ -98,7 +106,7 @@ public sealed class StreamingQuiescenceTests
     {
         var settled = await StreamingQuiescence.PollAsync(
             () => false,
-            timeout: TimeSpan.FromMilliseconds(50), interval: TimeSpan.FromMilliseconds(10),
+            TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(10),
             TestContext.Current.CancellationToken);
         Assert.False(settled);
     }
@@ -109,7 +117,7 @@ public sealed class StreamingQuiescenceTests
         var calls = 0;
         var settled = await StreamingQuiescence.PollAsync(
             () => ++calls >= 3,
-            timeout: TimeSpan.FromSeconds(5), interval: TimeSpan.FromMilliseconds(10),
+            TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(10),
             TestContext.Current.CancellationToken);
         Assert.True(settled);
     }

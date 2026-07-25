@@ -13,9 +13,12 @@ internal static class SampleBsaLocator
     ///     The FNV PC Final meshes BSA
     ///     (Sample/Full_Builds/Fallout New Vegas (PC Final)/Data/Fallout - Meshes.bsa).
     /// </summary>
-    public static string ResolveFnvMeshesBsa() => Resolve(
-        "Fallout - Meshes.bsa",
-        Path.Combine("Sample", "Full_Builds", "Fallout New Vegas (PC Final)", "Data", "Fallout - Meshes.bsa"));
+    public static string ResolveFnvMeshesBsa()
+    {
+        return Resolve(
+            "Fallout - Meshes.bsa",
+            Path.Combine("Sample", "Full_Builds", "Fallout New Vegas (PC Final)", "Data", "Fallout - Meshes.bsa"));
+    }
 
     private static string Resolve(string fileName, string repoRelativePath)
     {

@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
@@ -17,14 +18,15 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class NifParticleSystemParserTests
 {
+    private const string MeshesBsaRelative =
+        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+
+    private const string FxDustPath = @"meshes\effects\ambient\fxdustwhirlwind01.nif";
+
     public NifParticleSystemParserTests()
     {
         BucketBTestGuard.SkipUnlessEnabled();
     }
-
-    private const string MeshesBsaRelative =
-        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
-    private const string FxDustPath = @"meshes\effects\ambient\fxdustwhirlwind01.nif";
 
     [Fact]
     public void Parse_FxDustWhirlwind_FindsModifierChainEmitterAndSuppressesEmitterMesh()
@@ -32,7 +34,7 @@ public sealed class NifParticleSystemParserTests
         var bsaPath = SampleFileFixture.FindSamplePath(MeshesBsaRelative);
         Assert.SkipWhen(bsaPath is null, "FNV PC final meshes BSA not available");
 
-        using var archives = MeshArchiveSet.Open(bsaPath!, null, enableFuzzy: false, includeLooseFiles: false);
+        using var archives = MeshArchiveSet.Open(bsaPath!, null, false, false);
         Assert.True(archives.TryExtractFile(FxDustPath, out var data, out _), "FXDust NIF not found in BSA");
 
         var nif = NifParser.Parse(data);
@@ -79,8 +81,8 @@ public sealed class NifParticleSystemParserTests
         Assert.NotNull(debrisRate.SequenceTiming);
         Assert.Equal(60f, debrisRate.Sample(0f), 4);
         var expectedCells = Enumerable.Range(0, 16)
-            .Select(i => new System.Numerics.Vector4(
-                (i % 4) * 0.25f, (i / 4) * 0.25f, 0.25f, 0.25f))
+            .Select(i => new Vector4(
+                i % 4 * 0.25f, i / 4 * 0.25f, 0.25f, 0.25f))
             .ToArray();
         Assert.Equal(expectedCells, atlasDef.SubtextureOffsets);
         Assert.Equal(16, atlasDef.SubtextureOffsets.Distinct().Count());

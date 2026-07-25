@@ -125,7 +125,7 @@ public sealed class RegionWeatherSelectionResolverTests
             WorldspaceFormId = WorldspaceFormId,
             // RuntimeRegionReader cannot recover RPLI/RPLD or RDAT.
             Areas = [],
-            WeatherTypes = [],
+            WeatherTypes = []
         };
 
         var result = Resolve(Cell(RegionFormId), 50, 50, [runtimeOnly], []);
@@ -144,26 +144,26 @@ public sealed class RegionWeatherSelectionResolverTests
         var index = new Dictionary<uint, WeatherRecord> { [runtime.FormId] = runtime };
 
         var staticDefault = WeatherTransitionSelectionResolver.Resolve(
-            selectedWeather: climate,
-            isClimateDefaultSelection: true,
-            climateDefaultWeather: climate,
-            runtimeSnapshot: null,
-            weathersByFormId: index,
-            deterministicRegionWeather: region);
+            climate,
+            true,
+            climate,
+            null,
+            index,
+            region);
         var explicitResult = WeatherTransitionSelectionResolver.Resolve(
-            selectedWeather: explicitPreview,
-            isClimateDefaultSelection: false,
-            climateDefaultWeather: climate,
-            runtimeSnapshot: null,
-            weathersByFormId: index,
-            deterministicRegionWeather: region);
+            explicitPreview,
+            false,
+            climate,
+            null,
+            index,
+            region);
         var runtimeResult = WeatherTransitionSelectionResolver.Resolve(
-            selectedWeather: climate,
-            isClimateDefaultSelection: true,
-            climateDefaultWeather: climate,
-            runtimeSnapshot: Snapshot(runtime.FormId),
-            weathersByFormId: index,
-            deterministicRegionWeather: region);
+            climate,
+            true,
+            climate,
+            Snapshot(runtime.FormId),
+            index,
+            region);
 
         Assert.Same(region, staticDefault.CurrentWeather);
         Assert.Contains("weatherSource=region-rdwt", staticDefault.Telemetry, StringComparison.Ordinal);
@@ -177,55 +177,72 @@ public sealed class RegionWeatherSelectionResolverTests
         float x,
         float y,
         IReadOnlyList<RegionRecord> regions,
-        IReadOnlyList<WeatherRecord> weathers) =>
-        RegionWeatherSelectionResolver.Resolve(
+        IReadOnlyList<WeatherRecord> weathers)
+    {
+        return RegionWeatherSelectionResolver.Resolve(
             cell,
             x,
             y,
             WorldspaceFormId,
             regions.ToDictionary(region => region.FormId),
             weathers.ToDictionary(weather => weather.FormId));
+    }
 
-    private static CellRecord Cell(params uint[] regionFormIds) => new()
+    private static CellRecord Cell(params uint[] regionFormIds)
     {
-        FormId = CellFormId,
-        WorldspaceFormId = WorldspaceFormId,
-        GridX = 0,
-        GridY = 0,
-        RadiationRegionFormIds = regionFormIds,
-    };
+        return new CellRecord
+        {
+            FormId = CellFormId,
+            WorldspaceFormId = WorldspaceFormId,
+            GridX = 0,
+            GridY = 0,
+            RadiationRegionFormIds = regionFormIds
+        };
+    }
 
     private static RegionRecord Region(
         uint formId,
         IReadOnlyList<RegionWeatherType> weatherTypes,
-        IReadOnlyList<RegionPoint> points) => new()
+        IReadOnlyList<RegionPoint> points)
     {
-        FormId = formId,
-        WorldspaceFormId = WorldspaceFormId,
-        WeatherTypes = weatherTypes,
-        Areas = [new RegionArea(0, points)],
-    };
+        return new RegionRecord
+        {
+            FormId = formId,
+            WorldspaceFormId = WorldspaceFormId,
+            WeatherTypes = weatherTypes,
+            Areas = [new RegionArea(0, points)]
+        };
+    }
 
-    private static WeatherRecord Weather(uint formId, string editorId) => new()
+    private static WeatherRecord Weather(uint formId, string editorId)
     {
-        FormId = formId,
-        EditorId = editorId,
-    };
+        return new WeatherRecord
+        {
+            FormId = formId,
+            EditorId = editorId
+        };
+    }
 
-    private static IReadOnlyList<RegionPoint> Square(float minX, float minY, float maxX, float maxY) =>
-    [
-        new RegionPoint(minX, minY),
-        new RegionPoint(maxX, minY),
-        new RegionPoint(maxX, maxY),
-        new RegionPoint(minX, maxY),
-    ];
+    private static IReadOnlyList<RegionPoint> Square(float minX, float minY, float maxX, float maxY)
+    {
+        return
+        [
+            new RegionPoint(minX, minY),
+            new RegionPoint(maxX, minY),
+            new RegionPoint(maxX, maxY),
+            new RegionPoint(minX, maxY)
+        ];
+    }
 
-    private static WeatherTransitionSnapshot Snapshot(uint currentWeatherFormId) => new(
-        SkyVirtualAddress: 0x40000100,
-        CurrentWeatherPointer: 0x40000400,
-        CurrentWeatherFormId: currentWeatherFormId,
-        OutgoingWeatherPointer: 0x40000440,
-        OutgoingWeatherFormId: currentWeatherFormId,
-        CurrentWeatherWeight: 1f,
-        ModifierElapsedSeconds: null);
+    private static WeatherTransitionSnapshot Snapshot(uint currentWeatherFormId)
+    {
+        return new WeatherTransitionSnapshot(
+            0x40000100,
+            0x40000400,
+            currentWeatherFormId,
+            0x40000440,
+            currentWeatherFormId,
+            1f,
+            null);
+    }
 }

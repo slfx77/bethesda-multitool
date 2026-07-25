@@ -31,6 +31,8 @@ internal static class CaptureSelectionGuard
         return false;
     }
 
-    private static string ActualLabel(string? actual) =>
-        string.IsNullOrWhiteSpace(actual) ? "(none)" : actual.Trim();
+    private static string ActualLabel(string? actual)
+    {
+        return string.IsNullOrWhiteSpace(actual) ? "(none)" : actual.Trim();
+    }
 }

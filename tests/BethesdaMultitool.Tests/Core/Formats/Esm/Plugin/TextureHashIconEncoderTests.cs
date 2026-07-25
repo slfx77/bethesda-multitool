@@ -100,33 +100,36 @@ public class TextureHashIconEncoderTests
         Assert.Contains(encoded.Subrecords, s => s.Signature == "MODT");
     }
 
-    private static EncodedRecord EncodeModtOnlyRecord(string recordType) => recordType switch
+    private static EncodedRecord EncodeModtOnlyRecord(string recordType)
     {
-        "DOOR" => DoorEncoder.EncodeNew(new DoorRecord
+        return recordType switch
         {
-            FormId = 0x400,
-            EditorId = "D",
-            ModelPath = "d.nif",
-            TextureHashData = SampleModt,
-            Flags = 0x01
-        }),
-        "FURN" => FurnEncoder.EncodeNew(new FurnitureRecord
-        {
-            FormId = 0x200,
-            EditorId = "F",
-            ModelPath = "f.nif",
-            TextureHashData = SampleModt,
-            MarkerFlags = 0
-        }),
-        "CONT" => ContEncoder.EncodeNew(new ContainerRecord
-        {
-            FormId = 0x600,
-            EditorId = "C",
-            ModelPath = "c.nif",
-            TextureHashData = SampleModt
-        }),
-        _ => throw new ArgumentOutOfRangeException(nameof(recordType))
-    };
+            "DOOR" => DoorEncoder.EncodeNew(new DoorRecord
+            {
+                FormId = 0x400,
+                EditorId = "D",
+                ModelPath = "d.nif",
+                TextureHashData = SampleModt,
+                Flags = 0x01
+            }),
+            "FURN" => FurnEncoder.EncodeNew(new FurnitureRecord
+            {
+                FormId = 0x200,
+                EditorId = "F",
+                ModelPath = "f.nif",
+                TextureHashData = SampleModt,
+                MarkerFlags = 0
+            }),
+            "CONT" => ContEncoder.EncodeNew(new ContainerRecord
+            {
+                FormId = 0x600,
+                EditorId = "C",
+                ModelPath = "c.nif",
+                TextureHashData = SampleModt
+            }),
+            _ => throw new ArgumentOutOfRangeException(nameof(recordType))
+        };
+    }
 
     [Fact]
     public void LighEncoder_EncodeNew_EmitsModtBetweenModlAndFullAndData()
@@ -200,37 +203,40 @@ public class TextureHashIconEncoderTests
         Assert.Contains(encoded.Subrecords, s => s.Signature == "MICO");
     }
 
-    private static EncodedRecord EncodeInventoryItemRecord(string recordType) => recordType switch
+    private static EncodedRecord EncodeInventoryItemRecord(string recordType)
     {
-        "KEYM" => KeymEncoder.EncodeNew(new KeyRecord
+        return recordType switch
         {
-            FormId = 0x100,
-            EditorId = "K",
-            ModelPath = "k.nif",
-            TextureHashData = SampleModt,
-            IconPath = "icons/k.dds",
-            MessageIconPath = "icons/k_mini.dds"
-        }),
-        "AMMO" => AmmoEncoder.EncodeNew(new AmmoRecord
-        {
-            FormId = 0x100,
-            EditorId = "A",
-            ModelPath = "a.nif",
-            TextureHashData = SampleModt,
-            IconPath = "icons/a.dds",
-            MessageIconPath = "icons/a_mini.dds"
-        }),
-        "ALCH" => AlchEncoder.EncodeNew(new ConsumableRecord
-        {
-            FormId = 0x100,
-            EditorId = "A",
-            ModelPath = "a.nif",
-            TextureHashData = SampleModt,
-            IconPath = "icons/a.dds",
-            MessageIconPath = "icons/a_mini.dds"
-        }),
-        _ => throw new ArgumentOutOfRangeException(nameof(recordType))
-    };
+            "KEYM" => KeymEncoder.EncodeNew(new KeyRecord
+            {
+                FormId = 0x100,
+                EditorId = "K",
+                ModelPath = "k.nif",
+                TextureHashData = SampleModt,
+                IconPath = "icons/k.dds",
+                MessageIconPath = "icons/k_mini.dds"
+            }),
+            "AMMO" => AmmoEncoder.EncodeNew(new AmmoRecord
+            {
+                FormId = 0x100,
+                EditorId = "A",
+                ModelPath = "a.nif",
+                TextureHashData = SampleModt,
+                IconPath = "icons/a.dds",
+                MessageIconPath = "icons/a_mini.dds"
+            }),
+            "ALCH" => AlchEncoder.EncodeNew(new ConsumableRecord
+            {
+                FormId = 0x100,
+                EditorId = "A",
+                ModelPath = "a.nif",
+                TextureHashData = SampleModt,
+                IconPath = "icons/a.dds",
+                MessageIconPath = "icons/a_mini.dds"
+            }),
+            _ => throw new ArgumentOutOfRangeException(nameof(recordType))
+        };
+    }
 
     [Fact]
     public void ArmoEncoder_EncodeNew_EmitsBmdtBeforeModlModtIconMico()

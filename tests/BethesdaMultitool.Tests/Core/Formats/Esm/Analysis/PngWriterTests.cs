@@ -1,3 +1,4 @@
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using ImageMagick;
 using Xunit;
@@ -19,13 +20,14 @@ public sealed class PngWriterTests
         {
             for (var x = 0; x < width; x++)
             {
-                var i = ((y * width) + x) * 4;
-                pixels[i] = (byte)((x * 7) + (y * 3));
+                var i = (y * width + x) * 4;
+                pixels[i] = (byte)(x * 7 + y * 3);
                 pixels[i + 1] = (byte)((x * 13) ^ (y * 5));
-                pixels[i + 2] = (byte)(x + (y * 11));
-                pixels[i + 3] = (byte)(255 - ((x + y) % 32)); // varied alpha too
+                pixels[i + 2] = (byte)(x + y * 11);
+                pixels[i + 3] = (byte)(255 - (x + y) % 32); // varied alpha too
             }
         }
+
         return pixels;
     }
 
@@ -56,7 +58,7 @@ public sealed class PngWriterTests
         var second = PngWriter.EncodeRgba(pixels, 16, 12);
 
         Assert.Equal(first, second);
-        var containerText = System.Text.Encoding.Latin1.GetString(first);
+        var containerText = Encoding.Latin1.GetString(first);
         Assert.DoesNotContain("date:create", containerText);
         Assert.DoesNotContain("date:modify", containerText);
     }

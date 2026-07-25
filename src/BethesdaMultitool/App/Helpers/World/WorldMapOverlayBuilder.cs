@@ -61,7 +61,7 @@ internal static class WorldMapOverlayBuilder
         }
 
         // Group map markers by worldspace using cell ownership (GRUP-based, not coordinates)
-        var markersByWorldspace = GroupMarkersByWorldspace(semantic.Worldspaces);
+        var markersByWorldspace = GroupMarkersByWorldspace(semantic.Worldspaces, game);
 
         // Find exterior cells with grid coords but no worldspace linkage (common in DMP files)
         var linkedCellFormIds = CollectLinkedCellFormIds(semantic.Worldspaces);
@@ -263,7 +263,7 @@ internal static class WorldMapOverlayBuilder
             }
         }
 
-        var markersByWorldspace = GroupMarkersByWorldspace(suppRecords.Worldspaces);
+        var markersByWorldspace = GroupMarkersByWorldspace(suppRecords.Worldspaces, game);
         var linkedCellFormIds = CollectLinkedCellFormIds(suppRecords.Worldspaces);
 
         var unlinkedExterior = suppRecords.Cells
@@ -663,12 +663,13 @@ internal static class WorldMapOverlayBuilder
 
     // -- Shared helpers for both ESM and save+ESM paths --
 
-    // Group map markers by owning worldspace, folding in markers inherited from "Use Map Data" child
-    // worldspaces. Pure record computation, so it lives in Core (WorldspaceMarkerGrouping) where it is
-    // headless-unit-testable; this WinUI builder just delegates.
+    // Group map markers by owning worldspace, folding in markers inherited from child worldspaces
+    // (FO3+ "Use Map Data" flag, or the bare WNAM chain on TES4-era games). Pure record computation,
+    // so it lives in Core (WorldspaceMarkerGrouping) where it is headless-unit-testable; this WinUI
+    // builder just delegates.
     private static Dictionary<uint, List<PlacedReference>> GroupMarkersByWorldspace(
-        List<WorldspaceRecord> worldspaces)
-        => WorldspaceMarkerGrouping.GroupByWorldspace(worldspaces);
+        List<WorldspaceRecord> worldspaces, BethesdaGame game)
+        => WorldspaceMarkerGrouping.GroupByWorldspace(worldspaces, game);
 
     private static HashSet<uint> CollectLinkedCellFormIds(List<WorldspaceRecord> worldspaces)
     {

@@ -74,7 +74,7 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
 
     /// <summary>
     ///     Bytes protected at the end of the current frame slot. Ordinary allocations stop before
-    ///     this tail until <see cref="ReleaseTailReservation" /> is called. This lets a late pass
+    ///     this tail until <see cref="ReleaseTailReservation()" /> is called. This lets a late pass
     ///     guarantee its small constant-buffer budget before dense scene draws consume the ring.
     /// </summary>
     public uint ReservedTailBytes => _reservedTailBytes;
@@ -85,7 +85,7 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
     /// <summary>
     ///     Adds a protected tail to the current frame slot without advancing the bump pointer.
     ///     Returns false, leaving the prior reservation unchanged, when already-recorded allocations
-    ///     leave too little room. Call <see cref="ReleaseTailReservation" /> immediately before the
+    ///     leave too little room. Call <see cref="ReleaseTailReservation()" /> immediately before the
     ///     protected pass starts allocating.
     /// </summary>
     public bool TryReserveTail(uint size)
@@ -100,11 +100,31 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
         return true;
     }
 
-    /// <summary>Makes the protected tail available to subsequent allocations.</summary>
+    /// <summary>Makes the entire protected tail available to subsequent allocations.</summary>
     public void ReleaseTailReservation()
     {
         _reservedTailBytes = 0;
     }
+
+    /// <summary>
+    ///     Releases <paramref name="bytes" /> from the protected tail (clamped at the current
+    ///     reservation), exposing that much of it to subsequent allocations while leaving any
+    ///     remainder reserved. Unwinds a STACKED reservation one pass at a time: e.g. the water pass
+    ///     frees its own guaranteed sub-budget just before it draws while the shadow pass's
+    ///     reservation, reserved beneath it, stays protected for the frame-end replay.
+    /// </summary>
+    public void ReleaseTailReservation(uint bytes)
+    {
+        _reservedTailBytes = PlanTailRelease(_reservedTailBytes, bytes);
+    }
+
+    /// <summary>
+    ///     Pure release arithmetic (testable without a device): the tail after freeing
+    ///     <paramref name="releaseBytes" /> from <paramref name="reservedTailBytes" />, clamped at zero
+    ///     so over-releasing a partial reservation simply empties it.
+    /// </summary>
+    internal static uint PlanTailRelease(uint reservedTailBytes, uint releaseBytes) =>
+        reservedTailBytes - Math.Min(releaseBytes, reservedTailBytes);
 
     internal static bool TryPlanTailReservation(
         uint currentOffset,

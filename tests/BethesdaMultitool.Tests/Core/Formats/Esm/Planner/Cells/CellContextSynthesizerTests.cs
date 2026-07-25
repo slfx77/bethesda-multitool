@@ -29,7 +29,7 @@ public sealed class CellContextSynthesizerTests
             FormId = 0x0010B900,
             WorldspaceFormId = 0x0010B96F,
             GridX = gridX,
-            GridY = gridY,
+            GridY = gridY
         }));
 
         Assert.False(context.IsPersistentCellContainer);
@@ -45,7 +45,7 @@ public sealed class CellContextSynthesizerTests
             FormId = 0x0010B901,
             WorldspaceFormId = 0x0010B96F,
             GridX = -33,
-            GridY = 17,
+            GridY = 17
         }));
 
         Assert.Equal(0xFFFE0000u, ReadLabel(context.BlockLabel));
@@ -60,7 +60,7 @@ public sealed class CellContextSynthesizerTests
             FormId = 0x01001B75,
             WorldspaceFormId = 0x0010B96F,
             GridX = -1,
-            GridY = 3,
+            GridY = 3
         }));
 
         Assert.Equal(0xFFFF0000u, ReadLabel(context.BlockLabel));
@@ -76,7 +76,7 @@ public sealed class CellContextSynthesizerTests
             WorldspaceFormId = 0x0010B96F,
             GridX = 0,
             GridY = 0,
-            IsPersistentCell = true,
+            IsPersistentCell = true
         }));
 
         Assert.True(context.IsPersistentCellContainer);
@@ -92,13 +92,13 @@ public sealed class CellContextSynthesizerTests
         var interior = CellContextSynthesizer.Synthesize(Entry(new CellRecord
         {
             FormId = 0x0010B903,
-            Flags = 0x01,
+            Flags = 0x01
         }));
         var virtualCell = CellContextSynthesizer.Synthesize(Entry(new CellRecord
         {
             FormId = 0x0010B904,
             WorldspaceFormId = 0x0010B96F,
-            IsVirtual = true,
+            IsVirtual = true
         }));
 
         Assert.True(interior.IsInterior);
@@ -119,18 +119,21 @@ public sealed class CellContextSynthesizerTests
             {
                 FormId = 0x0010B905,
                 WorldspaceFormId = 0x0010B96F,
-                GridX = 1,
+                GridX = 1
             })));
 
         Assert.Contains("0x0010B905", error.Message, StringComparison.Ordinal);
     }
 
-    private static CellCatalogEntry Entry(CellRecord cell) => new()
+    private static CellCatalogEntry Entry(CellRecord cell)
     {
-        CellFormId = cell.FormId,
-        Source = SourceKind.DmpNew,
-        DmpModel = cell,
-    };
+        return new CellCatalogEntry
+        {
+            CellFormId = cell.FormId,
+            Source = SourceKind.DmpNew,
+            DmpModel = cell
+        };
+    }
 
     private static uint ReadLabel(byte[]? bytes)
     {
@@ -138,5 +141,8 @@ public sealed class CellContextSynthesizerTests
         return BinaryPrimitives.ReadUInt32LittleEndian(bytes);
     }
 
-    private static uint Pack(int x, int y) => unchecked((ushort)y | ((uint)(ushort)x << 16));
+    private static uint Pack(int x, int y)
+    {
+        return unchecked((ushort)y | ((uint)(ushort)x << 16));
+    }
 }

@@ -20,14 +20,15 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class NifParticleMeshEmitterColumnTests
 {
+    private const string MeshesBsaRelative =
+        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+
+    private const string FxDustPath = @"meshes\effects\ambient\fxdustwhirlwind01.nif";
+
     public NifParticleMeshEmitterColumnTests()
     {
         BucketBTestGuard.SkipUnlessEnabled();
     }
-
-    private const string MeshesBsaRelative =
-        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
-    private const string FxDustPath = @"meshes\effects\ambient\fxdustwhirlwind01.nif";
 
     [Fact]
     public void Extract_FxDustWhirlwind_ParticleCloudFillsEmitterMeshColumn()
@@ -35,7 +36,7 @@ public sealed class NifParticleMeshEmitterColumnTests
         var bsaPath = SampleFileFixture.FindSamplePath(MeshesBsaRelative);
         Assert.SkipWhen(bsaPath is null, "FNV PC final meshes BSA not available");
 
-        using var archives = MeshArchiveSet.Open(bsaPath!, null, enableFuzzy: false, includeLooseFiles: false);
+        using var archives = MeshArchiveSet.Open(bsaPath!, null, false, false);
         Assert.True(archives.TryExtractFile(FxDustPath, out var data, out _), "FXDust NIF not found in BSA");
 
         var nif = NifParser.Parse(data);
@@ -118,7 +119,7 @@ public sealed class NifParticleMeshEmitterColumnTests
                     data, dataBlock, nif.IsBigEndian, nif.BsVersion, nif.BinaryVersion, world),
                 "NiTriShapeData" => NifBlockParsers.ExtractTriShapeData(
                     data, dataBlock, nif.IsBigEndian, nif.BsVersion, nif.BinaryVersion, world),
-                _ => null,
+                _ => null
             };
 
             if (sub?.Positions is { Length: >= 3 } pos)
@@ -138,10 +139,13 @@ public sealed class NifParticleMeshEmitterColumnTests
 
         public Vector3 Extent => Valid ? Max - Min : Vector3.Zero;
 
-        public static Aabb Empty() => new()
+        public static Aabb Empty()
         {
-            Min = new Vector3(float.MaxValue), Max = new Vector3(float.MinValue), Valid = false,
-        };
+            return new Aabb
+            {
+                Min = new Vector3(float.MaxValue), Max = new Vector3(float.MinValue), Valid = false
+            };
+        }
 
         public void Add(float[] positions)
         {

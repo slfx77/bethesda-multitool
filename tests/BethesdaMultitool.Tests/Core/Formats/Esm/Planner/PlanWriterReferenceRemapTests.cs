@@ -116,7 +116,7 @@ public sealed class PlanWriterReferenceRemapTests
             Model = new ScriptRecord { FormId = sourceFormId },
             References = ImmutableArray<ResolvedRef>.Empty,
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
         var plan = new EmitPlan
         {
@@ -130,8 +130,8 @@ public sealed class PlanWriterReferenceRemapTests
             Meta = new PlanMetadata
             {
                 NextObjectId = 0x801,
-                PlannerCoverage = ImmutableHashSet.Create("SCPT"),
-            },
+                PlannerCoverage = ImmutableHashSet.Create("SCPT")
+            }
         };
         var sink = new RecordingSink();
 
@@ -155,7 +155,10 @@ public sealed class PlanWriterReferenceRemapTests
         {
         }
 
-        public void OnEvent(ConversionProgressEvent evt) => Events.Add(evt);
+        public void OnEvent(ConversionProgressEvent evt)
+        {
+            Events.Add(evt);
+        }
 
         public void OnPhaseEnd(string phase, ConversionPipelineStats partialStats)
         {

@@ -115,7 +115,7 @@ public sealed class ConcurrentLazyCacheTests
         cache.GetOrCreate("missing");
 
         Assert.True(cache.Release("k"));
-        Assert.False(cache.Release("missing", true));
+        Assert.False(cache.Release("missing"));
         Assert.Equal(1, cache.Count); // the negative survives
     }
 

@@ -1,7 +1,6 @@
 using System.IO.Compression;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using Xunit;
 using static BethesdaMultitool.Tests.Helpers.BinaryTestWriter;
 
@@ -568,7 +567,7 @@ public class EsmParserTests
     {
         // 200 nested GRUPs — without the depth cap this would recurse to a stack overflow.
         const int nesting = 200;
-        var buf = new byte[Tes4HeaderTotal + (nesting * 24)];
+        var buf = new byte[Tes4HeaderTotal + nesting * 24];
         var off = WriteTes4Preamble(buf);
         for (var i = 0; i < nesting; i++)
         {
@@ -600,7 +599,7 @@ public class EsmParserTests
     [Fact]
     public void EnumerateRecordsWithGrups_ZeroDataSizeRecordsInGrup_Terminates()
     {
-        var buf = new byte[Tes4HeaderTotal + 24 + (3 * 24)];
+        var buf = new byte[Tes4HeaderTotal + 24 + 3 * 24];
         var off = WriteTes4Preamble(buf);
         off = WriteGrupHeader(buf, off, (uint)(buf.Length - Tes4HeaderTotal), "WEAP");
         for (var i = 0; i < 3; i++)

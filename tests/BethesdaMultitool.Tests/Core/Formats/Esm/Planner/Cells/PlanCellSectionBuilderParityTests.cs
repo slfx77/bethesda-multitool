@@ -1,7 +1,6 @@
 using System.Collections.Immutable;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
@@ -218,7 +217,7 @@ public sealed class PlanCellSectionBuilderParityTests
         // at load, so the guard drops it and the cell emits with no children.
         var stats = new ConversionPipelineStats();
         var bytes = BuildSectionWithSinglePlacedRef(
-            baseFormId: 0xFF000B78, recordType: "ACHR", stats: stats);
+            0xFF000B78, "ACHR", stats);
 
         // Dropping the only child leaves an ITM cell override, which is suppressed too.
         Assert.Null(bytes);
@@ -234,7 +233,7 @@ public sealed class PlanCellSectionBuilderParityTests
         // at load — the phantom-master crash class. Same drop as runtime-dynamic bases.
         var stats = new ConversionPipelineStats();
         var bytes = BuildSectionWithSinglePlacedRef(
-            baseFormId: 0x0013D2F0, recordType: "REFR", stats: stats);
+            0x0013D2F0, "REFR", stats);
 
         Assert.Null(bytes);
         Assert.Equal(1, stats.DropReasonCounts["refr.dangling-base"]);
@@ -258,7 +257,7 @@ public sealed class PlanCellSectionBuilderParityTests
         var subs = RefrEncoder.EncodeNewPlacedReference(placed);
         var expectedChild = PluginRecordByteBuilder.BuildNewRecordBytes(
             "REFR", 0x01000801u, 0x400u, subs.Subrecords); // persistent-bucket ref carries flag 0x400
-        Assert.Equal(BuildExpectedCellOnlySection(persistentChildren: [expectedChild]), bytes);
+        Assert.Equal(BuildExpectedCellOnlySection([expectedChild]), bytes);
     }
 
     [Theory]
@@ -275,14 +274,14 @@ public sealed class PlanCellSectionBuilderParityTests
             BaseFormId = 0x0000001F,
             RecordType = "REFR",
             IsPersistent = true,
-            IsInitiallyDisabled = capturedDisabled,
+            IsInitiallyDisabled = capturedDisabled
         };
         var verdict = new PlacedRefDecision
         {
             Verdict = PlacedRefEmitVerdict.Emit,
             FinalBaseFormId = placed.BaseFormId,
             TargetGroupType = 8,
-            NewInitiallyDisabled = plannedDisabled,
+            NewInitiallyDisabled = plannedDisabled
         };
 
         var bytes = BuildSectionWithSinglePlacedRef(placed, verdict: verdict);
@@ -290,7 +289,7 @@ public sealed class PlanCellSectionBuilderParityTests
         var subs = RefrEncoder.EncodeNewPlacedReference(placed);
         var expectedChild = PluginRecordByteBuilder.BuildNewRecordBytes(
             "REFR", placed.FormId, expectedFlags, subs.Subrecords);
-        Assert.Equal(BuildExpectedCellOnlySection(persistentChildren: [expectedChild]), bytes);
+        Assert.Equal(BuildExpectedCellOnlySection([expectedChild]), bytes);
     }
 
     [Fact]
@@ -305,7 +304,7 @@ public sealed class PlanCellSectionBuilderParityTests
             RecordType = "REFR",
             IsPersistent = true,
             IsInitiallyDisabled = true,
-            EnableParentFormId = prototypeParent,
+            EnableParentFormId = prototypeParent
         };
         var verdict = new PlacedRefDecision
         {
@@ -313,7 +312,7 @@ public sealed class PlanCellSectionBuilderParityTests
             FinalBaseFormId = placed.BaseFormId,
             TargetGroupType = 8,
             NewInitiallyDisabled = true,
-            NewEnableParentFormId = retailParent,
+            NewEnableParentFormId = retailParent
         };
 
         var bytes = BuildSectionWithSinglePlacedRef(
@@ -325,7 +324,7 @@ public sealed class PlanCellSectionBuilderParityTests
         var subs = RefrEncoder.EncodeNewPlacedReference(expectedPlaced);
         var expectedChild = PluginRecordByteBuilder.BuildNewRecordBytes(
             "REFR", placed.FormId, 0xC00u, subs.Subrecords);
-        Assert.Equal(BuildExpectedCellOnlySection(persistentChildren: [expectedChild]), bytes);
+        Assert.Equal(BuildExpectedCellOnlySection([expectedChild]), bytes);
     }
 
     [Fact]
@@ -343,13 +342,13 @@ public sealed class PlanCellSectionBuilderParityTests
 
         var bytes = BuildSectionWithSinglePlacedRef(
             placed,
-            sourceToEmitted: ImmutableDictionary<uint, uint>.Empty.Add(0xAA000010, 0x01000900),
-            emittedFormIds: ImmutableHashSet.Create(0x01000801u, 0x01000900u));
+            ImmutableDictionary<uint, uint>.Empty.Add(0xAA000010, 0x01000900),
+            ImmutableHashSet.Create(0x01000801u, 0x01000900u));
 
         var subs = RefrEncoder.EncodeNewPlacedReference(placed with { BaseFormId = 0x01000900 });
         var expectedChild = PluginRecordByteBuilder.BuildNewRecordBytes(
             "REFR", 0x01000801u, 0x400u, subs.Subrecords); // persistent-bucket ref carries flag 0x400
-        Assert.Equal(BuildExpectedCellOnlySection(persistentChildren: [expectedChild]), bytes);
+        Assert.Equal(BuildExpectedCellOnlySection([expectedChild]), bytes);
     }
 
     [Fact]
@@ -386,7 +385,7 @@ public sealed class PlanCellSectionBuilderParityTests
         // base-type-mismatch class (the v20.5 ANAM/Robot lesson, placed-ref edition).
         var stats = new ConversionPipelineStats();
         var bytes = BuildSectionWithSinglePlacedRef(
-            baseFormId: 0x000ABCDE, recordType: "ACHR", stats: stats); // Base = the CELL master.
+            0x000ABCDE, "ACHR", stats); // Base = the CELL master.
 
         Assert.Null(bytes);
         Assert.Equal(1, stats.DropReasonCounts["refr.base-type-mismatch"]);
@@ -442,7 +441,7 @@ public sealed class PlanCellSectionBuilderParityTests
             TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
             RefDecisions = verdict is null
                 ? ImmutableDictionary<uint, PlacedRefDecision>.Empty
-                : ImmutableDictionary<uint, PlacedRefDecision>.Empty.Add(placed.FormId, verdict),
+                : ImmutableDictionary<uint, PlacedRefDecision>.Empty.Add(placed.FormId, verdict)
         };
 
         var plan = MakeEmptyPlan() with

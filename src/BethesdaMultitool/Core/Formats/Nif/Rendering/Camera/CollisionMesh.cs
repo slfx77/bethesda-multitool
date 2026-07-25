@@ -62,7 +62,10 @@ internal static class CollisionMeshBuilder
                 CollisionMeshSource.AuthoredHavok);
         }
 
-        if (WalkCollisionFallbackPolicy.IsEffectModel(modelPath, category))
+        // Effects are presentation-only; vegetation (Plants/Trees) is walk-through unless it shipped
+        // authored Havok (handled above). Neither gets render-mesh collision synthesized for it.
+        if (WalkCollisionFallbackPolicy.IsEffectModel(modelPath, category)
+            || WalkCollisionFallbackPolicy.IsVegetation(category))
         {
             return CollisionBuildResult.None;
         }

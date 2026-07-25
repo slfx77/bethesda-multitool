@@ -88,8 +88,8 @@ public class Tes3BannerAnimationProbe
         var weightedVerts = 0;
         for (var v = 0; v < skin.VertexCount; v++)
         {
-            var sum = skin.BoneWeights[v * 4] + skin.BoneWeights[(v * 4) + 1] +
-                      skin.BoneWeights[(v * 4) + 2] + skin.BoneWeights[(v * 4) + 3];
+            var sum = skin.BoneWeights[v * 4] + skin.BoneWeights[v * 4 + 1] +
+                      skin.BoneWeights[v * 4 + 2] + skin.BoneWeights[v * 4 + 3];
             if (sum > 0.99f)
             {
                 weightedVerts++;

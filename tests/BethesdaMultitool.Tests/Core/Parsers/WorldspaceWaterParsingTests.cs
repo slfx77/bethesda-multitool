@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using Xunit;
 using static BethesdaMultitool.Tests.Helpers.EsmTestRecordBuilder;
@@ -22,7 +23,7 @@ namespace BethesdaMultitool.Tests.Core.Parsers;
 /// </summary>
 public class WorldspaceWaterParsingTests
 {
-    private static List<BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WorldspaceRecord> ParseWorldspace(
+    private static List<WorldspaceRecord> ParseWorldspace(
         byte[] recordBytes, uint formId)
     {
         var mainRecord = new DetectedMainRecord("WRLD",
@@ -44,7 +45,7 @@ public class WorldspaceWaterParsingTests
         return buf;
     }
 
-    private static List<BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WorldspaceRecord>
+    private static List<WorldspaceRecord>
         ParseWorldspaceSet(params (uint FormId, byte[] Bytes)[] records)
     {
         var totalLength = records.Sum(r => r.Bytes.Length);
