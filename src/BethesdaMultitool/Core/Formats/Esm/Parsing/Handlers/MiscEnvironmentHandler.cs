@@ -166,10 +166,10 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     break;
                 // Skyrim's active set and FO4/FO76's only set ship as NAM2/NAM3/NAM4 zstrings
                 // (layer 1 first). Surface layer 1 as the compatibility noise texture, stripping
-                // the "data\" prefix authors use so the cache resolves it normally.
-                // Deliberately excludes Starfield: its WATR layout is unverified.
+                // the "data\" prefix authors use so the cache resolves it normally. The profile
+                // flag deliberately excludes Starfield: its WATR layout is unverified.
                 case "NAM2" or "NAM3" or "NAM4"
-                    when Context.Game is BethesdaGame.Skyrim or BethesdaGame.Fallout4 or BethesdaGame.Fallout76:
+                    when GameProfiles.For(Context.Game).HasVerifiedModernWatrLayout:
                 {
                     var texture = EsmStringUtils.ReadNullTermString(subData);
                     if (!string.IsNullOrEmpty(texture))
@@ -495,8 +495,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         //    (FO4/FO76/SF1 widen 4→8 RGBA bands at form version 111) and whose category COUNT grows with
         //    form version (10→19) — so the /10 structural divide is invalid. Key the stride off the game +
         //    form version instead and read whatever categories fit (base lighting rows plus Skyrim far fog 12).
-        var modernWeather = Context.Game is BethesdaGame.Skyrim or BethesdaGame.Fallout4
-            or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
+        var modernWeather = GameProfiles.For(Context.Game).HasModernWeatherLayout;
         var formVersion = ReadRecordFormVersion(record);
         var modernStride = modernWeather ? ModernWeatherStride(Context.Game, formVersion) : 0;
         var weatherBands = modernWeather ? 0 : DetectWeatherBands(data, dataSize, record.IsBigEndian);
@@ -517,7 +516,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     break;
                 // FO3 authors four scalar cloud speeds in ONAM. Some transitional FNV records retain
                 // that layout, so treat it as cloud data for both games rather than a FormID.
-                case "ONAM" when Context.Game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas:
+                case "ONAM" when GameProfiles.For(Context.Game).HasOnamCloudSpeeds:
                     cloudSpeedsX = ReadCloudSpeeds(subData, record.IsBigEndian, Context.Game);
                     break;
                 // FO3/FNV store their per-band IMAD references as binary signatures \0IAD..\5IAD.
@@ -835,12 +834,11 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         return colors;
     }
 
-    // FO4/FO76/SF1 widen weather time-of-day structs from 4 to 8 bands at form version 111 (xEdit
-    // wbWeatherTimeOfDay's wbFromVersion(111, …)); Skyrim never does. Shared by the NAM0/PNAM color
-    // and JNAM cloud-alpha strides so the rule can't drift between them.
+    // The widening game set and threshold (form version 111, xEdit wbWeatherTimeOfDay's
+    // wbFromVersion(111, …)) live on GameProfile so the NAM0/PNAM color and JNAM cloud-alpha
+    // strides can't drift from each other or from the profile registry.
     internal static bool HasWideTimeOfDayBands(BethesdaGame game, int formVersion) =>
-        formVersion >= 111
-        && game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
+        GameProfiles.For(game).WideTimeOfDayBandsFormVersion is { } widensAt && formVersion >= widensAt;
 
     // Per-category NAM0/PNAM stride for the version-trailered games. Stride = bands × 4 bytes (16 or 32).
     internal static int ModernWeatherStride(BethesdaGame game, int formVersion)
@@ -867,10 +865,11 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     /// </summary>
     internal static float[] ReadCloudSpeeds(ReadOnlySpan<byte> data, bool isBigEndian, BethesdaGame game)
     {
+        var legacyEncoding = GameProfiles.For(game).UsesLegacyCloudSpeedEncoding;
         var speeds = new float[data.Length];
         for (var i = 0; i < data.Length; i++)
         {
-            speeds[i] = game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas
+            speeds[i] = legacyEncoding
                 ? NormalizeLegacyCloudSpeedByte(data[i])
                 : NormalizeCloudSpeedByte(data[i]);
         }
@@ -1601,8 +1600,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         ImageSpaceDepthOfField? depthOfFieldData = null;
         string? lutTexturePath = null;
         var hasSplitModernHdr = false;
-        var modernImageSpace = Context.Game is BethesdaGame.Skyrim or BethesdaGame.Fallout4
-            or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
+        var modernImageSpace = GameProfiles.For(Context.Game).ImageSpaceFamily is not null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -1721,7 +1719,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         ReadOnlySpan<byte> data, bool isBigEndian, BethesdaGame game)
     {
         if (data.Length < 36) throw new ArgumentException("Modern IMGS HNAM requires 36 bytes.", nameof(data));
-        var fallout4Family = game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
+        var fallout4Family = GameProfiles.For(game).ImageSpaceFamily == ImageSpaceModernFamily.Fallout4;
         return fallout4Family
             ? new ImageSpaceModernHdr
             {
@@ -1755,7 +1753,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         ReadOnlySpan<byte> data, bool isBigEndian, BethesdaGame game)
     {
         if (data.Length < 56) throw new ArgumentException("Modern IMGS ENAM requires 56 bytes.", nameof(data));
-        var fallout4Family = game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
+        var fallout4Family = GameProfiles.For(game).ImageSpaceFamily == ImageSpaceModernFamily.Fallout4;
         var combined = ReadFloat(data, 16, isBigEndian);
         var modernHdr = fallout4Family
             ? new ImageSpaceModernHdr

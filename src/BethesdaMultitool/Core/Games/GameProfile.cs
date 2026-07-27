@@ -126,6 +126,65 @@ public sealed record GameProfile
     /// </summary>
     public float MarkerFullSizeZoom { get; init; }
 
+    // ---- Weather / imagespace record-generation capabilities (consumed by MiscEnvironmentHandler
+    // and the atmosphere/tonemap pipeline) ----
+
+    /// <summary>
+    ///     True when WTHR uses the Skyrim-and-later <c>wbWeatherTimeOfDay</c> struct layout
+    ///     (JNAM/IMSP/DALC era) instead of the fixed 10-category NAM0 color block:
+    ///     Skyrim, FO4, FO76, Starfield.
+    /// </summary>
+    public bool HasModernWeatherLayout { get; init; }
+
+    /// <summary>
+    ///     Which of the two incompatible semantic layouts this game's modern 36-byte IMGS HNAM
+    ///     uses — <see cref="ImageSpaceModernFamily.Skyrim" /> or <see cref="ImageSpaceModernFamily.Fallout4" />
+    ///     (FO4/FO76/Starfield). <c>null</c> for the classic single-DNAM games (Morrowind through FNV),
+    ///     which also disables the modern split ENAM/HNAM/CNAM/TNAM parse path entirely.
+    /// </summary>
+    public ImageSpaceModernFamily? ImageSpaceFamily { get; init; }
+
+    /// <summary>
+    ///     Form version at which WTHR time-of-day structs widen from 4 to 8 bands (xEdit
+    ///     <c>wbWeatherTimeOfDay</c>'s <c>wbFromVersion(111, …)</c>): 111 for FO4/FO76/Starfield,
+    ///     <c>null</c> for games that never widen (Skyrim stays at 4). Shared by the NAM0/PNAM color
+    ///     and JNAM cloud-alpha strides so the rule can't drift between them.
+    /// </summary>
+    public int? WideTimeOfDayBandsFormVersion { get; init; }
+
+    /// <summary>
+    ///     True when WATR ships its noise/normal layers as NAM2/NAM3/NAM4 zstrings and that layout
+    ///     has been verified against retail data: Skyrim, FO4, FO76. Deliberately false for
+    ///     Starfield — its WATR layout is unverified; flip when the Starfield WATR RE lands.
+    /// </summary>
+    public bool HasVerifiedModernWatrLayout { get; init; }
+
+    /// <summary>
+    ///     True when WTHR cloud speeds are the legacy unsigned scalar magnitude bytes
+    ///     (<c>b / 255</c>, FNV MemDebug <c>Clouds::Update</c> contract): Oblivion, FO3, FNV.
+    ///     Skyrim-and-later QNAM/RNAM bytes are signed axes biased around 127 instead.
+    /// </summary>
+    public bool UsesLegacyCloudSpeedEncoding { get; init; }
+
+    /// <summary>
+    ///     True when WTHR ONAM carries four scalar cloud speeds rather than a FormID: FO3 and FNV
+    ///     (some transitional FNV records retain the FO3 layout).
+    /// </summary>
+    public bool HasOnamCloudSpeeds { get; init; }
+
+    /// <summary>
+    ///     True when the game resolves engine-default IMGS records (interior 0x160 / exterior 0x161,
+    ///     à la <c>GetUsableImageSpace</c>) for cells that author none: Oblivion, FO3, FNV.
+    /// </summary>
+    public bool UsesEngineImagespaceDefaults { get; init; }
+
+    /// <summary>
+    ///     True when runtime HDR is the classic Gamebryo FO3/FNV imagespace stage: WTHR time-band
+    ///     IMADs apply after the base IMGS, and SunlightDimmer is gated by
+    ///     <c>bHDR &amp;&amp; !bInterior</c> (exteriors only).
+    /// </summary>
+    public bool UsesClassicHdrImagespace { get; init; }
+
     /// <summary>
     ///     Multiplier on the ambient ("fill") term in the scene lighting sum
     ///     <c>lit = AmbientLightScale·ambient + saturate(N·L)·sun</c> (objects + terrain). The engine value

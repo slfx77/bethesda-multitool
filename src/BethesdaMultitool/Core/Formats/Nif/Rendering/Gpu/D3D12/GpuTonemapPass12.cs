@@ -398,7 +398,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
         var adaptFactor = _adaptPrimed ? settings.AdaptFactor : 2f;
 
         var modernFamily = settings.ModernFamily ==
-            BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc.ImageSpaceModernFamily.Fallout4 ? 1f : 0f;
+            Core.Games.ImageSpaceModernFamily.Fallout4 ? 1f : 0f;
         var p = stackalloc float[24]
         {
             settings.Exposure, enabled ? 1f : 0f, (float)settings.Mode, settings.TargetLum,

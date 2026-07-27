@@ -76,6 +76,8 @@ public static class GameProfiles
                 // AmbientLightScale: engine default 1.0. The old 0.7 here compensated for the misread
                 // FNV "0.3 ambient scale" baseline (since refuted — see GameProfile.AmbientLightScale).
                 SupportsObscriptDecompilation = true,
+                UsesLegacyCloudSpeedEncoding = true,
+                UsesEngineImagespaceDefaults = true,
                 DefaultLandscapeDiffuse = OblivionDiffuse,
                 DefaultLandscapeNormal = OblivionNormal
             },
@@ -91,6 +93,10 @@ public static class GameProfiles
                 MarkerArt = MarkerArtStrategy.EmbeddedTinted,
                 HasWorldspaceDefaultWaterHeight = true,
                 SupportsObscriptDecompilation = true,
+                UsesLegacyCloudSpeedEncoding = true,
+                HasOnamCloudSpeeds = true,
+                UsesEngineImagespaceDefaults = true,
+                UsesClassicHdrImagespace = true,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
             },
@@ -106,6 +112,10 @@ public static class GameProfiles
                 MarkerArt = MarkerArtStrategy.EmbeddedTinted,
                 HasWorldspaceDefaultWaterHeight = true,
                 SupportsObscriptDecompilation = true,
+                UsesLegacyCloudSpeedEncoding = true,
+                HasOnamCloudSpeeds = true,
+                UsesEngineImagespaceDefaults = true,
+                UsesClassicHdrImagespace = true,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
             },
@@ -121,6 +131,9 @@ public static class GameProfiles
                 MarkerArt = MarkerArtStrategy.EmbeddedColored, // icons extracted from map.swf (skyrim_marker_NN.png)
                 MarkerIconScale = 1.5f, // map.swf icons are taller/finer than FNV's bold silhouettes
                 HasWorldspaceDefaultWaterHeight = true,
+                HasModernWeatherLayout = true,
+                ImageSpaceFamily = ImageSpaceModernFamily.Skyrim,
+                HasVerifiedModernWatrLayout = true,
                 DefaultLandscapeDiffuse = SkyrimDiffuse,
                 DefaultLandscapeNormal = SkyrimNormal
             },
@@ -135,6 +148,10 @@ public static class GameProfiles
                 HasMapMarkers = true,
                 MarkerArt = MarkerArtStrategy.EmbeddedTinted, // white silhouettes from MapMarkers.swf (fo4_marker_NN.png)
                 HasWorldspaceDefaultWaterHeight = true,
+                HasModernWeatherLayout = true,
+                ImageSpaceFamily = ImageSpaceModernFamily.Fallout4,
+                WideTimeOfDayBandsFormVersion = 111,
+                HasVerifiedModernWatrLayout = true,
                 DefaultLandscapeDiffuse = CommonwealthDiffuse,
                 DefaultLandscapeNormal = CommonwealthNormal
             },
@@ -150,6 +167,10 @@ public static class GameProfiles
                 // mapmarkerslibrary.swf sprites carry authored blue/black/yellow palettes; preserve them.
                 MarkerArt = MarkerArtStrategy.EmbeddedColored,
                 HasWorldspaceDefaultWaterHeight = true,
+                HasModernWeatherLayout = true,
+                ImageSpaceFamily = ImageSpaceModernFamily.Fallout4,
+                WideTimeOfDayBandsFormVersion = 111,
+                HasVerifiedModernWatrLayout = true,
                 DefaultLandscapeDiffuse = CommonwealthDiffuse,
                 DefaultLandscapeNormal = CommonwealthNormal
             },
@@ -163,6 +184,10 @@ public static class GameProfiles
                 MasterFileHints = ["Starfield"],
                 HasMapMarkers = true, // MarkerArt defaults to GlyphOnly (taxonomy + atlas TBD)
                 HasWorldspaceDefaultWaterHeight = true,
+                HasModernWeatherLayout = true,
+                ImageSpaceFamily = ImageSpaceModernFamily.Fallout4,
+                WideTimeOfDayBandsFormVersion = 111,
+                // HasVerifiedModernWatrLayout stays false: Starfield's WATR layout is unverified.
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
             }

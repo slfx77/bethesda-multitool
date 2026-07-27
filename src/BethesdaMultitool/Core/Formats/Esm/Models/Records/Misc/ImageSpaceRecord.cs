@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Games;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 
 /// <summary>
@@ -70,13 +72,6 @@ public record ImageSpaceHdr
     public float GrassDimmer { get; init; }
     public float TreeDimmer { get; init; }
     public float SkinDimmer { get; init; }
-}
-
-/// <summary>The two incompatible semantic layouts which share the 36-byte modern IMGS HNAM signature.</summary>
-public enum ImageSpaceModernFamily
-{
-    Skyrim,
-    Fallout4,
 }
 
 /// <summary>

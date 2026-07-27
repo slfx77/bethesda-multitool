@@ -103,7 +103,7 @@ internal static class WeatherCloudMotion
 
     private static float ResolveScale(WeatherRecord? weather, BethesdaGame game)
     {
-        if (game is not (BethesdaGame.Oblivion or BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas))
+        if (!GameProfiles.For(game).UsesLegacyCloudSpeedEncoding)
         {
             return UvPerSecondScale;
         }
