@@ -1,5 +1,5 @@
 // Oblivion (TES4) grass pixel shader — a transcription of retail GRASS2002.pso.
-// Paired with reference_grass_tes4.vert.hlsl; see that file's header for the full provenance,
+// Paired with reference_grass_oblivion.vert.hlsl; see that file's header for the full provenance,
 // the normal-decode explanation, and the list of deliberate deviations.
 //
 // RETAIL (GRASS2002.pso), all 18 instructions, with a0=oT0 uv, a4=oT4 ambient, a5=oT5

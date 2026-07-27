@@ -262,9 +262,7 @@ public sealed class FnvWater001SourceContractTests
 
     private static string ReadShader()
     {
-        return SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders",
-            "water.frag.hlsl");
+        return SourceContract.ReadShaderSource("water.frag.hlsl");
     }
 
     private static string Extract(string source, string startMarker, string endMarker)

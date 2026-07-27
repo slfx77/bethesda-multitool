@@ -70,9 +70,7 @@ public sealed class GrassAlphaToCoverageSourceContractTests
     [Fact]
     public void ShaderVariantSharpensCoverageAndPreservesTheLegacyDiscardWhenUndefined()
     {
-        var shader = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders",
-            "reference.frag.hlsl");
+        var shader = SourceContract.ReadShaderSource("reference.frag.hlsl");
 
         Assert.Contains("#if ALPHA_TO_COVERAGE", shader, StringComparison.Ordinal);
         // GREATER/GEQUAL only — every other comparison function keeps the binary discard.

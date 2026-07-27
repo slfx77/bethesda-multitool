@@ -21,6 +21,21 @@ internal static class SourceContract
         return File.ReadAllText(Path.Combine(RepoRoot, Path.Combine(relativePath)));
     }
 
+    /// <summary>The embedded-shader source tree (Gpu/Shaders).</summary>
+    public static string ShadersRoot => Path.Combine(
+        RepoRoot, "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders");
+
+    /// <summary>
+    ///     Resolve a shader source file by bare file name, searching every Shaders subdirectory.
+    ///     Mirrors the runtime's flat LogicalName lookup (names are globally unique by build-time
+    ///     guarantee), so shader pins stay valid when a file moves between subdirectories.
+    /// </summary>
+    public static string ShaderPath(string fileName) =>
+        Directory.EnumerateFiles(ShadersRoot, fileName, SearchOption.AllDirectories).Single();
+
+    /// <summary>Read a shader's source text by bare file name.</summary>
+    public static string ReadShaderSource(string fileName) => File.ReadAllText(ShaderPath(fileName));
+
     /// <summary>Assert each value appears in <paramref name="source" /> after the previous one.</summary>
     public static void AssertOrder(string source, params string[] values)
     {

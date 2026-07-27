@@ -33,9 +33,7 @@ public sealed class CollisionOverlayLineSourceContractTests
     [Fact]
     public void VertexShaderHandlesTheNearPlaneAndInterpolatesPixelDistancesLinearly()
     {
-        var shader = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders",
-            "collision_line.vert.hlsl");
+        var shader = SourceContract.ReadShaderSource("collision_line.vert.hlsl");
 
         // The cage surrounds the camera, so segments legitimately cross w <= 0; without the
         // homogeneous clip they would swim or vanish when the camera enters a cage.

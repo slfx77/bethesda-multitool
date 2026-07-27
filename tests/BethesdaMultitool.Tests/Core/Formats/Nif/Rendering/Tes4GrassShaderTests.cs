@@ -13,13 +13,9 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 /// </summary>
 public sealed class Tes4GrassShaderTests
 {
-    private static string VertexShader() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders",
-        "reference_grass_tes4.vert.hlsl");
+    private static string VertexShader() => SourceContract.ReadShaderSource("reference_grass_oblivion.vert.hlsl");
 
-    private static string PixelShader() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders",
-        "reference_grass_tes4.frag.hlsl");
+    private static string PixelShader() => SourceContract.ReadShaderSource("reference_grass_oblivion.frag.hlsl");
 
     [Fact]
     public void OnlyOblivionSelectsAPerGameGrassShader()
@@ -27,8 +23,8 @@ public sealed class Tes4GrassShaderTests
         var oblivion = GrassShaderProfile.ForGame(BethesdaGame.Oblivion);
 
         Assert.True(oblivion.Enabled);
-        Assert.Equal("reference_grass_tes4.vert.hlsl", oblivion.VertexShaderName);
-        Assert.Equal("reference_grass_tes4.frag.hlsl", oblivion.PixelShaderName);
+        Assert.Equal("reference_grass_oblivion.vert.hlsl", oblivion.VertexShaderName);
+        Assert.Equal("reference_grass_oblivion.frag.hlsl", oblivion.PixelShaderName);
     }
 
     [Theory]

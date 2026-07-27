@@ -85,9 +85,7 @@ public sealed class WaterHardwareOcclusionSourceContractTests
 
     private static string ReadShader()
     {
-        return SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders",
-            "water.frag.hlsl");
+        return SourceContract.ReadShaderSource("water.frag.hlsl");
     }
 
     private static int CountOccurrences(string source, string needle)

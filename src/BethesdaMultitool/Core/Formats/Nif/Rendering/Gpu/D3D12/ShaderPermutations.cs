@@ -52,8 +52,8 @@ internal static class ShaderPermutations
         // First per-game shader. Retail GRASS2020.vso / GRASS2002.pso light grass from the TERRAIN
         // normal with no surface normal at all, and compose ambient ADDITIVELY — neither expressible
         // as a uniform on the shared path. Selected by GrassShaderProfile.ForGame(Oblivion).
-        new("reference_grass_tes4.vert.hlsl", "main", "vs_5_1", None, "TES4 grass (GRASS2020.vso)"),
-        new("reference_grass_tes4.frag.hlsl", "main", "ps_5_1", None, "TES4 grass (GRASS2002.pso)"),
+        new("reference_grass_oblivion.vert.hlsl", "main", "vs_5_1", None, "Oblivion grass (GRASS2020.vso)"),
+        new("reference_grass_oblivion.frag.hlsl", "main", "ps_5_1", None, "Oblivion grass (GRASS2002.pso)"),
     ];
 
     /// <summary>

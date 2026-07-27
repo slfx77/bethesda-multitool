@@ -48,7 +48,7 @@ internal readonly record struct GrassShaderProfile(
         // ADDITIVELY; the shared path uses the blade card's own near-vertical normal multiplicatively,
         // which collapses at high sun and is the reported "grass too dark".
         BethesdaGame.Oblivion => new(
-            true, "reference_grass_tes4.vert.hlsl", "reference_grass_tes4.frag.hlsl"),
+            true, "reference_grass_oblivion.vert.hlsl", "reference_grass_oblivion.frag.hlsl"),
 
         // Everything else — including BethesdaGame.Unknown, which is what the headless NIF renderer
         // passes (NifHeadlessRenderer hands ReferenceRenderer12 a default WorldRenderCache). The

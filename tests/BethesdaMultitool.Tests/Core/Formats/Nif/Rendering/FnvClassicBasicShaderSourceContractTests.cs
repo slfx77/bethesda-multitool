@@ -147,9 +147,7 @@ public sealed class FnvClassicBasicShaderSourceContractTests
 
     private static string ReadShader(string fileName)
     {
-        return SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "Shaders",
-            fileName);
+        return SourceContract.ReadShaderSource(fileName);
     }
 
     private static string Section(string source, string startToken, string endToken)
