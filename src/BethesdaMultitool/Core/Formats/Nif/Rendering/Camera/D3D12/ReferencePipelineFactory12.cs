@@ -1,5 +1,4 @@
 #if WINDOWS_GUI
-using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using Vortice.Direct3D;
@@ -18,22 +17,17 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 /// </summary>
 internal sealed class ReferencePipelineFactory12 : IDisposable
 {
-    private static readonly Logger Log = Logger.Instance;
-
     private readonly GpuDevice12 _gpu;
     private readonly GpuRootSignature12 _rootSignature;
-    private readonly byte[] _blendedVsBytecode;
-    private readonly byte[] _psBytecode;
-    private readonly Dictionary<BlendPipelineKey, ID3D12PipelineState> _blendPsos = new();
-    private readonly Dictionary<BlendPipelineKey, ID3D12PipelineState> _blendDepthWritePsos = new();
 
-    // Per-game grass route. Separate PSO caches from the shared ones so a game switch can never hand
-    // back another game's pipeline — the keys are identical, only the shaders differ.
-    private readonly Dictionary<BlendPipelineKey, ID3D12PipelineState> _grassBlendPsos = new();
-    private readonly Dictionary<BlendPipelineKey, ID3D12PipelineState> _grassBlendDepthWritePsos = new();
-    private GrassShaderProfile _grassShaderProfile;
-    private byte[]? _grassVsBytecode;
-    private byte[]? _grassPsBytecode;
+    // Blend shader routes. The shared reference pair is the always-active default route; a per-game
+    // pair becomes a route that is active only while its shaders compiled, so the fallback stays
+    // structural. Each route owns PSO caches SEPARATE from every other route's — the blend keys are
+    // identical between routes, only the shaders differ, so one shared cache would hand back another
+    // route's pipeline after the first draw. Adding per-game pair #2 = one more route field + one
+    // more Set method.
+    private readonly ShaderRoutePsos _sharedRoute;
+    private readonly ShaderRoutePsos _grassRoute = new();
 
     private bool _disposed;
 
@@ -42,16 +36,17 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         _gpu = gpu;
         _rootSignature = rootSignature;
 
-        _blendedVsBytecode = CompileEmbeddedShader("reference.vert.hlsl", "main", "vs_5_1");
+        var blendedVsBytecode = CompileEmbeddedShader("reference.vert.hlsl", "main", "vs_5_1");
         var instancedVsBytecode = CompileEmbeddedShader("reference_instanced.vert.hlsl", "main", "vs_5_1");
-        _psBytecode = CompileEmbeddedShader("reference.frag.hlsl", "main", "ps_5_1");
-        OpaqueBackPso = CreatePipelineState(instancedVsBytecode, _psBytecode, doubleSided: false, blendAttachment: null,
+        var psBytecode = CompileEmbeddedShader("reference.frag.hlsl", "main", "ps_5_1");
+        _sharedRoute = new ShaderRoutePsos(blendedVsBytecode, psBytecode);
+        OpaqueBackPso = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: false, blendAttachment: null,
             depthWriteEnabled: true);
-        OpaqueDoublePso = CreatePipelineState(instancedVsBytecode, _psBytecode, doubleSided: true, blendAttachment: null,
+        OpaqueDoublePso = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: true, blendAttachment: null,
             depthWriteEnabled: true);
-        OpaqueBackDecalPso = CreatePipelineState(instancedVsBytecode, _psBytecode, doubleSided: false,
+        OpaqueBackDecalPso = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: false,
             blendAttachment: null, depthWriteEnabled: true, decal: true);
-        OpaqueDoubleDecalPso = CreatePipelineState(instancedVsBytecode, _psBytecode, doubleSided: true,
+        OpaqueDoubleDecalPso = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: true,
             blendAttachment: null, depthWriteEnabled: true, decal: true);
 
         // Grass cutouts: alpha-to-coverage variants (engine mechanism — BSRenderState::
@@ -123,69 +118,22 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     ///     because the caller's catch would take down the entire reference pipeline (and with it every
     ///     placed object) over one game's grass.
     /// </summary>
-    public void SetGrassShaderProfile(GrassShaderProfile profile)
-    {
-        if (profile.Equals(_grassShaderProfile)) return;
-
-        _grassShaderProfile = profile;
-        _grassVsBytecode = null;
-        _grassPsBytecode = null;
-        foreach (var pso in _grassBlendPsos.Values) pso.Dispose();
-        foreach (var pso in _grassBlendDepthWritePsos.Values) pso.Dispose();
-        _grassBlendPsos.Clear();
-        _grassBlendDepthWritePsos.Clear();
-
-        if (!profile.Enabled) return;
-
-        try
-        {
-            _grassVsBytecode = CompileEmbeddedShader(profile.VertexShaderName!, "main", "vs_5_1");
-            _grassPsBytecode = CompileEmbeddedShader(profile.PixelShaderName!, "main", "ps_5_1");
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or FileNotFoundException)
-        {
-            Log.Error(
-                "ReferencePipelineFactory12: per-game grass shaders '{0}'/'{1}' failed to compile; " +
-                "falling back to the shared reference shaders. {2}",
-                profile.VertexShaderName, profile.PixelShaderName, ex);
-            _grassVsBytecode = null;
-            _grassPsBytecode = null;
-            _grassShaderProfile = default;
-        }
-    }
+    public void SetGrassShaderProfile(GameShaderPair profile) =>
+        _grassRoute.Set(profile, nameof(ReferencePipelineFactory12) + " grass route");
 
     /// <summary>True when a per-game grass pair compiled and is available to <c>grassRoute</c> callers.</summary>
-    public bool GrassShaderAvailable => _grassVsBytecode is not null && _grassPsBytecode is not null;
+    public bool GrassShaderAvailable => _grassRoute.Active;
 
     public ID3D12PipelineState GetBlendPipeline(
         byte srcBlendMode, byte dstBlendMode, bool doubleSided, bool decal = false, bool grassRoute = false)
     {
-        var useGrass = grassRoute && GrassShaderAvailable;
-        var cache = useGrass ? _grassBlendPsos : _blendPsos;
-        var key = new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal);
-        if (cache.TryGetValue(key, out var existing))
-        {
-            return existing;
-        }
-
-        var rtBlend = new D12.RenderTargetBlendDescription
-        {
-            BlendEnable = true,
-            SourceBlend = NifD3D12BlendMapper.ResolveBlendFactor(srcBlendMode),
-            DestinationBlend = NifD3D12BlendMapper.ResolveBlendFactor(dstBlendMode),
-            BlendOperation = D12.BlendOperation.Add,
-            SourceBlendAlpha = D12.Blend.One,
-            DestinationBlendAlpha = D12.Blend.One,
-            BlendOperationAlpha = D12.BlendOperation.Max,
-            RenderTargetWriteMask = D12.ColorWriteEnable.All
-        };
-
-        var pso = CreatePipelineState(
-            useGrass ? _grassVsBytecode! : _blendedVsBytecode,
-            useGrass ? _grassPsBytecode! : _psBytecode,
-            doubleSided, rtBlend, depthWriteEnabled: false, decal);
-        cache[key] = pso;
-        return pso;
+        var route = grassRoute && GrassShaderAvailable ? _grassRoute : _sharedRoute;
+        return route.GetOrCreate(
+            new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal),
+            depthWrite: false,
+            (self: this, srcBlendMode, dstBlendMode, doubleSided, decal),
+            static (s, vs, ps) => s.self.CreateBlendPipelineState(
+                vs, ps, s.srcBlendMode, s.dstBlendMode, s.doubleSided, s.decal, depthWriteEnabled: false));
     }
 
     /// <summary>
@@ -197,14 +145,24 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     public ID3D12PipelineState GetBlendDepthWritePipeline(byte srcBlendMode, byte dstBlendMode, bool doubleSided,
         bool decal = false, bool grassRoute = false)
     {
-        var useGrass = grassRoute && GrassShaderAvailable;
-        var cache = useGrass ? _grassBlendDepthWritePsos : _blendDepthWritePsos;
-        var key = new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal);
-        if (cache.TryGetValue(key, out var existing))
-        {
-            return existing;
-        }
+        var route = grassRoute && GrassShaderAvailable ? _grassRoute : _sharedRoute;
+        return route.GetOrCreate(
+            new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal),
+            depthWrite: true,
+            (self: this, srcBlendMode, dstBlendMode, doubleSided, decal),
+            static (s, vs, ps) => s.self.CreateBlendPipelineState(
+                vs, ps, s.srcBlendMode, s.dstBlendMode, s.doubleSided, s.decal, depthWriteEnabled: true));
+    }
 
+    /// <summary>
+    ///     The alpha-blend PSO recipe shared by both blend getters and every shader route: the
+    ///     authored src/dst colour blend, One/Max alpha accumulation, and the standard depth/decal
+    ///     handling from <see cref="CreatePipelineState" />.
+    /// </summary>
+    private ID3D12PipelineState CreateBlendPipelineState(
+        byte[] vsBytecode, byte[] psBytecode, byte srcBlendMode, byte dstBlendMode, bool doubleSided,
+        bool decal, bool depthWriteEnabled)
+    {
         var rtBlend = new D12.RenderTargetBlendDescription
         {
             BlendEnable = true,
@@ -217,12 +175,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             RenderTargetWriteMask = D12.ColorWriteEnable.All
         };
 
-        var pso = CreatePipelineState(
-            useGrass ? _grassVsBytecode! : _blendedVsBytecode,
-            useGrass ? _grassPsBytecode! : _psBytecode,
-            doubleSided, rtBlend, depthWriteEnabled: true, decal);
-        cache[key] = pso;
-        return pso;
+        return CreatePipelineState(vsBytecode, psBytecode, doubleSided, rtBlend, depthWriteEnabled, decal);
     }
 
     private ID3D12PipelineState CreatePipelineState(
@@ -356,26 +309,8 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        foreach (var pso in _blendPsos.Values)
-        {
-            pso.Dispose();
-        }
-        _blendPsos.Clear();
-        foreach (var pso in _blendDepthWritePsos.Values)
-        {
-            pso.Dispose();
-        }
-        _blendDepthWritePsos.Clear();
-        foreach (var pso in _grassBlendPsos.Values)
-        {
-            pso.Dispose();
-        }
-        _grassBlendPsos.Clear();
-        foreach (var pso in _grassBlendDepthWritePsos.Values)
-        {
-            pso.Dispose();
-        }
-        _grassBlendDepthWritePsos.Clear();
+        _sharedRoute.DisposeAll();
+        _grassRoute.DisposeAll();
         ShadowAlphaTestPso.Dispose();
         ShadowOpaquePso.Dispose();
         if (AlphaToCoverageAvailable)
@@ -391,5 +326,102 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     }
 
     private readonly record struct BlendPipelineKey(byte SrcBlendMode, byte DstBlendMode, bool DoubleSided, bool Decal);
+
+    /// <summary>
+    ///     One blend shader route: a vertex+pixel bytecode pair plus its OWN blend and
+    ///     depth-writing-blend PSO caches. The shared reference pair is the always-active route; a
+    ///     per-game <see cref="GameShaderPair" /> (grass is pair #1) becomes a route that is active
+    ///     only while its shaders compiled. Routes never share a cache: the
+    ///     <see cref="BlendPipelineKey" />s are identical between routes — only the shaders differ —
+    ///     so one cache would hand back another route's pipeline after the first draw.
+    /// </summary>
+    private sealed class ShaderRoutePsos
+    {
+        private readonly Dictionary<BlendPipelineKey, ID3D12PipelineState> _blendPsos = new();
+        private readonly Dictionary<BlendPipelineKey, ID3D12PipelineState> _blendDepthWritePsos = new();
+        private GameShaderPair _profile;
+        private byte[]? _vsBytecode;
+        private byte[]? _psBytecode;
+
+        /// <summary>A per-game route: inactive (= shared path) until <see cref="Set" /> compiles a pair.</summary>
+        public ShaderRoutePsos()
+        {
+        }
+
+        /// <summary>The always-active route over the pre-compiled shared shaders.</summary>
+        public ShaderRoutePsos(byte[] vsBytecode, byte[] psBytecode)
+        {
+            _vsBytecode = vsBytecode;
+            _psBytecode = psBytecode;
+        }
+
+        /// <summary>True when this route's shaders are available to draw with.</summary>
+        public bool Active => _vsBytecode is not null && _psBytecode is not null;
+
+        /// <summary>
+        ///     Selects this route's shader pair, compiling it on first use. A no-op when the profile
+        ///     is unchanged; a change drops the bytecode and every cached PSO. FAIL-SOFT on a compile
+        ///     failure (<see cref="GameShaderPair.TryCompile" /> logs and returns null): the route
+        ///     goes inactive so callers keep the shared shaders, and the stored profile resets so a
+        ///     later Set of the same pair retries the compile instead of no-oping on the equality
+        ///     check.
+        /// </summary>
+        public void Set(GameShaderPair profile, string consumerName)
+        {
+            if (profile.Equals(_profile)) return;
+
+            _profile = profile;
+            _vsBytecode = null;
+            _psBytecode = null;
+            DisposeAll();
+
+            if (!profile.Enabled) return;
+
+            var compiled = profile.TryCompile(consumerName);
+            if (compiled is null)
+            {
+                _profile = default;
+                return;
+            }
+
+            (_vsBytecode, _psBytecode) = compiled.Value;
+        }
+
+        /// <summary>
+        ///     Route-local PSO lookup; builds via <paramref name="create" /> (handed this route's
+        ///     bytecode) on first miss. <paramref name="state" /> keeps call sites closure-free —
+        ///     this runs per blended draw, so a capturing lambda would allocate every frame.
+        /// </summary>
+        public ID3D12PipelineState GetOrCreate<TState>(
+            BlendPipelineKey key,
+            bool depthWrite,
+            TState state,
+            Func<TState, byte[], byte[], ID3D12PipelineState> create)
+        {
+            var cache = depthWrite ? _blendDepthWritePsos : _blendPsos;
+            if (cache.TryGetValue(key, out var existing))
+            {
+                return existing;
+            }
+
+            var pso = create(state, _vsBytecode!, _psBytecode!);
+            cache[key] = pso;
+            return pso;
+        }
+
+        public void DisposeAll()
+        {
+            foreach (var pso in _blendPsos.Values)
+            {
+                pso.Dispose();
+            }
+            _blendPsos.Clear();
+            foreach (var pso in _blendDepthWritePsos.Values)
+            {
+                pso.Dispose();
+            }
+            _blendDepthWritePsos.Clear();
+        }
+    }
 }
 #endif

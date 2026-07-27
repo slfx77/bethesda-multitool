@@ -31,7 +31,8 @@ bare file name in `GpuShaderCompiler12`. Consequences:
   disassembled retail shader is the source of truth.
 - **Preprocessor macros encode technique axes only** (`WATER_HARDWARE_OCCLUSION`,
   `ALPHA_TO_COVERAGE`, `SHADOW_CARD_LIGHT_FACING`) — never game identity. Per-game differences get
-  per-game *files*, selected by a `ForGame` profile record (see `GrassShaderProfile`).
+  per-game *files*, selected by a `ForGame` registry returning a `GameShaderPair`
+  (see `GrassShaderProfile`).
 
 ## Layout
 
@@ -48,5 +49,9 @@ bare file name in `GpuShaderCompiler12`. Consequences:
 | `Sprite/` | Headless CLI sprite renderer (SKIN2000.pso replica) |
 
 Adding a per-game shader pair: create `<subject>_<gametoken>.{vert,frag}.hlsl` beside the shared
-subject, return the pair from the subject's `ForGame` profile record (structural fallback = shared
-path), and add `ShaderPermutations` entries — `ShaderInventoryTests` fails until coverage exists.
+subject, return a `GameShaderPair` from the subject's `ForGame` registry (structural fallback =
+shared path; `GameShaderPair.TryCompile` is fail-soft — a compile failure logs and degrades to the
+shared shaders), give the consuming pipeline factory a `ShaderRoutePsos` field + Set method (grass
+in `ReferencePipelineFactory12` is the template), and add `ShaderPermutations` entries —
+`ShaderInventoryTests` fails until coverage exists. Water deliberately does NOT use this pattern:
+it has no shared-path fallback; `WaterProfile.PixelShaderFile` is its per-game seam.

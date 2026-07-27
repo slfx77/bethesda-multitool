@@ -131,13 +131,30 @@ public sealed class Tes4GrassShaderTests
         var factory = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferencePipelineFactory12.cs");
+        var compact = new string(factory.Where(c => !char.IsWhiteSpace(c)).ToArray());
 
-        // The blend keys are identical between routes — only the shaders differ — so a shared cache
-        // would hand a grass PSO to non-grass geometry (and vice versa) after the first draw.
-        Assert.Contains("_grassBlendPsos", factory, StringComparison.Ordinal);
-        Assert.Contains("_grassBlendDepthWritePsos", factory, StringComparison.Ordinal);
+        // The blend keys are identical between routes — only the shaders differ — so grass and the
+        // shared shaders must be DISTINCT ShaderRoutePsos instances, each owning its own PSO caches:
+        // one shared cache would hand a grass PSO to non-grass geometry (and vice versa) after the
+        // first draw. Both blend getters must pick the route the same way.
+        Assert.Contains("privatesealedclassShaderRoutePsos", compact, StringComparison.Ordinal);
+        Assert.Contains("readonlyShaderRoutePsos_sharedRoute;", compact, StringComparison.Ordinal);
+        Assert.Contains("readonlyShaderRoutePsos_grassRoute=new();", compact, StringComparison.Ordinal);
+        Assert.Equal(2, SourceContract.CountOccurrences(compact, "?_grassRoute:_sharedRoute;"));
+
         // Compile failure must degrade to the shared shaders, never throw: the caller's catch would
-        // otherwise take down the whole reference pipeline (every placed object) over one game's grass.
-        Assert.Contains("_grassShaderProfile = default;", factory, StringComparison.Ordinal);
+        // otherwise take down the whole reference pipeline (every placed object) over one game's
+        // grass. TryCompile is the fail-soft seam (logs + returns null), and the route resets its
+        // stored profile so a later Set of the same pair retries instead of no-oping.
+        Assert.Contains("profile.TryCompile(consumerName)", factory, StringComparison.Ordinal);
+        Assert.Contains("_profile = default;", factory, StringComparison.Ordinal);
+        var pair = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera",
+            "GameShaderPair.cs");
+        Assert.Contains(
+            "catch (Exception ex) when (ex is InvalidOperationException or FileNotFoundException)",
+            pair,
+            StringComparison.Ordinal);
+        Assert.Contains("return null;", pair, StringComparison.Ordinal);
     }
 }
