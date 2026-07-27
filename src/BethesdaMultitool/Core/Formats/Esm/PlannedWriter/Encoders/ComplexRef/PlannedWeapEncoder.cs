@@ -3,7 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 
-namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.SimpleRef;
+namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.ComplexRef;
 
 /// <summary>
 ///     Planned encoder for WEAP. Tier 2: transitional. Delegates to the legacy

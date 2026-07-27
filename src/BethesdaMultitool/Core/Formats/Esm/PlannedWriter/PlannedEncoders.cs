@@ -1,7 +1,20 @@
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Magic;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.ComplexRef;
-using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.SimpleRef;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.Trivial;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.World;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.AI;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 
@@ -36,6 +49,14 @@ public static class PlannedEncoders
         BuildAll().Select(e => e.RecordType).Distinct(StringComparer.Ordinal);
 
     /// <summary>
+    ///     One-line registration for a simple-ref encoder: New delegates to the legacy
+    ///     <c>EncodeNew(model)</c> primitive, Override emits an empty record.
+    /// </summary>
+    private static DelegatingPlannedEncoder<TModel> Simple<TModel>(
+        string recordType, Func<TModel, EncodedRecord> encodeNew) where TModel : class =>
+        new(recordType, encodeNew);
+
+    /// <summary>
     ///     Enumerate every planned encoder. Tier 1+ extends this list.
     /// </summary>
     public static IEnumerable<IPlannedRecordEncoder> BuildAll()
@@ -54,44 +75,44 @@ public static class PlannedEncoders
         // validation; WEAP threads the plan's emit set + remap table through to
         // its legacy EncodeNew(weap, validFormIds, remapTable) overload.
         yield return new PlannedWeapEncoder();
-        yield return new PlannedDoorEncoder();
-        yield return new PlannedMiscEncoder();
-        yield return new PlannedKeymEncoder();
-        yield return new PlannedNoteEncoder();
-        yield return new PlannedRcpeEncoder();
-        yield return new PlannedCobjEncoder();
-        yield return new PlannedArmaEncoder();
-        yield return new PlannedImodEncoder();
-        yield return new PlannedEnchEncoder();
-        yield return new PlannedSpelEncoder();
-        yield return new PlannedExplEncoder();
-        yield return new PlannedMgefEncoder();
-        yield return new PlannedProjEncoder();
+        yield return Simple<DoorRecord>("DOOR", DoorEncoder.EncodeNew);
+        yield return Simple<MiscItemRecord>("MISC", MiscEncoder.EncodeNew);
+        yield return Simple<KeyRecord>("KEYM", KeymEncoder.EncodeNew);
+        yield return Simple<NoteRecord>("NOTE", NoteEncoder.EncodeNew);
+        yield return Simple<RecipeRecord>("RCPE", RcpeEncoder.EncodeNew);
+        yield return Simple<ConstructibleObjectRecord>("COBJ", CobjEncoder.EncodeNew);
+        yield return Simple<ArmaRecord>("ARMA", ArmaEncoder.EncodeNew);
+        yield return Simple<WeaponModRecord>("IMOD", ImodEncoder.EncodeNew);
+        yield return Simple<EnchantmentRecord>("ENCH", EnchEncoder.EncodeNew);
+        yield return Simple<SpellRecord>("SPEL", SpelEncoder.EncodeNew);
+        yield return Simple<ExplosionRecord>("EXPL", ExplEncoder.EncodeNew);
+        yield return Simple<BaseEffectRecord>("MGEF", MgefEncoder.EncodeNew);
+        yield return Simple<ProjectileRecord>("PROJ", ProjEncoder.EncodeNew);
 
         // Tier 2 expansion — character/misc/world/AI trivials. Same delegate pattern as
         // the simple-ref encoders above.
-        yield return new PlannedSounEncoder();
-        yield return new PlannedFactEncoder();
-        yield return new PlannedHairEncoder();
-        yield return new PlannedEyesEncoder();
-        yield return new PlannedHdptEncoder();
-        yield return new PlannedBptdEncoder();
-        yield return new PlannedAvifEncoder();
-        yield return new PlannedClasEncoder();
-        yield return new PlannedRaceEncoder();
-        yield return new PlannedRepuEncoder();
-        yield return new PlannedVtypEncoder();
-        yield return new PlannedChalEncoder();
-        yield return new PlannedIngrEncoder();
-        yield return new PlannedIpctEncoder();
-        yield return new PlannedLtexEncoder();
-        yield return new PlannedMicnEncoder();
-        yield return new PlannedMuscEncoder();
-        yield return new PlannedRcctEncoder();
-        yield return new PlannedTxstEncoder();
-        yield return new PlannedActiEncoder();
-        yield return new PlannedDebrEncoder();
-        yield return new PlannedCstyEncoder();
+        yield return Simple<SoundRecord>("SOUN", SounEncoder.EncodeNew);
+        yield return Simple<FactionRecord>("FACT", FactEncoder.EncodeNew);
+        yield return Simple<HairRecord>("HAIR", HairEncoder.EncodeNew);
+        yield return Simple<EyesRecord>("EYES", EyesEncoder.EncodeNew);
+        yield return Simple<HeadPartRecord>("HDPT", HdptEncoder.EncodeNew);
+        yield return Simple<BodyPartDataRecord>("BPTD", BptdEncoder.EncodeNew);
+        yield return Simple<ActorValueInfoRecord>("AVIF", AvifEncoder.EncodeNew);
+        yield return Simple<ClassRecord>("CLAS", ClasEncoder.EncodeNew);
+        yield return Simple<RaceRecord>("RACE", RaceEncoder.EncodeNew);
+        yield return Simple<ReputationRecord>("REPU", RepuEncoder.EncodeNew);
+        yield return Simple<VoiceTypeRecord>("VTYP", VtypEncoder.EncodeNew);
+        yield return Simple<ChallengeRecord>("CHAL", ChalEncoder.EncodeNew);
+        yield return Simple<IngredientRecord>("INGR", IngrEncoder.EncodeNew);
+        yield return Simple<ImpactDataRecord>("IPCT", IpctEncoder.EncodeNew);
+        yield return Simple<LandscapeTextureRecord>("LTEX", LtexEncoder.EncodeNew);
+        yield return Simple<MenuIconRecord>("MICN", MicnEncoder.EncodeNew);
+        yield return Simple<MusicTypeRecord>("MUSC", MuscEncoder.EncodeNew);
+        yield return Simple<RecipeCategoryRecord>("RCCT", RcctEncoder.EncodeNew);
+        yield return Simple<TextureSetRecord>("TXST", TxstEncoder.EncodeNew);
+        yield return Simple<ActivatorRecord>("ACTI", ActiEncoder.EncodeNew);
+        yield return Simple<DebrisRecord>("DEBR", DebrEncoder.EncodeNew);
+        yield return Simple<CombatStyleRecord>("CSTY", CstyEncoder.EncodeNew);
 
         // Tier 3 — complex FormID-ref encoders. Transitional pass-through to legacy
         // EncodeNew(model, validFormIds, remapTable); FormID resolution comes from the
@@ -124,21 +145,21 @@ public static class PlannedEncoders
         // Tier 5a — remaining top-level world / misc encoders. Cell-children types
         // (REFR/ACHR/ACRE/LAND/NAVM/PGRE) ship in Tier 5b once cell-pipeline integration
         // routes their emission through the planner.
-        yield return new PlannedWrldEncoder();
-        yield return new PlannedLighEncoder();
-        yield return new PlannedFurnEncoder();
-        yield return new PlannedWatrEncoder();
-        yield return new PlannedWthrEncoder();
-        yield return new PlannedLgtmEncoder();
-        yield return new PlannedEczEncoder();
-        yield return new PlannedLsctEncoder();
-        yield return new PlannedRegnEncoder();
+        yield return Simple<WorldspaceRecord>("WRLD", WrldEncoder.EncodeNew);
+        yield return Simple<LightRecord>("LIGH", LighEncoder.EncodeNew);
+        yield return Simple<FurnitureRecord>("FURN", FurnEncoder.EncodeNew);
+        yield return Simple<WaterRecord>("WATR", WatrEncoder.EncodeNew);
+        yield return Simple<WeatherRecord>("WTHR", WthrEncoder.EncodeNew);
+        yield return Simple<LightingTemplateRecord>("LGTM", LgtmEncoder.EncodeNew);
+        yield return Simple<EncounterZoneRecord>("ECZN", EczEncoder.EncodeNew);
+        yield return Simple<LoadScreenTypeRecord>("LSCT", LsctEncoder.EncodeNew);
+        yield return Simple<RegionRecord>("REGN", RegnEncoder.EncodeNew);
         yield return new PlannedScolEncoder();
-        yield return new PlannedAlocEncoder();
-        yield return new PlannedCcrdEncoder();
-        yield return new PlannedCmnyEncoder();
-        yield return new PlannedCdckEncoder();
-        yield return new PlannedFlstEncoder();
+        yield return Simple<AudioLocationControllerRecord>("ALOC", AlocEncoder.EncodeNew);
+        yield return Simple<CaravanCardRecord>("CCRD", CcrdEncoder.EncodeNew);
+        yield return Simple<CaravanMoneyRecord>("CMNY", CmnyEncoder.EncodeNew);
+        yield return Simple<CaravanDeckRecord>("CDCK", CdckEncoder.EncodeNew);
+        yield return Simple<FormListRecord>("FLST", FlstEncoder.EncodeNew);
 
         // Tier 5b kickoff — CELL + placed-reference (REFR/ACHR/ACRE) encoders. These are
         // registered but not yet invoked by any dispatch path: cell-children records
