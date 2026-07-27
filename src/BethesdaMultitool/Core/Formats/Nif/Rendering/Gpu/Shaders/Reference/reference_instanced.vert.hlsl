@@ -29,14 +29,7 @@ cbuffer PerFrame : register(b0)
 // absolute phase seed; it never applies that large value to individual vertex positions. The leading
 // camera-position register is exposed for classic specular LOD; all positions are in the same
 // CPU-rebased space as the uploaded instance worlds.
-cbuffer Atmosphere : register(b3)
-{
-    float4 uSunDirIntensity; // xyz = world direction toward the Sun
-    float4 uAtmospherePadBeforeCamera[6];
-    float4 uCameraPosFogPower;
-    float4 uAtmospherePadAfterCamera;
-    float4 uCameraOrigin; // absolute snapped render origin; restores TallGrass placement phase identity
-};
+#include "atmosphere.hlsli"
 
 // Per-batch (one DrawIndexedInstanced) constants. TextureState.x marks BC5/ATI2 normal
 // decode; TexIndices.x = diffuse bindless slot, .y = normal bindless slot. uInstanceBase

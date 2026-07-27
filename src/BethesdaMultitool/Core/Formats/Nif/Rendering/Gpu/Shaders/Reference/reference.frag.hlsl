@@ -35,51 +35,9 @@ cbuffer PerFrame : register(b0) { float4x4 uViewProj; }
 // distant-mesh "isolated white dot" fireflies. Tuned per the 2026-07-14 hot-pixel audit (~4-8 band).
 static const float kEmissiveLumaCap = 6.0;
 
-// Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants,
-// uploaded once per frame and bound for the whole scene (terrain/reference/water all read it).
-cbuffer Atmosphere : register(b3)
-{
-    float4 uSunDirIntensity;    // xyz = sun world dir (toward sun), w = intensity
-    float4 uSunColorLighting;   // rgb = sun color, w = lightingEnabled (0/1)
-    float4 uAmbientColor;       // rgb = ambient, w = spare
-    float4 uSkyTopSkyEnabled;   // rgb = sky-top color, w = skyEnabled (0/1)
-    float4 uSkyHorizon;         // rgb = sky-horizon color, w = effective HDR active (0/1)
-    float4 uFogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
-    float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = placed-light count
-    float4 uCameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
-    float4 uFogFarColorMax;     // rgb = far-fog color, w = max powered fog amount
-    float4 uCameraOrigin;       // xyz = camera-relative render origin (VS-consumed; layout parity),
-                                // w = IMGS EmissiveMult for Lighting30; NoLighting does not consume it
-    // Sun shadow CASCADES, near→far (appended — earlier shaders declare only the prefix above,
-    // layout-safe). Each matrix: origin-relative world → that cascade's shadow clip (xy ±1,
-    // z reversed 0..1); each params: x = enabled, y = texel UV size, z = bias, w = SRV slot.
-    float4x4 uShadowMatrix0;
-    float4x4 uShadowMatrix1;
-    float4x4 uShadowMatrix2;
-    float4x4 uShadowMatrix3;
-    float4 uShadowParams0;
-    float4 uShadowParams1;
-    float4 uShadowParams2;
-    float4 uShadowParams3;
-    float4 uAmbientPositiveX;  // w = full DALC cube present
-    float4 uAmbientNegativeX;
-    float4 uAmbientPositiveY;
-    float4 uAmbientNegativeY;
-    float4 uAmbientPositiveZ;
-    float4 uAmbientNegativeZ;
-};
-
-// Per-frame local-light list. The root SRV lives outside the legacy t0..t7 texture table so
-// terrain and placed geometry can share the same forward loop without disturbing bindless slots.
-// Position is already expressed in the same absolute/origin-relative space as PSInput.vWorldPos.
-struct PointLight
-{
-    float4 PositionRadius;
-    float4 ColorIntensity;
-    float4 AuthoredMetadata;    // parsed falloff/FOV/flags; retained, not interpreted by FNV path
-    float4 Reserved;
-};
-StructuredBuffer<PointLight> uPointLights : register(t9, space0);
+#include "atmosphere.hlsli"
+#include "scene_lighting.hlsli"
+#include "fog.hlsli"
 
 // Skyrim BSLightingShader constant fog: q is the linear near→far distance, then the powered amount is
 // capped by FNAM max opacity. That SAME amount blends near→far fog color and the surface→fog result.
@@ -105,10 +63,8 @@ float3 ApplyFog(float3 color, float3 worldPos, float blendOperation)
         return color;
     }
 
-    float dist = length(worldPos - uCameraPosFogPower.xyz);
-    float q = saturate((dist - uAtmosphereParams.y) / max(uAtmosphereParams.z - uAtmosphereParams.y, 1.0));
-    float amount = min(pow(q, max(uCameraPosFogPower.w, 0.01)), saturate(uFogFarColorMax.w));
-    float3 fogRgb = lerp(uFogColorFogEnabled.rgb, uFogFarColorMax.rgb, amount);
+    float amount = FogAmountAtDistance(length(worldPos - uCameraPosFogPower.xyz));
+    float3 fogRgb = FogColorForAmount(amount);
     return additive
         ? color * (1.0 - amount)
         : multiplicative
@@ -116,67 +72,7 @@ float3 ApplyFog(float3 color, float3 worldPos, float blendOperation)
             : lerp(color, fogRgb, amount);
 }
 
-// One cascade attempt for ShadowFactor: returns true when worldPos lands inside this cascade's
-// footprint (with a PCF-kernel border margin so the filter never straddles the map edge) —
-// 'visibility' then carries the filtered shadow term. The PCF is a 3x3 tent of BILINEAR
-// comparison taps: each GatherRed pulls the tap's 2x2 texel quad and the four COMPARE RESULTS are
-// blended by the sub-texel fraction (filter the comparisons, never the depths). Ortho projection:
-// w == 1, no perspective divide. Reversed-Z: stored depth GROWS toward the light, so "an occluder
-// exists" reads as stored > pixelDepth + bias.
-bool TryCascadeShadow(float4x4 shadowMatrix, float4 cascade, float3 worldPos, out float visibility)
-{
-    visibility = 1.0;
-    if (cascade.x < 0.5)
-    {
-        return false;
-    }
-
-    float4 clip = mul(shadowMatrix, float4(worldPos, 1.0));
-    float texel = cascade.y;
-    float2 uv = float2(clip.x * 0.5 + 0.5, 0.5 - clip.y * 0.5);
-    float border = 2.5 * texel;
-    if (min(uv.x, uv.y) < border || max(uv.x, uv.y) > 1.0 - border || clip.z <= 0.0 || clip.z >= 1.0)
-    {
-        return false;
-    }
-
-    uint slot = (uint)cascade.w;
-    float reference = clip.z + cascade.z;
-    float2 texelPos = uv / texel - 0.5;
-    float2 f = frac(texelPos);
-    float2 gatherBase = (floor(texelPos) + 0.5) * texel;
-    float lit = 0.0;
-    [unroll]
-    for (int dy = -1; dy <= 1; dy++)
-    {
-        [unroll]
-        for (int dx = -1; dx <= 1; dx++)
-        {
-            float4 quad = textures[NonUniformResourceIndex(slot)]
-                .GatherRed(sShadowPoint, gatherBase + float2(dx, dy) * texel);
-            // Gather quad order (v grows downward): x=(0,+1) y=(+1,+1) z=(+1,0) w=(0,0).
-            float4 vis = 1.0 - step(reference.xxxx, quad);
-            lit += lerp(lerp(vis.w, vis.z, f.x), lerp(vis.x, vis.y, f.x), f.y);
-        }
-    }
-    visibility = lit / 9.0;
-    return true;
-}
-
-// Sun-shadow visibility for an (origin-relative) world position — 1 = fully lit, 0 = fully
-// occluded. CASCADED: the smallest (sharpest) cascade containing the sample wins, so quality
-// scales with closeness to the camera; the far cascade reaches the full render distance. All
-// cascades disabled (params.x == 0) returns 1.0, keeping the scene pixel-identical to the
-// pre-shadow renderer.
-float ShadowFactor(float3 worldPos)
-{
-    float visibility;
-    if (TryCascadeShadow(uShadowMatrix0, uShadowParams0, worldPos, visibility)) return visibility;
-    if (TryCascadeShadow(uShadowMatrix1, uShadowParams1, worldPos, visibility)) return visibility;
-    if (TryCascadeShadow(uShadowMatrix2, uShadowParams2, worldPos, visibility)) return visibility;
-    if (TryCascadeShadow(uShadowMatrix3, uShadowParams3, worldPos, visibility)) return visibility;
-    return 1.0;
-}
+#include "shadow_sampling.hlsli"
 
 // Per-pixel light factor (rgb) for a world-space normal. When lighting is disabled
 // (uSunColorLighting.w == 0) this returns the EXACT legacy flat shade — scalar 0.4 + 0.6*lambert
@@ -184,40 +80,6 @@ float ShadowFactor(float3 worldPos)
 // viewer. Enabled: colored ambient + sun·(N·L)·sunShadow (shadow = 1.0 whenever the shadow pass
 // is off, preserving the exact pre-shadow output), energy-bounded so a fully sunlit surface lands
 // near the legacy max (~1.0) instead of blowing out.
-float3 PlacedLightContribution(float3 N, float3 worldPos)
-{
-    float3 contribution = 0.0;
-    uint count = (uint)max(round(uAtmosphereParams.w), 0.0);
-    [loop]
-    for (uint i = 0; i < count; i++)
-    {
-        PointLight light = uPointLights[i];
-        float radius = light.PositionRadius.w;
-        float3 toLight = light.PositionRadius.xyz - worldPos;
-        float distanceSquared = dot(toLight, toLight);
-        float radiusSquared = radius * radius;
-        if (radius <= 0.0 || distanceSquared >= radiusSquared)
-        {
-            continue;
-        }
-
-        float3 L = toLight * rsqrt(max(distanceSquared, 1e-8));
-        float ndotl = saturate(dot(N, L));
-        if (ndotl <= 0.0)
-        {
-            continue;
-        }
-
-        // Exact shipped FNV SLS2128 omni term: 1-dot((lightPos-worldPos)/radius, ...), i.e.
-        // 1-(d/r)^2 (pc_land_shader_disassembly.txt, SLS 2128-2131). The engine draws a bounded
-        // light volume; this global loop performs that same bound explicitly above.
-        float attenuation = saturate(1.0 - distanceSquared / radiusSquared);
-        contribution += light.ColorIntensity.rgb *
-            (light.ColorIntensity.w * ndotl * attenuation);
-    }
-    return contribution;
-}
-
 float3 AtmosphereLight(
     float3 N, float3 worldPos, float sunShadow, float3 materialEmission, bool hdrActive)
 {

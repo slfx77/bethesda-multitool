@@ -69,33 +69,7 @@ cbuffer Uniforms : register(b0)
 // and body-lighting track the time-of-day/weather sun like the rest of the scene (P3). When lighting
 // is disabled (uSunColorLighting.w == 0) it falls back to the static kSunDir/kSunColor below, so the
 // water looks exactly as it did pre-atmosphere.
-cbuffer Atmosphere : register(b3)
-{
-    float4 uSunDirIntensity;    // xyz = sun world dir (toward sun), w = intensity
-    float4 uSunColorLighting;   // rgb = sun color, w = lightingEnabled (0/1)
-    float4 uAmbientColor;       // rgb = ambient, w = spare
-    float4 uSkyTopSkyEnabled;   // rgb = sky-top color, w = skyEnabled (0/1)
-    float4 uSkyHorizon;         // rgb = sky-horizon color, w = spare
-    float4 uFogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
-    float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = placed-light count
-    float4 uCameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
-    float4 uFogFarColorMax;     // rgb = far-fog color, w = max powered fog amount
-    float4 uCameraOrigin;       // xyz = camera-relative render origin
-    float4x4 uShadowMatrix0;
-    float4x4 uShadowMatrix1;
-    float4x4 uShadowMatrix2;
-    float4x4 uShadowMatrix3;
-    float4 uShadowParams0;
-    float4 uShadowParams1;
-    float4 uShadowParams2;
-    float4 uShadowParams3;
-    float4 uAmbientPositiveX;
-    float4 uAmbientNegativeX;
-    float4 uAmbientPositiveY;
-    float4 uAmbientNegativeY;
-    float4 uAmbientPositiveZ;
-    float4 uAmbientNegativeZ;
-};
+#include "atmosphere.hlsli"
 
 // Skyrim constant fog: the same powered, FNAM-capped amount blends near→far fog color and then
 // surface→fog. Legacy weather binds far=near/max=1.

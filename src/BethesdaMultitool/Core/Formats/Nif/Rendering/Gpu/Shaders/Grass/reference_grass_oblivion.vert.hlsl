@@ -73,13 +73,10 @@ cbuffer PerDraw : register(b1)
     uint4  uTexIndices;   // x = diffuse
 };
 
-// Prefix of the shared Atmosphere CB (b3).
-cbuffer Atmosphere : register(b3)
-{
-    float4 uSunDirIntensity;  // xyz = world direction toward the sun  (retail DiffuseDir)
-    float4 uSunColorLighting; // rgb = sun colour (retail DiffuseColor), w = lightingEnabled
-    float4 uAmbientColor;     // rgb = ambient band            (retail AmbientColor)
-};
+// Shared Atmosphere CB (b3). Retail CTAB mapping for the three fields this VS consumes:
+// uSunDirIntensity.xyz = DiffuseDir, uSunColorLighting = DiffuseColor (w = lightingEnabled),
+// uAmbientColor.rgb = AmbientColor.
+#include "atmosphere.hlsli"
 
 struct VSInput
 {

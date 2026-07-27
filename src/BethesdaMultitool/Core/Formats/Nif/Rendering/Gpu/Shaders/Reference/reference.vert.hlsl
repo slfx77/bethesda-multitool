@@ -17,12 +17,7 @@ cbuffer PerFrame : register(b0)
 // uWorld's translation. TallGrass alone adds uCameraOrigin back to the INSTANCE ORIGIN for its absolute
 // phase seed; it never applies that large value to individual vertex positions. The leading 9 float4 are
 // the sun/sky/fog/camera fields this VS does not otherwise use.
-cbuffer Atmosphere : register(b3)
-{
-    float4 uSunDirIntensity; // xyz = world direction toward the Sun
-    float4 uAtmospherePad[8];
-    float4 uCameraOrigin; // absolute snapped render origin; restores TallGrass placement phase identity
-};
+#include "atmosphere.hlsli"
 
 cbuffer PerDraw : register(b1)
 {

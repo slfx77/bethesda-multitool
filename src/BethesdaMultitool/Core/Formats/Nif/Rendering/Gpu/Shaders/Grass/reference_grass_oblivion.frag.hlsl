@@ -34,18 +34,8 @@ SamplerState sClampUWrapV : register(s4);
 SamplerState sWrapUClampV : register(s5);
 SamplerState sClampUV     : register(s6);
 
-cbuffer Atmosphere : register(b3)
-{
-    float4 uSunDirIntensity;
-    float4 uSunColorLighting;
-    float4 uAmbientColor;
-    float4 uSkyTopSkyEnabled;
-    float4 uSkyHorizon;
-    float4 uFogColorFogEnabled; // rgb = fog colour, w = fogEnabled
-    float4 uAtmosphereParams;   // y = fogNear, z = fogFar
-    float4 uCameraPosFogPower;  // xyz = camera world pos, w = fog power
-    float4 uFogFarColorMax;     // rgb = far-fog colour, w = max powered fog amount
-};
+#include "atmosphere.hlsli"
+#include "fog.hlsli"
 
 struct PSInput
 {
@@ -58,24 +48,6 @@ struct PSInput
     nointerpolation uint4  vTexIndices   : TEXCOORD5;
     float3 vWorldPos : TEXCOORD6;
 };
-
-// Verbatim from reference.frag.hlsl. Duplicated rather than shared through an .hlsli because
-// `#include` is not wired up yet: every compile site still passes `include: null!`, and the first
-// directive would fail with X1507 — which the GUI degrades to a log line and a blank viewport.
-// Promoting these into a common header is the first job of the include-handler phase.
-float3 ApplyFog(float3 color, float3 worldPos)
-{
-    if (uFogColorFogEnabled.w < 0.5)
-    {
-        return color;
-    }
-
-    float dist = length(worldPos - uCameraPosFogPower.xyz);
-    float q = saturate((dist - uAtmosphereParams.y) / max(uAtmosphereParams.z - uAtmosphereParams.y, 1.0));
-    float amount = min(pow(q, max(uCameraPosFogPower.w, 0.01)), saturate(uFogFarColorMax.w));
-    float3 fogRgb = lerp(uFogColorFogEnabled.rgb, uFogFarColorMax.rgb, amount);
-    return lerp(color, fogRgb, amount);
-}
 
 bool PassAlphaTest(float alpha, float threshold, float functionId)
 {

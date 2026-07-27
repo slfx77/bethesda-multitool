@@ -17,11 +17,7 @@ cbuffer Uniforms : register(b0)
 // each world vertex before projection so the large worldspace coordinates never enter the viewProj
 // product (the float-precision wobble). Zero when camera-relative is off; the leading 9 float4 are the
 // sun/sky/fog/camera fields this VS does not use.
-cbuffer Atmosphere : register(b3)
-{
-    float4 uAtmospherePad[9];
-    float4 uCameraOrigin;
-};
+#include "atmosphere.hlsli"
 
 struct VSInput
 {
