@@ -96,7 +96,7 @@ internal static class GpuShaderCompiler12
         var result = Compiler.Compile(
             source,
             macros,
-            include: null!,
+            EmbeddedShaderInclude.Instance,
             entryPoint,
             sourceName,
             profile,

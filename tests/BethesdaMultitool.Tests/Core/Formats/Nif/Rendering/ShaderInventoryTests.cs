@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -160,6 +161,32 @@ public sealed class ShaderInventoryTests
             Assert.True(
                 GpuShaderCompiler12.ResourceIndex.ContainsKey(permutation.File),
                 $"No embedded resource for '{permutation.File}'.");
+        }
+    }
+
+    private static readonly Regex IncludeDirective = new(
+        @"#include\s+""([^""]+)""", RegexOptions.Compiled);
+
+    [Fact]
+    public void EveryIncludeDirectiveResolvesToAnEmbeddedHeader()
+    {
+        // #include is resolved by EmbeddedShaderInclude against the same flat embedded index as
+        // top-level shaders, ignoring directory components. Without this guard a typo'd or
+        // un-embedded header only surfaces as a runtime FXC error under RUN_SHADER_COMPILE_TESTS —
+        // which the default CI suite does not exercise for most permutations.
+        foreach (var name in EmbeddedShaderNames())
+        {
+            var source = GpuShaderCompiler12.ReadSource(name);
+            foreach (Match match in IncludeDirective.Matches(source))
+            {
+                var header = Path.GetFileName(match.Groups[1].Value);
+                Assert.True(
+                    header.EndsWith(".hlsli", StringComparison.OrdinalIgnoreCase),
+                    $"{name}: #include \"{match.Groups[1].Value}\" must reference a .hlsli header.");
+                Assert.True(
+                    GpuShaderCompiler12.ResourceIndex.ContainsKey(header),
+                    $"{name}: included header '{header}' is not an embedded shader resource.");
+            }
         }
     }
 }
