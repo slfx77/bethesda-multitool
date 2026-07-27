@@ -179,8 +179,7 @@ internal readonly record struct GpuTonemapSettings
                 : settings.SunlightScale;
         }
 
-        var classicExterior = !isInterior &&
-                              (game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas);
+        var classicExterior = !isInterior && GameProfiles.For(game).UsesClassicHdrImagespace;
         return classicExterior ? settings.SunlightScale : 1f;
     }
 

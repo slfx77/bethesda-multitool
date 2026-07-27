@@ -248,9 +248,7 @@ public sealed partial class WorldView3DControl
                 Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ForOblivionWeather(
                     activeWeather?.Hdr))
             : Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ForGame(game, interior);
-        var engineImagespaceFamily = game is Core.Games.BethesdaGame.Oblivion
-            or Core.Games.BethesdaGame.Fallout3
-            or Core.Games.BethesdaGame.FalloutNewVegas;
+        var engineImagespaceFamily = GameProfiles.For(game).UsesEngineImagespaceDefaults;
         // Semantic Creation-family IMGS resolution is independent of the selected display operator.
         // Skyrim retains its family while GammaAces is active so the non-imagespace scene scales can
         // run without enabling the still-incomplete CreationModern cinematic/exposure shader.
@@ -445,7 +443,7 @@ public sealed partial class WorldView3DControl
         // The IMAD elapsed clock is not in the recovered Sky layout, so animatable timelines are
         // explicitly gated as unknown instead of silently sampling a fabricated t=0.
         if (_imagespaceMode == ImagespaceSelectionMode.Automatic && !interior
-            && game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas
+            && GameProfiles.For(game).UsesClassicHdrImagespace
             && (activeWeather?.ImageSpaceModifiers is not null
                 || weatherTransition.OutgoingWeather?.ImageSpaceModifiers is not null))
         {
