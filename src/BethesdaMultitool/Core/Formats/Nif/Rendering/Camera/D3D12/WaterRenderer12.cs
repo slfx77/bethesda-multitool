@@ -64,10 +64,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     // _psoDepthSample: same hardware GreaterEqual test against the host's READ-ONLY DSV while the
     // scene depth is simultaneously the shader's SRV (depth fade, FNV WATER000 path); its pixel
     // shader is the WATER_HARDWARE_OCCLUSION compile (manual occlusion clip dropped).
-    // The Oblivion pair is the same HLSL compiled with OBLIVION_WATER (view-angle body + single sun
-    // specular — see WaterShaderVariant.OblivionWater000), and the FO4 pair with FO4_WATER (the
-    // disassembled BSWaterShader math — see WaterShaderVariant.Fo4Water); both selected by the
-    // profile at draw time.
+    // The Oblivion pair compiles water_oblivion.frag.hlsl (view-angle body + single sun
+    // specular — see WaterShaderVariant.OblivionWater000), and the FO4 pair water_fo4.frag.hlsl
+    // (the disassembled BSWaterShader math — see WaterShaderVariant.Fo4Water); both selected by
+    // the profile (WaterProfile.PixelShaderFile) at draw time.
     private readonly ID3D12PipelineState _pso;
     private readonly ID3D12PipelineState _psoDepthSample;
     private readonly ID3D12PipelineState _psoFnvWater001DepthSample;
@@ -251,7 +251,11 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         gpu.Device.CreateShaderResourceView(_fnvNoiseNormalTexture, noiseSrvDescription, normalSrv.Cpu);
 
         var vsBytecode = CompileEmbeddedShader("water.vert.hlsl", "main", "vs_5_1");
-        var psBytecode = CompileEmbeddedShader("water.frag.hlsl", "main", "ps_5_1");
+        // Per-game water is a per-FILE axis (WaterProfile.PixelShaderFile); the only remaining
+        // preprocessor axes are technique macros (WATER_HARDWARE_OCCLUSION below,
+        // FO4_WATER_ARCHITECTURAL in ModernWaterResources12). Every variant file is compiled
+        // eagerly here because the loaded game can change per LoadData without rebuilding PSOs.
+        var psBytecode = CompileEmbeddedShader("water_fnv.frag.hlsl", "main", "ps_5_1");
 
         var rasterizer = new D12.RasterizerDescription
         {
@@ -306,13 +310,13 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         };
 
         var psOblivionBytecode = CompileEmbeddedShader(
-            "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("OBLIVION_WATER", "1"));
+            "water_oblivion.frag.hlsl", "main", "ps_5_1");
         var psFo4Bytecode = CompileEmbeddedShader(
-            "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("FO4_WATER", "1"));
+            "water_fo4.frag.hlsl", "main", "ps_5_1");
         var psMorrowindBytecode = CompileEmbeddedShader(
-            "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("MORROWIND_WATER", "1"));
+            "water_morrowind.frag.hlsl", "main", "ps_5_1");
         var psFnvWater001Bytecode = CompileEmbeddedShader(
-            "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("FNV_WATER001", "1"),
+            "water_fnv001.frag.hlsl", "main", "ps_5_1",
             new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
 
         var psoDesc = new GraphicsPipelineStateDescription
@@ -348,19 +352,16 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         // front of water). Hosts must bind the read-only DSV while depth sits in
         // DepthRead | PixelShaderResource; depth state and formats intentionally match _pso.
         var psDepthSampleBytecode = CompileEmbeddedShader(
-            "water.frag.hlsl", "main", "ps_5_1",
+            "water_fnv.frag.hlsl", "main", "ps_5_1",
             new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
         var psOblivionDepthSampleBytecode = CompileEmbeddedShader(
-            "water.frag.hlsl", "main", "ps_5_1",
-            new ShaderMacro("OBLIVION_WATER", "1"),
+            "water_oblivion.frag.hlsl", "main", "ps_5_1",
             new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
         var psFo4DepthSampleBytecode = CompileEmbeddedShader(
-            "water.frag.hlsl", "main", "ps_5_1",
-            new ShaderMacro("FO4_WATER", "1"),
+            "water_fo4.frag.hlsl", "main", "ps_5_1",
             new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
         var psMorrowindDepthSampleBytecode = CompileEmbeddedShader(
-            "water.frag.hlsl", "main", "ps_5_1",
-            new ShaderMacro("MORROWIND_WATER", "1"),
+            "water_morrowind.frag.hlsl", "main", "ps_5_1",
             new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
         psoDesc.PixelShader = psDepthSampleBytecode;
         _depthSamplePsoTemplate = psoDesc;
@@ -2226,19 +2227,17 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             try
             {
                 var modernPixelBytecode = CompileEmbeddedShader(
-                    "water.frag.hlsl",
+                    "water_fo4.frag.hlsl",
                     "main",
                     "ps_5_1",
-                    new ShaderMacro("FO4_WATER", "1"),
                     new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1"));
                 // The depth-sample template carries a hardware GreaterEqual test against the
                 // host's read-only DSV, so its pixel shader must be the WATER_HARDWARE_OCCLUSION
                 // compile (occlusion clip dropped) like every other depth-sample PSO.
                 var modernPixelDepthSampleBytecode = CompileEmbeddedShader(
-                    "water.frag.hlsl",
+                    "water_fo4.frag.hlsl",
                     "main",
                     "ps_5_1",
-                    new ShaderMacro("FO4_WATER", "1"),
                     new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1"),
                     new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
                 var pixelDescription = depthTemplate;

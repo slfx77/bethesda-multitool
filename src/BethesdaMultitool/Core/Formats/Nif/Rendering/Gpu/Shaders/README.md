@@ -40,7 +40,7 @@ bare file name in `GpuShaderCompiler12`. Consequences:
 | `Include/` | Shared `.hlsli` headers (atmosphere cbuffer, fog, shadow sampling, scene lighting) |
 | `Reference/` | Placed-object shaders (`reference.*`, instanced variant, shadow pass) |
 | `Grass/` | Per-game grass pairs (`reference_grass_oblivion.*`) |
-| `Water/` | Water surface + noise/simulation compute |
+| `Water/` | Per-game water pixel shaders (`water_fnv` also Skyrim/default, `water_oblivion`, `water_fo4`, `water_morrowind`, retail-program `water_fnv001`; selected by `WaterProfile.PixelShaderFile`, shared plumbing in `Include/water_common.hlsli`) + shared VS + noise/simulation compute |
 | `Terrain/` | Landscape (`terrain_textured.*` live; `terrain.*` legacy, kept compiling) |
 | `Sky/` | Sky dome geometry + celestial billboards |
 | `Post/` | Tonemap + bloom |

@@ -57,9 +57,9 @@ internal static class ShaderPermutations
     ];
 
     /// <summary>
-    ///     Water. Each variant is compiled twice — plain, and with WATER_HARDWARE_OCCLUSION for the
-    ///     read-only-DSV path. FNV_WATER001 duplicates <c>main()</c> wholesale inside the shader, so
-    ///     it is a separate program in all but file name.
+    ///     Water. The game is a per-FILE axis (<c>WaterProfile.PixelShaderFile</c>); each per-game
+    ///     file is compiled twice — plain, and with WATER_HARDWARE_OCCLUSION for the read-only-DSV
+    ///     path. FNV's retail WATER001 program is its own file (<c>water_fnv001.frag.hlsl</c>).
     /// </summary>
     internal static IReadOnlyList<ShaderPermutation> Water { get; } = BuildWater();
 
@@ -107,47 +107,47 @@ internal static class ShaderPermutations
             new("water_noise.comp.hlsl", "mainNormal", "cs_5_1", None, "FNV noise prepass: normal"),
         };
 
-        // Variant axis (the game) x occlusion axis (read-only DSV). Written as a product rather than
-        // 8 literals so a new variant cannot be added to one axis and forgotten on the other — the
-        // exact drift that left the water PSO table asymmetric before.
-        (string Name, string Purpose)[] variants =
+        // File axis (the game, per WaterProfile.PixelShaderFile) x occlusion axis (read-only DSV).
+        // Written as a product rather than 8 literals so a new per-game file cannot be added to one
+        // axis and forgotten on the other — the exact drift that left the water PSO table
+        // asymmetric before.
+        (string File, string Purpose)[] variants =
         [
-            (string.Empty, "FNV/FO3/Skyrim classic WATER000"),
-            ("OBLIVION_WATER", "Oblivion WATER000: N.V body, single sun glint"),
-            ("FO4_WATER", "FO4/FO76 BSWaterShader stand-in"),
-            ("MORROWIND_WATER", "Morrowind fixed-function animated plane"),
+            ("water_fnv.frag.hlsl", "FNV/FO3/Skyrim classic WATER000"),
+            ("water_oblivion.frag.hlsl", "Oblivion WATER000: N.V body, single sun glint"),
+            ("water_fo4.frag.hlsl", "FO4/FO76 BSWaterShader stand-in"),
+            ("water_morrowind.frag.hlsl", "Morrowind fixed-function animated plane"),
         ];
-        foreach (var (name, purpose) in variants)
+        foreach (var (file, purpose) in variants)
         {
             foreach (var occlusion in (bool[])[false, true])
             {
                 var macros = new List<ShaderMacro>();
-                if (name.Length > 0) macros.Add(new ShaderMacro(name, "1"));
                 if (occlusion) macros.Add(new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
                 list.Add(new ShaderPermutation(
-                    "water.frag.hlsl", "main", "ps_5_1", [.. macros],
+                    file, "main", "ps_5_1", [.. macros],
                     occlusion ? $"{purpose} (hardware occlusion)" : purpose));
             }
         }
 
-        // FNV_WATER001 ships only in its hardware-occlusion form (the snapshot path needs the
+        // FNV WATER001 ships only in its hardware-occlusion form (the snapshot path needs the
         // read-only DSV), matching WaterRenderer12's single compile of it.
         list.Add(new ShaderPermutation(
-            "water.frag.hlsl", "main", "ps_5_1",
-            [new ShaderMacro("FNV_WATER001", "1"), new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")],
-            "FNV WATER001 opaque-snapshot refraction (duplicates main() in-shader)"));
+            "water_fnv001.frag.hlsl", "main", "ps_5_1",
+            [new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")],
+            "FNV WATER001 opaque-snapshot refraction (its own retail program)"));
 
-        // FO4/FO76 "modern" water: opt-in, compiled lazily by ModernWaterResources12.
+        // FO4/FO76 "modern" water: opt-in TECHNIQUE macro on the FO4 file, compiled lazily by
+        // ModernWaterResources12.
         foreach (var occlusion in (bool[])[false, true])
         {
             var macros = new List<ShaderMacro>
             {
-                new("FO4_WATER", "1"),
                 new("FO4_WATER_ARCHITECTURAL", "1"),
             };
             if (occlusion) macros.Add(new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
             list.Add(new ShaderPermutation(
-                "water.frag.hlsl", "main", "ps_5_1", [.. macros],
+                "water_fo4.frag.hlsl", "main", "ps_5_1", [.. macros],
                 occlusion
                     ? "FO4/FO76 architectural water (hardware occlusion)"
                     : "FO4/FO76 architectural water"));

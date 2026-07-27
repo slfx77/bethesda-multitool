@@ -3,9 +3,9 @@
 // near→far fog color and the surface→fog result. Legacy weather binds far=near/max=1, reducing
 // exactly to its old single-color powered fog.
 //
-// Reads the shared Atmosphere cbuffer's fog/camera fields. water.frag.hlsl deliberately does NOT
-// use this header: water renders in absolute world space, so its fog distance comes from water's
-// OWN absolute camera (uCamPosTime.xyz) rather than uCameraPosFogPower.xyz.
+// Reads the shared Atmosphere cbuffer's fog/camera fields. The water shaders (water_common.hlsli's
+// ApplyFog) deliberately do NOT use this header: water renders in absolute world space, so its fog
+// distance comes from water's OWN absolute camera (uCamPosTime.xyz) rather than uCameraPosFogPower.xyz.
 #ifndef FOG_HLSLI
 #define FOG_HLSLI
 

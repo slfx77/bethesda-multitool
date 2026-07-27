@@ -13,17 +13,34 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 public sealed class WaterHardwareOcclusionSourceContractTests
 {
     [Fact]
-    public void ShaderGuardsBothOcclusionClipsBehindTheHardwareOcclusionMacro()
+    public void EveryWaterShaderGuardsItsOcclusionClipBehindTheHardwareOcclusionMacro()
     {
-        var shader = ReadShader();
-
-        // Exactly two occlusion clips (main WATER003 depth block + FnvWater003LocalFallback),
-        // each compiled out of the hardware-occlusion variants.
-        Assert.Equal(2, CountOccurrences(shader, "clip(column + asfloat(uDepthParams.w));"));
-        Assert.Equal(2, CountOccurrences(shader, "#if !WATER_HARDWARE_OCCLUSION"));
+        // Exactly one occlusion clip per per-game water file (the shared depth block in the four
+        // variant mains; FnvWater003LocalFallback in the WATER001 program), each compiled out of
+        // the hardware-occlusion variants.
+        foreach (var file in (string[])
+                 [
+                     "water_fnv.frag.hlsl",
+                     "water_oblivion.frag.hlsl",
+                     "water_fo4.frag.hlsl",
+                     "water_morrowind.frag.hlsl",
+                     "water_fnv001.frag.hlsl",
+                 ])
+        {
+            var shader = SourceContract.ReadShaderSource(file);
+            Assert.Equal(1, CountOccurrences(shader, "clip(column + asfloat(uDepthParams.w));"));
+            Assert.Equal(1, CountOccurrences(shader, "#if !WATER_HARDWARE_OCCLUSION"));
+            SourceContract.AssertOrder(
+                shader,
+                "#if !WATER_HARDWARE_OCCLUSION",
+                "clip(column + asfloat(uDepthParams.w));",
+                "#endif");
+        }
 
         // The non-finite fail-closed guard is NOT occlusion and must stay unconditional.
-        var fallback = Extract(shader, "float4 FnvWater003LocalFallback(", "float noiseFade =");
+        var fallback = Extract(
+            SourceContract.ReadShaderSource("water_fnv001.frag.hlsl"),
+            "float4 FnvWater003LocalFallback(", "float noiseFade =");
         SourceContract.AssertOrder(
             fallback,
             "clip(-1.0);",
@@ -81,11 +98,6 @@ public sealed class WaterHardwareOcclusionSourceContractTests
         return SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "WaterRenderer12.cs");
-    }
-
-    private static string ReadShader()
-    {
-        return SourceContract.ReadShaderSource("water.frag.hlsl");
     }
 
     private static int CountOccurrences(string source, string needle)

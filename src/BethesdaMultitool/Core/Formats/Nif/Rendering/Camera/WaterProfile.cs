@@ -23,7 +23,7 @@ public enum WaterShaderVariant
     FnvWater000,
 
     /// <summary>Oblivion's <c>WATER000.pso</c> on the RT-free path: view-angle (N·V) Deep→Shallow body,
-    /// single sun specular. Compiled from the same HLSL with the <c>OBLIVION_WATER</c> define.</summary>
+    /// single sun specular. Compiled from its own file, <c>water_oblivion.frag.hlsl</c>.</summary>
     OblivionWater000,
 
     /// <summary>FO4's <c>BSWaterShader</c> (D3D11 ps_5_0, disassembled from
@@ -31,14 +31,14 @@ public enum WaterShaderVariant
     /// <c>tools/GhidraProject/fo4_water_pixel_shader_decompiled.txt</c>): Oren-Nayar sun diffuse +
     /// transmission/backscatter, normalized Kelemen/Schlick Blinn specular (F0 = 0.2), analytic
     /// Shallow→Deep color/alpha ramps by water column (the engine's baked depth LUT), reflection ×
-    /// lighting composite. Compiled from the same HLSL with the <c>FO4_WATER</c> define.</summary>
+    /// lighting composite. Compiled from its own file, <c>water_fo4.frag.hlsl</c>.</summary>
     Fo4Water,
 
     /// <summary>Morrowind's fixed-function water — NetImmerse 4.0.0.2 predates water pixel shaders,
     /// so there is nothing to disassemble: the engine draws an animated tiled diffuse plane
     /// (<c>Morrowind.ini [Water]</c>: <c>textures\water\water00–31.dds</c> cycling at
-    /// <c>SurfaceFPS=12</c>, surface opacity <c>World Alpha=0.75</c>). Compiled from the same HLSL
-    /// with the <c>MORROWIND_WATER</c> define; the optional <c>[PixelWater]</c> terrain-reflection
+    /// <c>SurfaceFPS=12</c>, surface opacity <c>World Alpha=0.75</c>). Compiled from its own file,
+    /// <c>water_morrowind.frag.hlsl</c>; the optional <c>[PixelWater]</c> terrain-reflection
     /// path is a follow-up. Derivation: <c>docs/research/morrowind_atmosphere_water_model.md</c>.</summary>
     MorrowindWater,
 }
@@ -63,14 +63,14 @@ public enum LegacySurfaceFrameRole
 
 /// <summary>
 ///     Per-game configuration for the v3 water renderer, mirroring the per-game
-///     <see cref="SkyMoonProfile" /> pattern. The water shader (<c>water.frag.hlsl</c>) is a faithful
+///     <see cref="SkyMoonProfile" /> pattern. The water shader (<c>water_fnv.frag.hlsl</c>) is a faithful
 ///     RT-free port of FNV's <c>WATER000</c> pixel shader; this profile is the single place the
 ///     FNV-specific tuning constants and the per-game shader variant are decided from
 ///     <see cref="BethesdaGame" />, so those values stop being silently universal across games.
 ///     <para>
 ///         Shader <em>math</em> (Schlick fresnel exponent, dual sun/sky specular, the fixed sky-glint
-///         direction, the ripple distance fades) lives inside the shader's per-variant branch — for the
-///         FNV variant those are the engine-exact literals in <c>water.frag.hlsl</c>. This profile carries
+///         direction, the ripple distance fades) lives inside the per-game shader file — for the
+///         FNV variant those are the engine-exact literals in <c>water_fnv.frag.hlsl</c>. This profile carries
 ///         only the renderer-side, data-driven values (the variant selector, the NNAM noise tile size, the
 ///         depth tie-break bias, and the no-WATR fallback tints). Per the binary-RE-only grounding policy,
 ///         every game without its own decompiled water shader resolves to <see cref="Fnv" />.
@@ -80,6 +80,21 @@ public sealed record WaterProfile
 {
     /// <summary>Which shader path / PSO the renderer compiles and selects for this game.</summary>
     public WaterShaderVariant ShaderVariant { get; init; }
+
+    /// <summary>
+    ///     The per-game water pixel-shader FILE for <see cref="ShaderVariant" /> (the
+    ///     <see cref="GrassShaderProfile" /> pattern: game identity is a file, technique axes stay
+    ///     preprocessor macros — <c>WATER_HARDWARE_OCCLUSION</c>, <c>FO4_WATER_ARCHITECTURAL</c>).
+    ///     FNV's separately compiled WATER001 program (<c>water_fnv001.frag.hlsl</c>) is not selected
+    ///     here: it is a draw-time route inside the FNV variant, not a per-game profile decision.
+    /// </summary>
+    public string PixelShaderFile => ShaderVariant switch
+    {
+        WaterShaderVariant.OblivionWater000 => "water_oblivion.frag.hlsl",
+        WaterShaderVariant.Fo4Water => "water_fo4.frag.hlsl",
+        WaterShaderVariant.MorrowindWater => "water_morrowind.frag.hlsl",
+        _ => "water_fnv.frag.hlsl",
+    };
 
     /// <summary>World units per NNAM normal-map tile at the base octave (<c>uNoiseParams.y</c>); the shader
     /// samples 3 octaves at ×1/×2.2/×4.7 this frequency, so the finest ripple ≈ this/4.7. 512 → ripple

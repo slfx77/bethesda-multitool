@@ -109,7 +109,7 @@ internal readonly record struct FnvWater001DisplacedDepthTap(
 
 /// <summary>
 ///     Pure recovered WATER001 math and eligibility checks. The GPU implementation lives in
-///     <c>water.frag.hlsl</c>; these methods provide deterministic CPU oracles and keep host preflight
+///     <c>water_fnv001.frag.hlsl</c>; these methods provide deterministic CPU oracles and keep host preflight
 ///     decisions independent of D3D12 resource ownership.
 /// </summary>
 internal static class FnvWater001Contract

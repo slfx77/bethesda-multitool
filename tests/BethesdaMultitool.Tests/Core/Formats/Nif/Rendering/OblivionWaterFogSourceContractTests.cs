@@ -15,7 +15,7 @@ public sealed class OblivionWaterFogSourceContractTests
     [Fact]
     public void OblivionSurfaceFogBlock_UsesSceneFogDistances_NotWatrRange()
     {
-        var shader = SourceContract.ReadShaderSource("water.frag.hlsl");
+        var shader = SourceContract.ReadShaderSource("water_oblivion.frag.hlsl");
 
         var blockStart = shader.IndexOf(
             "// Oblivion WATER000 surface fog:", StringComparison.Ordinal);

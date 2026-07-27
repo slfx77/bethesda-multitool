@@ -11,7 +11,7 @@ public sealed class FnvWater001SourceContractTests
     {
         var source = ReadRenderer();
 
-        Assert.Contains("new ShaderMacro(\"FNV_WATER001\", \"1\")", source, StringComparison.Ordinal);
+        Assert.Contains("\"water_fnv001.frag.hlsl\", \"main\", \"ps_5_1\"", source, StringComparison.Ordinal);
         Assert.Contains("_psoFnvWater001DepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);",
             source, StringComparison.Ordinal);
         Assert.Contains("_psoFnvWater001DepthSample.Dispose();", source, StringComparison.Ordinal);
@@ -110,7 +110,9 @@ public sealed class FnvWater001SourceContractTests
     public void CSharpAndHlslAppendTheSameTwoWater001Registers()
     {
         var renderer = ReadRenderer();
-        var shader = ReadShader();
+        // The Uniforms cbuffer (with the appended WATER001 tail) lives in the shared header every
+        // per-game water shader includes, not in the WATER001 program file itself.
+        var shader = SourceContract.ReadShaderSource("water_common.hlsli");
 
         Assert.Contains("private const uint FnvWater001UniformByteSize = 2 * 16;", renderer,
             StringComparison.Ordinal);
@@ -174,8 +176,9 @@ public sealed class FnvWater001SourceContractTests
     [Fact]
     public void ShaderKeepsRecoveredDepthProjectionAndLocalFallbackContracts()
     {
-        var shader = ReadShader();
-        var water001 = Extract(shader, "#if FNV_WATER001", "#else");
+        // water_fnv001.frag.hlsl IS the WATER001 program (the old #if FNV_WATER001 arm, now its
+        // own per-game file), so the whole file carries the recovered contracts.
+        var water001 = ReadShader();
 
         Assert.Contains("sceneDistance / waterDistance", water001, StringComparison.Ordinal);
         Assert.Contains("length(scenePoint - input.vWorldPos) / underwaterFogFar", water001,
@@ -262,7 +265,7 @@ public sealed class FnvWater001SourceContractTests
 
     private static string ReadShader()
     {
-        return SourceContract.ReadShaderSource("water.frag.hlsl");
+        return SourceContract.ReadShaderSource("water_fnv001.frag.hlsl");
     }
 
     private static string Extract(string source, string startMarker, string endMarker)

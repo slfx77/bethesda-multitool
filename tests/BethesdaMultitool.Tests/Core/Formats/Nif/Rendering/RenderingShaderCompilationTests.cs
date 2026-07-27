@@ -99,7 +99,7 @@ public sealed class RenderingShaderCompilationTests
     [Fact]
     public void FnvRtFreeWaterKeepsRecoveredWater003ReflectionAndBodyLightTerms()
     {
-        var source = ReadEmbeddedShader("water.frag.hlsl");
+        var source = ReadEmbeddedShader("water_fnv.frag.hlsl");
 
         Assert.Contains(
             "float3 fnvBodyLightDir = normalize(float3(sunDir.x, 4.0 * sunDir.y, sunDir.z));",
@@ -115,13 +115,15 @@ public sealed class RenderingShaderCompilationTests
     [Fact]
     public void WaterDepthShaderMaxResolvesReversedZMsaaBeforeLinearization()
     {
-        var source = ReadEmbeddedShader("water.frag.hlsl");
-        var helperStart = source.IndexOf("float LoadSceneDepth(", StringComparison.Ordinal);
-        var helperEnd = source.IndexOf("#if FO4_WATER_ARCHITECTURAL", helperStart, StringComparison.Ordinal);
+        // The depth helpers + MSAA descriptor alias live in the shared water header; the depth
+        // block that consumes them lives in each per-game main (asserted via the FNV file).
+        var common = ReadEmbeddedShader("water_common.hlsli");
+        var helperStart = common.IndexOf("float LoadSceneDepth(", StringComparison.Ordinal);
+        var helperEnd = common.IndexOf("#endif // WATER_COMMON_HLSLI", helperStart, StringComparison.Ordinal);
 
         Assert.True(helperStart >= 0);
         Assert.True(helperEnd > helperStart);
-        var helper = source[helperStart..helperEnd];
+        var helper = common[helperStart..helperEnd];
         Assert.Contains("if (suppliedSampleCount <= 1u)", helper, StringComparison.Ordinal);
         Assert.Contains(
             "gWaterTextures[NonUniformResourceIndex(depthIndex)].Load(int3(pixel, 0)).r",
@@ -135,8 +137,9 @@ public sealed class RenderingShaderCompilationTests
 
         Assert.Contains(
             "Texture2DMS<float> gWaterDepthTexturesMsaa[] : register(t0, space3);",
-            source,
+            common,
             StringComparison.Ordinal);
+        var source = ReadEmbeddedShader("water_fnv.frag.hlsl");
         Assert.Contains("uint depthSampleCount = max((uint)uRenderOrigin.w, 1u);",
             source,
             StringComparison.Ordinal);
