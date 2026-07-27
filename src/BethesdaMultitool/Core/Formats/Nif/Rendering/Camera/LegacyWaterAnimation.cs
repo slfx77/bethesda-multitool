@@ -20,6 +20,36 @@ internal static class LegacyWaterAnimation
     }
 
     /// <summary>
+    ///     The shipped frame paths that ACTUALLY exist in the loaded game data, in frame order.
+    ///     <para>
+    ///         Callers MUST gate on this rather than on a null bindless index. The texture cache never
+    ///         reports a miss: <c>GpuTextureCache12.GetOrUpload</c> hands back a pinned FlatNormal /
+    ///         WhitePixel PLACEHOLDER for any non-empty path and resolves the real payload in the
+    ///         background, so a resolve of a file that does not exist still yields a perfectly valid,
+    ///         non-null, permanently-placeholder bindless index. Retail Oblivion ships no
+    ///         <c>water00-31.dds</c> at all (the engine generates its surface at runtime), so probing
+    ///         by index produced 32 usable-looking frames that were all the same flat normal — the
+    ///         animation advanced every frame and the water never moved.
+    ///     </para>
+    /// </summary>
+    internal static List<string> ExistingFramePaths(Func<string, bool> frameExists)
+    {
+        ArgumentNullException.ThrowIfNull(frameExists);
+
+        var paths = new List<string>(FrameCount);
+        for (var i = 0; i < FrameCount; i++)
+        {
+            var path = FramePath(i);
+            if (frameExists(path))
+            {
+                paths.Add(path);
+            }
+        }
+
+        return paths;
+    }
+
+    /// <summary>
     ///     Selects the current looping frame. The elapsed-time guard keeps device-reset or clock
     ///     anomalies from producing a negative/out-of-range array index.
     /// </summary>

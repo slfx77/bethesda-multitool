@@ -101,6 +101,13 @@ internal static class EnvironmentVariables
         /// </summary>
         public const string AuthoredSky = "FALLOUT_VIEWER_AUTHORED_SKY";
 
+        /// <summary>
+        ///     Set to <c>0</c> to force grass back onto the shared reference shaders even for a game
+        ///     that has a recovered per-game grass pair. Exists so the per-game lighting can be A/B'd
+        ///     against the old path in one session without a rebuild — the shipped default is on.
+        /// </summary>
+        public const string PerGameGrassShader = "FALLOUT_VIEWER_PER_GAME_GRASS_SHADER";
+
         public const string TerrainBuildConcurrency = "FALLOUT_VIEWER_TERRAIN_BUILD_CONCURRENCY";
         public const string TerrainBuildStartsPerFrame = "FALLOUT_VIEWER_TERRAIN_BUILD_STARTS_PER_FRAME";
 

@@ -290,13 +290,15 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             SourceBlend = D12.Blend.SourceAlpha,
             DestinationBlend = D12.Blend.InverseSourceAlpha,
             BlendOperation = D12.BlendOperation.Add,
-            // The swapchain is premultiplied-alpha (GpuSwapChainSurface12), so the scene-RT alpha channel
-            // is composited to the screen — a pass that drops it below the opaque scene's 1.0 makes that
-            // region render see-through over the WinUI background. Water blends its COLOR translucently
-            // (above) but must PRESERVE the destination alpha. Was DestinationBlendAlpha=Zero, which
-            // OVERWROTE the underlying opaque 1.0 with water's <1 alpha and turned the water surface — and
-            // any geometry it overlaps (partially-submerged rocks) — transparent. Max against the opaque
-            // 1.0 underneath keeps the surface opaque to the compositor, matching the reference renderer.
+            // Water blends its COLOR translucently (above) but must PRESERVE the destination alpha.
+            // Was DestinationBlendAlpha=Zero, which OVERWROTE the underlying opaque 1.0 with water's
+            // <1 alpha and turned the water surface — and any geometry it overlaps (partially-submerged
+            // rocks) — transparent. HISTORICAL NOTE: that symptom was a downstream effect of the
+            // composition swapchain being created PREMULTIPLIED, so scene-RT alpha reached the
+            // compositor; the swapchain is now AlphaMode.Ignore (GpuSwapChainSurface12) and the live
+            // view no longer composites scene alpha at all. Keep this Max-against-1.0 anyway: it is
+            // still the correct alpha for the offscreen export/capture readback, which DOES consume
+            // the alpha channel, and it keeps this pass consistent with the reference renderer.
             SourceBlendAlpha = D12.Blend.One,
             DestinationBlendAlpha = D12.Blend.One,
             BlendOperationAlpha = D12.BlendOperation.Max,
@@ -2088,52 +2090,16 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
 
     // D3DCOMPILE_ENABLE_UNBOUNDED_DESCRIPTOR_TABLES — required by fxc/D3DCompile for any shader
     // that declares an unbounded resource array (e.g. `Texture2D gWaterTextures[] : register(t0, space1)`).
-    // Mirrors the flag TerrainRenderer12/ReferenceRenderer12 set for their bindless shaders; without it
-    // the compile fails X3596 and the whole D3D12 backend init aborts.
-    private const ShaderFlags EnableUnboundedDescriptorTables = (ShaderFlags)0x00100000;
-
+    /// <summary>
+    ///     Forwards to the one shared compiler. The private copy this replaces detected the
+    ///     unbounded-descriptor need by scanning for <c>"[] : register"</c> — a DIFFERENT rule from
+    ///     the sibling renderers' <c>"textures[]"</c>, because water's array is
+    ///     <c>gWaterTextures[]</c>. That divergence is exactly why the flag is now unconditional in
+    ///     <see cref="GpuShaderCompiler12" /> instead of inferred from source text.
+    /// </summary>
     private static byte[] CompileEmbeddedShader(
-        string name, string entryPoint, string profile, params ShaderMacro[] defines)
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceName = assembly.GetManifestResourceNames()
-            .FirstOrDefault(n => n.EndsWith(name, StringComparison.OrdinalIgnoreCase))
-            ?? throw new FileNotFoundException($"Embedded shader resource not found: {name}");
-
-        using var stream = assembly.GetManifestResourceStream(resourceName)!;
-        using var reader = new StreamReader(stream);
-        var source = reader.ReadToEnd();
-
-        // Detect the unbounded-array declaration by its shape (`[] : register`) rather than a fixed
-        // variable name — water's array is `gWaterTextures[]`, so the name-specific `textures[]` check
-        // the other renderers use would miss it.
-        var shaderFlags = source.Contains("[] : register", StringComparison.Ordinal)
-            ? EnableUnboundedDescriptorTables
-            : ShaderFlags.None;
-
-        var result = Compiler.Compile(
-            source,
-            defines,
-            include: null!,
-            entryPoint,
-            sourceName: name,
-            profile,
-            shaderFlags,
-            EffectFlags.None,
-            out Blob? bytecode, out Blob? errors);
-
-        if (result.Failure || bytecode is null)
-        {
-            var errorText = errors?.AsString() ?? "(no error blob)";
-            errors?.Dispose();
-            bytecode?.Dispose();
-            throw new InvalidOperationException($"HLSL compile failed for {name} ({profile}): {errorText}");
-        }
-
-        errors?.Dispose();
-        try { return bytecode.AsBytes().ToArray(); }
-        finally { bytecode.Dispose(); }
-    }
+        string name, string entryPoint, string profile, params ShaderMacro[] defines) =>
+        GpuShaderCompiler12.Compile(name, entryPoint, profile, defines);
 
     /// <summary>
     ///     TES4's global surface animation tiles at ini <c>[Water] fSurfaceTileSize = 2048</c> world

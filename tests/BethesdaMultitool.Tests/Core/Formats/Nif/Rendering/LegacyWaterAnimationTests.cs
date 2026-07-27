@@ -35,4 +35,43 @@ public sealed class LegacyWaterAnimationTests
     {
         Assert.Equal(0, LegacyWaterAnimation.SelectFrame(elapsedSeconds, 12f, 32));
     }
+
+    [Fact]
+    public void GameShippingNoFramesYieldsNoneSoTheCallerKnowsToSynthesize()
+    {
+        // Retail Oblivion ships no water00-31.dds — the engine generates the surface at runtime.
+        // This MUST come back empty. The bug it replaces probed the resolved bindless index instead,
+        // and the texture cache answers every non-empty path with a valid permanently-placeholder
+        // index, so all 32 "resolved" — the synthesizer never ran and the water never moved.
+        Assert.Empty(LegacyWaterAnimation.ExistingFramePaths(static _ => false));
+    }
+
+    [Fact]
+    public void GameShippingTheFullSequenceYieldsAllThirtyTwoInFrameOrder()
+    {
+        var paths = LegacyWaterAnimation.ExistingFramePaths(static _ => true);
+
+        Assert.Equal(LegacyWaterAnimation.FrameCount, paths.Count);
+        Assert.Equal(@"textures\water\water00.dds", paths[0]);
+        Assert.Equal(@"textures\water\water31.dds", paths[^1]);
+    }
+
+    [Fact]
+    public void PartiallyShippedSequenceKeepsOnlyThePresentFramesInOrder()
+    {
+        // A replacer that ships a subset must not leave placeholder gaps in the cycle.
+        var paths = LegacyWaterAnimation.ExistingFramePaths(
+            static path => path.EndsWith("water00.dds", StringComparison.Ordinal) ||
+                           path.EndsWith("water17.dds", StringComparison.Ordinal));
+
+        Assert.Equal(
+            [@"textures\water\water00.dds", @"textures\water\water17.dds"],
+            paths);
+    }
+
+    [Fact]
+    public void NullProbeIsRejectedRatherThanSilentlyTreatedAsAbsent()
+    {
+        Assert.Throws<ArgumentNullException>(() => LegacyWaterAnimation.ExistingFramePaths(null!));
+    }
 }

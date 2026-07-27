@@ -122,7 +122,9 @@ public sealed class NifAlphaCompositionTests
     {
         // Engine-correct: only NiAlphaProperty (HasAlphaBlend) enables blending. A sub-1 material
         // alpha with no NiAlphaProperty must NOT route a solid mesh to the blend pass (which rendered
-        // opaque rocks/walls see-through over the premultiplied swapchain).
+        // opaque rocks/walls see-through back when the composition swapchain was PREMULTIPLIED and so
+        // composited scene-RT alpha; it is AlphaMode.Ignore now, but the routing rule stands on its
+        // own engine grounds and the offscreen capture path still consumes alpha).
         var submesh = CreateQuadSubmesh(0f, JacketTexturePath);
         submesh.MaterialAlpha = 0.5f;
 

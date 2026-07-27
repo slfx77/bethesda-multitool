@@ -586,39 +586,13 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         public const uint ByteSize = 64 + (7 * 16); // 176
     }
 
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceName = assembly.GetManifestResourceNames()
-            .FirstOrDefault(n => n.EndsWith(name, StringComparison.OrdinalIgnoreCase))
-            ?? throw new FileNotFoundException($"Embedded shader resource not found: {name}");
-
-        using var stream = assembly.GetManifestResourceStream(resourceName)!;
-        using var reader = new StreamReader(stream);
-        var source = reader.ReadToEnd();
-
-        // Bindless shaders (`Texture2D x[] : register`) need the unbounded-descriptor-tables flag at
-        // runtime compile, or PSO creation fails with X3596.
-        var shaderFlags = source.Contains("[] : register", StringComparison.Ordinal)
-            ? (ShaderFlags)0x00100000
-            : ShaderFlags.None;
-
-        var result = Compiler.Compile(
-            source, Array.Empty<ShaderMacro>(), include: null!, entryPoint, sourceName: name, profile,
-            shaderFlags, EffectFlags.None, out Blob? bytecode, out Blob? errors);
-
-        if (result.Failure || bytecode is null)
-        {
-            var errorText = errors?.AsString() ?? "(no error blob)";
-            errors?.Dispose();
-            bytecode?.Dispose();
-            throw new InvalidOperationException($"HLSL compile failed for {name} ({profile}): {errorText}");
-        }
-
-        errors?.Dispose();
-        try { return bytecode.AsBytes().ToArray(); }
-        finally { bytecode.Dispose(); }
-    }
+    /// <summary>
+    ///     Forwards to the one shared compiler — see <see cref="GpuShaderCompiler12" />.
+    ///     This was one of a dozen copy-pasted private compilers that had drifted apart on
+    ///     shader flags and manifest lookup; the flag decision is now made once, unconditionally.
+    /// </summary>
+    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile) =>
+        GpuShaderCompiler12.Compile(name, entryPoint, profile);
 }
 
 /// <summary>

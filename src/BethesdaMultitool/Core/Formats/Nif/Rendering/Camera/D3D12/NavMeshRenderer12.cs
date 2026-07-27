@@ -437,32 +437,15 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
     private static double ElapsedMilliseconds(long started) =>
         started == 0 ? 0 : Stopwatch.GetElapsedTime(started).TotalMilliseconds;
 
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceName = assembly.GetManifestResourceNames()
-            .FirstOrDefault(n => n.EndsWith(name, StringComparison.OrdinalIgnoreCase))
-            ?? throw new FileNotFoundException($"Embedded shader resource not found: {name}");
-
-        using var stream = assembly.GetManifestResourceStream(resourceName)!;
-        using var reader = new StreamReader(stream);
-        var source = reader.ReadToEnd();
-
-        var result = Compiler.Compile(source, entryPoint, sourceName: name, profile,
-            out Blob? bytecode, out Blob? errors);
-
-        if (result.Failure || bytecode is null)
-        {
-            var errorText = errors?.AsString() ?? "(no error blob)";
-            errors?.Dispose();
-            bytecode?.Dispose();
-            throw new InvalidOperationException($"HLSL compile failed for {name} ({profile}): {errorText}");
-        }
-
-        errors?.Dispose();
-        try { return bytecode.AsBytes().ToArray(); }
-        finally { bytecode.Dispose(); }
-    }
+    /// <summary>
+    ///     Forwards to the one shared compiler. The private copy this replaces used the short
+    ///     <c>Compiler.Compile</c> overload and so passed NO shader flags at all — harmless for
+    ///     cellgrid.*, which declares no unbounded array, but one more variant of a decision that is
+    ///     now made once in <see cref="GpuShaderCompiler12" />. It also means cellgrid.* is compiled
+    ///     once per process now rather than three times (here, SelectionHighlight, CellGridDebug).
+    /// </summary>
+    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile) =>
+        GpuShaderCompiler12.Compile(name, entryPoint, profile);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NavMeshUniforms

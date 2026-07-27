@@ -33,6 +33,14 @@ jobs:
     # Code coverage is intentionally absent: both instrumentation engines fail on
     # this codebase today (see CLAUDE.md, "Code coverage").
     - name: Run Tests
+      # RUN_SHADER_COMPILE_TESTS=1 is set here and nowhere else in CI. Without it every test behind
+      # ShaderCompileTestGuard is SKIPPED, and the only HLSL CI ever fed to FXC was
+      # terrain_textured.frag.hlsl via one ungated test — so a shader that failed to compile reached
+      # whoever next loaded that game, appearing as a silently missing 3D view rather than a build
+      # failure (the GUI degrades a compile throw to a log line). Costs roughly a minute.
+      # RUN_BUCKET_B / RUN_GPU_TESTS stay off: they need retail game assets and a GPU respectively.
+      env:
+        RUN_SHADER_COMPILE_TESTS: '1'
       run: |
         dotnet test --project tests/BethesdaMultitool.Tests/BethesdaMultitool.Tests.csproj `
           --configuration Release `

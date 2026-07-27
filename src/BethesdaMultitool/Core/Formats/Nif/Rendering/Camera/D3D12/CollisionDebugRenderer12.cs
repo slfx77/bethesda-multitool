@@ -36,7 +36,6 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 internal sealed class CollisionDebugRenderer12 : IDisposable
 {
     private const uint UniformsByteSize = 96; // float4x4 (64) + float4 color (16) + float4 params (16)
-    private const uint VertexStride = 12;     // sizeof(Vector3) — sizing only; the buffer binds as a root SRV
     private const int MaxColdWarmupRequestsPerFrame = 2;
 
     // Screen-space line profile (render-target pixels): core + feather ≈ a 2.5 px antialiased line,
@@ -331,32 +330,13 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
         return GpuMeshBufferFactory12.CreateUploadBuffer<Vector3>(_gpu, vertices.AsSpan(0, count));
     }
 
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceName = assembly.GetManifestResourceNames()
-            .FirstOrDefault(n => n.EndsWith(name, StringComparison.OrdinalIgnoreCase))
-            ?? throw new FileNotFoundException($"Embedded shader resource not found: {name}");
-
-        using var stream = assembly.GetManifestResourceStream(resourceName)!;
-        using var reader = new StreamReader(stream);
-        var source = reader.ReadToEnd();
-
-        var result = Compiler.Compile(source, entryPoint, sourceName: name, profile,
-            out Blob? bytecode, out Blob? errors);
-
-        if (result.Failure || bytecode is null)
-        {
-            var errorText = errors?.AsString() ?? "(no error blob)";
-            errors?.Dispose();
-            bytecode?.Dispose();
-            throw new InvalidOperationException($"HLSL compile failed for {name} ({profile}): {errorText}");
-        }
-
-        errors?.Dispose();
-        try { return bytecode.AsBytes().ToArray(); }
-        finally { bytecode.Dispose(); }
-    }
+    /// <summary>
+    ///     Forwards to the one shared compiler — see <see cref="GpuShaderCompiler12" />.
+    ///     This was one of a dozen copy-pasted private compilers that had drifted apart on
+    ///     shader flags and manifest lookup; the flag decision is now made once, unconditionally.
+    /// </summary>
+    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile) =>
+        GpuShaderCompiler12.Compile(name, entryPoint, profile);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct CollisionUniforms

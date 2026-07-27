@@ -159,9 +159,11 @@ public sealed partial class WorldView3DControl
         }
 
         var frames = new List<uint>(LegacyWaterAnimation.FrameCount);
-        for (var i = 0; i < LegacyWaterAnimation.FrameCount; i++)
+        // Probe EXISTENCE, not the resolved index: the texture cache returns a valid, permanently
+        // placeholder bindless index for a path it can never resolve, so index-based probing can
+        // never report "this game ships no frames" (see LegacyWaterAnimation.ExistingFramePaths).
+        foreach (var path in LegacyWaterAnimation.ExistingFramePaths(_textureResolver12.TextureExists))
         {
-            var path = LegacyWaterAnimation.FramePath(i);
             var index = frameRole == LegacySurfaceFrameRole.Diffuse
                 ? _textureResolver12.ResolveDiffuseBindlessIndex(path)
                 : _textureResolver12.ResolveNormalMapBindlessIndex(path);

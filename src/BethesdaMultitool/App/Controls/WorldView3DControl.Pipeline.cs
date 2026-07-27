@@ -64,6 +64,8 @@ public sealed partial class WorldView3DControl
 
         try
         {
+            // Clear any prior failure — this runs again on every ESM switch.
+            _referencePipelineInitError = null;
             var meshBsas = DiscoverMeshBsaPaths(_data);
             if (meshBsas.Length == 0)
             {
@@ -143,10 +145,25 @@ public sealed partial class WorldView3DControl
         }
         catch (Exception ex)
         {
-            Log.Warn("WorldView3DControl: reference pipeline init failed: {0}", ex.Message);
+            // This is the QUIETEST failure in the viewer and the one that per-game shader work makes
+            // more likely: the reference pipeline compiles the placed-object shaders, so when it
+            // throws, terrain still renders and every REFR silently disappears. Unlike the
+            // device-level path (Lifecycle.cs surfaces "3D view unavailable"), nothing told the user
+            // anything, and .Message discarded the FXC diagnostics. Log the whole exception at ERROR
+            // and latch the reason for the HUD — a persistent ShowStatus is not usable here because
+            // TryInitReferencePipeline runs BEFORE the worldspace load, whose own
+            // "Loading worldspace…" status would immediately overwrite it.
+            Log.Error("WorldView3DControl: reference pipeline init failed: {0}", ex);
+            _referencePipelineInitError = ex.Message;
             DisposeReferencePipeline();
         }
     }
+
+    /// <summary>
+    ///     Why the placed-object (reference) pipeline is unavailable, or null when it initialized.
+    ///     Surfaced persistently by <c>UpdateHud</c> so a silent loss of every REFR is impossible.
+    /// </summary>
+    private string? _referencePipelineInitError;
 
     /// <summary>
     ///     Resolves a placed-ref's requested mesh path against the open archive set and returns the

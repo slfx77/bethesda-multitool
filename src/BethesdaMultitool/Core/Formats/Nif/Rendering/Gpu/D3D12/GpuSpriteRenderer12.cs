@@ -903,28 +903,13 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         return sum / count;
     }
 
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceName = assembly.GetManifestResourceNames()
-            .FirstOrDefault(n => n.EndsWith(name, StringComparison.OrdinalIgnoreCase))
-            ?? throw new FileNotFoundException($"Embedded shader resource not found: {name}");
-        using var stream = assembly.GetManifestResourceStream(resourceName)!;
-        using var reader = new StreamReader(stream);
-        var source = reader.ReadToEnd();
-        var compileResult = Compiler.Compile(source, entryPoint, sourceName: name, profile,
-            out Blob? bytecode, out Blob? errors);
-        if (compileResult.Failure || bytecode is null)
-        {
-            var errorText = errors?.AsString() ?? "(no error blob)";
-            errors?.Dispose();
-            bytecode?.Dispose();
-            throw new InvalidOperationException($"HLSL compile failed for {name} ({profile}): {errorText}");
-        }
-        errors?.Dispose();
-        try { return bytecode.AsBytes().ToArray(); }
-        finally { bytecode.Dispose(); }
-    }
+    /// <summary>
+    ///     Forwards to the one shared compiler — see <see cref="GpuShaderCompiler12" />.
+    ///     This was one of a dozen copy-pasted private compilers that had drifted apart on
+    ///     shader flags and manifest lookup; the flag decision is now made once, unconditionally.
+    /// </summary>
+    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile) =>
+        GpuShaderCompiler12.Compile(name, entryPoint, profile);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct GpuUniforms

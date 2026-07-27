@@ -118,7 +118,23 @@
                       LogicalName="BethesdaMultitool.pdb_layouts.json" />
     <EmbeddedResource Include="Core\Formats\Esm\Export\Resources\comparison-renderer.js"
                       LogicalName="BethesdaMultitool.comparison-renderer.js" />
-    <EmbeddedResource Include="Core\Formats\Nif\Rendering\Gpu\Shaders\*.hlsl" />
+    <!--
+      Shaders embed under a FLAT, EXPLICIT logical namespace so runtime lookup can be an exact
+      dictionary hit instead of the old EndsWith()+FirstOrDefault() scan (which silently resolved a
+      suffix collision by metadata order, while the tests' .Single() threw on the same input).
+        * Recursive **  - subdirectories embed. The previous single-star glob silently dropped them,
+          surfacing only as a FileNotFoundException at runtime with no build error.
+        * *.hlsl*       - also matches .hlsli headers, which the old pattern excluded.
+        * LogicalName   - flat "BethesdaMultitool.Shaders.<file>", so moving a shader between
+          directories is a no-op, and two shaders sharing a filename become a BUILD error.
+        * WithCulture=false - stops MSBuild's AssignCulture from treating a filename component that
+          happens to parse as a culture code (e.g. ".is", ".no") as a satellite resource, which
+          would make the shader invisible to GetManifestResourceNames() at runtime.
+    -->
+    <EmbeddedResource Include="Core\Formats\Nif\Rendering\Gpu\Shaders\**\*.hlsl*">
+      <LogicalName>BethesdaMultitool.Shaders.%(Filename)%(Extension)</LogicalName>
+      <WithCulture>false</WithCulture>
+    </EmbeddedResource>
     <EmbeddedResource Include="Assets\MapMarkers\*.png" />
   </ItemGroup>
 

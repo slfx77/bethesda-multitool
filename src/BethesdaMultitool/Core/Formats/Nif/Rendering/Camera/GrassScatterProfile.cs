@@ -67,10 +67,22 @@ internal readonly record struct GrassScatterProfile(
 }
 
 /// <summary>
-///     Viewer grass-distance envelope in horizontal world units. Retail supplies the same configured
-///     start/range to a transformed-origin shader metric, then turns the result into only a zero/nonzero
-///     endpoint gate—not smooth opacity. The viewer keeps the authoritative CPU hard end and does not
-///     invent alpha, RGB, or mip fading.
+///     Viewer grass-distance envelope in horizontal world units. The viewer keeps an authoritative CPU
+///     hard end and does not invent alpha, RGB, or mip fading.
+///     <para>
+///         Retail behavior is NOT uniform across games, so do not re-generalize this: for FNV and
+///         Skyrim the engine supplies the configured start/range to a transformed-origin shader
+///         metric and turns the result into only a zero/nonzero endpoint gate — not smooth opacity
+///         (see <c>docs/research/grass_placement_pipeline.md</c>). OBLIVION differs: its
+///         <c>GRASS2020.vso</c> (retail <c>Shaders\shaderpackage019.sdp</c>, disassembled 2026-07-25)
+///         computes a genuine LINEAR opacity ramp —
+///         <c>oT5.w = saturate((d - AlphaParam.x) / AlphaParam.y) * (1 - saturate((d - AlphaParam.z) / AlphaParam.w))</c>
+///         — which its pixel shader multiplies straight into a blended output with no binarization.
+///         The viewer applies its hard end (2000 → 3000) for TES4 instead. Reproducing the smooth
+///         TES4 ramp requires the grass draw to BLEND, which it now does again: the 2026-07-25
+///         cutout/A2C reroute was reverted 2026-07-26 after retail in-game oracles showed soft blade
+///         silhouettes, so the smooth ramp is implementable here whenever it is picked up.
+///     </para>
 /// </summary>
 internal readonly record struct GrassDistanceEnvelope(float FadeStart, float FadeRange)
 {
@@ -186,6 +198,17 @@ internal static class FnvTallGrassWind
             1f);
     }
 }
+
+// REMOVED 2026-07-26: GrassCutoutPolicy / ReferenceRenderer12.IsGrassCutout. TES4 grass was rerouted
+// from the sorted-blend path to the alpha-to-coverage cutout path on 2026-07-25, on the strength of a
+// shaderpackage019 read claiming GRASS2002-2008.pso binarizes diffuse alpha. Retail IN-GAME oracles
+// (user, 2026-07-26) show SOFT blade silhouettes, and the cutout made every card's texture boundary
+// razor-sharp — with only 7-10 crossed cards per authored grass NIF (groundcovermediumgrass01 = 28
+// verts / 14 tris, gclonggrass01 = 40 / 20) that exposed the individual quads the retail blend hides,
+// which the user reported as "a couple triangles with harsh cutoffs". Reverted to the committed
+// blend path. NOTE the shader claim was never persisted to an artifact and remains UNVERIFIED; the
+// authored NiAlphaProperty (0x12ED = blend AND test @64-128) is consistent with the engine both
+// testing and blending, which is exactly what the restored path does.
 
 /// <summary>
 ///     Shared establishment/exact-cull predicate for the grass hard end. Establishment may pass the

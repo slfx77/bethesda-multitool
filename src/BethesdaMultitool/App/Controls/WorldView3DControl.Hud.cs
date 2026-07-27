@@ -53,6 +53,13 @@ public sealed partial class WorldView3DControl
             text += $"\n⚠ DRAW-CAP: {truncatedDraws} draws skipped this frame " +
                     $"(ring {ringTotalMib:0}MiB full — raise FALLOUT_VIEWER_RING_BUFFER_MB)";
         }
+        // A dead reference pipeline means terrain still draws while every placed object silently
+        // vanishes — indistinguishable from an empty cell. Keep the reason on screen rather than
+        // only in the log (a transient ShowStatus would be overwritten by the worldspace load).
+        if (_referencePipelineInitError is { Length: > 0 } referenceError)
+        {
+            text += $"\n⚠ PLACED OBJECTS UNAVAILABLE: {referenceError}";
+        }
         if (_showFrameStats && _terrain is not null)
         {
             var stats = _terrain.LastStats;

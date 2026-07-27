@@ -155,7 +155,12 @@ public sealed partial class WorldView3DControl
         }
         catch (Exception ex)
         {
-            Log.Warn("WorldView3DControl: D3D12 backend init failed: {0}", ex.Message);
+            // ERROR, and the WHOLE exception rather than just .Message: a shader-compile failure
+            // arrives here as an InvalidOperationException whose FXC diagnostics (the X#### code and
+            // the offending line) live in the message body and inner exception. Logging .Message
+            // alone discarded exactly the text needed to diagnose it. The caller
+            // (Lifecycle.cs OnLoaded) surfaces "3D view unavailable" to the user.
+            Log.Error("WorldView3DControl: D3D12 backend init failed: {0}", ex);
             DisposeD3D12Backend();
             return false;
         }

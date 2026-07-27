@@ -2,13 +2,12 @@ using System.Globalization;
 using System.Numerics;
 using System.Text.RegularExpressions;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Core.Formats.Esm;
 using BethesdaMultitool.Tests.Helpers;
-using Vortice.D3DCompiler;
-using Vortice.Direct3D;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -30,7 +29,6 @@ public sealed class FnvTerrainNormalMapTests
         WhitespaceTx01
     }
 
-    private const ShaderFlags EnableUnboundedDescriptorTables = (ShaderFlags)0x00100000;
     private const uint LtexFormId = 0x100;
     private const uint TxstFormId = 0x200;
     private const string NormalPath = @"textures\landscape\nvdesertgrass_n.dds";
@@ -486,44 +484,26 @@ public sealed class FnvTerrainNormalMapTests
         Assert.InRange(actual.Length(), 0.99999f, 1.00001f);
     }
 
+    /// <summary>
+    ///     Compiles possibly-mutated terrain shader text through the PRODUCTION compiler.
+    ///     <para>
+    ///         Now GATED. This was the one place that ran a real 373-line FXC compile in the DEFAULT
+    ///         suite, with its own always-on flag constant and its own <c>Compiler.Compile</c> call —
+    ///         a fourth variant of the flag decision, and by far the most expensive single operation
+    ///         in a run that is supposed to stay fast. Gating it costs nothing in coverage: CI now
+    ///         sets <c>RUN_SHADER_COMPILE_TESTS=1</c>, and <c>EveryShaderPermutationCompiles</c>
+    ///         compiles the unmutated shader regardless.
+    ///     </para>
+    /// </summary>
     private static void CompileTerrainFragmentShader(string source)
     {
-        Blob? bytecode = null;
-        Blob? errors = null;
-        try
-        {
-            var result = Compiler.Compile(
-                source,
-                [],
-                null!,
-                "main",
-                "terrain_textured.frag.hlsl",
-                "ps_5_1",
-                EnableUnboundedDescriptorTables,
-                EffectFlags.None,
-                out bytecode,
-                out errors);
-
-            Assert.False(result.Failure,
-                errors?.AsString() ?? "terrain_textured.frag.hlsl produced no compiler diagnostics");
-            Assert.NotNull(bytecode);
-        }
-        finally
-        {
-            errors?.Dispose();
-            bytecode?.Dispose();
-        }
+        ShaderCompileTestGuard.SkipUnlessEnabled();
+        var bytecode = GpuShaderCompiler12.CompileSource(
+            source, "terrain_textured.frag.hlsl", "main", "ps_5_1");
+        Assert.NotEmpty(bytecode);
     }
 
-    private static string ReadEmbeddedShader(string name)
-    {
-        var assembly = typeof(SptGeometryOptions).Assembly;
-        var resourceName = assembly.GetManifestResourceNames()
-            .Single(candidate => candidate.EndsWith(name, StringComparison.OrdinalIgnoreCase));
-        using var stream = assembly.GetManifestResourceStream(resourceName)!;
-        using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
-    }
+    private static string ReadEmbeddedShader(string name) => GpuShaderCompiler12.ReadSource(name);
 
     private static string Slice(string source, string startMarker, string endMarker)
     {

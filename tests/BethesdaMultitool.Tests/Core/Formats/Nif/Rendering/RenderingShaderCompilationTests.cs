@@ -1,7 +1,5 @@
-using System.Text.RegularExpressions;
-using BethesdaMultitool.Core.Formats.SpeedTree;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Tests.Helpers;
-using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Xunit;
 
@@ -9,8 +7,6 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
 public sealed class RenderingShaderCompilationTests
 {
-    private const ShaderFlags EnableUnboundedDescriptorTables = (ShaderFlags)0x00100000;
-
     [Fact]
     public void FnvTallGrassReferenceRoutesCompileForNormalInstancedAndShadowPasses()
     {
@@ -31,117 +27,49 @@ public sealed class RenderingShaderCompilationTests
     public void FnvActiveAdtBaseSls2000SharedReferenceRoutesCompile()
     {
         // Runtime material bits choose the bounded active SLS2000 equation inside one PS, while both
-        // direct/blended and instanced VSes supply its normalized tangent-space light.
+        // direct/blended and instanced VSes supply its normalized tangent-space light. The classic
+        // parallax route draws through these same three programs, so it is covered here too rather
+        // than by a second test with an identical body.
         Compile("reference.vert.hlsl", "main", "vs_5_1", []);
         Compile("reference_instanced.vert.hlsl", "main", "vs_5_1", []);
         Compile("reference.frag.hlsl", "main", "ps_5_1", []);
     }
 
+    /// <summary>
+    ///     Compiles EVERY permutation the renderers build, by iterating the same production table the
+    ///     factories are documented against — so test coverage cannot drift from what actually ships.
+    ///     <para>
+    ///         This replaces two hand-maintained lists. One was named
+    ///         <c>EveryRemainingEmbeddedRenderingEntryPointCompiles</c> but was in fact 26 literal
+    ///         tuples, so a newly added shader had zero coverage until someone remembered it. The
+    ///         other carried a phantom <c>FO76_WATER</c> macro that appears in no <c>.hlsl</c> file —
+    ///         a byte-identical duplicate of the FO4 permutation that implied FO76 was validated when
+    ///         nothing about it was.
+    ///     </para>
+    ///     <para>
+    ///         <see cref="ShaderInventoryTests.EveryEntryShaderIsReachedByAPermutation" /> keeps the
+    ///         table honest (and runs UNGATED, so it holds even in CI).
+    ///     </para>
+    /// </summary>
     [Fact]
-    public void WaterAndSpeedTreeEntryPointsCompileForEveryAffectedPermutation()
+    public void EveryShaderPermutationCompiles()
     {
-        var permutations = new (string Name, string EntryPoint, string Profile, ShaderMacro[] Macros)[]
+        var failures = new List<string>();
+        foreach (var permutation in ShaderPermutations.All)
         {
-            ("water.vert.hlsl", "main", "vs_5_1", []),
-            ("water_noise.comp.hlsl", "mainScrollBlend", "cs_5_1", []),
-            ("water_noise.comp.hlsl", "mainNormal", "cs_5_1", []),
-            ("water_modern.comp.hlsl", "mainBodyCoverage", "cs_5_1", []),
-            ("water_modern.comp.hlsl", "mainNormal", "cs_5_1", []),
-            ("water_modern.comp.hlsl", "mainGloss", "cs_5_1", []),
-            ("water_modern.comp.hlsl", "mainDepthLut", "cs_5_1", []),
-            ("water.frag.hlsl", "main", "ps_5_1", []),
-            ("water.frag.hlsl", "main", "ps_5_1", [new ShaderMacro("FNV_WATER001", "1")]),
-            ("water.frag.hlsl", "main", "ps_5_1", [new ShaderMacro("OBLIVION_WATER", "1")]),
-            ("water.frag.hlsl", "main", "ps_5_1", [new ShaderMacro("FO4_WATER", "1")]),
-            ("water.frag.hlsl", "main", "ps_5_1",
-                [new ShaderMacro("FO4_WATER", "1"), new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1")]),
-            ("water.frag.hlsl", "main", "ps_5_1",
-            [
-                new ShaderMacro("FO4_WATER", "1"), new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1"),
-                new ShaderMacro("FO76_WATER", "1")
-            ]),
-            ("water.frag.hlsl", "main", "ps_5_1", [new ShaderMacro("MORROWIND_WATER", "1")]),
-            // Depth-sample PSO compiles: WATER_HARDWARE_OCCLUSION drops the pixel-rate occlusion
-            // clip because the host binds a read-only DSV and the hardware GreaterEqual test
-            // rejects per sample. One entry per depth-sample PSO the renderer actually builds.
-            ("water.frag.hlsl", "main", "ps_5_1",
-                [new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")]),
-            ("water.frag.hlsl", "main", "ps_5_1",
-            [
-                new ShaderMacro("FNV_WATER001", "1"),
-                new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")
-            ]),
-            ("water.frag.hlsl", "main", "ps_5_1",
-            [
-                new ShaderMacro("OBLIVION_WATER", "1"),
-                new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")
-            ]),
-            ("water.frag.hlsl", "main", "ps_5_1",
-            [
-                new ShaderMacro("FO4_WATER", "1"),
-                new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")
-            ]),
-            ("water.frag.hlsl", "main", "ps_5_1",
-            [
-                new ShaderMacro("FO4_WATER", "1"), new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1"),
-                new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")
-            ]),
-            ("water.frag.hlsl", "main", "ps_5_1",
-            [
-                new ShaderMacro("MORROWIND_WATER", "1"),
-                new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1")
-            ]),
-            ("reference_instanced.vert.hlsl", "main", "vs_5_1", []),
-            ("reference_instanced.vert.hlsl", "main", "vs_5_1",
-                [new ShaderMacro("SHADOW_CARD_LIGHT_FACING", "1")])
-        };
-
-        foreach (var permutation in permutations)
-        {
-            Compile(permutation.Name, permutation.EntryPoint, permutation.Profile, permutation.Macros);
+            try
+            {
+                Compile(permutation.File, permutation.EntryPoint, permutation.Profile, permutation.Macros);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or FileNotFoundException)
+            {
+                // Collect rather than fail fast: one broken permutation should not hide the others.
+                failures.Add($"{permutation.File} [{permutation.EntryPoint}/{permutation.Profile}] " +
+                             $"({permutation.Purpose}): {ex.Message}");
+            }
         }
-    }
 
-    [Fact]
-    public void EveryRemainingEmbeddedRenderingEntryPointCompiles()
-    {
-        // Particles use the non-instanced reference vertex/pixel pair. SpeedTree bark, frond and leaf
-        // behavior is selected at runtime in the shared reference shaders, so compiling both the normal
-        // and SHADOW_CARD_LIGHT_FACING forms above covers every preprocessor permutation currently used.
-        var entryPoints = new (string Name, string EntryPoint, string Profile)[]
-        {
-            ("tonemap.vert.hlsl", "main", "vs_5_1"),
-            ("tonemap.frag.hlsl", "main", "ps_5_1"),
-            ("tonemap.frag.hlsl", "mainAvg", "ps_5_1"),
-            ("tonemap.frag.hlsl", "mainAdapt", "ps_5_1"),
-            ("bloom.frag.hlsl", "mainDownsample16", "ps_5_1"),
-            ("bloom.frag.hlsl", "main", "ps_5_1"),
-            ("bloom.frag.hlsl", "mainBlur", "ps_5_1"),
-            ("reference.vert.hlsl", "main", "vs_5_1"),
-            ("reference.frag.hlsl", "main", "ps_5_1"),
-            ("shadow.frag.hlsl", "main", "ps_5_1"),
-            ("skin.vert.hlsl", "main", "vs_5_1"),
-            ("skin.frag.hlsl", "main", "ps_5_1"),
-            ("sky_billboard.vert.hlsl", "main", "vs_5_1"),
-            ("sky_billboard.frag.hlsl", "main", "ps_5_1"),
-            ("sky_geo.vert.hlsl", "main", "vs_5_1"),
-            ("sky_geo.frag.hlsl", "main", "ps_5_1"),
-            ("terrain.vert.hlsl", "main", "vs_5_1"),
-            ("terrain.frag.hlsl", "main", "ps_5_1"),
-            ("terrain_textured.vert.hlsl", "main", "vs_5_1"),
-            ("terrain_textured.frag.hlsl", "main", "ps_5_1"),
-            ("cellgrid.vert.hlsl", "main", "vs_5_1"),
-            ("cellgrid.frag.hlsl", "main", "ps_5_1"),
-            ("collision_line.vert.hlsl", "main", "vs_5_1"),
-            ("collision_line.frag.hlsl", "main", "ps_5_1"),
-            ("triangle.vert.hlsl", "main", "vs_5_1"),
-            ("triangle.frag.hlsl", "main", "ps_5_1")
-        };
-
-        foreach (var entryPoint in entryPoints)
-        {
-            Compile(entryPoint.Name, entryPoint.EntryPoint, entryPoint.Profile, []);
-        }
+        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
 
     [Fact]
@@ -334,61 +262,18 @@ public sealed class RenderingShaderCompilationTests
         Assert.DoesNotContain("ParallaxScale", parallax, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public void FnvClassicParallaxReferenceDrawPathsCompile()
-    {
-        // The same PS consumes interpolants from the direct/blended and instanced reference VS paths.
-        Compile("reference.vert.hlsl", "main", "vs_5_1", []);
-        Compile("reference_instanced.vert.hlsl", "main", "vs_5_1", []);
-        Compile("reference.frag.hlsl", "main", "ps_5_1", []);
-    }
-
+    /// <summary>
+    ///     Compiles through the PRODUCTION compiler rather than a local copy. The copy this replaces
+    ///     had its own resource lookup and its own regex-based rule for the unbounded-descriptor flag
+    ///     — a third variant of a decision the runtime made two other ways — so a test could validate
+    ///     a configuration that never ships. Sharing the code makes that impossible.
+    /// </summary>
     private static void Compile(string name, string entryPoint, string profile, ShaderMacro[] macros)
     {
         ShaderCompileTestGuard.SkipUnlessEnabled();
-
-        var source = ReadEmbeddedShader(name);
-        // Match the runtime compiler's declaration-shape check so named tables such as
-        // gWaterTextures[] and textures[] both receive D3DCOMPILE_ENABLE_UNBOUNDED_DESCRIPTOR_TABLES.
-        var flags = Regex.IsMatch(
-            source, @"\[\]\s*:\s*register", RegexOptions.CultureInvariant)
-            ? EnableUnboundedDescriptorTables
-            : ShaderFlags.None;
-
-        Blob? bytecode = null;
-        Blob? errors = null;
-        try
-        {
-            var result = Compiler.Compile(
-                source,
-                macros,
-                null!,
-                entryPoint,
-                name,
-                profile,
-                flags,
-                EffectFlags.None,
-                out bytecode,
-                out errors);
-
-            Assert.False(result.Failure,
-                $"{name}:{entryPoint} ({profile}) failed: {errors?.AsString() ?? "(no compiler diagnostics)"}");
-            Assert.NotNull(bytecode);
-        }
-        finally
-        {
-            errors?.Dispose();
-            bytecode?.Dispose();
-        }
+        var bytecode = GpuShaderCompiler12.Compile(name, entryPoint, profile, macros);
+        Assert.NotEmpty(bytecode);
     }
 
-    private static string ReadEmbeddedShader(string name)
-    {
-        var assembly = typeof(SptGeometryOptions).Assembly;
-        var resourceName = assembly.GetManifestResourceNames()
-            .Single(n => n.EndsWith(name, StringComparison.OrdinalIgnoreCase));
-        using var stream = assembly.GetManifestResourceStream(resourceName)!;
-        using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
-    }
+    private static string ReadEmbeddedShader(string name) => GpuShaderCompiler12.ReadSource(name);
 }

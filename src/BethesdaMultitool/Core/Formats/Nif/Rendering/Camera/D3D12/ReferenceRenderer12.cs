@@ -551,6 +551,10 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
         _tallGrassWindSupported = FnvTallGrassWind.IsSupported(renderCache.Game);
         _grassDistanceEnvelope = GrassScatterProfile.ForGame(renderCache.Game).DistanceEnvelope;
         _classicSpecularLodProfile = ClassicSpecularLodProfile.ForGame(renderCache.Game);
+        // Per-game grass shaders. Resolved here — beside the other ForGame registries — because this
+        // is where the loaded game first reaches the renderer; the pipeline factory is constructed
+        // earlier, so its grass PSOs are built lazily on first grass draw.
+        _pipelines.SetGrassShaderProfile(GrassShaderProfile.ForGame(renderCache.Game));
         if (_grassDistanceEnvelope.Enabled)
         {
             Core.Diagnostics.Logger.Instance.Info(
@@ -2379,7 +2383,8 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                     draw.Submesh.SrcBlendMode,
                     draw.Submesh.DstBlendMode,
                     draw.Submesh.DoubleSided,
-                    draw.Submesh.IsDecal);
+                    draw.Submesh.IsDecal,
+                    grassRoute: draw.IsGrass);
                 DrawBlendedSubmesh(
                     cmd,
                     frameIndex,
@@ -2454,11 +2459,16 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
                 var draw = _depthWritingBlendDraws[i];
                 if (draw.Submesh.EffectiveIndexCount <= 0 ||
                     !PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)) continue;
+                // BOTH blend sites must pass grassRoute. Oblivion grass authors 0x12ED (blend AND
+                // test) and BuildAlphaState keeps the test live for a depth-writing blend, so grass
+                // reaches this list as well as the plain one — routing only the other site would
+                // light half the carpet with the shared shader and half with the per-game one.
                 var pso = _pipelines.GetBlendDepthWritePipeline(
                     draw.Submesh.SrcBlendMode,
                     draw.Submesh.DstBlendMode,
                     draw.Submesh.DoubleSided,
-                    draw.Submesh.IsDecal);
+                    draw.Submesh.IsDecal,
+                    grassRoute: draw.IsGrass);
                 DrawBlendedSubmesh(
                     cmd,
                     frameIndex,

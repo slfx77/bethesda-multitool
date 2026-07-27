@@ -273,7 +273,24 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
                 BufferCount = BufferCount,
                 Scaling = Scaling.Stretch,
                 SwapEffect = SwapEffect.FlipSequential,
-                AlphaMode = AlphaMode.Premultiplied,
+                // IGNORE, not PREMULTIPLIED: the scene target's alpha channel is NOT a coverage
+                // signal we want composited. Alpha-to-coverage grass writes fractional coverage into
+                // SV_Target.a (reference.frag.hlsl), the tonemap passes hdr.a straight through, and
+                // the post-tonemap debug overlays (navmesh / collision / selection / export framing)
+                // deliberately OVERWRITE destination alpha with their own line alpha
+                // (SourceBlendAlpha=One / DestinationBlendAlpha=Zero). Under PREMULTIPLIED, DWM then
+                // composited `src.rgb + (1 - src.a) * backdrop` over the XAML page brush: grass read
+                // washed-out/bright and the 27.5%-alpha navmesh fill read grey instead of green.
+                // The viewport is fully opaque by construction — RenderPanel is the first child of
+                // its Grid and StatusOverlay/HudPanel are siblings drawn ON TOP — so nothing needs to
+                // show through. This also makes GpuOffscreenSceneTarget12's readback alpha fixup
+                // ("invisible in the opaque-swapchain live view") an accurate statement rather than a
+                // false assumption. CreateSwapChainForComposition accepts UNSPECIFIED (which the
+                // compositor documents as equivalent to IGNORE, and which is what Microsoft's own
+                // SwapChainPanel sample leaves in place), PREMULTIPLIED, or IGNORE; only STRAIGHT is
+                // unsupported. Its documented desc constraints are FlipSequential + Scaling.Stretch,
+                // both satisfied above.
+                AlphaMode = AlphaMode.Ignore,
                 Flags = SwapChainFlags.None
             };
 

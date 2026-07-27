@@ -1,8 +1,7 @@
 #if WINDOWS_GUI
-using System.Reflection;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
-using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
@@ -19,7 +18,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 /// </summary>
 internal sealed class ReferencePipelineFactory12 : IDisposable
 {
-    private const ShaderFlags EnableUnboundedDescriptorTables = (ShaderFlags)0x00100000;
+    private static readonly Logger Log = Logger.Instance;
 
     private readonly GpuDevice12 _gpu;
     private readonly GpuRootSignature12 _rootSignature;
@@ -27,6 +26,15 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     private readonly byte[] _psBytecode;
     private readonly Dictionary<BlendPipelineKey, ID3D12PipelineState> _blendPsos = new();
     private readonly Dictionary<BlendPipelineKey, ID3D12PipelineState> _blendDepthWritePsos = new();
+
+    // Per-game grass route. Separate PSO caches from the shared ones so a game switch can never hand
+    // back another game's pipeline — the keys are identical, only the shaders differ.
+    private readonly Dictionary<BlendPipelineKey, ID3D12PipelineState> _grassBlendPsos = new();
+    private readonly Dictionary<BlendPipelineKey, ID3D12PipelineState> _grassBlendDepthWritePsos = new();
+    private GrassShaderProfile _grassShaderProfile;
+    private byte[]? _grassVsBytecode;
+    private byte[]? _grassPsBytecode;
+
     private bool _disposed;
 
     public ReferencePipelineFactory12(GpuDevice12 gpu, GpuRootSignature12 rootSignature)
@@ -108,10 +116,54 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     /// <summary>Depth-only shadow-pass PSO for alpha-tested batches (cutout discard PS).</summary>
     public ID3D12PipelineState ShadowAlphaTestPso { get; }
 
-    public ID3D12PipelineState GetBlendPipeline(byte srcBlendMode, byte dstBlendMode, bool doubleSided, bool decal = false)
+    /// <summary>
+    ///     Selects the per-game grass shader pair for the loaded game, compiling it on first use.
+    ///     Call once per ESM load, before any draw. A no-op when the profile is unchanged, and
+    ///     FAIL-SOFT: a compile failure logs and reverts to the shared shaders rather than throwing,
+    ///     because the caller's catch would take down the entire reference pipeline (and with it every
+    ///     placed object) over one game's grass.
+    /// </summary>
+    public void SetGrassShaderProfile(GrassShaderProfile profile)
     {
+        if (profile.Equals(_grassShaderProfile)) return;
+
+        _grassShaderProfile = profile;
+        _grassVsBytecode = null;
+        _grassPsBytecode = null;
+        foreach (var pso in _grassBlendPsos.Values) pso.Dispose();
+        foreach (var pso in _grassBlendDepthWritePsos.Values) pso.Dispose();
+        _grassBlendPsos.Clear();
+        _grassBlendDepthWritePsos.Clear();
+
+        if (!profile.Enabled) return;
+
+        try
+        {
+            _grassVsBytecode = CompileEmbeddedShader(profile.VertexShaderName!, "main", "vs_5_1");
+            _grassPsBytecode = CompileEmbeddedShader(profile.PixelShaderName!, "main", "ps_5_1");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or FileNotFoundException)
+        {
+            Log.Error(
+                "ReferencePipelineFactory12: per-game grass shaders '{0}'/'{1}' failed to compile; " +
+                "falling back to the shared reference shaders. {2}",
+                profile.VertexShaderName, profile.PixelShaderName, ex);
+            _grassVsBytecode = null;
+            _grassPsBytecode = null;
+            _grassShaderProfile = default;
+        }
+    }
+
+    /// <summary>True when a per-game grass pair compiled and is available to <c>grassRoute</c> callers.</summary>
+    public bool GrassShaderAvailable => _grassVsBytecode is not null && _grassPsBytecode is not null;
+
+    public ID3D12PipelineState GetBlendPipeline(
+        byte srcBlendMode, byte dstBlendMode, bool doubleSided, bool decal = false, bool grassRoute = false)
+    {
+        var useGrass = grassRoute && GrassShaderAvailable;
+        var cache = useGrass ? _grassBlendPsos : _blendPsos;
         var key = new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal);
-        if (_blendPsos.TryGetValue(key, out var existing))
+        if (cache.TryGetValue(key, out var existing))
         {
             return existing;
         }
@@ -128,9 +180,11 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             RenderTargetWriteMask = D12.ColorWriteEnable.All
         };
 
-        var pso = CreatePipelineState(_blendedVsBytecode, _psBytecode, doubleSided, rtBlend, depthWriteEnabled: false,
-            decal);
-        _blendPsos[key] = pso;
+        var pso = CreatePipelineState(
+            useGrass ? _grassVsBytecode! : _blendedVsBytecode,
+            useGrass ? _grassPsBytecode! : _psBytecode,
+            doubleSided, rtBlend, depthWriteEnabled: false, decal);
+        cache[key] = pso;
         return pso;
     }
 
@@ -141,10 +195,12 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     ///     above — which a no-depth blend (drawn after water) can't do.
     /// </summary>
     public ID3D12PipelineState GetBlendDepthWritePipeline(byte srcBlendMode, byte dstBlendMode, bool doubleSided,
-        bool decal = false)
+        bool decal = false, bool grassRoute = false)
     {
+        var useGrass = grassRoute && GrassShaderAvailable;
+        var cache = useGrass ? _grassBlendDepthWritePsos : _blendDepthWritePsos;
         var key = new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal);
-        if (_blendDepthWritePsos.TryGetValue(key, out var existing))
+        if (cache.TryGetValue(key, out var existing))
         {
             return existing;
         }
@@ -161,9 +217,11 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             RenderTargetWriteMask = D12.ColorWriteEnable.All
         };
 
-        var pso = CreatePipelineState(_blendedVsBytecode, _psBytecode, doubleSided, rtBlend, depthWriteEnabled: true,
-            decal);
-        _blendDepthWritePsos[key] = pso;
+        var pso = CreatePipelineState(
+            useGrass ? _grassVsBytecode! : _blendedVsBytecode,
+            useGrass ? _grassPsBytecode! : _psBytecode,
+            doubleSided, rtBlend, depthWriteEnabled: true, decal);
+        cache[key] = pso;
         return pso;
     }
 
@@ -286,45 +344,13 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         return _gpu.Device.CreateGraphicsPipelineState(psoDesc);
     }
 
+    /// <summary>
+    ///     Forwards to the one shared compiler. This used to be a private copy — one of a dozen that
+    ///     had drifted apart on flags and resource lookup; see <see cref="GpuShaderCompiler12" />.
+    /// </summary>
     private static byte[] CompileEmbeddedShader(
-        string name, string entryPoint, string profile, params ShaderMacro[] macros)
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceName = assembly.GetManifestResourceNames()
-            .FirstOrDefault(n => n.EndsWith(name, StringComparison.OrdinalIgnoreCase))
-            ?? throw new FileNotFoundException($"Embedded shader resource not found: {name}");
-
-        using var stream = assembly.GetManifestResourceStream(resourceName)!;
-        using var reader = new StreamReader(stream);
-        var source = reader.ReadToEnd();
-
-        var shaderFlags = source.Contains("textures[]", StringComparison.Ordinal)
-            ? EnableUnboundedDescriptorTables
-            : ShaderFlags.None;
-
-        var result = Compiler.Compile(
-            source,
-            macros,
-            include: null!,
-            entryPoint,
-            sourceName: name,
-            profile,
-            shaderFlags,
-            EffectFlags.None,
-            out Blob? bytecode, out Blob? errors);
-
-        if (result.Failure || bytecode is null)
-        {
-            var errorText = errors?.AsString() ?? "(no error blob)";
-            errors?.Dispose();
-            bytecode?.Dispose();
-            throw new InvalidOperationException($"HLSL compile failed for {name} ({profile}): {errorText}");
-        }
-
-        errors?.Dispose();
-        try { return bytecode.AsBytes().ToArray(); }
-        finally { bytecode.Dispose(); }
-    }
+        string name, string entryPoint, string profile, params ShaderMacro[] macros) =>
+        GpuShaderCompiler12.Compile(name, entryPoint, profile, macros);
 
     public void Dispose()
     {
@@ -340,6 +366,16 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             pso.Dispose();
         }
         _blendDepthWritePsos.Clear();
+        foreach (var pso in _grassBlendPsos.Values)
+        {
+            pso.Dispose();
+        }
+        _grassBlendPsos.Clear();
+        foreach (var pso in _grassBlendDepthWritePsos.Values)
+        {
+            pso.Dispose();
+        }
+        _grassBlendDepthWritePsos.Clear();
         ShadowAlphaTestPso.Dispose();
         ShadowOpaquePso.Dispose();
         if (AlphaToCoverageAvailable)
