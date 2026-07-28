@@ -11,7 +11,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 ///     Background: NVTR bytes can reach us from two sources — the proto's ESM byte stream
 ///     (parsed via <see cref="Conversion.Schema.SubrecordSchemaProcessor" />) or runtime
 ///     <c>BSNavMesh</c> struct synthesis (via
-///     <see cref="Runtime.Readers.Specialized.RuntimeNavMeshDiscovery.ProjectTrianglesToNvtr"/>).
+///     <see cref="Runtime.Readers.Specialized.NavMesh.RuntimeNavMeshDiscovery.ProjectTrianglesToNvtr"/>).
 ///     Both paths can carry inconsistent neighbor indices when the engine modified the mesh
 ///     dynamically before DMP capture — <c>NavMesh::FlipTriangle</c>, <c>RemoveObstacle</c>,
 ///     door-portal disabling, etc. Emitting those bytes verbatim trips the engine's load-time

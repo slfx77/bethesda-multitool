@@ -3,7 +3,7 @@ using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Scanning;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
+using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.World;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Utils;
 
