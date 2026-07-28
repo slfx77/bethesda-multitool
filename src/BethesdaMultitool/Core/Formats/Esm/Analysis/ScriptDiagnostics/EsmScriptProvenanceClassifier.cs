@@ -2,9 +2,9 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Script;
-using ScriptReferenceSlot = BethesdaMultitool.Core.Formats.Esm.Analysis.EsmScriptBlockReader.ScriptReferenceSlot;
+using ScriptReferenceSlot = BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics.EsmScriptBlockReader.ScriptReferenceSlot;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 
 /// <summary>
 ///     Stateless classification, hashing, byte-formatting, and label-resolution helpers used by the script provenance

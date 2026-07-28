@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.Cells;
 
 /// <summary>
 ///     Represents information about a cell in a worldspace.

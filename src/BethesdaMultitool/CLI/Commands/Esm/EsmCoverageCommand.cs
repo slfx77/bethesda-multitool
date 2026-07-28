@@ -1,5 +1,6 @@
 using System.CommandLine;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Esm;

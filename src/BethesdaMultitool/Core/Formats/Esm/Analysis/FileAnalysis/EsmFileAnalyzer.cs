@@ -3,6 +3,7 @@ using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.FileFormat;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Records;
@@ -10,7 +11,7 @@ using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Esm.Utilities;
 using BethesdaMultitool.Core.Games;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 
 /// <summary>
 ///     Analyzes complete ESM/ESP files for the Single File Analysis tab.

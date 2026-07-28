@@ -1,6 +1,6 @@
 using ImageMagick;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 
 /// <summary>
 ///     Simple PNG writer using Magick.NET (replaces ImageSharp dependency).

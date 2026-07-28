@@ -3,9 +3,9 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Script;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
-using static BethesdaMultitool.Core.Formats.Esm.Analysis.EsmScriptDiagnosticsResolvers;
+using static BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics.EsmScriptDiagnosticsResolvers;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 
 /// <summary>
 ///     Builds the per-block (SCDA) diagnostic rows and reference-slot rows for a script-bearing record, walking each

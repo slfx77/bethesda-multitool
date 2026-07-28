@@ -7,10 +7,10 @@ using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Script;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
-using static BethesdaMultitool.Core.Formats.Esm.Analysis.EsmScriptProvenanceClassifier;
-using ScriptReferenceSlot = BethesdaMultitool.Core.Formats.Esm.Analysis.EsmScriptBlockReader.ScriptReferenceSlot;
+using static BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics.EsmScriptProvenanceClassifier;
+using ScriptReferenceSlot = BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics.EsmScriptBlockReader.ScriptReferenceSlot;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 
 /// <summary>Traces how a generated ESP's scripts, dialogue, and references originate from source/master records.</summary>
 public static class EsmScriptProvenanceAnalyzer

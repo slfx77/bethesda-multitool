@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.Cells;
 
 /// <summary>
 ///     A placed reference (REFR/ACHR/ACRE) with optional editor ID.

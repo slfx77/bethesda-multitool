@@ -1,4 +1,7 @@
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
+
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.Cells;
 
 /// <summary>
 ///     Represents a group of adjacent cells with terrain differences.

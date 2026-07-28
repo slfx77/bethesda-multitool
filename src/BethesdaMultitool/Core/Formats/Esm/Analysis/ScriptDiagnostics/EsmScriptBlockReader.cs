@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 
 /// <summary>
 ///     Shared low-level helpers for walking compiled-script (SCHR/SCDA) blocks inside an ESM/ESP record's subrecord

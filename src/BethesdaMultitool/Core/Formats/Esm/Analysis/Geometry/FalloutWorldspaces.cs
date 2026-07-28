@@ -1,7 +1,7 @@
 using System.Collections.Frozen;
 using System.Globalization;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 
 /// <summary>
 ///     Known worldspace FormIDs for Fallout: New Vegas.

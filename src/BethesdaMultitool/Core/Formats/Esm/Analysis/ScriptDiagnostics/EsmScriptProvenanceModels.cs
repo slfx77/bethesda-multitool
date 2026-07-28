@@ -1,7 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
-using ScriptReferenceSlot = BethesdaMultitool.Core.Formats.Esm.Analysis.EsmScriptBlockReader.ScriptReferenceSlot;
+using ScriptReferenceSlot = BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics.EsmScriptBlockReader.ScriptReferenceSlot;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 
 /// <summary>Provenance report tracing how a generated ESP's scripts/dialogue relate to their source and master records.</summary>
 public sealed record EsmScriptProvenanceReport(

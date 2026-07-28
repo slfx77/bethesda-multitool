@@ -1,9 +1,10 @@
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Utils;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
 
 /// <summary>
 ///     Lightweight ESM scanner that builds reverse indexes mapping model paths to base records

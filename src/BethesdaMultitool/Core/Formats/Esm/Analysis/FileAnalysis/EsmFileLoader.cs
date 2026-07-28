@@ -1,7 +1,7 @@
 using Spectre.Console;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 
 /// <summary>
 ///     Shared file loading and validation logic for ESM commands.

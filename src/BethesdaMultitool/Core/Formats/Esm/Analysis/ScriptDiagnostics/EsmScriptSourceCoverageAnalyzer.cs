@@ -1,12 +1,13 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Script;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using EsmStringUtils = BethesdaMultitool.Core.Utils.EsmStringUtils;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 
 /// <summary>
 ///     Audits source text exactly as serialized in emitted script blocks. It does not

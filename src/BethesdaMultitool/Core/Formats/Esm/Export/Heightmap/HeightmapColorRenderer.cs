@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
 

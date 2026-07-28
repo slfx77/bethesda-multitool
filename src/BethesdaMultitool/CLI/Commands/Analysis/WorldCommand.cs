@@ -320,7 +320,7 @@ public static class WorldCommand
             Directory.CreateDirectory(dir);
         }
 
-        Core.Formats.Esm.Analysis.PngWriter.SaveGrayscale(pixels, (int)width, (int)height, output);
+        Core.Formats.Esm.Analysis.Geometry.PngWriter.SaveGrayscale(pixels, (int)width, (int)height, output);
         var label = ws.EditorId ?? ws.FullName ?? $"0x{ws.FormId:X8}";
         AnsiConsole.MarkupLine(
             "[green]Wrote[/] {0} ({1:N0}x{2:N0}) — worldspace [cyan]{3}[/], {4:N0} cells, height {5:F0}..{6:F0}",

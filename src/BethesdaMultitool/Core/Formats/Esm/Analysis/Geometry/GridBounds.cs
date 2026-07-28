@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 
 /// <summary>Inclusive min/max cell-grid coordinate bounds of a worldspace.</summary>
 public sealed class GridBounds

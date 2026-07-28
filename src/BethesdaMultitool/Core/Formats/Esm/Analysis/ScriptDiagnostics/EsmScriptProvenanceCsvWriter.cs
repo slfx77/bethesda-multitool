@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 
 /// <summary>Renders an <see cref="EsmScriptProvenanceReport" /> into its CSV files.</summary>
 internal static class EsmScriptProvenanceCsvWriter

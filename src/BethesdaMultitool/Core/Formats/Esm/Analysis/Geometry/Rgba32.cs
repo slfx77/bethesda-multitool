@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 
 /// <summary>
 ///     Simple RGBA color struct (replaces ImageSharp dependency).

@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
 
 /// <summary>Result of comparing script-bytecode coverage between a baseline and a candidate ESM/ESP.</summary>
 public sealed record EsmCoverageComparisonResult(

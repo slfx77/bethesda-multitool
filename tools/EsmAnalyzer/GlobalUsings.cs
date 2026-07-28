@@ -1,7 +1,12 @@
 // Global using directives for EsmAnalyzer
 
 global using BethesdaMultitool.Core.Formats.Esm.Analysis;
+global using BethesdaMultitool.Core.Formats.Esm.Analysis.Cells;
+global using BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
+global using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
+global using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 global using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
+global using BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 global using BethesdaMultitool.Core.Formats.Esm.Conversion;
 global using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 global using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;

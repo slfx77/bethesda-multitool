@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 
 /// <summary>
 ///     Represents the playable bounds of a worldspace from the MNAM subrecord.

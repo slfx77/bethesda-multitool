@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Numerics;
 using BethesdaMultitool;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using Microsoft.UI.Xaml;

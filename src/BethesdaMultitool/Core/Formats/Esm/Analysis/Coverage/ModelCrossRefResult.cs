@@ -1,4 +1,6 @@
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Cells;
+
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
 
 /// <summary>
 ///     Result of a model path cross-reference lookup.

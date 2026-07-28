@@ -1,5 +1,6 @@
 using System.CommandLine;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Esm.Land.Btd;
 using Spectre.Console;
 

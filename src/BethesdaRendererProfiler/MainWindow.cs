@@ -354,7 +354,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 
             var rgba = BgraToRgba(render.Bgra);
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-            BethesdaMultitool.Core.Formats.Esm.Analysis.PngWriter.SaveRgba(rgba, render.Width, render.Height, path);
+            BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry.PngWriter.SaveRgba(rgba, render.Width, render.Height, path);
 
             var msg = string.Format(
                 CultureInfo.InvariantCulture,
@@ -550,7 +550,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 
             var rgba = BgraToRgba(bgra);
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-            BethesdaMultitool.Core.Formats.Esm.Analysis.PngWriter.SaveRgba(rgba, px, pyh, path);
+            BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry.PngWriter.SaveRgba(rgba, px, pyh, path);
             var pixelSha256 = CaptureImageFingerprint.Compute(bgra);
             string pngSha256;
             using (var pngStream = File.OpenRead(path))

@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Terrain;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 
 /// <summary>
 ///     Shared constants for ESM analysis operations.

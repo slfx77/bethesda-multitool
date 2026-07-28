@@ -1,5 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 
 /// <summary>
 ///     Result of loading and validating an ESM file.

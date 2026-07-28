@@ -3,6 +3,8 @@ using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Tests.Helpers;

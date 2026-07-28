@@ -2,6 +2,7 @@ using System.CommandLine;
 using EgtAnalyzer.Verification;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using ImageMagick;
 using Spectre.Console;
 

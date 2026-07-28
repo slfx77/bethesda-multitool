@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 
 /// <summary>Renders an <see cref="EsmScriptDiagnosticsResult" /> into its CSV reports and Markdown summary.</summary>
 internal static class EsmScriptDiagnosticsCsvWriter

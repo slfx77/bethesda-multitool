@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 
 // Export data structures
 /// <summary>Serializable summary of a single LAND record's heightmap/texture/normal data for export.</summary>

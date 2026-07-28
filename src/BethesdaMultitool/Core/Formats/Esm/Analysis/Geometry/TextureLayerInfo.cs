@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 
 /// <summary>One LAND landscape texture layer: its LTEX FormID, quadrant, and layer index.</summary>
 public sealed class TextureLayerInfo
