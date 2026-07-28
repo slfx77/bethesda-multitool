@@ -4,7 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
@@ -430,7 +430,7 @@ public sealed partial class WorldView3DControl
                             "for the sun-shadow pass.");
                     }
                     captureShadowRingReserved = true;
-                    _shadowMap ??= new Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12(
+                    _shadowMap ??= new Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12(
                         _gpu12!, _cbvSrvUavHeap12!);
                     _references!.ArmShadowCapture(MathF.Min(ShadowCasterRingRadius, _renderDistance));
                 }
@@ -692,7 +692,7 @@ public sealed partial class WorldView3DControl
             _shadowMap is { HasContent: true } dumpMap)
         {
             for (var cascade = 0;
-                 cascade < Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.CascadeCount;
+                 cascade < Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount;
                  cascade++)
             {
                 recorder.BeginFrame();

@@ -9,7 +9,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using Vortice.Direct3D12;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>One submesh of a cached reference mesh: its GPU vertex/index buffer views, diffuse/normal texture entries, and packed alpha/render state.</summary>
 internal sealed class CachedSubmesh12

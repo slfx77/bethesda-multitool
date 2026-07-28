@@ -14,7 +14,7 @@ public sealed class FnvClassicBasicShaderSourceContractTests
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Materials",
             "FnvClassicBasicShaderPolicy.cs");
         var renderer = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
 
         Assert.Contains("internal const bool RetailRuntimeSupported = false", policy,
@@ -128,7 +128,7 @@ public sealed class FnvClassicBasicShaderSourceContractTests
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Materials",
             "FnvClassicBasicShaderPolicy.cs");
         var decoder = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceMeshDecoder12.cs");
 
         foreach (var token in new[]

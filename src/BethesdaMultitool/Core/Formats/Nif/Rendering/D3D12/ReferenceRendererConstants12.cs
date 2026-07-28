@@ -1,14 +1,17 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
-// Kept outside the WINDOWS_GUI implementation file so platform-neutral tests can reflect the exact
-// production ABI types. On Windows this partial declaration merges with ReferenceRenderer12.
-internal sealed partial class ReferenceRenderer12
+/// <summary>
+///     GPU constant-buffer ABI types for <c>ReferenceRenderer12</c>. Kept outside the WINDOWS_GUI
+///     implementation file so platform-neutral tests can reflect the exact production ABI types;
+///     the renderer imports them via <c>using static</c>.
+/// </summary>
+internal static class ReferenceRendererConstants12
 {
     [StructLayout(LayoutKind.Sequential)]
-    private struct PerDrawConstants
+    internal struct PerDrawConstants
     {
         public Matrix4x4 World;
         public Vector4 AlphaState;
@@ -49,7 +52,7 @@ internal sealed partial class ReferenceRenderer12
     ///     and `.z` the state-discriminated specular/environment-mask/simple-height union.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    private readonly record struct InstanceDrawConstants(
+    internal readonly record struct InstanceDrawConstants(
         Vector4 AlphaState,
         Vector4 RenderState,
         Vector4 TextureState,
@@ -100,5 +103,5 @@ internal sealed partial class ReferenceRenderer12
     ///     (TextureState disambiguates).
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    private readonly record struct TexIndexQuad(uint X, uint Y, uint Z, uint W);
+    internal readonly record struct TexIndexQuad(uint X, uint Y, uint Z, uint W);
 }

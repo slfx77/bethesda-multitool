@@ -9,6 +9,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
@@ -23,14 +24,15 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 using BethesdaMultitool.Core.Orchestration;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
+using static BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ReferenceRendererConstants12;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>
 ///     D3D12 placed-object renderer. Opaque/cutout references are batched by cached submesh
 ///     and rendered with instancing; blended/effect submeshes remain sorted back-to-front.
 /// </summary>
-internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRenderer
+internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 {
     // viewProj (64) + the 4 SpeedTree wind-v2 sway matrices (4 × 64) — see reference_instanced.vert.hlsl
     // PerFrame. The shadow pass keeps its own shorter PerFrame; its shader variant never reads the matrices.

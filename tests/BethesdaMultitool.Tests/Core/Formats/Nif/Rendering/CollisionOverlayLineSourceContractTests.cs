@@ -15,7 +15,7 @@ public sealed class CollisionOverlayLineSourceContractTests
     public void RendererExpandsQuadsFromTheRootSrvAndNeverUsesFixedFunctionLineAa()
     {
         var renderer = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "CollisionDebugRenderer12.cs");
 
         Assert.DoesNotContain("AntialiasedLineEnable", renderer, StringComparison.Ordinal);

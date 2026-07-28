@@ -247,7 +247,7 @@ public sealed class FnvWater001SourceContractTests
             "_references?.RenderBlendedDeferred();");
 
         var references = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
         Assert.Contains("WaterTransparencyPartition.IsWhollyBelow(", references,
             StringComparison.Ordinal);
@@ -258,7 +258,7 @@ public sealed class FnvWater001SourceContractTests
     private static string ReadRenderer()
     {
         return SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "WaterRenderer12.cs");
     }
 

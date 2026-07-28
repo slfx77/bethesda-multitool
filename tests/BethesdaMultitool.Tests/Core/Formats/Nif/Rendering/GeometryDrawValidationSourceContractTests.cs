@@ -56,7 +56,7 @@ public sealed class GeometryDrawValidationSourceContractTests
     private static string ReadRenderer()
     {
         return SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
     }
 

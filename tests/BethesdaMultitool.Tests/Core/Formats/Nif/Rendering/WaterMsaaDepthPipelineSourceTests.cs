@@ -108,7 +108,7 @@ public sealed class WaterMsaaDepthPipelineSourceTests
     public void WaterTelemetryNamesRtFreeTechniqueAndDepthRouteTruthfully()
     {
         var source = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "WaterRenderer12.cs");
         var callStart = source.IndexOf("LastStats.WaterTechnique = DescribeTechnique(", StringComparison.Ordinal);
         var helperStart = source.IndexOf("private static string DescribeTechnique(", StringComparison.Ordinal);
@@ -148,7 +148,7 @@ public sealed class WaterMsaaDepthPipelineSourceTests
     public void WaterSampleCountUsesTheExistingUniformSpareWithoutGrowingTheAbi()
     {
         var source = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "WaterRenderer12.cs");
 
         Assert.Contains("private const uint UniformsByteSize = ModernWaterPipeline.FrameUniformByteSize;",
@@ -163,7 +163,7 @@ public sealed class WaterMsaaDepthPipelineSourceTests
     public void InvalidEnabledDepthMetadataIsRejectedInsteadOfChangingHostRouting()
     {
         var source = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "WaterRenderer12.cs");
         var methodStart = source.IndexOf("public void SetSceneDepth(", StringComparison.Ordinal);
         var methodEnd = source.IndexOf("public void SetModernCubeMap(", methodStart, StringComparison.Ordinal);

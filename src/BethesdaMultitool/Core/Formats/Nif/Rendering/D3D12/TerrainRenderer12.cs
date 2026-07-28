@@ -9,6 +9,7 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Terrain;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
@@ -20,7 +21,7 @@ using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>
 ///     v3 Pass 4 Step 2c — D3D12 port of <c>TerrainRenderer</c>. Renders textured

@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using BethesdaMultitool.Core.Games;
@@ -15,7 +16,7 @@ using Vortice.Direct3D12;
 using Vortice.DXGI;
 using D12 = Vortice.Direct3D12;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>
 ///     v3 Pass 4 Step 2e — D3D12 port of <c>WaterRenderer</c>. Renders one

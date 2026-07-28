@@ -4,7 +4,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using Vortice.Direct3D12;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>
 ///     Per-cell bindless texture indices for the 16 blend slots. The original diffuse

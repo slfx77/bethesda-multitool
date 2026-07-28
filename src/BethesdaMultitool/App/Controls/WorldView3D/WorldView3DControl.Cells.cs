@@ -4,7 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using WaterRenderer12 = BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.WaterRenderer12;
+using WaterRenderer12 = BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.WaterRenderer12;
 
 namespace BethesdaMultitool;
 

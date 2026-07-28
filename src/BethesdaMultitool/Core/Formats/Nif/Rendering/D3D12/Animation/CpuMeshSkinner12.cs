@@ -5,7 +5,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using Vortice.Direct3D12;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.Animation;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.Animation;
 
 /// <summary>
 ///     Per-frame CPU skinner for keyframe-animated placed meshes (Morrowind banners). Pose is

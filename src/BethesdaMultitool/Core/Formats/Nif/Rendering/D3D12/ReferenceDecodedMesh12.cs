@@ -8,7 +8,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 // CollisionPositions/CollisionTriangles carry the NIF's decoded Havok (bhk*) collision soup when
 // present (root-local treatRootsAsIdentity frame, same as the visual submeshes). BuildCollisionMesh

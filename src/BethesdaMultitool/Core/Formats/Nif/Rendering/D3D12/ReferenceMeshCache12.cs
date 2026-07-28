@@ -21,7 +21,7 @@ using BethesdaMultitool.Core.Orchestration;
 using BethesdaMultitool.Core.Resources;
 using Vortice.Direct3D12;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>
 ///     D3D12 placed-reference mesh cache. CPU decode is requested asynchronously; all D3D12

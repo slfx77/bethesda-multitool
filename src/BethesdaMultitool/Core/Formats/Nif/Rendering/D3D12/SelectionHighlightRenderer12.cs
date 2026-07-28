@@ -9,7 +9,7 @@ using Vortice.Direct3D12;
 using Vortice.DXGI;
 using D12 = Vortice.Direct3D12;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>
 ///     3D-5 — draws a single bright outline box around the currently-selected placed object so the

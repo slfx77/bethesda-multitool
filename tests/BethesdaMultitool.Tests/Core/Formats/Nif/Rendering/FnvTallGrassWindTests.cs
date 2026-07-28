@@ -162,10 +162,10 @@ public sealed class FnvTallGrassWindTests
     public void RendererSource_GatesWindToFnvGrassAndPreservesMatrixOnlyInstances()
     {
         var renderer = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
         var batches = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "OpaqueBatchRegistry12.cs");
 
         Assert.Contains(
@@ -193,7 +193,7 @@ public sealed class FnvTallGrassWindTests
     public void MeshCacheSource_DisablesSoftParticlesForTallGrassMaterialRoute()
     {
         var meshCache = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceMeshCache12.cs");
         var compact = string.Concat(meshCache.Where(c => !char.IsWhiteSpace(c)));
 
@@ -208,7 +208,7 @@ public sealed class FnvTallGrassWindTests
     public void RendererSource_UsesRecoveredFixedWorldPositiveYDirection()
     {
         var renderer = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
         var compact = string.Concat(renderer.Where(c => !char.IsWhiteSpace(c)));
 

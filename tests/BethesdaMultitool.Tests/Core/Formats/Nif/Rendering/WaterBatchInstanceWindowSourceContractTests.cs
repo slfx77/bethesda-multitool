@@ -18,7 +18,7 @@ public sealed class WaterBatchInstanceWindowSourceContractTests
     public void FnvBatchesWindowTheirSliceThroughTheSrvNotStartInstanceLocation()
     {
         var renderer = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "WaterRenderer12.cs");
 
         Assert.Contains("FirstElement = (ulong)startInstance", renderer, StringComparison.Ordinal);

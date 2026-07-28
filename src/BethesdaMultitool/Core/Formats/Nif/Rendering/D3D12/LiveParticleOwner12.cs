@@ -5,7 +5,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>
 ///     Render-thread owner for one opt-in legacy live particle cloud. CPU snapshots are cached at the

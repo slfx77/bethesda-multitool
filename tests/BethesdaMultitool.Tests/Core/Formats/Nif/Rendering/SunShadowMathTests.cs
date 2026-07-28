@@ -173,7 +173,7 @@ public sealed class SunShadowMathTests
     {
         var frame = SourceContract.ReadAppSource("WorldView3DControl.Frame.cs");
         var shadowMap = ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
             "D3D12", "ShadowMapRenderer12.cs");
 
         var reserve = frame.IndexOf(

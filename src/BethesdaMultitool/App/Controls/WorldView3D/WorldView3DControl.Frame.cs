@@ -28,7 +28,7 @@ public sealed partial class WorldView3DControl
     // Sun shadow map (directional shadows: reference batches cast onto terrain + references).
     // Lazily created on the first shadow-enabled frame; disposed with the D3D12 backend
     // (DisposeD3D12Backend). Kill-switch FALLOUT_VIEWER_SHADOWS=0; UI toggle in the lighting flyout.
-    private Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12? _shadowMap;
+    private Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12? _shadowMap;
     private static readonly bool ShadowsEnvEnabled =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.Shadows) != "0";
 
@@ -65,7 +65,7 @@ public sealed partial class WorldView3DControl
     // frame start so a dense scene cannot clear a near cascade and then fail to allocate the three
     // constants needed to repopulate it (reference b0 + terrain b0/b2). Each allocation is CB-aligned.
     private const uint ShadowPassRingReservationBytes =
-        ((uint)Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.CascadeCount * 3u + 1u) *
+        ((uint)Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount * 3u + 1u) *
         GpuRingBuffer12.CbAlignment; // three CBs per cascade + worst-case initial alignment pad
 
     // Water draws after terrain + references, which in a whole-map / streaming frame fill the ring and
@@ -326,7 +326,7 @@ public sealed partial class WorldView3DControl
         // content, when the caller opts out (ortho export / top-down), or when the toggle / env
         // kill-switch is off — the shader's ShadowFactor then returns 1.0 and the scene is
         // pixel-identical to before.
-        var shadow = default(Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.ShadowSampleConstants);
+        var shadow = default(Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.ShadowSampleConstants);
         if (enableShadows && lightingOn && _showShadows && ShadowsEnvEnabled &&
             _shadowMap is { HasContent: true } shadowMap)
         {
@@ -411,7 +411,7 @@ public sealed partial class WorldView3DControl
             float placedLightCount,
             Vector3 cameraOrigin,
             float ambientScale = 0.3f,
-            Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.ShadowSampleConstants shadow = default,
+            Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.ShadowSampleConstants shadow = default,
             float emissiveMult = 1f,
             bool hdrActive = true,
             float sunlightScale = 1f)
@@ -522,7 +522,7 @@ public sealed partial class WorldView3DControl
             return; // animated refresh before any publish — nothing consistent to refresh yet
         }
 
-        var cascadeCount = Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.CascadeCount;
+        var cascadeCount = Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount;
         var frustums = new SunShadowMath.LightFrustum[cascadeCount];
         for (var i = 0; i < cascadeCount; i++)
         {
@@ -816,7 +816,7 @@ public sealed partial class WorldView3DControl
             shadowRingReserved = _ringBuffer12!.TryReserveTail(ShadowPassRingReservationBytes);
             if (shadowRingReserved)
             {
-                _shadowMap ??= new Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12(
+                _shadowMap ??= new Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12(
                     _gpu12!, _cbvSrvUavHeap12!);
                 _references!.ArmShadowCapture(MathF.Min(ShadowCasterRingRadius, _renderDistance));
             }
@@ -902,10 +902,10 @@ public sealed partial class WorldView3DControl
         // compare NEVER matched while walking and re-culled ~100k candidates per frame. Ortho /
         // projection modes keep the exact compare (their viewProj is genuinely stable when idle).
         // FALLOUT_VIEWER_TOLERANT_CULL=0 reverts to the exact compare (perf A/B + escape hatch).
-        Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12.CullCameraPose? cullPose =
+        Core.Formats.Nif.Rendering.D3D12.ReferenceRenderer12.CullCameraPose? cullPose =
             projectionActive || !TolerantCullEnabled
                 ? null
-                : new Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12.CullCameraPose(
+                : new Core.Formats.Nif.Rendering.D3D12.ReferenceRenderer12.CullCameraPose(
                     _camera.Forward, _camera.FovYRadians, aspect);
         var visibleReferences = 0;
         if (_showReferences)

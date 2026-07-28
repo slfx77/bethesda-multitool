@@ -148,10 +148,10 @@ public sealed class GrassDistanceEnvelopeTests
     public void WindowsRenderer_WiresEnvelopePolicyThroughEveryDistanceCullRoute()
     {
         var renderer = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
         var batches = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "OpaqueBatchRegistry12.cs");
         var compactRenderer = RemoveWhitespace(renderer);
 

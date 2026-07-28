@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>
 ///     Pure upload-time self-check for the mesh cache's submesh packing: every draw binds a

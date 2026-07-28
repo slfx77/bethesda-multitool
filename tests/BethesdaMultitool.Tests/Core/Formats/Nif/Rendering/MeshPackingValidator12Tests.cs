@@ -1,4 +1,4 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;

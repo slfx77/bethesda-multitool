@@ -195,7 +195,7 @@ public sealed class SpeedTreeWindRigTests
         var root = FindRepoRoot();
         var renderer = File.ReadAllText(Path.Combine(
             root, "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
-            "Camera", "D3D12", "ReferenceRenderer12.cs"));
+            "D3D12", "ReferenceRenderer12.cs"));
         var capture = SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs");
 
         Assert.Contains("_windRig.Tick(_windStrength", renderer, StringComparison.Ordinal);

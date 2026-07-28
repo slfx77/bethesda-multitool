@@ -11,7 +11,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Formats.SpeedTree;
@@ -330,7 +330,7 @@ internal static class NifHeadlessRenderer
                 if (guiShape)
                 {
                     // Live-viewer call shape: tolerant cull pose + deferred blended pass.
-                    var pose = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12
+                    var pose = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12
                         .ReferenceRenderer12.CullCameraPose(
                             cameraForward, 0.9f, 1f);
                     references.Render(viewProj, cylinder, deferBlended: true,
@@ -480,7 +480,7 @@ internal static class NifHeadlessRenderer
                     references.SetWind(Vector2.UnitX, 0f, animTime + k / 30f);
                     if (guiShape)
                     {
-                        var pose = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12
+                        var pose = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12
                             .ReferenceRenderer12.CullCameraPose(
                                 cameraForward, 0.9f, 1f);
                         references.Render(viewProj, cylinder, deferBlended: true,

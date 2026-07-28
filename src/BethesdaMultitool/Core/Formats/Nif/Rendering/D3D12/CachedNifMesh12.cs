@@ -4,7 +4,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>A reference NIF uploaded to GPU geometry/texture caches: its submeshes, bounds, and authored water geometry, drawn each frame and disposed when evicted.</summary>
 internal sealed class CachedNifMesh12 : IDisposable

@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
@@ -13,7 +14,7 @@ using Vortice.DXGI;
 using Vortice.Mathematics;
 using D12 = Vortice.Direct3D12;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>
 ///     v3 Pass 4 Step 2b — D3D12 port of <c>CellGridDebugRenderer</c>. Renders

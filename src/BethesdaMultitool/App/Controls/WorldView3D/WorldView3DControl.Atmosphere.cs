@@ -7,7 +7,7 @@ using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Games;
 
@@ -507,7 +507,7 @@ public sealed partial class WorldView3DControl
         }
         _skyTexKey = key;
 
-        const uint none = BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SkyBillboardRenderer12.NoTexture;
+        const uint none = BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.SkyBillboardRenderer12.NoTexture;
         var paths = ResolveSkyTexturePaths(climate, weather);
         _resolvedSkyTexturePaths = paths;
 

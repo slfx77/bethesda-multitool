@@ -115,7 +115,7 @@ public sealed class Tes4GrassShaderTests
     public void BothBlendSitesRouteGrassSoTheCarpetCannotBeHalfLit()
     {
         var renderer = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
         var compact = new string(renderer.Where(c => !char.IsWhiteSpace(c)).ToArray());
 
@@ -131,7 +131,7 @@ public sealed class Tes4GrassShaderTests
     public void GrassPsoCachesAreSeparateFromTheSharedOnes()
     {
         var factory = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferencePipelineFactory12.cs");
         var compact = new string(factory.Where(c => !char.IsWhiteSpace(c)).ToArray());
 

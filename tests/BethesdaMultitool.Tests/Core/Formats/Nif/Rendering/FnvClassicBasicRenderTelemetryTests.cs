@@ -99,7 +99,7 @@ public sealed class FnvClassicBasicRenderTelemetryTests
     public void RendererSource_CountsBothInstancedAndDirectColorDrawsAfterSubmission()
     {
         var renderer = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
         var frame = SourceContract.ReadAppSource("WorldView3DControl.Frame.cs");
         var compact = string.Concat(renderer.Where(static character => !char.IsWhiteSpace(character)));
@@ -163,7 +163,7 @@ public sealed class FnvClassicBasicRenderTelemetryTests
     public void RendererSource_ReResolvesBlendedRouteAtSubmissionAcrossRuntimeGateTransitions()
     {
         var renderer = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
         var compact = string.Concat(renderer.Where(static character => !char.IsWhiteSpace(character)));
 

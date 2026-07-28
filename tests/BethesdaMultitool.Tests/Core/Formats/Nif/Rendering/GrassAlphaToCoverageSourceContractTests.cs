@@ -15,7 +15,7 @@ public sealed class GrassAlphaToCoverageSourceContractTests
     public void FactoryBuildsPairedA2CVariantsAndAliasesThemWhenSceneIsSingleSampled()
     {
         var factory = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferencePipelineFactory12.cs");
 
         // The blend state and the coverage-writing PS must never desynchronize: both come from the
@@ -37,7 +37,7 @@ public sealed class GrassAlphaToCoverageSourceContractTests
     public void RendererRoutesGrassCutoutsToA2CAtBothBatchAssemblySites()
     {
         var renderer = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
         var compact = RemoveWhitespace(renderer);
 
@@ -55,7 +55,7 @@ public sealed class GrassAlphaToCoverageSourceContractTests
     public void BatchKeyCarriesThePipelineState()
     {
         var batches = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "OpaqueBatchRegistry12.cs");
 
         // Grass rerouting means the PSO is no longer derivable from the submesh alone; without it

@@ -104,7 +104,7 @@ public sealed partial class WorldView3DControl
             // Capacity/budget env knobs are diagnostic levers for eviction-pressure stress gates
             // (e.g. capacity 64 + 16 MB makes the LRU eviction cascade fire constantly); defaults
             // preserve the shipped behavior. Read here, not in the cache — same as `capacity` always was.
-            _referenceMeshCache12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceMeshCache12(
+            _referenceMeshCache12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ReferenceMeshCache12(
                 _gpu12, _meshArchives, _referenceTextureResolver, _referenceTextureCache12,
                 _deletionQueue12,
                 capacity: BethesdaMultitool.Core.EnvironmentVariables.GetClampedInt(
@@ -125,7 +125,7 @@ public sealed partial class WorldView3DControl
                 speedTreeLeafTextures: _data?.SpeedTreeLeafTextures,
                 // TREE CNAM canopy-depth dimming (leaf + branch scalars) — engine-applied per tree.
                 speedTreeDimming: _data?.SpeedTreeDimming);
-            _references = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12(
+            _references = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ReferenceRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12,
                 _cbvSrvUavHeap12, _referenceMeshCache12, _referenceEnabledOverrides)
             {
@@ -181,7 +181,7 @@ public sealed partial class WorldView3DControl
             return null;
         }
 
-        var lookup = BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12
+        var lookup = BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12
             .ReferenceMeshDecoder12.NormalizeModelPath(requestedModelPath);
         return _meshArchives.TryResolvePath(lookup, out _, out var resolved) &&
                !string.Equals(resolved, lookup, StringComparison.OrdinalIgnoreCase)

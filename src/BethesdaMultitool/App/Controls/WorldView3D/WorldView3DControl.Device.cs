@@ -91,7 +91,7 @@ public sealed partial class WorldView3DControl
             // The cell-grid overlay is the simplest D3D12 renderer: PSO creation +
             // ring-buffer-backed CB/VB + root signature + command list draws, exercising the
             // whole lightweight backend path the heavier renderers (terrain/reference/water) share.
-            _cellGrid = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.CellGridDebugRenderer12(
+            _cellGrid = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.CellGridDebugRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12)
             {
                 DetailedProfilingEnabled = _profileLogging,
@@ -100,12 +100,12 @@ public sealed partial class WorldView3DControl
             // Selection outline overlay. Same lightweight backend handles as the cell grid;
             // created once and reused across worldspace/cell switches (selection state lives on the
             // control and is cleared on those switches).
-            _selectionHighlight = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SelectionHighlightRenderer12(
+            _selectionHighlight = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.SelectionHighlightRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12);
 
             // WaterRenderer12 doesn't depend on per-ESM data (water height is
             // discovered at LoadData), so we can instantiate up front alongside CellGrid.
-            _water = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.WaterRenderer12(
+            _water = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.WaterRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _cbvSrvUavHeap12, _deletionQueue12)
             {
                 DetailedProfilingEnabled = _profileLogging,
@@ -115,17 +115,17 @@ public sealed partial class WorldView3DControl
             // Real sky-dome NIF renderer — the exterior sky drawn from the climate's own Sky\*.nif
             // (atmosphere gradient + stars + clouds layers) on their authored UVs. Per-layer geometry +
             // textures are loaded from data in EnsureSkyTexturesResolved; reads the shared b3 sky colors.
-            _skyGeometry = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SkyGeometryRenderer12(
+            _skyGeometry = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.SkyGeometryRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _cbvSrvUavHeap12);
 
             // Textured sky billboards — sun (disc + glare) + moon, drawn after the gradient. Uses the
             // shared bindless table (textures resolved per-climate from the terrain texture cache).
-            _skyBillboards = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SkyBillboardRenderer12(
+            _skyBillboards = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.SkyBillboardRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _cbvSrvUavHeap12);
 
             // Navmesh overlay — like water/cellgrid, no per-ESM dependency at construction;
             // the navmesh-by-cell data + spatial index arrive in LoadData via TryBuildCellGrid.
-            _navMesh = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.NavMeshRenderer12(
+            _navMesh = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.NavMeshRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _deletionQueue12)
             {
                 DetailedProfilingEnabled = _profileLogging,
@@ -134,7 +134,7 @@ public sealed partial class WorldView3DControl
             // Collision-cage debug overlay (off by default). Reads collision meshes live from the
             // reference cache (created later in the reference pipeline) via ResolveCollisionMesh; the
             // spatial index arrives in LoadData via TryBuildCellGrid like the other overlays.
-            _collisionDebug = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.CollisionDebugRenderer12(
+            _collisionDebug = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.CollisionDebugRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _deletionQueue12,
                 _referenceEnabledOverrides)
             {
@@ -145,7 +145,7 @@ public sealed partial class WorldView3DControl
 
             // Export framing preview: reuses the collision line shaders (no spatial index needed — it
             // draws the export's world-AABB + a view gizmo from a handful of edges).
-            _exportFraming = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.ExportFramingOverlay(
+            _exportFraming = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ExportFramingOverlay(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12);
 
             // TerrainRenderer12 is instantiated lazily in LoadData (needs the per-ESM

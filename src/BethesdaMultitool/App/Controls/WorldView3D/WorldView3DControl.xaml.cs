@@ -69,17 +69,17 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // The rendering backend is single-backend D3D12 by design — renderer fields are the concrete
     // D3D12 types directly; the I*Renderer interfaces remain (the renderers implement them) but
     // add no indirection here, and no backend-selection abstraction should be reintroduced.
-    private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.CellGridDebugRenderer12? _cellGrid;
-    private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SelectionHighlightRenderer12? _selectionHighlight;
-    private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainRenderer12? _terrain;
-    private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainTextureResolver12? _textureResolver12;
-    private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.WaterRenderer12? _water;
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.CellGridDebugRenderer12? _cellGrid;
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.SelectionHighlightRenderer12? _selectionHighlight;
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.TerrainRenderer12? _terrain;
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.TerrainTextureResolver12? _textureResolver12;
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.WaterRenderer12? _water;
     // Real climate sky-dome NIF renderer — the exterior sky drawn from the game's own Sky\*.nif geometry
     // (atmosphere gradient + stars + clouds layers) on their authored UVs, replacing the procedural dome.
-    private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SkyGeometryRenderer12? _skyGeometry;
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.SkyGeometryRenderer12? _skyGeometry;
     // Textured sky billboards (sun disc + glare, moon). Textures resolved per-climate via the terrain
     // texture cache; uint.MaxValue = SkyBillboardRenderer12.NoTexture (object skipped).
-    private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SkyBillboardRenderer12? _skyBillboards;
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.SkyBillboardRenderer12? _skyBillboards;
     private uint _sunDiscTexIndex = uint.MaxValue;
     private uint _sunGlareTexIndex = uint.MaxValue;
     private uint _moonTexIndex = uint.MaxValue;        // Masser full moon (or the single Fallout moon)
@@ -94,21 +94,21 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private IReadOnlyList<SkyNifTexture>? _skyNifTextures; // cached CLMT MODL NIF harvest
     private string? _skyNifModlKey;                        // mesh path the harvest is for
 
-    private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.NavMeshRenderer12? _navMesh;
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.NavMeshRenderer12? _navMesh;
     // Debug overlay: per-ref walk-mode collision mesh (Havok bhk* where present, else visual fallback)
     // drawn as a green wireframe so the user can compare collision against the rendered meshes.
-    private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.CollisionDebugRenderer12? _collisionDebug;
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.CollisionDebugRenderer12? _collisionDebug;
     // Export-tab framing preview: the captured world bounds + a view-direction gizmo, drawn as a
     // wireframe overlay when the Export tab is up and its "Show framing" toggle is on.
-    private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.ExportFramingOverlay? _exportFraming;
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ExportFramingOverlay? _exportFraming;
     // Placed-object (REFR) rendering pipeline. Parallel to the terrain pipeline; owns separate
     // CPU NIF texture metadata and D3D12 GPU texture payload resolvers.
     private MeshArchiveSet? _meshArchives;
     private NifTextureResolver? _referenceTextureResolver;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.NifGpuTextureResolver? _referenceGpuTextureResolver12;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTextureCache12? _referenceTextureCache12;
-    private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceMeshCache12? _referenceMeshCache12;
-    private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12? _references;
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ReferenceMeshCache12? _referenceMeshCache12;
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ReferenceRenderer12? _references;
     // Per-placement ACTI/REFR Enabled preview overrides. This table is scene-local and keyed by the
     // placed FormID, so changing one selected instance never mutates its parsed/base record or siblings.
     private readonly ReferenceEnabledOverrideStore _referenceEnabledOverrides = new();
@@ -469,10 +469,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                     Log.Info("WorldView3DControl: discovered {0} texture BSA(s) for terrain.", bsas.Length);
                 }
 
-                _textureResolver12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainTextureResolver12(
+                _textureResolver12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.TerrainTextureResolver12(
                     _gpu12, _commandRecorder12!, _cbvSrvUavHeap12!, _deletionQueue12!,
                     _data.LandTexturesByFormId, _data.TextureSetsByFormId, bsas, _data.Game);
-                var terrain12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainRenderer12(
+                var terrain12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.TerrainRenderer12(
                     _gpu12, _commandRecorder12!, _ringBuffer12!, _rootSignature12!,
                     _cbvSrvUavHeap12!, _deletionQueue12!,
                     _textureResolver12);

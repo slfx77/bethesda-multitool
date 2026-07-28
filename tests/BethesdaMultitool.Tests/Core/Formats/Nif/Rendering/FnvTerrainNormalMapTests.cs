@@ -283,10 +283,10 @@ public sealed class FnvTerrainNormalMapTests
     public void PerCellNormalIndicesPreserveDiffuseOffsetsAndStillConsumeOneRingStride()
     {
         var cachedCell = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "CachedCellMesh12.cs");
         var renderer = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "TerrainRenderer12.cs");
         var ring = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
@@ -346,10 +346,10 @@ public sealed class FnvTerrainNormalMapTests
     public void TerrainNormalHostRoutingIsFNVOnlyAndPopulatesEverySlotWithAFlatSafeFallback()
     {
         var resolver = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "TerrainTextureResolver12.cs");
         var renderer = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "TerrainRenderer12.cs");
         var textureCache = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",

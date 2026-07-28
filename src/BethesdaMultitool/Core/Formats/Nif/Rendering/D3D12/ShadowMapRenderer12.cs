@@ -7,7 +7,7 @@ using Vortice.Direct3D12;
 using Vortice.DXGI;
 using Vortice.Mathematics;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>
 ///     Owns the CASCADED directional sun-shadow maps: <see cref="CascadeCount" /> single-sample

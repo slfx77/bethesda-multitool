@@ -1,7 +1,7 @@
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Games;
@@ -97,9 +97,9 @@ public sealed class ClassicSpecularLodTests
     [Fact]
     public void RendererAndShaders_PreserveAbiAndScopeFadeToDirectFnvSunSpecular()
     {
-        var perDrawType = Assert.IsAssignableFrom<Type>(typeof(ReferenceRenderer12).GetNestedType(
+        var perDrawType = Assert.IsAssignableFrom<Type>(typeof(ReferenceRendererConstants12).GetNestedType(
             "PerDrawConstants", BindingFlags.NonPublic));
-        var instanceDrawType = Assert.IsAssignableFrom<Type>(typeof(ReferenceRenderer12).GetNestedType(
+        var instanceDrawType = Assert.IsAssignableFrom<Type>(typeof(ReferenceRendererConstants12).GetNestedType(
             "InstanceDrawConstants", BindingFlags.NonPublic));
         Assert.Equal(256, Marshal.SizeOf(perDrawType));
         Assert.Equal(224, Marshal.OffsetOf(perDrawType, "UvScroll").ToInt32());
@@ -108,10 +108,10 @@ public sealed class ClassicSpecularLodTests
         Assert.Equal(240, RecordFieldOffset(instanceDrawType, "SpecularLodParams"));
 
         var renderer = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
         var rendererConstants = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRendererConstants12.cs");
         var topDown = SourceContract.ReadAppSource("WorldView3DControl.TopDown.cs");
         var directVertex = ReadEmbeddedShader("reference.vert.hlsl");
