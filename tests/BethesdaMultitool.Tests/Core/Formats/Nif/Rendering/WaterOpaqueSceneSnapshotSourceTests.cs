@@ -419,8 +419,6 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
 
     private static string ReadAppSource(string fileName)
     {
-        return SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls",
-            fileName);
+        return SourceContract.ReadAppSource(fileName);
     }
 }

@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -170,8 +171,7 @@ public sealed class SunShadowMathTests
     [Fact]
     public void FrameContract_ProtectsLateShadowAllocations_AndDisablesEmptyCascades()
     {
-        var frame = ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Frame.cs");
+        var frame = SourceContract.ReadAppSource("WorldView3DControl.Frame.cs");
         var shadowMap = ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera",
             "D3D12", "ShadowMapRenderer12.cs");

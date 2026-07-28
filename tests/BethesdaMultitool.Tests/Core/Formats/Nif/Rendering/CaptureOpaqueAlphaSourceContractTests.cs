@@ -17,8 +17,7 @@ public sealed class CaptureOpaqueAlphaSourceContractTests
     [Fact]
     public void PerspectiveCaptureForcesReadbackAlphaOpaque()
     {
-        var capture = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.SceneCapture.cs");
+        var capture = SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs");
         var body = Extract(capture, "internal async Task<byte[]?> Profiler_CaptureSceneAsync(",
             "private RendererProfilerScenarioSnapshot BuildProfilerScenarioSnapshot(");
 

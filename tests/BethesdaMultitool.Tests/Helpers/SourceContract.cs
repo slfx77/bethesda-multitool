@@ -36,6 +36,18 @@ internal static class SourceContract
     /// <summary>Read a shader's source text by bare file name.</summary>
     public static string ReadShaderSource(string fileName) => File.ReadAllText(ShaderPath(fileName));
 
+    /// <summary>The WinUI application source tree (src/BethesdaMultitool/App).</summary>
+    public static string AppRoot => Path.Combine(RepoRoot, "src", "BethesdaMultitool", "App");
+
+    /// <summary>
+    ///     Read an App-layer source file by bare file name, searching every App subdirectory.
+    ///     App uses a single flat namespace, so files move freely between folders; resolving by
+    ///     unique bare file name keeps source pins valid across moves (mirrors
+    ///     <see cref="ReadShaderSource" />).
+    /// </summary>
+    public static string ReadAppSource(string fileName) =>
+        File.ReadAllText(Directory.EnumerateFiles(AppRoot, fileName, SearchOption.AllDirectories).Single());
+
     /// <summary>Assert each value appears in <paramref name="source" /> after the previous one.</summary>
     public static void AssertOrder(string source, params string[] values)
     {

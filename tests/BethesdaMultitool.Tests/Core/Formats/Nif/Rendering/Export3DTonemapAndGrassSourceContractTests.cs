@@ -53,8 +53,7 @@ public sealed class Export3DTonemapAndGrassSourceContractTests
     public void GrassIsAnIndependentExportTabToggleSeededFromTheViewAndReadIntoOptions()
     {
         // The Export tab hosts its own Grass checkbox (independent of the live view).
-        var panelXaml = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DExportPanel.xaml");
+        var panelXaml = SourceContract.ReadAppSource("WorldView3DExportPanel.xaml");
         Assert.Contains("x:Name=\"GrassCheckBox\"", panelXaml, StringComparison.Ordinal);
 
         // The viewer seeds it once from the live grass state, then reads it into Export3DOptions on run.
@@ -76,6 +75,6 @@ public sealed class Export3DTonemapAndGrassSourceContractTests
 
     private static string ReadAppSource(string fileName)
     {
-        return SourceContract.ReadSource("src", "BethesdaMultitool", "App", "Controls", fileName);
+        return SourceContract.ReadAppSource(fileName);
     }
 }

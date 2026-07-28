@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.SpeedTree;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.SpeedTree;
@@ -195,9 +196,7 @@ public sealed class SpeedTreeWindRigTests
         var renderer = File.ReadAllText(Path.Combine(
             root, "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
             "Camera", "D3D12", "ReferenceRenderer12.cs"));
-        var capture = File.ReadAllText(Path.Combine(
-            root, "src", "BethesdaMultitool", "App", "Controls",
-            "WorldView3DControl.SceneCapture.cs"));
+        var capture = SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs");
 
         Assert.Contains("_windRig.Tick(_windStrength", renderer, StringComparison.Ordinal);
         Assert.Contains("_captureWindRig.ResetAndReplayConstantWind", renderer, StringComparison.Ordinal);

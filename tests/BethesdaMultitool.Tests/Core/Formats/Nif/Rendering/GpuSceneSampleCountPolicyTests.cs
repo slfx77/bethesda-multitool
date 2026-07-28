@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -34,24 +35,10 @@ public sealed class GpuSceneSampleCountPolicyTests
     [Fact]
     public void PerspectiveCaptureReportsTheActualTargetSampleCount()
     {
-        var source = File.ReadAllText(Path.Combine(
-            FindRepoRoot(),
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.SceneCapture.cs"));
+        var source = SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs");
 
         Assert.Contains("target.TonemapHistoryResetReason,", source, StringComparison.Ordinal);
         Assert.Contains("int sceneSampleCount)", source, StringComparison.Ordinal);
         Assert.Contains("SceneSampleCount: sceneSampleCount", source, StringComparison.Ordinal);
-    }
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null &&
-               !File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
-        {
-            directory = directory.Parent;
-        }
-
-        return directory?.FullName ?? throw new DirectoryNotFoundException("Repository root not found.");
     }
 }

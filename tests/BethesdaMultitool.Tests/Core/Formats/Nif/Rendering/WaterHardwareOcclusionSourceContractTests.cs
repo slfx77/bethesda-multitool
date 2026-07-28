@@ -79,14 +79,12 @@ public sealed class WaterHardwareOcclusionSourceContractTests
     [Fact]
     public void HostsBindTheReadOnlyDsvWhileWaterSamplesDepth()
     {
-        var frame = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Frame.cs");
+        var frame = SourceContract.ReadAppSource("WorldView3DControl.Frame.cs");
         var liveBranch = Extract(frame, "if (waterUsesDepth)", "visibleWater = _showWater");
         Assert.Contains("cmd.OMSetRenderTargets(sceneRtv, surface.ReadOnlyDepthStencilView);",
             liveBranch, StringComparison.Ordinal);
 
-        var capture = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.SceneCapture.cs");
+        var capture = SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs");
         var captureBranch = Extract(capture, "if (captureWaterUsesDepth)",
             "_water.RenderAtTime(viewProj, cylinder, Vector3.Zero, animationTimeSeconds)");
         Assert.Contains("target.BindColorReadOnlyDepth(cmd);", captureBranch,

@@ -99,8 +99,7 @@ public sealed class TallGrassRenderTelemetryTests
         var renderer = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferenceRenderer12.cs");
-        var capture = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.SceneCapture.cs");
+        var capture = SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs");
         var compactRenderer = string.Concat(renderer.Where(c => !char.IsWhiteSpace(c)));
         var compactCapture = string.Concat(capture.Where(c => !char.IsWhiteSpace(c)));
 

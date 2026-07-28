@@ -36,10 +36,8 @@ public sealed class WaterMsaaDepthPipelineSourceTests
     [Fact]
     public void LiveAndCaptureWaterRoutesPassTheActualDepthSampleCount()
     {
-        var frame = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Frame.cs");
-        var capture = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.SceneCapture.cs");
+        var frame = SourceContract.ReadAppSource("WorldView3DControl.Frame.cs");
+        var capture = SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs");
 
         var liveStart = frame.IndexOf("var waterUsesDepth =", StringComparison.Ordinal);
         var liveEnd = frame.IndexOf(
@@ -74,12 +72,9 @@ public sealed class WaterMsaaDepthPipelineSourceTests
     [Fact]
     public void LiveAndCaptureDepthFactoriesAndTransitionsPreserveTheMsaaViewContract()
     {
-        var lifecycle = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Lifecycle.cs");
-        var frame = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Frame.cs");
-        var capture = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.SceneCapture.cs");
+        var lifecycle = SourceContract.ReadAppSource("WorldView3DControl.Lifecycle.cs");
+        var frame = SourceContract.ReadAppSource("WorldView3DControl.Frame.cs");
+        var capture = SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs");
 
         var liveFactoryStart = lifecycle.IndexOf("private void EnsureDepthSrv()", StringComparison.Ordinal);
         var liveFactoryEnd = lifecycle.IndexOf("private void DisposeRenderResources()", liveFactoryStart,

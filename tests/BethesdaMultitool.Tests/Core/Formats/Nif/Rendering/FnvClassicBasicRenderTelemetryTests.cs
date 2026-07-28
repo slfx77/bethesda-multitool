@@ -100,8 +100,7 @@ public sealed class FnvClassicBasicRenderTelemetryTests
         var renderer = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferenceRenderer12.cs");
-        var frame = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Frame.cs");
+        var frame = SourceContract.ReadAppSource("WorldView3DControl.Frame.cs");
         var compact = string.Concat(renderer.Where(static character => !char.IsWhiteSpace(character)));
         var compactFrame = string.Concat(frame.Where(static character => !char.IsWhiteSpace(character)));
 

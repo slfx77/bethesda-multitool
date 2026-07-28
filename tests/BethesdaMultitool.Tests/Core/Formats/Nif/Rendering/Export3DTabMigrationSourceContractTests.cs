@@ -20,8 +20,7 @@ public sealed class Export3DTabMigrationSourceContractTests
         Assert.Contains("x:Name=\"WorldExportHost\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"WorldExportPresenter\"", xaml, StringComparison.Ordinal);
 
-        var switching = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Tabs", "SingleFileTab.WorldMap.cs");
+        var switching = SourceContract.ReadAppSource("SingleFileTab.WorldMap.cs");
         // The 3-way visibility switch + framing gate + 3D-only seeding.
         Assert.Contains("var export = sender.SelectedItem == WorldPanelExportItem;", switching,
             StringComparison.Ordinal);
@@ -34,20 +33,17 @@ public sealed class Export3DTabMigrationSourceContractTests
     [Fact]
     public void ViewerConstructsAndWiresTheExportPanelAndDropsTheToolbarButton()
     {
-        var ctor = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.xaml.cs");
+        var ctor = SourceContract.ReadAppSource("WorldView3DControl.xaml.cs");
         SourceContract.AssertOrder(
             ctor,
             "ExportPanel = new WorldView3DExportPanel();",
             "WireExportPanel();");
 
         // The old toolbar Export button and its click handler are gone (the tab is the entry point).
-        var viewXaml = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.xaml");
+        var viewXaml = SourceContract.ReadAppSource("WorldView3DControl.xaml");
         Assert.DoesNotContain("x:Name=\"ExportButton\"", viewXaml, StringComparison.Ordinal);
 
-        var run = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.ExportButton.cs");
+        var run = SourceContract.ReadAppSource("WorldView3DControl.ExportButton.cs");
         Assert.DoesNotContain("new MapExport3DDialog", run, StringComparison.Ordinal);
         Assert.DoesNotContain("ExportButton_Click", run, StringComparison.Ordinal);
     }
@@ -55,8 +51,7 @@ public sealed class Export3DTabMigrationSourceContractTests
     [Fact]
     public void RunReadsThePanelAndWritesToTheFolderNameFieldsInsteadOfASavePicker()
     {
-        var panel = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.ExportPanel.cs");
+        var panel = SourceContract.ReadAppSource("WorldView3DControl.ExportPanel.cs");
 
         // Output path comes from the folder + name fields, not a FileSavePicker.
         Assert.Contains("Path.Combine(folder, name + \".png\")", panel, StringComparison.Ordinal);
@@ -71,14 +66,12 @@ public sealed class Export3DTabMigrationSourceContractTests
     [Fact]
     public void FramingOverlayDrawsOnlyWhileTheExportTabIsUpAndTheToggleIsOn()
     {
-        var panel = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.ExportPanel.cs");
+        var panel = SourceContract.ReadAppSource("WorldView3DControl.ExportPanel.cs");
         Assert.Contains(
             "_exportTabSelected && _exportBoundsValid && ExportPanel.ShowFramingToggle.IsOn",
             panel, StringComparison.Ordinal);
 
-        var frame = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Frame.cs");
+        var frame = SourceContract.ReadAppSource("WorldView3DControl.Frame.cs");
         SourceContract.AssertOrder(
             frame,
             "if (ExportFramingVisible && _exportFraming is not null)",
@@ -88,6 +81,6 @@ public sealed class Export3DTabMigrationSourceContractTests
 
     private static string ReadTab(string fileName)
     {
-        return SourceContract.ReadSource("src", "BethesdaMultitool", "App", "Tabs", fileName);
+        return SourceContract.ReadAppSource(fileName);
     }
 }

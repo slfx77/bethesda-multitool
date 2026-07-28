@@ -47,8 +47,7 @@ public sealed class CollisionOverlayLineSourceContractTests
     [Fact]
     public void LiveFrameDrawsCollisionAfterTheTonemapResolveIntoTheLdrBackBuffer()
     {
-        var frame = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Frame.cs");
+        var frame = SourceContract.ReadAppSource("WorldView3DControl.Frame.cs");
 
         // Deliberate ordering (d53867c0): the cage must not feed bloom/eye-adaptation, so it draws
         // into the back buffer AFTER the HDR scene resolves + tonemaps.

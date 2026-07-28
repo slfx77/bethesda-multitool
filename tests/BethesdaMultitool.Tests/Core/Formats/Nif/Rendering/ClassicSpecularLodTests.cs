@@ -113,8 +113,7 @@ public sealed class ClassicSpecularLodTests
         var rendererConstants = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
             "ReferenceRendererConstants12.cs");
-        var topDown = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.TopDown.cs");
+        var topDown = SourceContract.ReadAppSource("WorldView3DControl.TopDown.cs");
         var directVertex = ReadEmbeddedShader("reference.vert.hlsl");
         var instancedVertex = ReadEmbeddedShader("reference_instanced.vert.hlsl");
         var pixel = ReadEmbeddedShader("reference.frag.hlsl");

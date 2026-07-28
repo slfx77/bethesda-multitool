@@ -98,8 +98,7 @@ public sealed class FnvWater001SourceContractTests
         Assert.Contains("HasMixedWaterTypes: false", route, StringComparison.Ordinal);
         Assert.Contains("if (water.Height != planeHeight)", route, StringComparison.Ordinal);
 
-        var host = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Cells.cs");
+        var host = SourceContract.ReadAppSource("WorldView3DControl.Cells.cs");
         Assert.Contains("_water?.SetFnvWaterMaterialCatalog(ResolveFnvWaterMaterialCatalog());",
             host, StringComparison.Ordinal);
         Assert.Contains("foreach (var (formId, water) in _data.WatersByFormId)", host,
@@ -211,8 +210,7 @@ public sealed class FnvWater001SourceContractTests
     [Fact]
     public void LiveAndCaptureRoutesPutWhollyUnderwaterBlendsIntoRefractionSnapshot()
     {
-        var live = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.Frame.cs");
+        var live = SourceContract.ReadAppSource("WorldView3DControl.Frame.cs");
         SourceContract.AssertOrder(
             live,
             "_references.RenderBlendedDeferredBelowWater(partitionedWaterPlaneHeight);",
@@ -229,8 +227,7 @@ public sealed class FnvWater001SourceContractTests
             "else",
             "_references?.RenderBlendedDeferred();");
 
-        var capture = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "App", "Controls", "WorldView3DControl.SceneCapture.cs");
+        var capture = SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs");
         SourceContract.AssertOrder(
             capture,
             "_references.RenderBlendedDeferredBelowWater(captureWaterPlaneHeight);",
