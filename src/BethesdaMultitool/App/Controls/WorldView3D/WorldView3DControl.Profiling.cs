@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 
 namespace BethesdaMultitool;
 

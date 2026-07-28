@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 

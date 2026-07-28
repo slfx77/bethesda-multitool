@@ -2,6 +2,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 

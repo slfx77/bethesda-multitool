@@ -1,5 +1,6 @@
 #if WINDOWS_GUI
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Walk;
 using Windows.System;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;

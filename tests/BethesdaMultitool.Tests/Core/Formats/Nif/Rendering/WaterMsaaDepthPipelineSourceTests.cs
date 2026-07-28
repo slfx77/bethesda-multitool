@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 

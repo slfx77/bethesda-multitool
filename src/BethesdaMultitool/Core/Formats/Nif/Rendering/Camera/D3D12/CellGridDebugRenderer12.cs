@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;

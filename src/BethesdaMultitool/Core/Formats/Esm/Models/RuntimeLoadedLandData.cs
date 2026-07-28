@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Models;
 

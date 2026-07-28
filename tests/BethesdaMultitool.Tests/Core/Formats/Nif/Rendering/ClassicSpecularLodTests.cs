@@ -1,8 +1,8 @@
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Helpers;

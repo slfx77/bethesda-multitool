@@ -1,4 +1,4 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 

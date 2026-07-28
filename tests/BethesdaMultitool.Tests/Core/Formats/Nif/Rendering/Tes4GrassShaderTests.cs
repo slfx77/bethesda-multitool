@@ -1,4 +1,6 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Vegetation;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -149,7 +151,7 @@ public sealed class Tes4GrassShaderTests
         Assert.Contains("profile.TryCompile(consumerName)", factory, StringComparison.Ordinal);
         Assert.Contains("_profile = default;", factory, StringComparison.Ordinal);
         var pair = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Abstractions",
             "GameShaderPair.cs");
         Assert.Contains(
             "catch (Exception ex) when (ex is InvalidOperationException or FileNotFoundException)",

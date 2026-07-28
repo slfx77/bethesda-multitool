@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -44,8 +45,8 @@ public enum StarVisibilityModel
 /// <summary>
 ///     Per-game atmosphere behavior recovered from binaries — the sun-path model, whether the
 ///     sunlight band is modulated by the daylight factor, the <c>fDaytimeColorExtension</c> window
-///     widening, and the star-visibility schedule. Sibling of <see cref="Camera.SkySunProfile" /> /
-///     <see cref="Camera.SkyMoonProfile" />; selected once per resolve by
+///     widening, and the star-visibility schedule. Sibling of <see cref="Atmosphere.SkySunProfile" /> /
+///     <see cref="Atmosphere.SkyMoonProfile" />; selected once per resolve by
 ///     <see cref="AtmosphereState" />. Fields move here only with decompile evidence — a game keeps
 ///     the stand-in/fallback value until its binary is audited.
 /// </summary>

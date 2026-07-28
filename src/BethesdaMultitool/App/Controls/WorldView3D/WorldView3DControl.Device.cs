@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 
 namespace BethesdaMultitool;
 

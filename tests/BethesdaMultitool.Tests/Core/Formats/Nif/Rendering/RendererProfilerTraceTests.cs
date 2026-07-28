@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Text.Json;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using BethesdaMultitool.Core.Games;
 using BethesdaRendererProfiler;
 using Xunit;

@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 
@@ -30,7 +31,7 @@ public sealed partial class WorldView3DControl
     private const int Export3DMaxTileDimension = 2048;
 
     /// <summary>Long-edge cap for a NON-tiled export's single output PNG, rendered internally tiled
-    /// and stitched (<see cref="Core.Formats.Nif.Rendering.Camera.ExportTileStitcher" />). 16384
+    /// and stitched (<see cref="Core.Formats.Nif.Rendering.Export.ExportTileStitcher" />). 16384
     /// matches <see cref="WorldMapExporter" />'s non-tiled cap; the stitched RGBA buffer at this size
     /// is 1 GiB (managed-array ceiling would allow ~23k). Tiled exports have no overall cap.</summary>
     private const int Export3DMaxImageDimension = 16384;

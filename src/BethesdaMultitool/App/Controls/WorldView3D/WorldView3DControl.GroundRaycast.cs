@@ -2,7 +2,9 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Walk;
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool;

@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Numerics;
 using BethesdaMultitool;
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using Windows.Graphics;
 using Windows.UI;
 using Microsoft.UI.Dispatching;

@@ -2,7 +2,6 @@ using System.Numerics;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
 namespace BethesdaMultitool;
 

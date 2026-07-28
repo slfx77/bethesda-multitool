@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Vegetation;
 using SharpGen.Runtime;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
@@ -83,8 +86,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private uint _moonSecundaTexIndex = uint.MaxValue; // Secunda full moon; NoTexture for single-moon games
     // Per-phase moon textures (Morrowind ships 8 per moon: new..full..waning). Index = MoonSky phase 0..7;
     // NoTexture entries (games with no per-phase moon art) fall back to the full-moon index above.
-    private readonly uint[] _moonPhaseTexIndices = new uint[BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.MoonSky.PhaseCount];
-    private readonly uint[] _moonSecundaPhaseTexIndices = new uint[BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.MoonSky.PhaseCount];
+    private readonly uint[] _moonPhaseTexIndices = new uint[BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere.MoonSky.PhaseCount];
+    private readonly uint[] _moonSecundaPhaseTexIndices = new uint[BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere.MoonSky.PhaseCount];
     // (climate, current-weather, outgoing-weather FormIds) the sky topology was resolved for. The
     // continuously changing weather percentage updates retained layer state without recooking the NIFs.
     private (uint Climate, uint Weather, uint OutgoingWeather)? _skyTexKey;
@@ -394,7 +397,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             ? Visibility.Collapsed
             : Visibility.Visible;
         SettingsPanel.GrassCheckBox.Visibility =
-            Core.Formats.Nif.Rendering.Camera.GrassScatterProfile.ForGame(data.Game).Supported
+            Core.Formats.Nif.Rendering.Vegetation.GrassScatterProfile.ForGame(data.Game).Supported
                 ? Visibility.Visible
                 : Visibility.Collapsed;
         // Make the base-object category available to the placement bake before the renderer pulls

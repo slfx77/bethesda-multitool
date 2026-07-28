@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using BethesdaMultitool;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using WinRT;

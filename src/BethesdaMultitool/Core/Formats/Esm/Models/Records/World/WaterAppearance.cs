@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
 /// <summary>

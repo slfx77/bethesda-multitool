@@ -4,6 +4,8 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Walk;
 using BethesdaMultitool.Core.Games;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;

@@ -1,4 +1,6 @@
 // ShaderMacro lives in Vortice.Direct3D (Vortice.DirectX), NOT Vortice.D3DCompiler.
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Vegetation;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using Vortice.Direct3D;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;

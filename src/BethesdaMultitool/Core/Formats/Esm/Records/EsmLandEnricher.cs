@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Esm.Parsing.Subrecords;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Terrain;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Records;
 

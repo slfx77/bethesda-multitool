@@ -1,7 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using WaterRenderer12 = BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.WaterRenderer12;
@@ -183,15 +183,15 @@ public sealed partial class WorldView3DControl
             _data.Game == BethesdaMultitool.Core.Games.BethesdaGame.Oblivion &&
             frameRole == LegacySurfaceFrameRole.GlobalNormal)
         {
-            var synthesized = BethesdaMultitool.Core.Formats.Nif.Rendering.Camera
+            var synthesized = BethesdaMultitool.Core.Formats.Nif.Rendering.Water
                 .OblivionWaterSurfaceSynthesizer.GenerateFrames();
             for (var i = 0; i < synthesized.Length; i++)
             {
                 frames.Add(_textureResolver12.GetOrCreateSyntheticBindlessIndex(
                     $"synthetic:oblivion-water-surface:{i:D2}",
-                    BethesdaMultitool.Core.Formats.Nif.Rendering.Camera
+                    BethesdaMultitool.Core.Formats.Nif.Rendering.Water
                         .OblivionWaterSurfaceSynthesizer.TextureSize,
-                    BethesdaMultitool.Core.Formats.Nif.Rendering.Camera
+                    BethesdaMultitool.Core.Formats.Nif.Rendering.Water
                         .OblivionWaterSurfaceSynthesizer.TextureSize,
                     synthesized[i]));
             }

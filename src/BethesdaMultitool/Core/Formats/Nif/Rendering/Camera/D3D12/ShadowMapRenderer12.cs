@@ -1,6 +1,7 @@
 #if WINDOWS_GUI
 using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using Vortice.Direct3D12;
 using Vortice.DXGI;

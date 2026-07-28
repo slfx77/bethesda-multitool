@@ -1,6 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Walk;
 using Xunit;
 using Xunit.Sdk;
 

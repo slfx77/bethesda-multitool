@@ -1,6 +1,7 @@
 #if WINDOWS_GUI
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Vegetation;
 using Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
