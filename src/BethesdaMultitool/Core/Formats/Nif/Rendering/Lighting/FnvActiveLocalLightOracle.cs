@@ -1,6 +1,7 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using System.Numerics;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 
 /// <summary>
 ///     Non-runtime CPU oracle for the recovered FNV active local-light passes. Pass ID 220

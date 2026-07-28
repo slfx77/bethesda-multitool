@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Dds;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 using BethesdaMultitool.Tests.Helpers;

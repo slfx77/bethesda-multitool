@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 
 /// <summary>
 ///     Resolves the separate FO3/FNV <c>BSShaderPPLightingProperty</c> environment pass.

@@ -1,7 +1,7 @@
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 
 /// <summary>
 ///     Texture sampling utilities for scanline rasterization: bilinear/nearest sampling,

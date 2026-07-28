@@ -1,9 +1,10 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Games;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 
 /// <summary>
 ///     A placed LIGH emitter baked from a REFR independently of its optional renderable model.

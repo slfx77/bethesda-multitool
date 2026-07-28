@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 
 /// <summary>
 ///     Shared rendering constants: SKIN2000.pso-accurate lighting parameters

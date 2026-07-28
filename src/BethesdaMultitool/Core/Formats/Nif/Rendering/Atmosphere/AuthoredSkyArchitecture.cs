@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core.Games;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 
 /// <summary>
 ///     Opt-in boundary for authored-sky architectural replacements. Weather parsing, semantic

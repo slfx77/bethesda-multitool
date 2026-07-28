@@ -1,7 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 
 /// <summary>
 ///     Immutable triangle geometry for a NIF <c>WaterShaderProperty</c> surface. The retail FNV

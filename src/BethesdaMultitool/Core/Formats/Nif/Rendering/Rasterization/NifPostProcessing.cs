@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 
 /// <summary>Software post-processing passes applied to a rendered sprite buffer (e.g. emissive bloom).</summary>
 internal static class NifPostProcessing

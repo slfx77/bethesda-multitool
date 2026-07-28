@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
 using System.Numerics;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 
 /// <summary>
 ///     Non-runtime CPU oracle for the recovered FNV property-light influence, final geometry-bound

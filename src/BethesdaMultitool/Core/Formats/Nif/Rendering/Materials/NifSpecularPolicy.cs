@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 
 /// <summary>
 ///     Resolves whether a decoded NIF submesh can enter the viewer's sun-specular shader branch.

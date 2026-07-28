@@ -1,5 +1,7 @@
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Orchestration;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;

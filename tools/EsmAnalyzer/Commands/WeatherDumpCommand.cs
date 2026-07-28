@@ -1,5 +1,6 @@
 using System.CommandLine;
 using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;

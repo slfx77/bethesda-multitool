@@ -1,4 +1,6 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -23,7 +25,7 @@ public sealed class FnvActiveLocalLightOracleTests
         var sourceRoot = Path.Combine(root, "src");
         var oraclePath = Path.GetFullPath(Path.Combine(
             root,
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Lighting",
             "FnvActiveLocalLightOracle.cs"));
         var productionSources = Directory
             .EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories)
@@ -45,7 +47,7 @@ public sealed class FnvActiveLocalLightOracleTests
             .ToArray();
         var basePolicy = File.ReadAllText(Path.Combine(
             sourceRoot,
-            "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
+            "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Lighting",
             "FnvActiveAdtBasePolicy.cs"));
 
         Assert.Empty(routeConsumers);

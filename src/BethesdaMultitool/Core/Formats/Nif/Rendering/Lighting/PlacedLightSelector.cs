@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 
 /// <summary>Per-cell local-light cap policy shared by the live upload path and unit tests.</summary>
 internal static class PlacedLightSelector

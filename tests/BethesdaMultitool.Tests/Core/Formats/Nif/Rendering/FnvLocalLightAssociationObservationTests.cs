@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -75,7 +76,7 @@ public sealed class FnvLocalLightAssociationObservationTests
         var contractPath = Path.GetFullPath(Path.Combine(
             sourceRoot,
             "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
-            "FnvLocalLightAssociationObservation.cs"));
+            "Lighting", "FnvLocalLightAssociationObservation.cs"));
         var consumers = Directory
             .EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories)
             .Where(path => Path.GetExtension(path) is ".cs" or ".hlsl")

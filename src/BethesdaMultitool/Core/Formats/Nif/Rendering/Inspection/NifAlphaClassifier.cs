@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Dds;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 

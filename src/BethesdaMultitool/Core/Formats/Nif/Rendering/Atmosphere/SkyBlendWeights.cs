@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 
 /// <summary>
 ///     CPU reference-facing form of the recovered FO3/FNV SKY vertex-shader blend contract. Vertex RGB

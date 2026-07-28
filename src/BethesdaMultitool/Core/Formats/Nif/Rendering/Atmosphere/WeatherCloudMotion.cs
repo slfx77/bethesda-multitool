@@ -2,7 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Games;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 
 /// <summary>Resolves authored WTHR cloud motion, including engine-defined legacy defaults.</summary>
 internal static class WeatherCloudMotion

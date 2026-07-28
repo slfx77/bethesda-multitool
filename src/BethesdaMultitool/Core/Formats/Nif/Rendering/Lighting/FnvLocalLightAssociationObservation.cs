@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 
 /// <summary>
 ///     How much retail association evidence is known for one placed geometry/source-shape pair.

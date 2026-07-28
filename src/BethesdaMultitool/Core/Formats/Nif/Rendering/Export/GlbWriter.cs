@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using System.Numerics;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;

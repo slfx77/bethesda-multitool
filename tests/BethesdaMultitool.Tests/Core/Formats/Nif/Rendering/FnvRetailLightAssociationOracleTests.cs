@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -110,7 +111,7 @@ public sealed class FnvRetailLightAssociationOracleTests
         var sourceRoot = Path.Combine(root, "src");
         var oraclePath = Path.GetFullPath(Path.Combine(
             sourceRoot,
-            "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
+            "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Lighting",
             "FnvRetailLightAssociationOracle.cs"));
         var consumers = Directory
             .EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories)

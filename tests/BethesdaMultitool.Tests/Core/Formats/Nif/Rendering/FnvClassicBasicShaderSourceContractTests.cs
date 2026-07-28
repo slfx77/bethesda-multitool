@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -9,7 +11,7 @@ public sealed class FnvClassicBasicShaderSourceContractTests
     public void DormantPs1RouteFailsClosedAndBothReferenceDrawPathsShareTheGate()
     {
         var policy = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Materials",
             "FnvClassicBasicShaderPolicy.cs");
         var renderer = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",
@@ -123,7 +125,7 @@ public sealed class FnvClassicBasicShaderSourceContractTests
     public void EligibilityExcludesNeighboringMaterialFamiliesBeforePersistence()
     {
         var policy = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Materials",
             "FnvClassicBasicShaderPolicy.cs");
         var decoder = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Camera", "D3D12",

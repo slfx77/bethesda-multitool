@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 
 /// <summary>
 ///     Selects the simple FO3/FNV PP-lighting parallax permutation. Bit 28 is the separate

@@ -1,3 +1,6 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
+
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 
 /// <summary>

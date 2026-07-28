@@ -2,7 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Games;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 
 /// <summary>
 ///     One recovered weather-transition view of an authored cloud source layer. Skyrim integrates a

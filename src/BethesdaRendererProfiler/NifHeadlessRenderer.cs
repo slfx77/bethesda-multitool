@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;

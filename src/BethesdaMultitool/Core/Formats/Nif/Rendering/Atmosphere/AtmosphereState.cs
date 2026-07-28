@@ -3,7 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Games;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 
 /// <summary>
 ///     Resolves the scene "atmosphere" — sun direction plus sky / ambient / fog colors — from a game

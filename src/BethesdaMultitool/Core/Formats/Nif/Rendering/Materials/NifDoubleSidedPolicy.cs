@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 
 /// <summary>Combines legacy stencil state with the Skyrim-family shader-property cull flag.</summary>
 internal static class NifDoubleSidedPolicy

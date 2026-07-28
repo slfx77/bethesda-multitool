@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 
 /// <summary>
 ///     CPU-only planning for a back-to-front blended list when the transient draw budget cannot hold

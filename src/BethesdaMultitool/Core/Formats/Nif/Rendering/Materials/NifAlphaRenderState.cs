@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 
 /// <summary>Resolved transparency state for a NIF shape: render mode plus the raw NiAlphaProperty blend/test fields and material alpha.</summary>
 internal readonly record struct NifAlphaRenderState(

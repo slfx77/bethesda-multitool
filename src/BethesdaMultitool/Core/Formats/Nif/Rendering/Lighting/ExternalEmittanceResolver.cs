@@ -1,7 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 
 /// <summary>Resolves REFR XEMI targets and applies the recovered effect-shader color blend.</summary>
 internal static class ExternalEmittanceResolver

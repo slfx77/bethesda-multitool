@@ -1,7 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 
-namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 
 /// <summary>
 ///     Classifies the bounded PC-final FNV PS1 basic bump-lighting family recovered as
