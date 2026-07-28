@@ -1,4 +1,4 @@
-using EsmAnalyzer.Commands;
+using EsmAnalyzer.Commands.OpenMwParity;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Tools.EsmAnalyzer;

@@ -1,4 +1,14 @@
 using EsmAnalyzer.Commands;
+using EsmAnalyzer.Commands.Audits;
+using EsmAnalyzer.Commands.DialogueVoice;
+using EsmAnalyzer.Commands.Dmp;
+using EsmAnalyzer.Commands.Dump;
+using EsmAnalyzer.Commands.Ofst;
+using EsmAnalyzer.Commands.OpenMwParity;
+using EsmAnalyzer.Commands.Records;
+using EsmAnalyzer.Commands.SpeedTree;
+using EsmAnalyzer.Commands.Terrain;
+using EsmAnalyzer.Commands.Toft;
 using Spectre.Console;
 using System.CommandLine;
 

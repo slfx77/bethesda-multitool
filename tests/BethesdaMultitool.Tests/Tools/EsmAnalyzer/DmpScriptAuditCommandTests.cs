@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
-using EsmAnalyzer.Commands;
+using EsmAnalyzer.Commands.Audits;
+using EsmAnalyzer.Commands.Dmp;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Tools.EsmAnalyzer;

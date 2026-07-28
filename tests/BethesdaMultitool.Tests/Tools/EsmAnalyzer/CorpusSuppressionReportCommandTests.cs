@@ -1,5 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
-using EsmAnalyzer.Commands;
+using EsmAnalyzer.Commands.Audits;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Tools.EsmAnalyzer;
