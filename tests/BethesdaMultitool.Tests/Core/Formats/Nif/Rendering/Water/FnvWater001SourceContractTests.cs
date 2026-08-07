@@ -572,6 +572,43 @@ public sealed class FnvWater001SourceContractTests
             live, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    ///     The 2D map's top-down overlay must UNBIND the planar sky reflection before drawing water.
+    ///     <para>
+    ///         <c>WaterRenderer12.SetWaterReflection</c> state PERSISTS across frames — both the
+    ///         bindless index and the scene width/height the shader divides <c>SV_Position</c> by are
+    ///         owned by the live frame path. The reflection lookup itself
+    ///         (<c>water_common.hlsli</c>'s <c>SampleSkyReflection</c>) is SCREEN-SPACE, so it is only
+    ///         valid for the camera that rendered the target. The overlay renders through the same
+    ///         D3D12 stack under an ORTHOGRAPHIC top-down projection, so leaving the live window's
+    ///         binding in place stretched its mirrored sky affinely across whatever world rectangle the
+    ///         map was showing — the reflection's world-space feature size tracked 1/zoom, and the
+    ///         width mismatch pushed most of the map into the target's clamped edge texel.
+    ///     </para>
+    ///     <para>
+    ///         Unlike the capture path this must NOT render its own reflection: under a parallel
+    ///         top-down view a planar mirror reflects the zenith for every pixel, so a mirrored-camera
+    ///         target is degenerate. Unbinding restores the direction-based gradient, which depends only
+    ///         on the world normal and view vector and is therefore zoom-invariant.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void TopDownOverlayUnbindsTheLivePlanarReflectionBeforeDrawingWater()
+    {
+        var topDown = SourceContract.ReadAppSource("WorldView3DControl.TopDown.cs");
+
+        SourceContract.AssertOrder(
+            topDown,
+            "_water.SetNifWaterPlanes(",
+            "_water.SetWaterReflection(null, 0, 0)",
+            "_water.Render(viewProj, cylinder)");
+
+        // Nobody may "fix" this later by binding the live SRV with corrected dimensions: the target
+        // itself is the wrong image for a parallel projection, not merely the wrong scale.
+        Assert.DoesNotContain(
+            "TryRenderCaptureWaterReflection", topDown, StringComparison.Ordinal);
+    }
+
     private static string ReadShader()
     {
         return SourceContract.ReadShaderSource("water_fnv001.frag.hlsl");

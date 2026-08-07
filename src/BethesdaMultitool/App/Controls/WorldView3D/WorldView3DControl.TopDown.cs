@@ -179,6 +179,23 @@ public sealed partial class WorldView3DControl
                     // are unused without the SRV soft-fade.
                     _water.SetNifWaterPlanes(_references.NifWaterPlanes);
                     _water.SetSceneDepth(NoDepthSrv, _camera.NearPlane, _camera.FarPlane);
+                    // Clear the LIVE window's planar sky-reflection binding, for the same reason
+                    // SceneCapture does (see WorldView3DControl.SceneCapture.cs): the reflection is a
+                    // SCREEN-SPACE lookup (water_common.hlsli's SampleSkyReflection divides
+                    // SV_Position by the scene dimensions the live frame uploaded), and both the
+                    // bindless index and those dimensions PERSIST across frames on the water renderer.
+                    // Left bound, this overlay would sample the live perspective window's mirrored sky
+                    // at the live window's scale — stretched affinely across whatever world rectangle
+                    // the map is showing, so the reflection's world-space feature size tracked 1/zoom.
+                    // Unlike the capture path we do NOT render our own: this view is ORTHOGRAPHIC and
+                    // top-down, where a planar mirror reflects the zenith for every pixel, so a
+                    // mirrored-camera target carries no information a parallel projection can use.
+                    // Unbinding falls back to the direction-based sky gradient (lerp(skyHorizon,
+                    // skyTop, saturate(R.z)) with R = reflect(-V, N)), which depends only on the
+                    // world-space normal and view vector and is therefore zoom- and
+                    // resolution-invariant. No restore is needed: the live frame re-supplies the
+                    // binding unconditionally every frame.
+                    _water.SetWaterReflection(null, 0, 0);
                     _water.Render(viewProj, cylinder);
                 }
                 target.RecordReadback(cmd);

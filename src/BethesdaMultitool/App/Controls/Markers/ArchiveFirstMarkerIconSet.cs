@@ -32,7 +32,7 @@ internal sealed class ArchiveFirstMarkerIconSet : IMapMarkerIconSet
         {
             var loaded = provider.Resolve(entry, payload =>
             {
-                var bitmap = TryCreateBitmap(resourceCreator, payload);
+                var bitmap = TryCreateBitmap(game, resourceCreator, payload);
                 return bitmap is null ? null : new LoadedIcon(bitmap, payload.Source);
             });
             if (loaded is null)
@@ -74,7 +74,24 @@ internal sealed class ArchiveFirstMarkerIconSet : IMapMarkerIconSet
         _icons.Clear();
     }
 
+    /// <summary>
+    ///     True for games whose retail marker DDS carries transparent padding the draw path would
+    ///     otherwise normalize over, shrinking the visible glyph.
+    ///     <para>
+    ///         Scoped to FO3/FNV deliberately, per the project's per-game-explicit-switch rule.
+    ///         Oblivion takes the SAME archive-DDS branch (11/11 catalog paths resolve against a real
+    ///         install), but its padding is unmeasured, its parchment tiles are not guaranteed square —
+    ///         so a trim could change <c>iconAspect</c>, which is inert for FNV's square icons but not
+    ///         for Oblivion's — and its <c>MarkerIconScale = 1.5</c> / <c>MarkerMinScreenScale = 0.55</c>
+    ///         were hand-tuned against the embedded 32×32 PNG thirteen days BEFORE it moved to archive
+    ///         DDS. Widen this only after measuring the Oblivion art.
+    ///     </para>
+    /// </summary>
+    private static bool TrimsArchiveIconPadding(BethesdaGame game) =>
+        game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas;
+
     private static CanvasBitmap? TryCreateBitmap(
+        BethesdaGame game,
         ICanvasResourceCreator resourceCreator,
         MapMarkerIconPayload payload)
     {
@@ -88,12 +105,26 @@ internal sealed class ArchiveFirstMarkerIconSet : IMapMarkerIconSet
                     return null;
                 }
 
-                var premultiplied = MapMarkerIconPixels.PremultiplyRgba(decoded.Pixels);
+                // Trim the retail icon's transparent border so the bitmap's own SizeInPixels becomes the
+                // corrected source of truth. Every consumer — live draw, PNG export, hover/selection
+                // outline, hit radius, accessibility bounds — already sizes off that, so nothing
+                // downstream needs to change. Embedded fallback art is already tight, so restrict this
+                // to archive payloads.
+                var pixels = decoded.Pixels;
+                var width = decoded.Width;
+                var height = decoded.Height;
+                if (payload.Source == MapMarkerIconPayloadSource.GameArchive &&
+                    TrimsArchiveIconPadding(game))
+                {
+                    (pixels, width, height) = MapMarkerIconPixels.CropToOpaqueBounds(pixels, width, height);
+                }
+
+                var premultiplied = MapMarkerIconPixels.PremultiplyRgba(pixels);
                 return CanvasBitmap.CreateFromBytes(
                     resourceCreator,
                     premultiplied,
-                    decoded.Width,
-                    decoded.Height,
+                    width,
+                    height,
                     DirectXPixelFormat.R8G8B8A8UIntNormalized);
             }
 

@@ -739,8 +739,19 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         DisposeMarkerIcons();
     }
 
-    /// <summary>Invalidates any in-flight async build without necessarily clearing the current layer.</summary>
-    private void InvalidateWorldBitmap(bool keepCurrentBitmap)
+    /// <summary>
+    ///     Invalidates any in-flight async build without necessarily clearing the current layer.
+    ///     <para>
+    ///         <paramref name="dropWorldWater" /> exists because the world-water layer is keyed on the
+    ///         WORLDSPACE and is built colour-complete regardless of the water toggle, so only a
+    ///         worldspace switch invalidates it. Rebuilds triggered by TERRAIN SHADING (the vertex-colour
+    ///         and hillshade checkboxes, which are visible only on the Terrain Textures layer) must pass
+    ///         <c>false</c>: dropping it there re-kicked a second full-worldspace heightmap pass on a
+    ///         background core, concurrently with the terrain aggregate's own — for a change that has
+    ///         nothing to do with water.
+    ///     </para>
+    /// </summary>
+    private void InvalidateWorldBitmap(bool keepCurrentBitmap, bool dropWorldWater = true)
     {
         CancelTerrainStream();
         _worldHeightmapBuildVersion++;
@@ -750,7 +761,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _terrainTextureViewportKey = null;
         if (!keepCurrentBitmap)
         {
-            ClearWorldBitmaps();
+            ClearWorldBitmaps(dropWorldWater);
         }
     }
 
@@ -786,7 +797,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         ClearWorldBitmaps();
     }
 
-    private void ClearWorldBitmaps()
+    private void ClearWorldBitmaps(bool dropWorldWater = true)
     {
         _terrainTextureViewportKey = null;
         _pendingCellApplies.Clear();
@@ -801,10 +812,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _terrainAggregateVersion++;
         // World water layer is worldspace-specific (not layer/water-toggle specific); drop it so a
         // worldspace switch rebuilds it. The version bump drops any in-flight build's result.
-        _worldWaterBitmap?.Dispose();
-        _worldWaterBitmap = null;
-        _worldWaterWorldspaceFormId = null;
-        _worldWaterVersion++;
+        // Because it is worldspace-keyed, a SHADING rebuild must NOT drop it — see the
+        // dropWorldWater note on InvalidateWorldBitmap.
+        if (dropWorldWater)
+        {
+            _worldWaterBitmap?.Dispose();
+            _worldWaterBitmap = null;
+            _worldWaterWorldspaceFormId = null;
+            _worldWaterVersion++;
+        }
         _worldHeightmapBitmap?.Dispose();
         _worldHeightmapBitmap = null;
         if (_layerCellBitmaps is not null)

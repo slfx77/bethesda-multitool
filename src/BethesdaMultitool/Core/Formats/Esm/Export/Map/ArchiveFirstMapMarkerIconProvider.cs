@@ -296,6 +296,76 @@ internal sealed class ArchiveFirstMapMarkerIconProvider : IDisposable
 /// <summary>Pixel helpers shared by the archive materializer and pure tests.</summary>
 internal static class MapMarkerIconPixels
 {
+    /// <summary>
+    ///     Crops straight (non-premultiplied) RGBA to the bounding box of its non-transparent texels.
+    ///     <para>
+    ///         Retail FO3/FNV ship each map marker as a 64×64 DDS whose ink occupies only a centred
+    ///         35×35 box (measured across all 15 FNV and all 15 FO3 icons: fill 0.547). The bundled PNGs
+    ///         they replaced were 35×35 with ink filling the whole image, and every downstream consumer
+    ///         normalizes the drawn height over the FULL source extent — so moving to archive art shrank
+    ///         the visible glyph to 0.547× linear (16.0 → 8.75 DIP) at every zoom.
+    ///     </para>
+    ///     <para>
+    ///         The engine crops rather than scales: FNV's <c>MapMarkerTemplate</c> in
+    ///         <c>menus\main\map_menu.xml</c> sets <c>zoom = width/34*100</c> and
+    ///         <c>cropx = cropy = zoom/100*14</c>, i.e. 14 texels off each edge of the 64×64 to display
+    ///         the centred 34×34 window. Deriving the box from the art rather than hard-coding 14 keeps
+    ///         this correct for mods that ship differently-padded icons.
+    ///     </para>
+    ///     <para>
+    ///         Returns the source array REFERENCE-EQUAL when the ink already touches every edge or when
+    ///         nothing clears <paramref name="alphaThreshold" />, so callers can cheaply detect a no-op
+    ///         and so a fully transparent icon is never cropped to zero.
+    ///     </para>
+    /// </summary>
+    /// <param name="alphaThreshold">
+    ///     Minimum alpha counted as ink. 8 mirrors the hard-transparent cutoff the texture decoder
+    ///     already uses for cutout detection, so a DXT1 punch-through fringe does not defeat the trim.
+    /// </param>
+    internal static (byte[] Pixels, int Width, int Height) CropToOpaqueBounds(
+        byte[] straightRgba, int width, int height, byte alphaThreshold = 8)
+    {
+        if (width <= 0 || height <= 0 || straightRgba.Length < width * height * 4)
+        {
+            return (straightRgba, width, height);
+        }
+
+        int minX = width, minY = height, maxX = -1, maxY = -1;
+        for (var y = 0; y < height; y++)
+        {
+            var row = y * width * 4;
+            for (var x = 0; x < width; x++)
+            {
+                if (straightRgba[row + x * 4 + 3] < alphaThreshold) continue;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+
+        // Fully transparent, or already tight against all four edges — nothing to do either way.
+        if (maxX < 0 || (minX == 0 && minY == 0 && maxX == width - 1 && maxY == height - 1))
+        {
+            return (straightRgba, width, height);
+        }
+
+        var croppedWidth = maxX - minX + 1;
+        var croppedHeight = maxY - minY + 1;
+        var cropped = new byte[croppedWidth * croppedHeight * 4];
+        for (var y = 0; y < croppedHeight; y++)
+        {
+            Buffer.BlockCopy(
+                straightRgba,
+                ((minY + y) * width + minX) * 4,
+                cropped,
+                y * croppedWidth * 4,
+                croppedWidth * 4);
+        }
+
+        return (cropped, croppedWidth, croppedHeight);
+    }
+
     /// <summary>Returns a premultiplied RGBA copy suitable for Win2D's default alpha mode.</summary>
     internal static byte[] PremultiplyRgba(byte[] straightRgba)
     {

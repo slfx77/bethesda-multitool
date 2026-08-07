@@ -203,7 +203,12 @@ public sealed partial class WorldMapControl
     /// </summary>
     private void RebuildForShadingChange()
     {
-        InvalidateWorldBitmap(keepCurrentBitmap: false);
+        // dropWorldWater:false — shading is baked into the TERRAIN caches only. The world-water layer
+        // is worldspace-keyed and built colour-complete regardless of the water toggle, so dropping it
+        // here re-kicked a full-worldspace water pass alongside the terrain aggregate's own, for a
+        // change with no water dependency. The ShadingMenu is visible only on Terrain Textures, so
+        // this is the first thing a user clicks after switching to that layer.
+        InvalidateWorldBitmap(keepCurrentBitmap: false, dropWorldWater: false);
         if (_cellHeightmapBitmap is not null && _state.SelectedCell is not null)
         {
             RebuildCellDetailBitmaps(_state.SelectedCell);

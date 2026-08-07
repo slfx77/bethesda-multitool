@@ -605,9 +605,32 @@ internal sealed class DecodedTerrainCell
         FromEsmHeightmap = fromEsmHeightmap;
         FromRuntimeTerrain = fromRuntimeTerrain;
         MissingTerrain = missingTerrain;
+        // Lowest vertex on the SAME 33×33 grid the water masks sample (Morrowind's native 65×65 is
+        // already downsampled by then), so the dry-cell early-outs below are exact rather than
+        // conservative. Non-finite heights appear in runtime-DMP terrain; treat any as "unknown" by
+        // falling to NegativeInfinity, which disables the early-out instead of silently dropping water.
+        var minHeight = float.PositiveInfinity;
+        foreach (var h in heights)
+        {
+            if (!float.IsFinite(h))
+            {
+                minHeight = float.NegativeInfinity;
+                break;
+            }
+            if (h < minHeight) minHeight = h;
+        }
+        MinHeight = heights.Length == 0 ? float.NegativeInfinity : minHeight;
     }
 
     internal float[] Heights { get; }
+
+    /// <summary>
+    ///     Lowest height on the 33×33 grid, or <see cref="float.NegativeInfinity" /> when there is no
+    ///     terrain or any vertex is non-finite. Lets the water-mask builders reject a cell that lies
+    ///     entirely above the waterline without touching a single output pixel — the dominant cost of
+    ///     the 2D map's terrain-textures layer, which samples up to 1,056² per cell.
+    /// </summary>
+    internal float MinHeight { get; }
     internal byte[]? LowResWaterMask { get; private set; }
     internal bool FromEsmHeightmap { get; }
     internal bool FromRuntimeTerrain { get; }
@@ -666,6 +689,13 @@ internal sealed class DecodedTerrainCell
         {
             return null;
         }
+
+        // Dry-cell early-out, same argument as GetHiResWaterMask but against this path's STRICT `<`
+        // test: no vertex can satisfy HeightAt < waterH, so the mask is all-zero and the box blur of an
+        // all-zero mask is all-zero — equivalent to null for every consumer. Skips the allocation and
+        // the cache entry; the only observable difference is that LowResWaterMask (and therefore
+        // EstimatedBytes) stays null for dry cells, which is the more accurate figure anyway.
+        if (MinHeight >= effectiveWaterHeight.Value) return null;
 
         var key = BitConverter.SingleToInt32Bits(effectiveWaterHeight.Value);
         lock (_waterMaskByHeightBits)
@@ -736,6 +766,15 @@ internal sealed class DecodedTerrainCell
         if (pixelsPerCell < 2) return null;
 
         var waterH = effectiveWaterHeight.Value;
+        // Dry-cell early-out. Every output pixel's height is a bilinear blend of four grid vertices, so
+        // h >= MinHeight everywhere; if even the lowest vertex sits at or above the top of the fade band
+        // then t <= 0 for every pixel and the mask is all-zero. An all-zero mask is ALREADY equivalent to
+        // null downstream (WriteWaterTilePixels returns false -> BuildCellWaterTile returns null;
+        // ApplyCellWaterOverlay no-ops on null), so this is output-identical — it just skips
+        // pixelsPerCell² bilinear samples and a pixelsPerCell² allocation per cell per call. At the
+        // texture layer's 1,056 px/cell that is ~1.1M iterations and ~1 MB of LOH churn saved for every
+        // dry cell, which is all of them across a desert worldspace.
+        if (MinHeight >= waterH + shorelineSoftnessUnits) return null;
         const byte InteriorIntensity = 180;
         var twoSoft = 2f * shorelineSoftnessUnits;
         var span = (float)(GridSize - 1); // 32 quad-spaces across the cell
@@ -792,6 +831,21 @@ internal sealed class DecodedTerrainCell
             return null;
         }
         var waterH = effectiveWaterHeight.Value;
+
+        // Dry-cell early-out. Unlike the single-cell paths this must also clear the NEIGHBORS, because
+        // the 3×3 blur pulls their border rows in: a dry cell beside a submerged one still needs its
+        // shoreline fade. Only terrain-BEARING neighbors can contribute (the else branches copy this
+        // cell's own edge row when a neighbor is null or terrain-less), and MinHeight is
+        // NegativeInfinity for those, so `HasTerrain &&` keeps a terrain-less neighbor from forcing the
+        // slow path — while a genuinely lower neighbor still does.
+        static bool NeighborCanWet(DecodedTerrainCell? n, float waterHeight) =>
+            n is { HasTerrain: true } && n.MinHeight < waterHeight;
+        if (self.MinHeight >= waterH &&
+            !NeighborCanWet(north, waterH) && !NeighborCanWet(south, waterH) &&
+            !NeighborCanWet(east, waterH) && !NeighborCanWet(west, waterH))
+        {
+            return null;
+        }
 
         const int N = GridSize;      // 33
         const int E = N + 2;         // 35 — 1 vertex of context per side
