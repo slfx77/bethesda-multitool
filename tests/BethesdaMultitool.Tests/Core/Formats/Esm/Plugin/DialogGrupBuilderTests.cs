@@ -132,6 +132,86 @@ public sealed class DialogGrupBuilderTests
     }
 
     [Fact]
+    public void BuildDialogSection_RecoversOrphanInfoViaUniqueRawParentTopic()
+    {
+        // USER POLICY 2026-08-03 (recover, don't orphan): the runtime topic attribution is
+        // missing, but raw type-7 ancestry names exactly one emittable parent — adopt it.
+        const uint sourceTopic = 0x00120030;
+        const uint sourceInfo = 0x00120031;
+        var stats = new ConversionPipelineStats();
+
+        var result = DialogGrupBuilder.BuildDialogSection(
+            [
+                new DialogTopicRecord
+                {
+                    FormId = sourceTopic,
+                    EditorId = "RawAncestryTopic",
+                    QuestFormId = ProducerQuest,
+                    TopicType = 0
+                }
+            ],
+            [
+                new DialogueRecord
+                {
+                    FormId = sourceInfo,
+                    TopicFormId = null,
+                    RawParentTopicFormIds = [sourceTopic],
+                    QuestFormId = ProducerQuest,
+                    Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Recovered line." }]
+                }
+            ],
+            new NewVsOverrideClassifier([ProducerQuest]),
+            new FormIdAllocator(),
+            [ProducerQuest],
+            new Dictionary<uint, ParsedMainRecord>(),
+            stats,
+            NullConversionProgressSink.Instance,
+            new Dictionary<uint, uint>(),
+            []);
+
+        Assert.True(result.NewInfoSourceToAllocated.ContainsKey(sourceInfo));
+        Assert.Equal(1, stats.EmittedByType["INFO"]);
+    }
+
+    [Fact]
+    public void BuildDialogSection_DoesNotGuessBetweenAmbiguousRawParents()
+    {
+        // Two raw candidates BOTH resolve — the model forbids guessing; the INFO stays orphaned.
+        const uint topicA = 0x00120040;
+        const uint topicB = 0x00120041;
+        const uint sourceInfo = 0x00120042;
+        var stats = new ConversionPipelineStats();
+
+        var result = DialogGrupBuilder.BuildDialogSection(
+            [
+                new DialogTopicRecord
+                    { FormId = topicA, EditorId = "AmbiguousA", QuestFormId = ProducerQuest, TopicType = 0 },
+                new DialogTopicRecord
+                    { FormId = topicB, EditorId = "AmbiguousB", QuestFormId = ProducerQuest, TopicType = 0 }
+            ],
+            [
+                new DialogueRecord
+                {
+                    FormId = sourceInfo,
+                    TopicFormId = null,
+                    RawParentTopicFormIds = [topicA, topicB],
+                    QuestFormId = ProducerQuest,
+                    Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Ambiguous line." }]
+                }
+            ],
+            new NewVsOverrideClassifier([ProducerQuest]),
+            new FormIdAllocator(),
+            [ProducerQuest],
+            new Dictionary<uint, ParsedMainRecord>(),
+            stats,
+            NullConversionProgressSink.Instance,
+            new Dictionary<uint, uint>(),
+            []);
+
+        Assert.DoesNotContain(sourceInfo, result.NewInfoSourceToAllocated.Keys);
+    }
+
+    [Fact]
     public void BuildDialogSection_FollowsChainedAliasToActuallyEmittedScriptVariableOwner()
     {
         const uint sourceTopic = 0x00120020;

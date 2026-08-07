@@ -94,7 +94,11 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.Null(loaded.ClassicParallaxHeightMapTexturePath);
         Assert.Equal(FnvClassicBasicShaderMode.Sls1013VertexColor, loaded.ClassicBasicShaderMode);
         Assert.Equal(41, loaded.SourceBlockIndex);
-        Assert.Equal(66, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+        // v68: the ENGINE z-write rule bits (EngineZWriteOff + DepthTestOff) joined the payload.
+        // v69: triggered-FX rest-state resolve changed particle bake output (dormant emitters).
+        Assert.True(loaded.EngineZWriteOff);
+        Assert.True(loaded.DepthTestOff);
+        Assert.Equal(70, ReferenceDecodedMeshDiskCache12.DecoderVersion);
     }
 
     [Fact]
@@ -280,7 +284,9 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
                 ClassicEnvironmentMapUsesWindowReflection: true,
                 ClassicBasicShaderMode: FnvClassicBasicShaderMode.Sls1013VertexColor,
                 SourceBlockIndex: 41,
-                BillboardMode: NifBillboardMode.AlwaysFaceCenter)
+                BillboardMode: NifBillboardMode.AlwaysFaceCenter,
+                EngineZWriteOff: true,
+                DepthTestOff: true)
         ]);
     }
 

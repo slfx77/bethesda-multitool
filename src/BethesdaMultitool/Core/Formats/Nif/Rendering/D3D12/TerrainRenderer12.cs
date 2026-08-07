@@ -130,6 +130,17 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 
     private LruCache<(int gx, int gy), CachedCellMesh12> _meshCache;
     private readonly HashSet<(int gx, int gy)> _knownUnusableCells = new();
+
+    // Transient build/upload failures get retried before a cell is permanently blacklisted for
+    // the worldspace session — one BSA/IO hiccup must not hole a cell until reload.
+    private readonly Dictionary<(int gx, int gy), int> _cellBuildFailures = new();
+    private const int MaxCellBuildFailures = 3;
+
+    // Camera cell + retain radius snapshot from the current frame's gather: completed CPU builds
+    // and queue entries within this Chebyshev band survive a one-frame boundary exit under fast
+    // movement instead of being pruned and rebuilt from scratch.
+    private (int gx, int gy) _retainCameraCell;
+    private int _retainRadiusCells;
     private readonly List<VisibleCell> _visibleScratch = new();
     private readonly List<VisibleCell> _missingVisibleScratch = new();
     private readonly HashSet<(int gx, int gy)> _missingVisibleKeys = new();
@@ -243,6 +254,10 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private double _frameBudgetScale = 1.0;
     private long _lastFrameTimestamp;
 
+    /// <summary>EMA of the observed frame duration that drives the streaming budget scale. Smoothed
+    /// because the raw previous frame is partly a RESULT of this budget — see StreamingFrameBudgetScaler.</summary>
+    private double _smoothedFrameSeconds;
+
     private int EffectiveMaxBuildStartsPerFrame =>
         StreamingThrottled
             ? Core.Resources.StreamingFrameBudgetScaler.ScaleCount(MaxBuildStartsPerFrame, _frameBudgetScale)
@@ -289,6 +304,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         var capacity = Math.Max(MinCacheCapacity, cells.Count + CacheHeadroom);
         _meshCache = CreateMeshCache(capacity);
         _knownUnusableCells.Clear();
+        _cellBuildFailures.Clear();
         _cells = cells;
         _spatialIndex = spatialIndex;
         _renderCache = renderCache;
@@ -522,11 +538,20 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         // Self-measured frame duration → this frame's time-based streaming scale. A back-to-back
         // second call in the same frame (depth prepass) measures ~0 and floors at 1.0 — allowances
         // never shrink below the 60fps calibration.
+        // Driven from a SMOOTHED frame time so one hitch cannot license the burst that sustains it.
         var nowTimestamp = Stopwatch.GetTimestamp();
-        _frameBudgetScale = _lastFrameTimestamp == 0
-            ? 1.0
-            : Core.Resources.StreamingFrameBudgetScaler.Scale(
+        if (_lastFrameTimestamp == 0)
+        {
+            _frameBudgetScale = 1.0;
+        }
+        else
+        {
+            _smoothedFrameSeconds = Core.Resources.StreamingFrameBudgetScaler.SmoothFrameSeconds(
+                _smoothedFrameSeconds,
                 Stopwatch.GetElapsedTime(_lastFrameTimestamp, nowTimestamp).TotalSeconds);
+            _frameBudgetScale = Core.Resources.StreamingFrameBudgetScaler.Scale(_smoothedFrameSeconds);
+        }
+
         _lastFrameTimestamp = nowTimestamp;
 
         var cmd = _recorder.CommandList;
@@ -567,7 +592,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         cmd.IASetIndexBuffer(_sharedIbv);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerModeCbv, perModeAlloc.GpuAddress);
-        cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.BindlessSrvTable, _cbvSrvUavHeap.BindlessHeapStartGpu);
+        GpuRootSignature12.SetGraphicsBindlessTables(cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
 
         LastStats.StateSetupMilliseconds = ElapsedMilliseconds(segmentStarted);
         segmentStarted = StartTiming();
@@ -578,12 +603,33 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         _missingVisibleKeys.Clear();
         var camX = cylinder.Position.X;
         var camY = cylinder.Position.Y;
+        // Exit hysteresis: gather one extra cell ring beyond the streaming square, but cells in
+        // that margin draw ONLY when already cached — new builds are admitted strictly inside the
+        // un-margined radius. Without this, the draw set is recomputed from scratch each frame
+        // with a strict boundary test while the far plane extends PAST the square, so any camera
+        // motion away from a boundary cell popped that fully visible cell off screen in a single
+        // frame (the "cell unloads while moving" report; the mesh stays cached throughout).
+        var gatherRadius = cylinder.Radius + WorldGridConstants.CellSize;
+        _retainCameraCell = (
+            (int)MathF.Floor(camX / WorldGridConstants.CellSize),
+            (int)MathF.Floor(camY / WorldGridConstants.CellSize));
+        _retainRadiusCells = (int)MathF.Ceiling(cylinder.Radius / WorldGridConstants.CellSize) + 2;
         if (_spatialIndex is not null)
         {
-            _spatialIndex.QueryCellsInRadius(camX, -camY, cylinder.Radius, _candidateScratch);
+            var half = WorldGridConstants.CellSize * 0.5f;
+            _spatialIndex.QueryCellsInRadius(camX, -camY, gatherRadius, _candidateScratch);
             foreach (var candidate in _candidateScratch)
             {
                 var center = candidate.CenterCanvas;
+                // Same closest-point Chebyshev test as QueryCellsInRadius, at the strict radius.
+                var closestX = Math.Clamp(camX, center.X - half, center.X + half);
+                var closestY = Math.Clamp(-camY, center.Y - half, center.Y + half);
+                var insideAdmit = MathF.Abs(camX - closestX) < cylinder.Radius &&
+                                  MathF.Abs(-camY - closestY) < cylinder.Radius;
+                if (!insideAdmit && !_meshCache.ContainsKey(candidate.Key))
+                {
+                    continue; // margin ring is draw-only: never admits new builds
+                }
                 var dx = camX - center.X;
                 var dy = -camY - center.Y;
                 _visibleScratch.Add(new VisibleCell(candidate.Key, candidate.Cell, dx * dx + dy * dy));
@@ -591,9 +637,15 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         }
         else
         {
+            var marginCylinder = new VisibilityCylinder(cylinder.Position, gatherRadius);
             foreach (var (key, cell) in _cells!)
             {
-                if (!cylinder.ContainsCell(key.gx, key.gy)) continue;
+                var insideAdmit = cylinder.ContainsCell(key.gx, key.gy);
+                if (!insideAdmit &&
+                    !(marginCylinder.ContainsCell(key.gx, key.gy) && _meshCache.ContainsKey(key)))
+                {
+                    continue;
+                }
                 var cellCenterX = (key.gx + 0.5f) * WorldGridConstants.CellSize;
                 var cellCenterY = (key.gy + 0.5f) * WorldGridConstants.CellSize;
                 var dx = camX - cellCenterX;
@@ -747,6 +799,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         // the cylinder radius, so this rarely bites, but it keeps the frame from blanking.
         if (!_ringBuffer.TryAllocate(_recorder.FrameIndex, PerDrawByteSize, out var perDrawAlloc, GpuRingBuffer12.CbAlignment))
         {
+            LastStats.TerrainDrawsTruncated++; // surfaced on the HUD: a skip here reads as a missing cell
             return;
         }
         var textureIndices = entry.TextureIndices;
@@ -797,7 +850,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             {
                 RemoveBuildResult(key);
                 _queuedOrBuilding.Remove(key);
-                _knownUnusableCells.Add(key);
+                MarkCellBuildFailure(key);
                 return null;
             }
             if (uploadBudget <= 0) return null; // keep the result; upload on a later frame
@@ -807,7 +860,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             var entry = UploadBuiltCell(key, cpu);
             if (entry is null)
             {
-                _knownUnusableCells.Add(key);
+                MarkCellBuildFailure(key);
                 return null;
             }
             uploadBudget--;
@@ -828,6 +881,23 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         _queuedOrBuilding.Add(key);
     }
 
+    /// <summary>Counts a failed build/upload; the cell is blacklisted for the worldspace session
+    /// only after <see cref="MaxCellBuildFailures" /> attempts, so a transient BSA/IO exception
+    /// gets retried on a later frame instead of permanently holing the cell.</summary>
+    private void MarkCellBuildFailure((int gx, int gy) key)
+    {
+        var failures = _cellBuildFailures.GetValueOrDefault(key) + 1;
+        _cellBuildFailures[key] = failures;
+        if (failures >= MaxCellBuildFailures)
+        {
+            _knownUnusableCells.Add(key);
+        }
+    }
+
+    private bool WithinRetainMargin((int gx, int gy) key) =>
+        Math.Max(Math.Abs(key.gx - _retainCameraCell.gx), Math.Abs(key.gy - _retainCameraCell.gy))
+            <= _retainRadiusCells;
+
     private void StartQueuedBuilds()
     {
         while (_frameBuildStarts < EffectiveMaxBuildStartsPerFrame &&
@@ -837,11 +907,14 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             var key = _buildQueue.Dequeue();
 
             // Drop stale queue entries: the cell got cached/unusable some other way, was already
-            // dequeued, or has scrolled out of view since it was enqueued (a prior frame).
+            // dequeued, or has scrolled well out of view since it was enqueued (a prior frame).
+            // The retain margin keeps entries that merely oscillated across the streaming-square
+            // boundary for a frame under fast movement — dropping those forced full rebuilds
+            // exactly when build throughput was scarcest.
             if (!_queuedOrBuilding.Contains(key) ||
                 _meshCache.ContainsKey(key) ||
                 _knownUnusableCells.Contains(key) ||
-                !_missingVisibleKeys.Contains(key))
+                (!_missingVisibleKeys.Contains(key) && !WithinRetainMargin(key)))
             {
                 _queuedOrBuilding.Remove(key);
                 continue;
@@ -934,7 +1007,10 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             _pruneScratch.Clear();
             foreach (var k in _buildResults.Keys)
             {
-                if (!_missingVisibleKeys.Contains(k))
+                // Retain completed builds within the margin band of the camera: a one-frame
+                // boundary exit under fast/diagonal movement must not discard a finished CPU
+                // build (memory stays bounded by the margin band).
+                if (!_missingVisibleKeys.Contains(k) && !WithinRetainMargin(k))
                 {
                     _pruneScratch.Add(k);
                 }

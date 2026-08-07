@@ -9,9 +9,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin;
 ///     covering the common "renamed during FNV production" case (e.g.
 ///     <c>SCOLParkingLotChunk03</c> → master <c>SCOLParkingLotChunk03b</c>).
 ///     <para>
-///         Conservative first cut: strip only a single trailing
-///         disambiguation letter that follows a digit (<c>(?&lt;=[0-9])[a-z]$</c>) AND the
-///         Fallout-3-to-New-Vegas rename suffix <c>nv</c>/<c>_nv</c>. Wider patterns
+///         Conservative by design: strip only a single trailing
+///         disambiguation letter that follows a digit (<c>(?&lt;=[0-9])[a-z]$</c>), the
+///         Fallout-3-to-New-Vegas rename suffix <c>nv</c>/<c>_nv</c>, and the proto-era
+///         <c>Trimmed</c> suffix. Wider patterns
 ///         (<c>new</c>, <c>old</c>, <c>alt</c>, <c>temp</c>, <c>test</c>, <c>v\d+</c>)
 ///         stay out until census evidence shows misses caused by them.
 ///         The chunk-number itself is intentionally preserved — the empirical FNV rename
@@ -21,10 +22,18 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin;
 ///         <c>SCOLParkingLotChunk0N</c> would tie with every <c>0Mb</c>) and the ambiguity
 ///         gate refuses the remap.
 ///     </para>
+///     <para>
+///         <c>Trimmed</c> was admitted 2026-08-05 on exactly the census evidence the doc above
+///         asks for: proto-only SCOLs <c>SWDirtMidTrimmed</c> / <c>SWDirtEnd01Trimmed</c> /
+///         <c>SWDirtEnd02Trimmed</c> (Feb-2010 Strip sidewalks) whose retail counterparts are
+///         the un-suffixed <c>SWDirtMid</c>-class STATs — 24 placed refs dropped as
+///         dangling-base solely because the stem could not shed the suffix. It is the
+///         FALLBACK lane behind runtime SCOL ingestion (USER RULING: A with B fallback).
+///     </para>
 /// </summary>
 public static partial class EditorIdStem
 {
-    [GeneratedRegex(@"(?:_?nv|(?<=[0-9])[a-z])$",
+    [GeneratedRegex(@"(?:_?nv|trimmed|(?<=[0-9])[a-z])$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex VersionSuffixRegex();
 

@@ -1147,10 +1147,14 @@ public sealed partial class WorldView3DControl
     // free); the offscreen scene capture passes the absolute camera position with its absolute viewProj.
     // <paramref name="billboardBasis"/> overrides the sun/moon billboard camera basis — the ortho
     // projection modes pass their own camera axes because the perspective camera is parked/stale there.
+    // <paramref name="advanceCloudScroll"/> is false for a SECOND draw of the same frame's sky (the
+    // planar water reflection): the cloud scroll integrates once per Render call, so re-advancing it
+    // would double the drift and desync the reflected clouds from the sky's.
     private void RenderSky(Matrix4x4 viewProj, Vector3 domeCenter,
         (Vector3 Right, Vector3 Up)? billboardBasis = null,
         float? animationTimeSeconds = null,
-        float skyColorScale = 1f)
+        float skyColorScale = 1f,
+        bool advanceCloudScroll = true)
     {
         EnsureSkyTexturesResolved();
         var atmo = AtmosphereState.ApplySkyColorScale(
@@ -1171,7 +1175,7 @@ public sealed partial class WorldView3DControl
         _skyGeometry?.Render(viewProj, domeCenter,
             atmo.SkyTopColor, atmo.SkyLowerColor, atmo.AuthoredHorizonColor, atmo.SkyHorizonColor,
             cloudTint, cloudOpacity, starTint, domeStarFade, _gameHour, _currentClimateTiming,
-            _data?.Game ?? BethesdaGame.Unknown, animationTimeSeconds);
+            _data?.Game ?? BethesdaGame.Unknown, animationTimeSeconds, advanceCloudScroll);
 
         if (exterior)
         {

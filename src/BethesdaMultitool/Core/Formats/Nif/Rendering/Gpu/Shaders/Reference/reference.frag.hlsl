@@ -236,7 +236,9 @@ bool PassAlphaTest(float alpha, float threshold, float functionId)
 // bit 5 = TallGrassShaderProperty (consumed by the reference vertex shaders),
 // bit 6 = classic FO3/FNV environment pass, bit 7 = TexIndices.z is its custom mask,
 // bit 9 = classic SLS2058/bit-21 window-reflection direction, bit 10 = FNV active
-// ID193/BSSM_ADT zero-local-light route, bit 11 = its Toggles.x vertex-RGB branch
+// ID193/BSSM_ADT zero-local-light route, bit 11 = its Toggles.x vertex-RGB branch,
+// bit 12 = FNV runtime TallGrass no-sun-shadow (retail's GRASS pixel-shader family never
+// samples a sun/world shadow map; set only on the FNV branch of ResolveTextureState)
 // (bit 8 is classic parallax).
 uint MaterialTextureFlags(float packedState)
 {
@@ -286,6 +288,11 @@ bool UsesFnvActiveAdtBaseLighting(float packedState)
 bool UsesFnvActiveAdtBaseVertexColor(float packedState)
 {
     return (MaterialTextureFlags(packedState) & 2048u) != 0u;
+}
+
+bool HasFnvGrassNoSunShadow(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 4096u) != 0u;
 }
 
 float4 SampleMaterialTexture(uint slot, float2 uv, float packedState)
@@ -586,8 +593,12 @@ float4 main(PSInput input) : SV_Target
     // lived here while the dimmer was missing.)
     bool fullBright = input.vRenderState.w > 0.5;
     // NoLighting bypasses both scene lighting and its shadow lookup. This is also what keeps that
-    // branch entirely independent of Lighting30's IMGS EmissiveMult input.
-    float sunShadow = !fullBright && !fnvActiveAdtBase && uSunColorLighting.w >= 0.5
+    // branch entirely independent of Lighting30's IMGS EmissiveMult input. FNV TallGrass draws
+    // (runtime bit 12) skip the sun-cascade lookup here: retail shadows only grass's SUN term
+    // (GRASS2002.pso), which this shader's single shade term cannot express — the per-game grass
+    // shader implements the real split, and this path is its fallback.
+    float sunShadow = !fullBright && !fnvActiveAdtBase
+            && !HasFnvGrassNoSunShadow(input.vTextureState.z) && uSunColorLighting.w >= 0.5
         ? ShadowFactor(input.vWorldPos)
         : 1.0;
     // Tracks whether this (non-full-bright) shape carries authored Lighting30 emittance — those

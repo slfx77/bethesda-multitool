@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Utils;
 
@@ -204,7 +205,7 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
     /// </summary>
     internal List<StaticCollectionRecord> ParseStaticCollections()
     {
-        return ParseRecordList("SCOL", 8192,
+        var collections = ParseRecordList("SCOL", 8192,
             ParseScolFromAccessor,
             record => new StaticCollectionRecord
             {
@@ -213,6 +214,154 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             });
+
+        // Runtime overlay (USER RULING 2026-08-05, playtest finding 3): dumps carry
+        // BGSStaticCollection structs for SCOLs whose serialized records were never captured
+        // (proto-only sidewalk collections in TheStripWorld — 133 runtime structs, 0 serialized
+        // headers in xex21). Without this call those bases never emit and every ref to them
+        // drops as refr.dangling-base. The runtime read recovers the baked model + bounds only;
+        // the PDB layout has no part list (see RuntimeStaticCollectionReader).
+        Context.MergeRuntimeOverlayRecords(
+            collections,
+            [0x21],
+            record => record.FormId,
+            static (reader, entry) => reader.ReadRuntimeStaticCollection(entry),
+            MergeStaticCollection,
+            "staticCollections");
+
+        return collections;
+    }
+
+    /// <summary>
+    ///     Parse all Placeable Water (PWAT) records — a water-plane placement bound to a
+    ///     parent WATR type via DNAM, with per-placement reflection/refraction flags.
+    /// </summary>
+    internal List<PlaceableWaterRecord> ParsePlaceableWaters()
+    {
+        var waters = ParseRecordList("PWAT", 512,
+            ParsePwatFromAccessor,
+            record => new PlaceableWaterRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+
+        // PWAT was previously routed through the generic-record path, which cannot recover
+        // its parent WATR: the reference lives inside an 8-byte embedded struct that the
+        // generic reader hex-dumps rather than walks. RuntimePlaceableWaterReader follows it.
+        Context.MergeRuntimeOverlayRecords(
+            waters,
+            [0x23],
+            record => record.FormId,
+            static (reader, entry) => reader.ReadRuntimePlaceableWater(entry),
+            MergePlaceableWater,
+            "placeableWaters");
+
+        return waters;
+    }
+
+    private static PlaceableWaterRecord MergePlaceableWater(
+        PlaceableWaterRecord esm, PlaceableWaterRecord runtime)
+    {
+        return esm with
+        {
+            EditorId = esm.EditorId ?? runtime.EditorId,
+            ModelPath = esm.ModelPath ?? runtime.ModelPath,
+            Bounds = esm.Bounds ?? runtime.Bounds,
+            // The serialized DNAM is authoritative when it was captured; the runtime copy
+            // only backfills a water/flags pair the ESM side never supplied.
+            WaterFormId = esm.WaterFormId != 0 ? esm.WaterFormId : runtime.WaterFormId,
+            Flags = esm.WaterFormId != 0 ? esm.Flags : runtime.Flags,
+            Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
+            IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian
+        };
+    }
+
+    private PlaceableWaterRecord? ParsePwatFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new PlaceableWaterRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? modelPath = null;
+        byte[]? textureHashData = null;
+        ObjectBounds? bounds = null;
+        uint waterFormId = 0;
+        uint flags = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODT" when sub.DataLength > 0:
+                    textureHashData = subData.ToArray();
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                // DNAM is { uint32 Flags, FormID Water } — the SAME order as the runtime
+                // BGSPlaceableWaterData struct (flags at +0, TESWaterForm* at +4), per xEdit
+                // wbRecord(PWAT) and all 29 retail PWATs.
+                case "DNAM" when sub.DataLength == 8:
+                    flags = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    waterFormId = RecordParserContext.ReadFormId(subData[4..], record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new PlaceableWaterRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            ModelPath = modelPath,
+            ModelTextureData = textureHashData,
+            Bounds = bounds,
+            WaterFormId = waterFormId,
+            Flags = flags,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private static StaticCollectionRecord MergeStaticCollection(
+        StaticCollectionRecord esm, StaticCollectionRecord runtime)
+    {
+        return esm with
+        {
+            EditorId = esm.EditorId ?? runtime.EditorId,
+            ModelPath = esm.ModelPath ?? runtime.ModelPath,
+            Bounds = esm.Bounds ?? runtime.Bounds,
+            Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
+            IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian
+        };
     }
 
     private StaticCollectionRecord? ParseScolFromAccessor(DetectedMainRecord record, byte[] buffer)

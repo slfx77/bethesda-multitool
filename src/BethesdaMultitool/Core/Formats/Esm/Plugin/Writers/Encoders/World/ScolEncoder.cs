@@ -70,9 +70,22 @@ public sealed class ScolEncoder : IRecordEncoder
 
         if (validParts == 0)
         {
+            // A runtime-sourced SCOL never has parts — the PDB layout carries no part list —
+            // but it does carry the BAKED collection model, which is what the engine renders.
+            // Emitting EDID+OBND+MODL keeps refs to it resolvable instead of dangling (USER
+            // RULING 2026-08-05, playtest finding 3: 27 proto-Strip sidewalk refs dropped this
+            // way). A part-less SCOL with no model is still dropped — there is nothing to draw.
+            if (!string.IsNullOrEmpty(scol.ModelPath))
+            {
+                warnings.Add(
+                    $"SCOL 0x{scol.FormId:X8} \"{scol.EditorId ?? "<no EDID>"}\" emitted PART-LESS " +
+                    "(runtime capture carries only the baked model — the PDB layout has no part list).");
+                return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+            }
+
             warnings.Add(
                 $"SCOL 0x{scol.FormId:X8} \"{scol.EditorId ?? "<no EDID>"}\" had no reachable parts " +
-                "after ONAM validation — dropping record (PluginBuilder short-circuits empty subrecord lists).");
+                "and no baked model — dropping record (PluginBuilder short-circuits empty subrecord lists).");
             return new EncodedRecord { Subrecords = [], Warnings = warnings };
         }
 

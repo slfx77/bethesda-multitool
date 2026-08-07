@@ -149,6 +149,7 @@ public static class PlannedEncoders
         yield return Simple<LightRecord>("LIGH", LighEncoder.EncodeNew);
         yield return Simple<FurnitureRecord>("FURN", FurnEncoder.EncodeNew);
         yield return Simple<WaterRecord>("WATR", WatrEncoder.EncodeNew);
+        yield return Simple<PlaceableWaterRecord>("PWAT", PwatEncoder.EncodeNew);
         yield return Simple<WeatherRecord>("WTHR", WthrEncoder.EncodeNew);
         yield return Simple<LightingTemplateRecord>("LGTM", LgtmEncoder.EncodeNew);
         yield return Simple<EncounterZoneRecord>("ECZN", EczEncoder.EncodeNew);
@@ -160,6 +161,39 @@ public static class PlannedEncoders
         yield return Simple<CaravanMoneyRecord>("CMNY", CmnyEncoder.EncodeNew);
         yield return Simple<CaravanDeckRecord>("CDCK", CdckEncoder.EncodeNew);
         yield return Simple<FormListRecord>("FLST", FlstEncoder.EncodeNew);
+
+        // Tier 5c — the generic-record types. These have no typed model: they arrive as
+        // GenericEsmRecord from RuntimeGenericReader (Fields keyed by PDB identifier) or
+        // the ESM carve path (keyed by subrecord signature), which is why their legacy
+        // encoders all take GenericEsmRecord and read through GenericRecordFields.
+        // PlannedEncoderRegistry keys on RecordType rather than model CLR type, so several
+        // GenericEsmRecord-backed encoders coexist here without colliding.
+        //
+        // Routing them through the planner is what makes a REFR on a proto-only MSTT/TACT
+        // base resolve. Legacy allocates new top-level FormIDs during Phase 3, which runs
+        // AFTER BuildPlannerStateIfEnabled, so CellChildVerdictPlanner saw neither the
+        // source→emitted mapping nor the emitted set and dropped those refs as
+        // refr.dangling-base while their base records emitted perfectly well.
+        yield return Simple<GenericEsmRecord>("FLOR", FlorEncoder.EncodeNew);
+        yield return Simple<GenericEsmRecord>("MSTT", MsttEncoder.EncodeNew);
+        yield return Simple<GenericEsmRecord>("ANIO", AnioEncoder.EncodeNew);
+        yield return Simple<GenericEsmRecord>("TACT", TactEncoder.EncodeNew);
+        yield return Simple<GenericEsmRecord>("ASPC", AspcEncoder.EncodeNew);
+        yield return Simple<GenericEsmRecord>("ADDN", AddnEncoder.EncodeNew);
+
+        // Tier 5d — the last ordinary top-level types still emitted by the legacy Phase-3
+        // encode path. All four families are plain model-in/bytes-out encoders, so they need
+        // nothing beyond a row here and a matching DmpRecordSource extractor row.
+        // RADS/DEHY/HUNG/SLPD share one encoder and one model; PlannedEncoderRegistry keys on
+        // RecordType, so four DelegatingPlannedEncoder instances over SurvivalStageRecord
+        // coexist the same way the GenericEsmRecord ones above do.
+        yield return Simple<ClimateRecord>("CLMT", ClmtEncoder.EncodeNew);
+        yield return Simple<GrassRecord>("GRAS", GrasEncoder.EncodeNew);
+        yield return Simple<ImageSpaceRecord>("IMGS", ImgsEncoder.EncodeNew);
+        yield return Simple<SurvivalStageRecord>("RADS", SurvivalStageEncoder.EncodeNew);
+        yield return Simple<SurvivalStageRecord>("DEHY", SurvivalStageEncoder.EncodeNew);
+        yield return Simple<SurvivalStageRecord>("HUNG", SurvivalStageEncoder.EncodeNew);
+        yield return Simple<SurvivalStageRecord>("SLPD", SurvivalStageEncoder.EncodeNew);
 
         // Tier 5b kickoff — CELL + placed-reference (REFR/ACHR/ACRE) encoders. These are
         // registered but not yet invoked by any dispatch path: cell-children records

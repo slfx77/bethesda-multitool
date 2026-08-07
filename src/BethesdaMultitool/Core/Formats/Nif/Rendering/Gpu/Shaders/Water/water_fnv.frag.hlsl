@@ -8,15 +8,22 @@
 // separately compiled WATER001 opaque-snapshot refraction program. Preprocessor macros encode
 // TECHNIQUE axes only (WATER_HARDWARE_OCCLUSION here).
 //
-// The engine shader composites: reflection RT, refraction RT, a depth-map water-column factor,
-// a single NNAM normal tap, a Schlick fresnel, a dual sun/sky specular, and distance fog. The
-// normal viewer fallback has no reflection/refraction targets, so it reproduces the engine's
-// WATER003 RT-free path exactly:
-//   * reflection  == ReflectionColor          (engine WATER003 no-RT permutation; unlike WATER000's
-//                                                RT path, it does not apply FresnelRI.w reflectivity)
-//   * refraction  == the water body color      (engine blends refraction by depth; we use the body)
-//   * depthT      == real scene-depth column when the host binds the D32 depth as an SRV (matches
-//                    the engine's DepthMap fade over DepthFalloffStart/End); else a view-angle proxy
+// The engine shader composites: reflection RT, refraction RT, a 2-channel depth-map water-column
+// factor, a single NNAM normal tap, a Schlick fresnel, a dual sun/sky specular, and distance fog.
+// The viewer has no reflection/refraction targets, so this program follows the engine's WATER003
+// RT-free alpha/body/fog lanes exactly, with ONE deliberate upgrade toward the default-settings
+// WATER000 look:
+//   * reflection  == the b3 sky gradient along the reflected ray x FresnelRI.w Reflectivity while
+//                    the sky is live (stand-in for WATER000's planar ReflectionMap sample, which
+//                    is where ALL of retail water's blue comes from); the sky-off fallback stays
+//                    on WATER003's unscaled ReflectionColor constant
+//   * refraction  == the destination blend (the framebuffer already holds the rendered scene the
+//                    refraction RT would sample). Coverage is WATER000's composite solved for that
+//                    blend: alpha = 1 - (1 - Fe)(1 - W), i.e. the fog weight AND the Fresnel
+//                    reflection both hide the bed. Using WATER003's alpha (the fog weight alone)
+//                    left grazing views transparent where retail is opaque.
+//   * depthT      == the DepthFalloff shoreline feather from the reconstructed depth-writer
+//                    channels when the host binds the D32 depth as an SRV; else a view-angle proxy
 // The Fresnel form (Schlick, F0 = DNAM FresnelAmount, exponent 5), the Shallow->Deep-by-depth body,
 // the ReflectionColor mix scaled by ReflectivityAmount, and the dual specular are the engine's exact
 // math. NNAM is a NORMAL map (unpack xy = rgb*2-1, rebuild z); sampling it as color is the classic
@@ -47,27 +54,49 @@ float4 main(PSInput input) : SV_Target
     float fMacro = 1.0 / fUVScale;               // macro world tile = TexScale (fUVScale ~1000): broad structure
     float fDetail = fNoiseScale / fUVScale;      // fine normal-detail scale (fUVScale/fNoiseScale ~75): dense ripple
     float F0 = saturate(uSurface0.y);            // FNV FresnelRI.x
-    float reflectivity = saturate(uSurface0.z);  // FNV FresnelRI.w (reflection multiplier)
+    // DNAM@20 ReflectivityAmount = WATER000's c8.y VarAmounts.y: the LERP WEIGHT from the authored
+    // ReflectionColor toward the reflection RT. It is NOT FresnelRI.w (that is DNAM@160
+    // ReflectionHDRMult, clamped >= 1.0 by the engine and therefore never a darkening term).
+    float reflectivity = saturate(uSurface0.z);
     float specExp = max(uSurface0.w, 1.0);       // FNV VarAmounts.x (sun-specular exponent)
 
     float3 eye = uCamPosTime.xyz - input.vWorldPos; // surface -> camera (FNV EyePos - worldPos)
     float distXY = length(eye.xy);
     float3 V = normalize(eye);
 
-    // FNV depthT = water-column thickness from the scene depth map, normalized over DepthFalloff.
-    // When the host hands us the scene depth SRV (uDepthParams.x != 0xFFFFFFFF) we reproduce that
-    // exactly: linearize the sampled scene depth and this water fragment's own depth, take the
-    // view-space gap, and normalize by DepthFalloffStart/End (uSurface1.yz). Occlusion against
-    // nearer opaque geometry: WATER_HARDWARE_OCCLUSION compiles rely on the read-only DSV's
-    // per-sample GreaterEqual test (antialiased silhouettes); legacy compiles discard here at
-    // pixel rate. Falls back to a view-angle proxy when no depth SRV is set.
+    // FNV distance fade of ripples: full within 4096 world units, -> 0 at 8192. Also the engine's
+    // far ramp in the corrected-depth lanes below (WATER003 `lrp_sat r3.xy, -r0.w, c7.w, r0`).
+    float noiseFade = saturate((8192.0 - distXY) / 4096.0);
+
+    // FNV water-column inputs. The engine renders underwater geometry into a 2-channel DepthMap
+    // (SM3027.pso and the other SLS/NOLIGHT "WF" writers in shaderpackage019): oC0.x = slant path
+    // |P - W| below the surface, oC0.y = perpendicular (vertical) column, both divided by
+    // FogParams.x = the ACTIVE water FogFar (the above-water DNAM@36 whenever the camera is above
+    // the surface — TESWaterSystem::UpdateWaterShaderProperties only switches to the UnderWater
+    // trio when the camera itself is submerged). WATER003.pso then derives two DIFFERENT lanes:
+    //   depthT = sat((D.y - DepthFalloffStart)/(DepthFalloffEnd - DepthFalloffStart))  [asm 66-70]
+    //            — a SHORELINE FEATHER (~9 world units for NVCleanWater), NOT the transparency
+    //            curve; it feathers alpha/ripple at the waterline only.
+    //   corrD  = sat(lerp(1, D.xy, noiseFade))                                        [asm 82]
+    //            — the body/reflection/fog inputs, pinned to "deep" beyond the ripple fade.
+    // We reconstruct both writer channels from the scene-depth SRV via the view ray. Previous
+    // bugs, in order: clamping the RAW world-unit ray gap against DepthFalloffEnd (0.0109,
+    // normalized units) made all water opaque within ~1 cm; normalizing by UnderwaterFogFar
+    // (5500) still completed the fade at ~60 units AND drove body/alpha from the feather instead
+    // of the above-water fog lanes — still "essentially impossible to see through".
+    // Occlusion against nearer opaque geometry: WATER_HARDWARE_OCCLUSION compiles rely on the
+    // read-only DSV's per-sample GreaterEqual test (antialiased silhouettes); legacy compiles
+    // discard here at pixel rate. Falls back to a view-angle proxy when no depth SRV is set.
     uint depthIndex = uDepthParams.x;
     float depthT;
+    float2 corrD;          // engine corrected-depth (slant, vertical) lanes in FogFar units
     float column = 0.0;    // raw view-space depth gap in world units (only meaningful when sampled)
-    float waterDist = 0.0; // linearized view distance to the water surface (vertical-column conversion)
+    float fogNear = uLegacySurface1.x;                    // DNAM@32 above-water FogNear (NVCleanWater -80)
+    float fogFar = max(uLegacySurface1.y, fogNear + 1.0); // DNAM@36 above-water FogFar (NVCleanWater 850)
     if (depthIndex == 0xFFFFFFFFu)
     {
         depthT = saturate(dot(float3(0, 0, 1), V));
+        corrD = float2(1.0, depthT); // no depth info: full reflection edge + view-angle body proxy
     }
     else
     {
@@ -76,7 +105,7 @@ float4 main(PSInput input) : SV_Target
         uint depthSampleCount = max((uint)uRenderOrigin.w, 1u);
         float sceneNdc = LoadSceneDepth(depthIndex, (int2)input.Position.xy, depthSampleCount);
         float sceneDist = LinearizeDepth(sceneNdc, near, far);
-        waterDist = LinearizeDepth(input.Position.z, near, far);
+        float waterDist = LinearizeDepth(input.Position.z, near, far);
         column = sceneDist - waterDist;           // >0: water over a floor; <0: geometry occludes
 #if !WATER_HARDWARE_OCCLUSION
         // 3D-2 tie-break: bias the occlusion test toward KEEPING the water (uDepthParams.w world units) so
@@ -87,9 +116,23 @@ float4 main(PSInput input) : SV_Target
         // rejects per sample (and covers the same coplanar tie-break in hardware).
         clip(column + asfloat(uDepthParams.w));    // discard water hidden behind opaque geometry
 #endif
-        float start = uSurface1.y;                 // DepthFalloffStart
+        // Reconstruct the depth-writer channels: scene point along the view ray, then the slant
+        // and vertical water columns between it and the surface point, in FogFar units.
+        float rayScale = sceneDist / max(waterDist, 1e-4);
+        float3 scenePoint = uCamPosTime.xyz + (input.vWorldPos - uCamPosTime.xyz) * rayScale;
+        float slantColumn = max(length(scenePoint - input.vWorldPos), 0.0);
+        float verticalColumn = max(input.vWorldPos.z - scenePoint.z, 0.0);
+        float2 D = float2(slantColumn, verticalColumn) / fogFar;
+        corrD = saturate(lerp(float2(1.0, 1.0), D, noiseFade));
+        float start = uSurface1.y;                 // DepthFalloffStart (D.y-normalized units)
         float end = uSurface1.z;                   // DepthFalloffEnd
-        depthT = saturate((column - start) / max(end - start, 1e-3));
+        if (end <= start)
+        {
+            // Engine sentinel: equal Start/End uploads DepthFalloff = (-1, 0), disabling the feather.
+            start = -1.0;
+            end = 0.0;
+        }
+        depthT = saturate((D.y - start) / (end - start));
     }
 
     // OBLIV-2 lava: emissive, no Fresnel/reflection/specular. The DATA Shallow/Deep colors are the molten
@@ -103,9 +146,6 @@ float4 main(PSInput input) : SV_Target
         // it off instead of clipping it flat. The tonemap's own saturate is the final clamp.
         return float4(ApplyFog(lava * pulse * 1.3, input.vWorldPos), 1.0);
     }
-
-    // FNV distance fade of ripples: full within 4096 world units, -> 0 at 8192.
-    float noiseFade = saturate((8192.0 - distXY) / 4096.0);
 
     // FNV WATER000 surface normal — engine PS (WATER000.pso lines 90-96), reproduced exactly:
     //   r3 = noise.xyz*2-1 ; r3 = r3*depthT + (0,0,1) ; r3.xy *= distFade ; N = normalize(r3)
@@ -160,52 +200,103 @@ float4 main(PSInput input) : SV_Target
     float ndotv = saturate(dot(N, V));
 
 
-    // FNV body color: lerp(Shallow, Deep, depthT), lit by WATER003's recovered key direction.
-    // The no-reflection/no-refraction hardware-depth permutation scales SunDir Y by four before
-    // normalizing (WATER003.pso asm 101-105: c0.zwzw = 1,4,1,4). Using the raw direction changed
-    // the body response substantially whenever the sun had a non-zero Y component.
-    float3 body = lerp(uShallow.rgb, uDeep.rgb, depthT);
+    // FNV body color: lerp(Shallow, Deep, corrD.y) — the VERTICAL fog-lane column, not the
+    // shoreline feather (WATER003.pso asm 97-99 `mad_pp r2.xyz, r3.y, r2, c2` with r3.y = corrD.y).
+    // Driving this from depthT deepened the body to full Deep within the ~9-unit feather. Lit by
+    // WATER003's recovered key direction: the no-reflection/no-refraction hardware-depth
+    // permutation scales SunDir Y by four before normalizing (asm 101-105: c0.zwzw = 1,4,1,4).
+    float3 body = lerp(uShallow.rgb, uDeep.rgb, corrD.y);
     float3 fnvBodyLightDir = normalize(float3(sunDir.x, 4.0 * sunDir.y, sunDir.z));
     body *= saturate(dot(N, fnvBodyLightDir));
 
     // Reflected view vector — used for both the sky-reflection tint and the sun specular below.
     float3 R = reflect(-V, N);
 
-    // The viewer has no planar-reflection or refraction targets. FNV therefore follows the recovered
-    // WATER003 no-RT permutation, which stays on the authored DNAM ReflectionColor. Replacing it with
-    // the atmosphere gradient made daytime water flat gray and made the remaining night signal
-    // disappear with a dark sky. Oblivion's distinct recovered shader still interpolates its authored
-    // color toward the sky-gradient stand-in below.
-    float3 reflectedSky = uSkyTopSkyEnabled.w > 0.5
-        ? lerp(uSkyHorizon.rgb, uSkyTopSkyEnabled.rgb, saturate(R.z))
+    // Reflection term. Retail at DEFAULT PC settings runs WATER000, whose reflection is
+    //   refl = lerp(ReflectionColor, ReflectionMap_RT, VarAmounts.y) * FresnelRI.w
+    // (WATER000.asm 109-111 `add r0.xyw, r7.xyzz, -c4.xyzz` / `mov r6.xyz, c4` /
+    // `mad_pp r0.xyw, c8.y, r0, r6.xyzz`, then 143 `mad r0.xyz, r0.xyww, c5.w, -r1`).
+    //
+    // c8.y = VarAmounts.y = DNAM@20 **ReflectivityAmount** — a LERP WEIGHT between the authored
+    // constant and the mirror, NOT a brightness multiplier. c5.w = FresnelRI.w is a different field
+    // entirely, DNAM@160 ReflectionHDRMult, which the engine clamps to >= 1.0
+    // (`fsel f0,f3,f31,f4` at 0x82A71860 == max(HDRMult*0.1, 1.0)), so it can never darken.
+    // Treating ReflectivityAmount as that multiplier turned NVCleanWaterNoReflect
+    // (ReflectivityAmount = 0, the WATR over the Colorado) into a BLACK reflection lane, and with
+    // FresnelAmount = 0.75 that lane owns ~79% of the pixel — the reported near-black water.
+    // Retail at reflectivity 0 simply falls back to the authored ReflectionColor, whose luminance
+    // is close to Deep, giving a flat view-independent green rather than a mirror.
+    //
+    // RT-free stand-in for the sampled sky: the b3 atmosphere gradient along the reflected ray.
+    // WATER003 (no RT) carries neither c8.y nor c5.w and uses the bare constant (asm 106-107), which
+    // is what the sky-off/night path keeps.
+    float3 skyReflectionStandIn = SampleSkyReflection(input.Position.xy, N, R);
+    float3 refl = uSkyTopSkyEnabled.w > 0.5
+        ? lerp(uReflection.rgb, skyReflectionStandIn, reflectivity)
         : uReflection.rgb;
-    // WATER003.pso asm 106-107: lerp(body * NdotL, c4 ReflectionColor, fresnel). FresnelRI.w is
-    // absent from that no-RT composite; it only scales WATER000's sampled reflection-target path.
-    // Applying authored Reflectivity here suppressed Potomac's sole night signal by another 40%.
-    float3 refl = uReflection.rgb;
 
-    // FNV Schlick fresnel: F0 + (1-F0)*(1-NdotV)^5, F0 = FresnelAmount. Reflection over body.
+    // FNV Schlick fresnel: F0 + (1-F0)*(1-NdotV)^5, F0 = FresnelAmount — then gated by the engine's
+    // shoreline edge factor corrD.x (WATER000 asm 95+151 `mul r0.w, r4.x, r3.x`; WATER003 asm 96
+    // `mul r0.y, r3.x, r1.w`): reflections fade out over thin water, so looking down into shallows
+    // shows the green body + bed, while grazing/deep views become the sky mirror.
     float F = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
-    float fresneled = saturate(F);
-    float3 color = lerp(body, refl, fresneled);
+    float fresneled = saturate(F * corrD.x);
 
     // FNV dual specular: sharp sun glint off the reflected view vector + a fixed sky-glint term.
     float sunSpec = pow(saturate(dot(R, sunDir)), specExp);
     float skyGlint = pow(saturate(dot(float2(N.x, N.z), float2(-0.57, 0.82))), 100.0);
-    color += (sunSpec + skyGlint) * sunCol * sunGate;
+    float3 spec = (sunSpec + skyGlint) * sunCol * sunGate;
 
-    // Refraction stand-in via destination blend: retail WATER001 composites the water body over
-    // the REFRACTED scene (transmitted = lerp(refracted, litBody, depth weight), recovered in the
-    // water_fnv001.frag.hlsl program). The RT-free path has no refraction snapshot, but the destination
-    // already holds the rendered scene — exactly what the refraction RT samples, minus distortion —
-    // so blending by the same depth weight reproduces the transmitted term: the bed shows through
-    // shallow water and fades out by DepthFalloff, while grazing angles stay reflective-opaque via
-    // the fresnel term. Without a scene-depth SRV there is no water column (ortho/export paths):
-    // keep the previous opaque output rather than inventing a coverage ramp from the N·V proxy.
-    // The 0.15 floor keeps a visible surface film at the waterline (the engine's shallow tint
-    // never reaches fully invisible).
-    float alpha = (depthIndex == 0xFFFFFFFFu)
-        ? 1.0
-        : max(max(saturate(depthT), fresneled), 0.15);
-    return float4(ApplyFog(color, input.vWorldPos), alpha);
+    // Fog weight W — WATER000.pso asm 136-141 (identical in WATER003, where it IS the alpha):
+    //   W = depthT * (1 - sat(FogParam.z * (1 - corrD.x) / FogParam.w)) * FogColor.w
+    // FogParam.z = active water FogFar, FogParam.w = FogFar - FogNear, FogColor.w = the WATR
+    // above-water Fog Amount (TESWaterSystem::UpdateWaterShaderProperties fills the trio from
+    // DNAM@36/@32/@132 while the camera is above the surface). Substituting D.x = slant/FogFar
+    // collapses it to canonical linear fog of the slant water path over -80..850 world units,
+    // capped at 0.75, for NVCleanWater.
+    float aboveFog = 1.0 - saturate(fogFar * (1.0 - corrD.x) / max(fogFar - fogNear, 1e-3));
+    float W = saturate(depthT * aboveFog * saturate(uFnvWater001Surface.z));
+
+    // DEGENERATE FOG RANGE. Interior WATRs commonly author FogNear == FogFar (retail's
+    // DefaultInteriorWater uses 1000/1000), which makes the ramp above collapse to zero for every
+    // pixel. Retail tolerates that because WATER000/001 are OPAQUE draws whose transparency comes
+    // from the RefractionMap — a zero fog weight there just means "no fog tint over the refraction".
+    // We turn W into COVERAGE, so the same data would erase the water entirely (alpha ~= fresnel
+    // ~= 0.003). Fall back to the authored WATR ANAM opacity, which is exactly the "how solid is
+    // this water" value the record carries for that case. Exterior records never reach this branch
+    // (NVCleanWater's -80..850 range yields W ~= 0.66), so Lake Mead is unaffected.
+    if (fogFar - fogNear <= 1.0)
+    {
+        W = saturate(depthT * saturate(asfloat(uNoiseParams.w)));
+    }
+
+    // COMPOSITE. FNV at default PC settings runs WATER000, an OPAQUE draw (asm 165
+    // `mov oC0.w, v6.w`) whose entire see-through comes from sampling the RefractionMap in RGB:
+    //     final = lerp( lerp(Rf, litBody, W), Refl, Fe ) + Sp
+    // with Rf the de-fogged refraction sample (asm 124-128) and Fe = corrD.x * fresnel. Expanded:
+    //     final = (1-Fe)(1-W)·Rf + (1-Fe)·W·litBody + Fe·Refl + Sp
+    // Our destination already holds Rf (the scene behind the surface), so matching the Rf
+    // coefficient against straight SrcAlpha/InvSrcAlpha blending gives
+    //     alpha = 1 - (1-Fe)(1-W)
+    //     src   = ((1-Fe)·W·litBody + Fe·Refl + Sp) / alpha
+    // NOTE this is deliberately NOT WATER003's alpha (= W alone, asm 124-129). WATER003 is the
+    // permutation for when BOTH targets are unavailable; porting its coverage while our reflection
+    // term is still present drops the reflection's share of the pixel, and the bed shows through at
+    // grazing angles where retail is opaque — measured: the Colorado read as a faint tint over a
+    // fully visible riverbed.
+    //
+    // Sp is added to the NUMERATOR only and must never enter alpha. SunPower reaches 826 on these
+    // records, so `pow(dot(R,sunDir), specExp)` is a razor-sharp lobe that flips between 0 and 1 as
+    // the animated ripple normal moves; as a coverage term it swung alpha per-frame on glinting
+    // pixels and the premultiplied divide amplified it into a visible shimmer. Retail adds the glint
+    // in RGB over an already-opaque pixel and so cannot produce that.
+    float alpha = saturate(1.0 - (1.0 - fresneled) * (1.0 - W));
+    float3 premultiplied = (1.0 - fresneled) * W * body + fresneled * refl + spec;
+    // Without a scene-depth SRV there is no water column (ortho/export paths): keep the opaque
+    // output rather than inventing coverage from the view-angle proxy.
+    if (depthIndex == 0xFFFFFFFFu)
+    {
+        return float4(ApplyFog(lerp(body, refl, fresneled) + spec, input.vWorldPos), 1.0);
+    }
+    return float4(ApplyFog(premultiplied / max(alpha, 1e-4), input.vWorldPos), alpha);
 }

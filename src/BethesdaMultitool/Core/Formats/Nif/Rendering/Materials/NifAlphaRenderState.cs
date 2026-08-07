@@ -10,13 +10,26 @@ internal readonly record struct NifAlphaRenderState(
     byte SrcBlendMode,
     byte DstBlendMode,
     float MaterialAlpha,
-    // DepthWritingBlend: an alpha-BLEND shape that the engine ALSO writes depth for. Per the decompiled
-    // engine render-state setup (BSShader::SetupGeometryRenderStates), the alpha pass writes depth exactly
-    // when the alpha-TEST bit is set — so this is a shape that BOTH blends and alpha-tests (e.g. NVSeaPlant02
-    // foliage, window-cutout hulls). Its kept cutout texels are opaque, so it writes depth while staying a
-    // blend. The reference renderer draws these inline BEFORE the water pass with a depth-writing blend PSO,
-    // so water occludes them from above instead of them painting over it.
-    bool DepthWritingBlend = false)
+    // DepthWritingBlend: the LEGACY viewer classification — a shape that both blends and
+    // alpha-tests with a cutting threshold (e.g. NVSeaPlant02 foliage, window-cutout hulls) is
+    // drawn with a depth-writing blend PSO before the water pass, so water occludes it from
+    // above. This is a viewer heuristic, NOT the engine's rule (see EngineZWriteOff); it keeps
+    // serving every stream-off route (legacy pass order, non-FNV games, ortho, exports).
+    bool DepthWritingBlend = false,
+    // ENGINE z-write rule (decompile-proven — memory note fnv_alpha_zwrite_order_re_2026_08_04):
+    // z-write is ambient-ON for the alpha pass and is turned OFF only for decals (Shader Flags
+    // bits 26/27), hair (bit 18 + blend; the engine's tech-6/8 pass also drops color-write — a
+    // multi-pass pipeline we approximate), and the BSShaderNoLighting family honoring
+    // Shader Flags 2 bit 0 "zbuffer write" (CLEAR ⇒ OFF; e.g. FXMistLow01Long's SmokeWispsTile
+    // sheet authors 0x0). Ordinary blended LIT geometry KEEPS z-write — that is what resolves
+    // WhiteHorseNettle. Consumed only by the unified transparency stream's per-draw PSO choice;
+    // computed only from authored shader metadata — an evidence-less shape (particle systems,
+    // NiTexturing-era games, unmatched property types) MIRRORS the legacy classification
+    // instead of guessing a lit default.
+    bool EngineZWriteOff = false,
+    // NoLighting shapes also honor Shader Flags bit 31 "zbuffer test": CLEAR ⇒ depth test OFF
+    // (the authored default 0x82000000 has it SET, so this is rare). Same stream-only consumer.
+    bool DepthTestOff = false)
 {
     // A2C writes depth at per-sample granularity (each surviving sub-pixel deposits depth), so for
     // sort/group purposes it behaves like Cutout/Opaque, not like Blend. A DepthWritingBlend shape stays

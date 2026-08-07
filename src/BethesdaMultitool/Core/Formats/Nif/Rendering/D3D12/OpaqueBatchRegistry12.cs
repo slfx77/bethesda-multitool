@@ -47,6 +47,10 @@ internal sealed class OpaqueBatchRegistry12
             batch.PhysicsLiteSeeds.Clear();
             batch.ShadowOnlyInstances.Clear();
             batch.ShadowOnlyPhysicsLiteSeeds.Clear();
+            Array.Clear(batch.CascadePrefix);
+            Array.Clear(batch.ShadowOnlyCascadePrefix);
+            Array.Clear(batch.FrameCascadeCount);
+            Array.Clear(batch.FrameShadowOnlyCascadeCount);
         }
         _activeBatches.Clear();
 
@@ -163,6 +167,29 @@ internal sealed class OpaqueBatchState(
     ///     is also what lets a frozen (reused) batch stay exact while the camera drifts.
     /// </summary>
     public List<Vector4> InstanceBounds { get; } = new(16);
+
+    /// <summary>
+    ///     Number of leading <see cref="Instances" /> that can cast into cascade i, after the build
+    ///     sorts them by smallest containing cascade. Monotonically non-decreasing in i because the
+    ///     cascade volumes are nested, which is what makes a per-cascade PREFIX well-defined.
+    ///     <para>
+    ///         The shadow replay can only truncate a draw's instance count from the tail — its start
+    ///         offset lives in an immutable captured constant buffer — so prefix ordering is the only
+    ///         shape that lets one captured draw serve every cascade at its own instance count.
+    ///     </para>
+    /// </summary>
+    public int[] CascadePrefix { get; } = new int[ShadowMapRenderer12.CascadeCount];
+
+    /// <summary>Same, for the shadow-only casters appended after the main range.</summary>
+    public int[] ShadowOnlyCascadePrefix { get; } = new int[ShadowMapRenderer12.CascadeCount];
+
+    /// <summary>Post-compaction mirror of <see cref="CascadePrefix" /> for the CURRENT frame: the copy
+    /// pass drops instances (exact cull, grass distance, SpeedTree LOD), so the prefixes have to be
+    /// re-derived against what was actually written.</summary>
+    public int[] FrameCascadeCount { get; } = new int[ShadowMapRenderer12.CascadeCount];
+
+    /// <summary>Post-compaction mirror of <see cref="ShadowOnlyCascadePrefix" />.</summary>
+    public int[] FrameShadowOnlyCascadeCount { get; } = new int[ShadowMapRenderer12.CascadeCount];
 
     /// <summary>
     ///     Placed REFR FormIDs parallel to <see cref="Instances" /> only when this batch's submesh

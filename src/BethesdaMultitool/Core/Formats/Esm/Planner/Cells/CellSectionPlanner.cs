@@ -53,12 +53,10 @@ public sealed class CellSectionPlanner
             return Empty();
         }
 
-        // Coord-based pairing. Catches proto cells at master coords that carry
-        // different FormIDs than master's (a captured dump produced 522 such collisions in
-        // WastelandNV alone). Without this, both the master cell and the proto cell survive
-        // to emission and the engine destroys one of them with a "Cell will be destroyed"
-        // warning. After reconciliation: one DmpOverride entry per coord-match, keyed on
-        // master's FormID with proto's placement data attached.
+        // Coord-based pairing. Catches proto cells at master coords carrying different FormIDs
+        // (522 such collisions in WastelandNV alone). Without it both survive to emission and
+        // the engine destroys one with a "Cell will be destroyed" warning. After reconciliation:
+        // one DmpOverride per coord-match, keyed on master's FormID with proto placement data.
         catalog = CoordBasedCellPairingPass.Reconcile(
             catalog, masterRecordsByFormId, out var protoToMasterCellAlias);
 
@@ -67,14 +65,13 @@ public sealed class CellSectionPlanner
         uint EffectiveCellFormId(uint cellFormId)
             => protoToMasterCellAlias.TryGetValue(cellFormId, out var master) ? master : cellFormId;
 
+        // Master-cell NAVM gate — rationale, engine RE, and why the Warning must be loud all
+        // live on MasterCellNavmSuppression. Post-alias, so folded proto cells count as master.
+        var navmSuppressionDiagnostics = ImmutableArray<PlanDiagnostic>.Empty;
         if (!emitMasterCellNavmAugmentation)
         {
-            // Suppress master-cell NAVM records too, not only their NAVI rows: an emitted NAVM
-            // with no NAVI row in an un-ESM-flagged plugin null-derefs NavMeshInfoMap on entry.
-            // Post-alias, so folded proto cells count as the master cells they now are.
-            dmpNavmeshes = dmpNavmeshes
-                .Where(navm => !masterContexts.ContainsKey(EffectiveCellFormId(navm.CellFormId)))
-                .ToList();
+            dmpNavmeshes = MasterCellNavmSuppression.Apply(
+                dmpNavmeshes, masterContexts, EffectiveCellFormId, out navmSuppressionDiagnostics);
         }
 
         var dispositionEngine = new CellDispositionEngine([new DefaultCellDispositionPolicy()]);
@@ -122,13 +119,14 @@ public sealed class CellSectionPlanner
             cells, masterContexts, masterRecordsByFormId, masterRefToCell, allocator,
             out var clonedDoorFormIds, out var doorDiagnostics);
 
-        // Exterior persistents (NEW refs, all persistent actors, map markers, rescued
-        // enable-parent targets) move to the worldspace persistent-container cell — the
-        // loader never reads Persistent-Children GRUPs under exterior grid cells (in-game
-        // proven; see PersistentCellReparenting). The allocator lets the pass synthesize a
-        // NEW container for proto worldspaces (e.g. TheStripWorld) that have neither a
-        // master nor a captured one.
-        cells = PersistentCellReparenting.Apply(cells, masterContexts, masterRecordsByFormId, allocator);
+        // Exterior persistents (NEW refs, persistent actors, map markers, rescued enable-parent
+        // targets) move to the worldspace persistent-container cell — the loader never reads
+        // Persistent-Children GRUPs under exterior grid cells (in-game proven; see
+        // PersistentCellReparenting). The allocator lets the pass synthesize a NEW container
+        // for proto worldspaces (e.g. TheStripWorld) without a master or captured one.
+        cells = PersistentCellReparenting.Apply(
+            cells, masterContexts, masterRecordsByFormId, out var reparentingDiagnostics,
+            allocator, masterRefToCell);
         var (worldspaces, worldspaceSourceToEmitted) =
             BuildWorldspacePlans(worldspaceCatalog, allocator);
 
@@ -148,7 +146,10 @@ public sealed class CellSectionPlanner
             LandByCellSourceToEmitted = allocations.LandByCellSourceToEmitted,
             AdditionalEmittedFormIds = clonedDoorFormIds,
             WorldspaceSourceToEmitted = worldspaceSourceToEmitted,
-            Diagnostics = landPlanning.Diagnostics.AddRange(doorDiagnostics),
+            Diagnostics = landPlanning.Diagnostics
+                .AddRange(doorDiagnostics)
+                .AddRange(reparentingDiagnostics)
+                .AddRange(navmSuppressionDiagnostics),
         };
     }
 

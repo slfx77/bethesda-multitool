@@ -250,6 +250,10 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     ///     intersect the current reference visibility volume. The renderer still runs exact
     ///     per-reference sphere/frustum tests afterward; this only avoids visiting whole
     ///     sub-cell buckets that are definitely outside.
+    ///     <para>
+    ///         <paramref name="ringRadius" /> keeps buckets inside the sun-shadow caster ring even when
+    ///         the frustum rejects them — see the <c>Query</c> overload it forwards to.
+    ///     </para>
     /// </summary>
     internal int QueryPlacementCandidates(
         CellRecord cell,
@@ -258,14 +262,15 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
         float radius,
         Frustum? frustum,
         float frustumMargin,
-        List<RenderableReference> destination)
+        List<RenderableReference> destination,
+        float ringRadius = 0f)
     {
         var index = _placementSpatialIndexes.GetOrAdd(
             cell,
             static (c, cache) => ReferencePlacementSpatialIndex.Build(cache.GetPlacementList(c)),
             this);
 
-        index.Query(centerX, centerY, radius, frustum, frustumMargin, destination);
+        index.Query(centerX, centerY, radius, frustum, frustumMargin, destination, ringRadius);
         return index.Count;
     }
 
@@ -488,13 +493,26 @@ internal sealed class ReferencePlacementSpatialIndex
         return new ReferencePlacementSpatialIndex(buckets, placements.Count);
     }
 
+    /// <summary>
+    ///     Collects this index's placements whose bucket bounds may intersect the visibility volume.
+    ///     <para>
+    ///         <paramref name="ringRadius" /> admits buckets the frustum rejects but which lie inside a
+    ///         camera-centred Chebyshev square of that half-extent — the sun-shadow caster ring, whose
+    ///         off-screen occupants still cast into view. Callers previously had to pass a NULL frustum
+    ///         whenever the ring was active, because a frustum-rejected bucket could hold a ring caster;
+    ///         that disabled the broadphase entirely and pushed the full ~540k candidate set through the
+    ///         per-reference loop. The ring cannot be expressed as a frustum margin (it is a 360° region),
+    ///         hence a disjunction rather than a wider <paramref name="frustumMargin" />.
+    ///     </para>
+    /// </summary>
     internal void Query(
         float centerX,
         float centerY,
         float radius,
         Frustum? frustum,
         float frustumMargin,
-        List<RenderableReference> destination)
+        List<RenderableReference> destination,
+        float ringRadius = 0f)
     {
         var radiusSq = radius * radius;
         var margin = frustumMargin > 0f ? new Vector3(frustumMargin) : Vector3.Zero;
@@ -505,9 +523,15 @@ internal sealed class ReferencePlacementSpatialIndex
                 continue;
             }
 
-            if (frustum.HasValue && !frustum.Value.IntersectsAabb(bucket.Min - margin, bucket.Max + margin))
+            if (frustum.HasValue)
             {
-                continue;
+                var min = bucket.Min - margin;
+                var max = bucket.Max + margin;
+                if (!frustum.Value.IntersectsAabb(min, max) &&
+                    !OverlapsChebyshevSquare(min, max, centerX, centerY, ringRadius))
+                {
+                    continue;
+                }
             }
 
             foreach (var placement in bucket.Placements)
@@ -516,6 +540,14 @@ internal sealed class ReferencePlacementSpatialIndex
             }
         }
     }
+
+    /// <summary>XY overlap between an AABB and a centred square of half-extent <paramref name="half" />.
+    /// A non-positive half-extent means "no ring", which never admits.</summary>
+    private static bool OverlapsChebyshevSquare(
+        Vector3 min, Vector3 max, float centerX, float centerY, float half) =>
+        half > 0f &&
+        min.X <= centerX + half && max.X >= centerX - half &&
+        min.Y <= centerY + half && max.Y >= centerY - half;
 
     private static bool IntersectsCylinder(Vector3 min, Vector3 max, float centerX, float centerY, float radiusSq)
     {

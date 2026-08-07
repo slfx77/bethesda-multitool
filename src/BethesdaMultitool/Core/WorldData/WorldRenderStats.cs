@@ -22,6 +22,10 @@ internal sealed class WorldRenderStats
     internal int VisibleCandidates { get; set; }
     internal int TerrainDraws { get; set; }
     internal int TerrainQuadrantDraws { get; set; }
+
+    /// <summary>Terrain cells whose per-draw ring allocation soft-failed this frame — a silent
+    /// draw skip that would otherwise be un-observable (it reads as a missing cell on screen).</summary>
+    internal int TerrainDrawsTruncated { get; set; }
     internal int NewUploads { get; set; }
     internal int NewPreUploads { get; set; }
     internal int TextureCacheMisses { get; set; }
@@ -42,6 +46,27 @@ internal sealed class WorldRenderStats
     internal float WaterAnimationSeconds { get; set; }
     internal bool WaterNoisePrepassUsed { get; set; }
     internal string? WaterTelemetryUnavailableReason { get; set; }
+
+    /// <summary>
+    ///     Unified-transparency stream cost + loss, exposed because both regressed invisibly once:
+    ///     the drain cuts a run at every blended reference draw, so runs used to scale with visible
+    ///     CELLS rather than materials, and a ring exhaustion mid-drain silently dropped every
+    ///     remaining (nearer) water entry — which reads to the user as "some pools are missing".
+    ///     <see cref="WaterStreamEntries" /> is what was queued, <see cref="WaterStreamRuns" /> how
+    ///     many draws that collapsed into, and <see cref="WaterStreamDroppedEntries" /> what never
+    ///     drew. Dropped > 0 is always a defect, never a tuning outcome.
+    /// </summary>
+    internal int WaterStreamEntries { get; set; }
+    internal int WaterStreamRuns { get; set; }
+    internal int WaterStreamNoisePrepasses { get; set; }
+    internal int WaterStreamDroppedEntries { get; set; }
+
+    /// <summary>
+    ///     Visible WATR materials that found no free per-material noise tile this frame and fell
+    ///     back to their authored normal map. Non-zero means the slot pool is undersized for the
+    ///     scene — a quality reduction that would otherwise be invisible.
+    /// </summary>
+    internal int WaterNoiseSlotOverflows { get; set; }
     internal int WireframeDraws { get; set; }
     internal double CpuFrameMilliseconds { get; set; }
     internal double StateSetupMilliseconds { get; set; }
@@ -64,6 +89,18 @@ internal sealed class WorldRenderStats
     internal int ReferenceCellsVisited { get; set; }
     internal int ReferenceCandidates { get; set; }       // sum of PlacedObjects across visited cells
     internal int ReferenceCulled { get; set; }           // dropped by per-REFR cylinder test
+
+    // Whether this frame REUSED the cached cull survivor set instead of re-testing every candidate.
+    // The single most motion-sensitive state in the renderer, and previously unreported: the hit rate
+    // could only be inferred from ReferenceCullMilliseconds == 0, which is fragile. A rotating camera
+    // drives this to 0% while straight-line travel holds it near 75%.
+    internal bool ReferenceCullCacheHit { get; set; }
+    internal bool ReferenceBatchesReused { get; set; }
+
+    /// <summary>First reuse-gate clause that failed this frame (ReferenceRenderer12.BatchReuseBlocker).
+    /// 0 = reused. The resolve+batch pass is the largest CPU item in the frame, so knowing WHY it
+    /// re-runs is the difference between fixing it and guessing at it.</summary>
+    internal int ReferenceBatchReuseBlocker { get; set; }
     internal int ReferenceMeshMissing { get; set; }      // GetOrUpload returned null this frame
     internal int ReferenceTexturePending { get; set; }   // mesh ready, but at least one texture still streaming
     internal int ReferenceDrawn { get; set; }            // REFRs that issued ≥1 submesh draw
@@ -179,6 +216,7 @@ internal sealed class WorldRenderStats
         VisibleCandidates = 0;
         TerrainDraws = 0;
         TerrainQuadrantDraws = 0;
+        TerrainDrawsTruncated = 0;
         NewUploads = 0;
         NewPreUploads = 0;
         TextureCacheMisses = 0;
@@ -199,6 +237,11 @@ internal sealed class WorldRenderStats
         WaterAnimationSeconds = 0f;
         WaterNoisePrepassUsed = false;
         WaterTelemetryUnavailableReason = null;
+        WaterStreamEntries = 0;
+        WaterStreamRuns = 0;
+        WaterStreamNoisePrepasses = 0;
+        WaterNoiseSlotOverflows = 0;
+        WaterStreamDroppedEntries = 0;
         WireframeDraws = 0;
         CpuFrameMilliseconds = 0;
         StateSetupMilliseconds = 0;
@@ -215,6 +258,9 @@ internal sealed class WorldRenderStats
         ReferenceCellsVisited = 0;
         ReferenceCandidates = 0;
         ReferenceCulled = 0;
+        ReferenceCullCacheHit = false;
+        ReferenceBatchesReused = false;
+        ReferenceBatchReuseBlocker = 0;
         ReferenceMeshMissing = 0;
         ReferenceTexturePending = 0;
         ReferenceDrawn = 0;
@@ -319,6 +365,7 @@ internal sealed class WorldRenderStats
         VisibleCandidates = VisibleCandidates,
         TerrainDraws = TerrainDraws,
         TerrainQuadrantDraws = TerrainQuadrantDraws,
+        TerrainDrawsTruncated = TerrainDrawsTruncated,
         NewUploads = NewUploads,
         NewPreUploads = NewPreUploads,
         TextureCacheMisses = TextureCacheMisses,
@@ -339,6 +386,11 @@ internal sealed class WorldRenderStats
         WaterAnimationSeconds = WaterAnimationSeconds,
         WaterNoisePrepassUsed = WaterNoisePrepassUsed,
         WaterTelemetryUnavailableReason = WaterTelemetryUnavailableReason,
+        WaterStreamEntries = WaterStreamEntries,
+        WaterStreamRuns = WaterStreamRuns,
+        WaterStreamNoisePrepasses = WaterStreamNoisePrepasses,
+        WaterNoiseSlotOverflows = WaterNoiseSlotOverflows,
+        WaterStreamDroppedEntries = WaterStreamDroppedEntries,
         WireframeDraws = WireframeDraws,
         CpuFrameMilliseconds = CpuFrameMilliseconds,
         StateSetupMilliseconds = StateSetupMilliseconds,
@@ -355,6 +407,9 @@ internal sealed class WorldRenderStats
         ReferenceCellsVisited = ReferenceCellsVisited,
         ReferenceCandidates = ReferenceCandidates,
         ReferenceCulled = ReferenceCulled,
+        ReferenceCullCacheHit = ReferenceCullCacheHit,
+        ReferenceBatchesReused = ReferenceBatchesReused,
+        ReferenceBatchReuseBlocker = ReferenceBatchReuseBlocker,
         ReferenceMeshMissing = ReferenceMeshMissing,
         ReferenceTexturePending = ReferenceTexturePending,
         ReferenceDrawn = ReferenceDrawn,

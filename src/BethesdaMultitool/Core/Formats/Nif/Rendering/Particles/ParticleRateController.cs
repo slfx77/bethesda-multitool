@@ -109,6 +109,14 @@ internal sealed class ParticleRateControllerDefinition
     public float? ConstantValue { get; init; }
 
     /// <summary>
+    ///     True for the load-time rest-state resolve's dormant verdict: the emitter is bound only
+    ///     by activation-triggered NiControllerSequences (no idle-named autoplay), so at game
+    ///     start it emits nothing. Carried on the definition so a future per-instance
+    ///     "preview activation" inspector toggle can identify and re-bind these systems.
+    /// </summary>
+    public bool DormantTriggeredFx { get; init; }
+
+    /// <summary>
     ///     True when the authored coefficients are retained but the evaluator uses linear interpolation.
     ///     NiBezFloatKey/NiTCBFloatKey binary-oracle recovery can replace this fallback without a parser or
     ///     renderer contract change.

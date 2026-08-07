@@ -308,11 +308,27 @@ internal sealed class CachedSubmesh12
     public SpeedTreeLodMetadata? SpeedTreeLod { get; init; }
 
     /// <summary>
-    ///     True for an alpha-BLEND shape the engine writes depth for (effects-folder foliage like
-    ///     NVSeaPlant02). The renderer draws it inline BEFORE the water pass with a depth-writing blend
-    ///     PSO, so water occludes it from above instead of it painting over the surface.
+    ///     LEGACY depth-writing-blend classification (blend + test + cutting threshold, e.g.
+    ///     NVSeaPlant02). The renderer draws it inline BEFORE the water pass with a depth-writing
+    ///     blend PSO on every stream-off route, so water occludes it from above instead of it
+    ///     painting over the surface.
     /// </summary>
     public bool DepthWritingBlend { get; init; }
+
+    /// <summary>
+    ///     ENGINE z-write rule bit (decompile-proven — memory fnv_alpha_zwrite_order_re_2026_08_04):
+    ///     TRUE when the engine turns z-write OFF for this shape (decal / hair flag /
+    ///     NoLighting flags2-bit0-clear); FALSE for lit geometry, which keeps z-write even when
+    ///     blended. Metadata-less shapes mirror <see cref="DepthWritingBlend" />. Consumed only by
+    ///     the unified transparency stream's per-draw PSO choice.
+    /// </summary>
+    public bool EngineZWriteOff { get; init; }
+
+    /// <summary>
+    ///     NoLighting Shader Flags bit 31 "zbuffer test" CLEAR ⇒ depth test OFF (rare — the
+    ///     authored default sets it). Same stream-only consumer as <see cref="EngineZWriteOff" />.
+    /// </summary>
+    public bool DepthTestOff { get; init; }
 
     /// <summary>
     ///     True for decal overlay geometry (BGSM decal byte / shader-flags bits 26-27 — grime,

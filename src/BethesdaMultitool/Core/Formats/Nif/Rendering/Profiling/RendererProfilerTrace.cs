@@ -158,6 +158,9 @@ internal static class RendererProfilerTrace
         Add("refCellsVisited", stats.ReferenceCellsVisited);
         Add("refCandidates", stats.ReferenceCandidates);
         Add("refCulled", stats.ReferenceCulled);
+        Add("refCullCacheHit", stats.ReferenceCullCacheHit);
+        Add("refBatchesReused", stats.ReferenceBatchesReused);
+        Add("refReuseBlocker", stats.ReferenceBatchReuseBlocker);
         Add("refMeshMissing", stats.ReferenceMeshMissing);
         Add("refTexturePending", stats.ReferenceTexturePending);
         Add("refDrawn", stats.ReferenceDrawn);

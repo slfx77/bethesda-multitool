@@ -137,6 +137,69 @@ public class PlacedRefEncoderTests
         }
     }
 
+    /// <summary>
+    ///     XRDO must land immediately after NAME — that is where all 19 radio references in retail
+    ///     FalloutNV.esm carry it — and must serialize the four RADIO_DATA fields in schema order.
+    ///     Without it the engine defaults a radio to Broadcast Range Type 0 (Radius) with a NULL
+    ///     anchor and reports "Radio station exterior position ref … is not placed in an exterior".
+    /// </summary>
+    [Fact]
+    public void RefrEncoder_New_EmitsXrdoAfterNameWithRecoveredRadioData()
+    {
+        var placed = new PlacedReference
+        {
+            FormId = 0x010017A2,
+            BaseFormId = 0x0014E8DE,
+            RadioData = new RadioData
+            {
+                Radius = 0f,
+                RangeType = 4, // RADIO_RANGE_CURRENT_CELL
+                StaticPercentage = 0.25f,
+                PositionRefFormId = null
+            }
+        };
+
+        var encoded = RefrEncoder.EncodeNewPlacedReference(placed);
+        var signatures = encoded.Subrecords.Select(s => s.Signature).ToArray();
+
+        Assert.Equal("NAME", signatures[0]);
+        Assert.Equal("XRDO", signatures[1]);
+
+        var xrdo = Assert.Single(encoded.Subrecords, s => s.Signature == "XRDO");
+        Assert.Equal(16, xrdo.Bytes.Length);
+        Assert.Equal(0f, BinaryPrimitives.ReadSingleLittleEndian(xrdo.Bytes.AsSpan(0, 4)));
+        Assert.Equal(4u, BinaryPrimitives.ReadUInt32LittleEndian(xrdo.Bytes.AsSpan(4, 4)));
+        Assert.Equal(0.25f, BinaryPrimitives.ReadSingleLittleEndian(xrdo.Bytes.AsSpan(8, 4)));
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(xrdo.Bytes.AsSpan(12, 4)));
+
+        // Range type 4 needs no exterior anchor, so a NULL position ref is not worth warning about.
+        Assert.DoesNotContain(encoded.Warnings, w => w.Contains("position reference"));
+    }
+
+    /// <summary>
+    ///     A dangling Position Reference is zeroed rather than dropping the whole subrecord: a
+    ///     radio with no XRDO is worse than a radio with an unanchored one, and 17 of the 19 retail
+    ///     radios have no anchor at all.
+    /// </summary>
+    [Fact]
+    public void RefrEncoder_New_ZeroesDanglingXrdoPositionRefButKeepsTheSubrecord()
+    {
+        var placed = new PlacedReference
+        {
+            FormId = 0x010017A2,
+            BaseFormId = 0x0014E8DE,
+            RadioData = new RadioData { RangeType = 0, PositionRefFormId = 0x0BADF00D }
+        };
+
+        var encoded = RefrEncoder.EncodeNewPlacedReference(placed, validFormIds: new HashSet<uint>());
+
+        var xrdo = Assert.Single(encoded.Subrecords, s => s.Signature == "XRDO");
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(xrdo.Bytes.AsSpan(12, 4)));
+        Assert.Contains(encoded.Warnings, w => w.Contains("0x0BADF00D") && w.Contains("dangles"));
+        // Type 0 without an anchor is the state the engine complains about — surface it at convert time.
+        Assert.Contains(encoded.Warnings, w => w.Contains("broadcasts by radius"));
+    }
+
     [Theory]
     [InlineData("ACRE", "CREA", true)]
     [InlineData("ACRE", "ARMO", false)]

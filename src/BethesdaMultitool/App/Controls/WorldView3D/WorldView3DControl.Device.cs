@@ -182,6 +182,8 @@ public sealed partial class WorldView3DControl
         _waterOpaqueSnapshotSrv = null;
         _waterOpaqueSnapshotSrvResource = null;
         _captureWaterOpaqueSnapshotSrv = null;
+        _opaqueDepthSnapshotSrv = null; // same heap — the depth-snapshot slot dies with it too
+        _opaqueDepthSnapshotSrvResource = null;
 
         _ringBuffer12?.Dispose(); _ringBuffer12 = null;
         _surface12?.Dispose(); _surface12 = null;

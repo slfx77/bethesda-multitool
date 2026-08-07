@@ -73,7 +73,9 @@ invalidated because they cannot reproduce sphere-surface distance.
 ## Rendering and ABI contract
 
 The instanced opaque path keeps `StructuredBuffer<float4x4>` as its complete per-instance payload:
-one 64-byte world matrix. Two append-only `float4` registers were added to the per-batch
+one 64-byte world matrix. (FO3/FNV grass rides its lighting payload inside that same 64 bytes, in the
+matrix's otherwise-unused w-lanes — the stride and buffer type are unchanged; see
+`reference_grass_fnv.vert.hlsl`.) Two append-only `float4` registers were added to the per-batch
 `InstanceDraw` cbuffer:
 
 - root-local bound center/radius;

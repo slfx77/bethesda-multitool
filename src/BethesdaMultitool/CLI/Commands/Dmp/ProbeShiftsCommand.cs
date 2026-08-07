@@ -217,6 +217,13 @@ internal static class ProbeShiftsCommand
         yield return "AmmoMargin";
         yield return "AmmoSamples";
 
+        // BGSAcousticSpace layout era. Not a shift: the class grew by appending members across the
+        // captured window, so the winner names which era's field set the dump actually has.
+        yield return "AspcLayout";
+        yield return "AspcScore";
+        yield return "AspcMargin";
+        yield return "AspcSamples";
+
         // Race (2 shifts)
         yield return "RaceS0";
         yield return "RaceS1";
@@ -290,6 +297,11 @@ internal static class ProbeShiftsCommand
         yield return Csv(p.AmmoScore);
         yield return Csv(p.AmmoMargin);
         yield return Csv(p.AmmoSamples);
+
+        yield return Csv(p.AspcLayout);
+        yield return Csv(p.AspcScore);
+        yield return Csv(p.AspcMargin);
+        yield return Csv(p.AspcSamples);
 
         yield return Csv(p.RaceShifts.ElementAtOrDefault(0));
         yield return Csv(p.RaceShifts.ElementAtOrDefault(1));
@@ -401,6 +413,10 @@ internal static class ProbeShiftsCommand
         AppendJsonField(sb, "AmmoScore", p.AmmoScore, indent: 4);
         AppendJsonField(sb, "AmmoMargin", p.AmmoMargin, indent: 4);
         AppendJsonField(sb, "AmmoSamples", p.AmmoSamples, indent: 4);
+        AppendJsonField(sb, "AspcLayout", p.AspcLayout, indent: 4);
+        AppendJsonField(sb, "AspcScore", p.AspcScore, indent: 4);
+        AppendJsonField(sb, "AspcMargin", p.AspcMargin, indent: 4);
+        AppendJsonField(sb, "AspcSamples", p.AspcSamples, indent: 4);
         AppendJsonField(sb, "RaceShifts", p.RaceShifts, indent: 4);
         AppendJsonField(sb, "RaceLabel", p.RaceLabel, indent: 4);
         AppendJsonField(sb, "RaceScore", p.RaceScore, indent: 4);
@@ -766,6 +782,11 @@ internal static class ProbeShiftsCommand
         public int? AmmoMargin { get; set; }
         public int? AmmoSamples { get; set; }
 
+        public string? AspcLayout { get; set; }
+        public int? AspcScore { get; set; }
+        public int? AspcMargin { get; set; }
+        public int? AspcSamples { get; set; }
+
         public static ProbeSnapshot FromReader(RuntimeStructReader reader)
         {
             var snap = new ProbeSnapshot();
@@ -789,6 +810,14 @@ internal static class ProbeShiftsCommand
                 snap.AmmoScore = ammo.WinnerScore;
                 snap.AmmoMargin = ammo.Margin;
                 snap.AmmoSamples = ammo.SampleCount;
+            }
+
+            if (probes.AcousticSpaceLayout is { } aspc)
+            {
+                snap.AspcLayout = aspc.Winner.Layout.Label;
+                snap.AspcScore = aspc.WinnerScore;
+                snap.AspcMargin = aspc.Margin;
+                snap.AspcSamples = aspc.SampleCount;
             }
 
             if (probes.RaceLayout is { } race)

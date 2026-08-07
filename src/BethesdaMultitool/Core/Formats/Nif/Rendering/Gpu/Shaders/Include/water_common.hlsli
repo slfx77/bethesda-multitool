@@ -44,6 +44,11 @@ cbuffer Uniforms : register(b0)
     uint4 uFnvWater001Snapshot; // x = opaque SceneColor Texture2D index, y/z = dimensions,
                                 // w = asuint(horizontal generated-cell plane height)
     float4 uFnvWater001Surface; // UnderwaterFogNear/Far, AboveWaterFogAmount, DistortionAmount
+    // Planar sky-reflection target (mirrored-camera sky pass). Appended at the tail; every earlier
+    // constant keeps its register. y/z are the SCENE viewport dimensions (not the target's) because
+    // the lookup is a normalized screen-space UV — the target may be rendered at any resolution.
+    uint4 uWaterReflection;     // x = reflection SceneColor Texture2D index (0xFFFFFFFF = none),
+                                // y/z = scene viewport dimensions, w = asuint(UV distortion scale)
 };
 
 // Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants,
@@ -77,11 +82,43 @@ float3 ApplyFog(float3 color, float3 worldPos)
 Texture2D gWaterTextures[] : register(t0, space1);
 // space3 aliases the same bindless heap slots for R32_FLOAT Texture2DMS scene-depth descriptors.
 // uRenderOrigin.w selects this declaration only when the host supplied sampleCount > 1.
-Texture2DMS<float> gWaterDepthTexturesMsaa[] : register(t0, space3);
+// Explicitly bounded to the heap's persistent region (16384; depth SRVs are persistent slots):
+// the UNBOUNDED `[]` form miscompiled/misresolved on the deployed driver — sampleinfo/ldms
+// through the unbounded 2DMS array intermittently returned unrelated low heap slots (the live
+// view's depth) instead of the indexed slot, while the space1 unbounded Texture2D array resolved
+// the same indices correctly. A bounded declaration emits different (reliable) DXBC indexing.
+Texture2DMS<float> gWaterDepthTexturesMsaa[16384] : register(t0, space3);
 SamplerState gWaterSampler : register(s0);
 // WATER001's opaque-scene snapshot and FO4's generated LUT/cubemap paths both use the root
 // signature's clamp sampler. Keep it outside the FO4 guard so the FNV permutation can bind it.
 SamplerState gWaterClampSampler : register(s2);
+
+// Planar sky reflection, replacing the 2-row gradient stand-in when a target is bound.
+//
+// Retail WATER000 samples a planar ReflectionMap RT (sky + scene) and scales it by c5.w
+// ReflectivityAmount; a 2-row vertical gradient cannot reproduce the cloud-shaped mottling, warm
+// tint or sun glitter that reflection carries, which is why our water read flat and subdued.
+//
+// The target is the sky drawn with the view's Z axis MIRRORED. Under that mirror the pixel at a
+// given screen position holds the sky along reflect(eyeDir, up) — exactly the direction a flat
+// water surface reflects there — so the correct lookup is the fragment's OWN screen UV, and no
+// per-plane setup is needed: the dome is at infinity, so one target serves every water height.
+// The ripple normal perturbs the UV, which is what makes waves visible in the reflection.
+float3 SampleSkyReflection(float2 screenPos, float3 N, float3 R)
+{
+    // 2-row stand-in, retained as the fallback (no target bound, or the sky is disabled).
+    float3 gradient = lerp(uSkyHorizon.rgb, uSkyTopSkyEnabled.rgb, saturate(R.z));
+    if (uWaterReflection.x == 0xFFFFFFFFu || uWaterReflection.y == 0u || uWaterReflection.z == 0u)
+    {
+        return gradient;
+    }
+
+    float2 uv = screenPos / float2((float)uWaterReflection.y, (float)uWaterReflection.z);
+    uv += N.xy * asfloat(uWaterReflection.w);
+    // Clamp sampler + saturate: a perturbed UV must never wrap to the opposite edge of the sky.
+    return gWaterTextures[NonUniformResourceIndex(uWaterReflection.x)]
+        .SampleLevel(gWaterClampSampler, saturate(uv), 0).rgb;
+}
 
 // FO3/FNV's DNAM-driven scroll/blend + normal reconstruction now runs in the explicit
 // water_noise.comp.hlsl prepass. This helper remains for Skyrim's independently-authored normal maps
@@ -147,8 +184,9 @@ float LoadSceneDepth(uint depthIndex, int2 pixel, uint suppliedSampleCount)
         return gWaterTextures[NonUniformResourceIndex(depthIndex)].Load(int3(pixel, 0)).r;
     }
 
+    // The depth index is wave-UNIFORM (a per-draw CB scalar), so index the MSAA alias directly.
     uint depthWidth, depthHeight, descriptorSampleCount;
-    gWaterDepthTexturesMsaa[NonUniformResourceIndex(depthIndex)]
+    gWaterDepthTexturesMsaa[depthIndex]
         .GetDimensions(depthWidth, depthHeight, descriptorSampleCount);
     float nearestNdc = 0.0;
     [loop]
@@ -157,7 +195,7 @@ float LoadSceneDepth(uint depthIndex, int2 pixel, uint suppliedSampleCount)
         // Reversed-Z: maximum is the nearest covered opaque sample. This preserves occlusion at an
         // MSAA silhouette instead of allowing water through one uncovered/far sample.
         nearestNdc = max(nearestNdc,
-            gWaterDepthTexturesMsaa[NonUniformResourceIndex(depthIndex)].Load(pixel, sampleIndex));
+            gWaterDepthTexturesMsaa[depthIndex].Load(pixel, sampleIndex));
     }
     return nearestNdc;
 }

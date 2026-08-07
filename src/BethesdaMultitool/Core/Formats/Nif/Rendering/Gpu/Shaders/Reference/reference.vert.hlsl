@@ -165,6 +165,10 @@ VSOutput main(VSInput input)
         // uWorld's translation is CPU-folded to the render origin, so this is already the camera-relative
         // position (absolute when renderOrigin == 0). The prior post-multiply "-= uCameraOrigin" is gone.
         worldPos = mul(uWorld, float4(input.aPosition, 1.0));
+        // FO3/FNV grass placements carry a lighting payload in the matrix's w-lanes (see
+        // FnvGrassLighting); a blend-property grass NIF reaches this per-draw path with that
+        // matrix in uWorld. Restore w — affine draws already evaluate to exactly 1.0.
+        worldPos.w = 1.0;
     }
 
     // The per-draw path uses a layout-preserving union: uSoftParticle is GRASS2000 WindData for

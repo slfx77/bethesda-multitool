@@ -42,14 +42,16 @@ public sealed record CellOverrideBundle
 public static class CellGrupBuilder
 {
     /// <summary>
-    ///     Subrecords stripped from master WRLD anchor clones. OFST is the worldspace's
-    ///     per-file cell offset table: byte offsets into the file the record was READ from.
-    ///     The FNV runtime consults each master-flagged file's own OFST as the fast path for
-    ///     exterior cell lookup (TESWorldSpace.cpp — decompile-verified), so a master OFST
-    ///     copied into this plugin makes the engine seek THIS file at the master's offsets
-    ///     and every loaded exterior cell fails with "CELLS: Failed to load temporary data".
-    ///     With OFST absent the engine falls back to scanning the file's world children
-    ///     groups. xEdit likewise removes OFST from saved plugins.
+    ///     Subrecords dropped from master WRLD anchor clones. OFST is the worldspace's per-file
+    ///     cell offset table, holding byte offsets into the file the record was READ from, so
+    ///     the master's payload is meaningless here — copied verbatim it makes the engine seek
+    ///     THIS file at the master's offsets and every loaded exterior cell fails with
+    ///     "CELLS: Failed to load temporary data".
+    ///     <para>
+    ///     Dropping it is only half the job: the record is then re-emitted with a table rebuilt
+    ///     for this file by <see cref="WorldOfstTableBuilder" />. Shipping no OFST at all is a
+    ///     third, separately broken state — see that class for why it crashes the cell attach.
+    ///     </para>
     /// </summary>
     private static readonly IReadOnlySet<string> WrldAnchorStripSubrecords =
         new HashSet<string>(StringComparer.Ordinal) { "OFST" };
@@ -186,7 +188,20 @@ public static class CellGrupBuilder
             return false;
         }
 
-        // WRLD anchor record.
+        // WRLD anchor record, carrying a zero-filled OFST sized to this worldspace's grid.
+        // Entries are WRLD-relative, so they are filled in below once the cells are placed —
+        // no post-assembly fixup needed. A worldspace whose bounds we can't read keeps the
+        // pre-existing no-OFST behaviour rather than getting a guessed table.
+        var wrldPos = stream.Position;
+        var grid = WorldOfstTableBuilder.TryReadGrid(wrldAnchorBytes);
+        var ofstPayloadPos = -1L;
+        if (grid is not null)
+        {
+            wrldAnchorBytes = WorldOfstTableBuilder.AppendEmptyOfst(
+                wrldAnchorBytes, grid.Count, out var payloadOffsetInRecord);
+            ofstPayloadPos = wrldPos + payloadOffsetInRecord;
+        }
+
         stream.Write(wrldAnchorBytes);
 
         // World children GRUP (type 1, label = EMITTED WRLD FormID — matches the anchor bytes).
@@ -195,6 +210,8 @@ public static class CellGrupBuilder
         var childrenPos = WriteGrupHeader(stream, wrldLabel, 1);
 
         // Persistent CELL containers go directly under world children, no block wrapping.
+        // They are deliberately NOT indexed into OFST: the table addresses exterior grid
+        // slots, and a persistent cell reached through one is exactly the crash this fixes.
         foreach (var bundle in bundlesInWrld.Where(b => b.Context.IsPersistentCellContainer))
         {
             WriteCellAndChildren(stream, bundle);
@@ -202,12 +219,26 @@ public static class CellGrupBuilder
 
         // Remaining (block-bound) cells get the exterior block/subblock hierarchy.
         var blockBound = bundlesInWrld.Where(b => !b.Context.IsPersistentCellContainer).ToList();
+        var exteriorCellPositions = new List<(long Position, int GridX, int GridY)>();
         if (blockBound.Count > 0)
         {
-            EmitBlocksAndSubblocks(stream, blockBound, 4, 5);
+            EmitBlocksAndSubblocks(stream, blockBound, 4, 5, (bundle, position) =>
+            {
+                if (WorldOfstTableBuilder.TryReadCellGrid(bundle.CellRecordBytes, out var x, out var y))
+                {
+                    exteriorCellPositions.Add((position, x, y));
+                }
+            });
         }
 
         RecordHeaderProcessor.FinalizeGrupSize(stream, childrenPos);
+
+        if (grid is not null)
+        {
+            WorldOfstTableBuilder.PatchTable(
+                stream, ofstPayloadPos, wrldPos, grid, exteriorCellPositions);
+        }
+
         return true;
     }
 
@@ -216,11 +247,16 @@ public static class CellGrupBuilder
     ///     proper nested GRUPs. Used by both interior (block=2, subblock=3) and exterior
     ///     (block=4, subblock=5) paths.
     /// </summary>
+    /// <param name="onCellWritten">
+    ///     Called with each cell bundle and the stream position it is about to be written at,
+    ///     so the exterior path can index cells into the worldspace's OFST table.
+    /// </param>
     private static void EmitBlocksAndSubblocks(
         Stream stream,
         IReadOnlyList<CellOverrideBundle> bundles,
         int blockGroupType,
-        int subblockGroupType)
+        int subblockGroupType,
+        Action<CellOverrideBundle, long>? onCellWritten = null)
     {
         // INTERIOR cells (block group type 2) are filed at the engine's FormID-derived
         // block/sub-block position — block = (fid & 0xFFFFFF) % 10, sub-block =
@@ -265,6 +301,7 @@ public static class CellGrupBuilder
 
                 foreach (var bundle in subblockGroup.OrderBy(b => b.CellFormId))
                 {
+                    onCellWritten?.Invoke(bundle, stream.Position);
                     WriteCellAndChildren(stream, bundle);
                 }
 

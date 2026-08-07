@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls.Primitives;
 
 namespace BethesdaMultitool;
 
@@ -34,6 +35,14 @@ public sealed partial class WorldView3DControl
         var text =
             $"[{backend}]   " +
             $"Cells: {visible} / {total}   refs: {visibleReferences}   nav: {visibleNavMesh}   " +
+            // Placed lights previously had NO user-visible surface, so "the toggle does nothing"
+            // was indistinguishable from "the lights are uploading but look subtle".
+            $"lights: {_framePlacedLights.Count}   " +
+            // Submerged blended submeshes reordered ahead of the water surface. Zero while water is
+            // on screen means the split is inactive — the state in which underwater decals composite
+            // on top of the water, which had no diagnostic surface at all before.
+            $"subm: {_references?.LastBelowWaterBlendedDraws ?? 0}/" +
+            $"{_references?.LastPartitionedBlendedCandidates ?? 0}   " +
             $"pos: ({_camera.Position.X:0}, {_camera.Position.Y:0}, {_camera.Position.Z:0})   " +
             $"yaw: {NormalizedYawDegrees():0}°   pitch: {_camera.Pitch * (180f / MathF.PI):0}°   " +
             $"speed: {_controller.MoveSpeed:0}   " +
@@ -172,7 +181,14 @@ public sealed partial class WorldView3DControl
 
     private void HudToggleButton_Changed(object sender, RoutedEventArgs e)
     {
-        _hudHidden = HudToggleButton.IsChecked != true;
+        _hudHidden = (sender as ToggleButton)?.IsChecked != true;
+        // Fires DURING XAML load: IsChecked="True" raises Checked as the markup assigns it, and the
+        // toggle now sits in the toolbar, which the parser builds BEFORE the viewport panels below
+        // it. The x:Name fields for those are still null at that point, and the exception thrown
+        // out of a property assignment surfaces only as "Failed to assign to property
+        // ToggleButton.IsChecked" — so guard rather than reorder the markup. ApplyHudVisibility on
+        // the next HUD update reconciles whatever this call skipped.
+        if (HudPanel is null || StatusOverlay is null) return;
         HudPanel.Visibility = !_hudHidden && StatusOverlay.Visibility != Visibility.Visible
             ? Visibility.Visible
             : Visibility.Collapsed;

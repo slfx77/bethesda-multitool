@@ -56,6 +56,17 @@ internal static class ShaderPermutations
         // as a uniform on the shared path. Selected by GrassShaderProfile.ForGame(Oblivion).
         new("reference_grass_oblivion.vert.hlsl", "main", "vs_5_1", None, "Oblivion grass (GRASS2020.vso)"),
         new("reference_grass_oblivion.frag.hlsl", "main", "ps_5_1", None, "Oblivion grass (GRASS2002.pso)"),
+        // Per-game shader #2, and the first on the INSTANCED axis. Retail FO3/FNV lights grass from
+        // terrain data baked per instance at placement time (land normal + land-colour luminance),
+        // composes ambient additively without vertex colour, boosts the sun term 1.5x, and shadows
+        // only that sun term. Selected by GrassShaderProfile.InstancedForGame(FalloutNewVegas/3).
+        new("reference_grass_fnv.vert.hlsl", "main", "vs_5_1", None,
+            "FO3/FNV grass (GRASS2002.vso on the instanced ABI)"),
+        new("reference_grass_fnv.frag.hlsl", "main", "ps_5_1", None,
+            "FO3/FNV grass (GRASS2002.pso: sun*shadow + ambient)"),
+        new("reference_grass_fnv.frag.hlsl", "main", "ps_5_1",
+            [new ShaderMacro("ALPHA_TO_COVERAGE", "1")],
+            "FO3/FNV grass MSAA A2C variant; aliases the plain PSO when SceneSampleCount == 1"),
     ];
 
     /// <summary>

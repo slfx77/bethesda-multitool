@@ -128,7 +128,17 @@ public sealed class FnvClassicBasicRenderTelemetryTests
             compact,
             StringComparison.Ordinal);
         Assert.Contains(
-            "state.Z=FnvActiveAdtBasePolicy.ApplyRuntimeFlags(eligibility,",
+            "varflags=FnvActiveAdtBasePolicy.ApplyRuntimeFlags(eligibility,",
+            compact,
+            StringComparison.Ordinal);
+        // FNV-scoped runtime bit 12: TallGrass draws skip the sun-cascade lookup (no retail GRASS
+        // permutation samples a sun/world shadow map).
+        Assert.Contains(
+            "flags|=FnvActiveAdtBasePolicy.RuntimeFnvGrassNoSunShadowFlag;",
+            compact,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "state.Z=flags;",
             compact,
             StringComparison.Ordinal);
         Assert.Contains(

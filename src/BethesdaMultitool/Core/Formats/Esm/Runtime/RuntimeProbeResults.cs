@@ -32,6 +32,14 @@ internal sealed class RuntimeProbeResults
     public RuntimeLayoutProbeResult<int>? AmmoDataLayout { get; init; }
 
     /// <summary>
+    ///     Probed <c>BGSAcousticSpace</c> field layout. ASPC grew by appending members across the
+    ///     captured window (one sound in Nov 2009, four by Feb 2010, five plus a Walla population
+    ///     in the July-2010 PDB), so it is not describable as a uniform shift and the generic shift
+    ///     probe mis-fits it. Surfaced so <c>dmp probe-shifts</c> can report the winner and margin.
+    /// </summary>
+    public RuntimeLayoutProbeResult<RuntimeAcousticSpaceLayout>? AcousticSpaceLayout { get; init; }
+
+    /// <summary>
     ///     Per-FormType uniform shift for the generic PDB reader.
     ///     Key = FormType byte, Value = shift in bytes to apply to all non-TESForm fields.
     /// </summary>

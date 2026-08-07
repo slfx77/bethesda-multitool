@@ -88,6 +88,12 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["RCCT"] = (model, _) => RcctEncoder.EncodeNew((RecipeCategoryRecord)model),
             // FLOR has no typed model — it is captured/parsed as a GenericEsmRecord.
             ["FLOR"] = (model, _) => FlorEncoder.EncodeNew((GenericEsmRecord)model),
+            // Same shape as FLOR: read by RuntimeGenericReader, no typed model.
+            ["MSTT"] = (model, _) => MsttEncoder.EncodeNew((GenericEsmRecord)model),
+            ["ANIO"] = (model, _) => AnioEncoder.EncodeNew((GenericEsmRecord)model),
+            ["TACT"] = (model, _) => TactEncoder.EncodeNew((GenericEsmRecord)model),
+            ["ASPC"] = (model, _) => AspcEncoder.EncodeNew((GenericEsmRecord)model),
+            ["ADDN"] = (model, _) => AddnEncoder.EncodeNew((GenericEsmRecord)model),
             ["COBJ"] = (model, _) => CobjEncoder.EncodeNew((ConstructibleObjectRecord)model),
             ["EYES"] = (model, _) => EyesEncoder.EncodeNew((EyesRecord)model),
             ["HAIR"] = (model, _) => HairEncoder.EncodeNew((HairRecord)model),
@@ -124,7 +130,13 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["CSTY"] = (model, _) => CstyEncoder.EncodeNew((CombatStyleRecord)model),
             ["LGTM"] = (model, _) => LgtmEncoder.EncodeNew((LightingTemplateRecord)model),
             ["WATR"] = (model, _) => WatrEncoder.EncodeNew((WaterRecord)model),
+            ["PWAT"] = (model, _) => PwatEncoder.EncodeNew((PlaceableWaterRecord)model),
             ["WTHR"] = (model, _) => WthrEncoder.EncodeNew((WeatherRecord)model),
+            ["CLMT"] = (model, _) => ClmtEncoder.EncodeNew((ClimateRecord)model),
+            // IMGS had a registry entry but no dispatcher row, so every *new* proto imagespace
+            // was dropped even once its models were yielded. See ImgsEncoder's own remarks on the
+            // observed cell-entry crash in proto worldspaces.
+            ["IMGS"] = (model, _) => ImgsEncoder.EncodeNew((ImageSpaceRecord)model),
             // Close encoder coverage for every type with a runtime reader.
             ["ECZN"] = (model, _) => EczEncoder.EncodeNew((EncounterZoneRecord)model),
             ["MICN"] = (model, _) => MicnEncoder.EncodeNew((MenuIconRecord)model),

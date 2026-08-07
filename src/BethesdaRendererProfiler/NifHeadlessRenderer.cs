@@ -338,8 +338,24 @@ internal static class NifHeadlessRenderer
                         cullViewProj: viewProj, renderOrigin: default, cullCameraPose: pose,
                         cameraPosition: cameraPosition, cameraForward: cameraForward);
                     water.SetNifWaterPlanes(references.NifWaterPlanes);
+                    // Match the live viewer: submerged translucent geometry is issued BEFORE the
+                    // water surface, since water writes no depth and anything drawn afterwards
+                    // composites over it regardless of position.
+                    var partitioned = water.HasVisibleWaterToPartition(cylinder);
+                    if (partitioned)
+                    {
+                        references.RenderBlendedDeferredBelowWater(water, cameraPosition.Z);
+                    }
+
                     waterDraws = water.Render(viewProj, cylinder);
-                    references.RenderBlendedDeferred();
+                    if (partitioned)
+                    {
+                        references.RenderBlendedDeferredAtOrAboveWater(water, cameraPosition.Z);
+                    }
+                    else
+                    {
+                        references.RenderBlendedDeferred();
+                    }
                 }
                 else
                 {
@@ -488,8 +504,22 @@ internal static class NifHeadlessRenderer
                             cullViewProj: viewProj, renderOrigin: default, cullCameraPose: pose,
                             cameraPosition: cameraPosition, cameraForward: cameraForward);
                         water.SetNifWaterPlanes(references.NifWaterPlanes);
+                        // Same below-water ordering as the live viewer (see the first pass above).
+                        var framePartitioned = water.HasVisibleWaterToPartition(cylinder);
+                        if (framePartitioned)
+                        {
+                            references.RenderBlendedDeferredBelowWater(water, cameraPosition.Z);
+                        }
+
                         water.Render(viewProj, cylinder);
-                        references.RenderBlendedDeferred();
+                        if (framePartitioned)
+                        {
+                            references.RenderBlendedDeferredAtOrAboveWater(water, cameraPosition.Z);
+                        }
+                        else
+                        {
+                            references.RenderBlendedDeferred();
+                        }
                     }
                     else
                     {

@@ -216,8 +216,15 @@ public sealed class GrassDistanceEnvelopeTests
             2,
             SourceContract.CountOccurrences(renderer,
                 "PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)"));
-        Assert.Contains("draws[i].SourceWorld.Translation", renderer, StringComparison.Ordinal);
-        Assert.Contains("draws[i].IsGrass", renderer, StringComparison.Ordinal);
+        // The blended passes sort an INDEX array rather than the ~220-byte draws, so the reservation
+        // mask reads draws[order[i]]. What this pins is unchanged: that mask must gate on the same
+        // grass envelope as the draw itself, or a blended grass card outside the envelope would
+        // reserve constant-buffer space it never uses (and could evict a nearer draw's reservation).
+        Assert.Contains("var draw = draws[order[i]];", renderer, StringComparison.Ordinal);
+        Assert.Contains(
+            RemoveWhitespace("PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)"),
+            compactRenderer,
+            StringComparison.Ordinal);
 
         // Widened off-screen shadow casters are independently restored to the exact endpoint in
         // both shared-ring and fallback-ring copies.

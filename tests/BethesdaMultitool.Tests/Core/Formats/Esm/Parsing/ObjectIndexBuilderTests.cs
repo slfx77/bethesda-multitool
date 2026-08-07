@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
@@ -22,9 +23,41 @@ public sealed class ObjectIndexBuilderTests
             EditorId = "SSHQExterior03",
             ModelPath = "SCOL\\SSHQExterior03.NIF"
         };
-        var cells = new List<CellRecord>
+        var cells = OneCellPlacing(scolFormId);
+
+        BuildAndEnrich(cells, staticCollections: [scol]);
+
+        Assert.Equal("SCOL\\SSHQExterior03.NIF", cells[0].PlacedObjects[0].ModelPath);
+    }
+
+    [Fact]
+    public void BuildAndEnrich_ResolvesPwatModelPathOntoPlacedReference()
+    {
+        // Regression: PWAT (placeable water) is the water plane for every pond, sewer and crater pool
+        // whose surface is NOT the cell's XCLW plane. PWAT rode the generic-record list until it moved
+        // to the typed ParsePlaceableWaters() path (needed to recover its parent WATR); that move
+        // dropped it out of the model index, so every placed water plane lost its MODL and the
+        // renderer discarded the reference — water simply missing in the viewer.
+        const uint pwatFormId = 0x174163;
+        var pwat = new PlaceableWaterRecord
         {
-            new()
+            FormId = pwatFormId,
+            EditorId = "NVCleanWater1x402",
+            ModelPath = "Water\\NVCleanWater1x402.NIF",
+            WaterFormId = 0x000881EE
+        };
+        var cells = OneCellPlacing(pwatFormId);
+
+        BuildAndEnrich(cells, placeableWaters: [pwat]);
+
+        Assert.Equal("Water\\NVCleanWater1x402.NIF", cells[0].PlacedObjects[0].ModelPath);
+    }
+
+    private static List<CellRecord> OneCellPlacing(uint baseFormId)
+    {
+        return
+        [
+            new CellRecord
             {
                 FormId = 0x100,
                 GridX = 0,
@@ -33,20 +66,25 @@ public sealed class ObjectIndexBuilderTests
                 [
                     new PlacedReference
                     {
-                        FormId = 0x200, BaseFormId = scolFormId, RecordType = "REFR", X = 0, Y = 0, Z = 0
+                        FormId = 0x200, BaseFormId = baseFormId, RecordType = "REFR", X = 0, Y = 0, Z = 0
                     }
                 ]
             }
-        };
+        ];
+    }
 
+    private static void BuildAndEnrich(
+        List<CellRecord> cells,
+        List<StaticCollectionRecord>? staticCollections = null,
+        List<PlaceableWaterRecord>? placeableWaters = null)
+    {
         ObjectIndexBuilder.BuildAndEnrich(
             [], [], [], [], [],
-            [scol],
+            staticCollections ?? [],
+            placeableWaters ?? [],
             [], [], [], [], [], [],
             [], [], [], [], [], [],
             cells, [], new Dictionary<uint, string>(),
             new Stopwatch());
-
-        Assert.Equal("SCOL\\SSHQExterior03.NIF", cells[0].PlacedObjects[0].ModelPath);
     }
 }

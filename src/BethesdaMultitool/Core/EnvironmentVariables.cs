@@ -132,6 +132,64 @@ internal static class EnvironmentVariables
         /// Set to "0" to revert to the exact viewProj compare — perf A/B lever + escape hatch.</summary>
         public const string TolerantCull = "FALLOUT_VIEWER_TOLERANT_CULL";
 
+        /// <summary>Angular slack, in whole DEGREES, that the tolerant cull cache absorbs before
+        /// re-culling (default 4, clamped 0-20). The establishment cull widens its frustum by the same
+        /// angle, so the cached survivor set stays a superset across small rotations. Set to "0" to
+        /// restore the exact-forward compare, under which ANY mouse movement re-culls every frame.</summary>
+        public const string TolerantCullDegrees = "FALLOUT_VIEWER_TOLERANT_CULL_DEG";
+
+        /// <summary>Frames a batch set built DURING streaming may be reused before it is rebuilt
+        /// (default 4, clamped 1-60). Bounds how late newly-streamed geometry can appear; 1 restores
+        /// rebuild-every-frame for a settling scene.</summary>
+        public const string BatchReuseStreamingFrames = "FALLOUT_VIEWER_BATCH_REUSE_STREAM_FRAMES";
+
+        /// <summary>Per-cascade culling of the sun-shadow replay (default ON): each captured draw
+        /// submits only the casters that can reach the cascade being filled. Set to "0" to submit the
+        /// whole caster set to every cascade — the previous behaviour, and the A/B lever for proving
+        /// the culling is not dropping shadows.</summary>
+        public const string ShadowCascadeCull = "FALLOUT_VIEWER_SHADOW_CASCADE_CULL";
+
+        /// <summary>Unified transparency stream (default ON): blended reference draws and FNV water
+        /// batches merge into one back-to-front sequence, matching the engine's single depth-sorted
+        /// alpha stream. "0" restores the split pass order — the A/B lever for ordering changes.</summary>
+        public const string UnifiedTransparency = "FALLOUT_VIEWER_UNIFIED_TRANSPARENCY";
+
+        /// <summary>Engine z-write rule inside the unified stream (default ON): per-draw z-write =
+        /// decompiled ambient-ON minus the authored exceptions (decal / hair flag /
+        /// NoLighting flags2-bit0-clear), so blended LIT geometry writes depth. "0" keeps the
+        /// legacy blend+test+threshold per-draw choice. No effect when the stream is off.</summary>
+        public const string EngineZWrite = "FALLOUT_VIEWER_ENGINE_ZWRITE";
+
+        /// <summary>"1" renders TRIGGERED FX as if their activation sequences were playing (the
+        /// pre-2026-08-05 behavior). Default OFF = the load-time rest-state resolve: a particle
+        /// emitter whose NiControllerManager sequences are all activation-triggered (no idle-named
+        /// autoplay) stays DORMANT, matching the world at game start before any script or door
+        /// fires it.</summary>
+        public const string TriggeredFx = "FALLOUT_VIEWER_TRIGGERED_FX";
+
+        /// <summary>Planar sky reflection for water (default ON): a second, mirrored sky draw into a
+        /// small offscreen target that the water shaders sample. "0" restores the 2-row sky-gradient
+        /// stand-in — the A/B lever for the reflection's cost and look.</summary>
+        public const string WaterReflection = "FALLOUT_VIEWER_WATER_REFLECTION";
+
+        /// <summary>Parallel establishment cull (default ON): the visible cells are partitioned
+        /// across the thread pool and the per-partition survivors merged in cell order. Set to "0"
+        /// for the single-threaded loop — the A/B lever for the cull's cost and for proving the
+        /// merge preserves survivor order.</summary>
+        public const string ParallelCull = "FALLOUT_VIEWER_PARALLEL_CULL";
+
+        /// <summary>Mip chain on the FNV water noise-normal prepass target (default ON). The
+        /// authored NNAM DDS the retail shader samples ships with mips; the recovered prepass
+        /// regenerates mip 0 every frame, and sampling it mipless at the macro tile turns grazing
+        /// views into per-frame uncorrelated glint shimmer. Set to "0" to restore the single-mip
+        /// texture — the A/B lever for the fixed-pose water flicker.</summary>
+        public const string WaterNoiseMips = "FALLOUT_VIEWER_WATER_NOISE_MIPS";
+
+        /// <summary>Keep the broadphase frustum filter armed while the sun-shadow caster ring is active
+        /// (default ON), widening it by the ring instead of dropping it. Set to "0" for the previous
+        /// behaviour — an unfiltered broadphase — as a perf A/B lever and escape hatch.</summary>
+        public const string BroadphaseShadowFrustum = "FALLOUT_VIEWER_BROADPHASE_SHADOW_FRUSTUM";
+
         /// <summary>Reference batch reuse on quiesced frames (default ON): when the cull cache hit,
         /// the render origin is unchanged, and the last build streamed nothing, the per-frame
         /// resolve+batch pass is skipped and the frozen batches are re-drawn (with a per-instance
@@ -153,13 +211,12 @@ internal static class EnvironmentVariables
         public const string Shadows = "FALLOUT_VIEWER_SHADOWS";
 
         /// <summary>Placed LIGH emitter kill-switch. Set to "0" to skip the point-light
-        /// buffer and shader loop (default ON for interiors; also gated by the live UI toggle).</summary>
+        /// buffer and shader loop (default ON for interiors AND exteriors; also gated by the live UI
+        /// toggle). The former exterior-only opt-in, FALLOUT_VIEWER_EXTERIOR_LIGHTS, is gone: nothing
+        /// ever set it, so it silently forced every exterior to zero lights in every game while the UI
+        /// toggle claimed otherwise. Its real purpose — bounding the upload in dense worldspaces — is
+        /// now served by the frame-wide nearest-N cap in WorldView3DControl.PointLights.</summary>
         public const string PlacedLights = "FALLOUT_VIEWER_PLACED_LIGHTS";
-
-        /// <summary>Opt-in for placed LIGH emitters in exterior cells. Interior lights are enabled
-        /// by default; exteriors remain behind this diagnostic/performance gate until the global
-        /// forward loop has been profiled in dense worldspaces.</summary>
-        public const string ExteriorPlacedLights = "FALLOUT_VIEWER_EXTERIOR_LIGHTS";
 
         /// <summary>DIAGNOSTIC cap for the LAST shadow cascade's half-extent, in WORLD UNITS
         /// (unset = the fixed ladder's 131072; the earlier cascades are fixed at 2048/8192/32768).

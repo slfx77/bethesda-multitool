@@ -722,7 +722,8 @@ public sealed class RuntimeParityStructReaderTests : RuntimeStructReaderTestBase
         WriteExtraPointerNode(data, extraMapMarkerOffset, ExtraMapMarkerType, 0, FileOffsetToVa(mapDataOffset));
 
         WriteRefrLockData(data, lockDataOffset, 75, FileOffsetToVa(lockKeyOffset), 0x05, 2, 1);
-        WriteDoorTeleportData(data, teleportDataOffset, FileOffsetToVa(destinationDoorOffset));
+        WriteDoorTeleportData(data, teleportDataOffset, FileOffsetToVa(destinationDoorOffset),
+            x: 6528f, y: 3712f, z: 8256f, rotX: 0f, rotY: 0f, rotZ: -3.1415f, flags: 0x01);
         WriteMapMarkerData(data, mapDataOffset, FileOffsetToVa(markerNameOffset), "Camp Marker", markerNameOffset, 7);
 
         var reader = CreateReader(data);
@@ -746,6 +747,16 @@ public sealed class RuntimeParityStructReaderTests : RuntimeStructReaderTestBase
         Assert.Equal((byte)0x01, result.EnableParentFlags);
         Assert.Equal(0x00006014u, result.LinkedRefFormId);
         Assert.Equal(0x00006015u, result.DestinationDoorFormId);
+        // The arrival transform lives at DoorTeleportData+4 (position) / +16 (rotation) / +28
+        // (flags); zero on some axes is legal and must survive.
+        Assert.NotNull(result.TeleportPosRot);
+        Assert.Equal(6528f, result.TeleportPosRot!.X);
+        Assert.Equal(3712f, result.TeleportPosRot.Y);
+        Assert.Equal(8256f, result.TeleportPosRot.Z);
+        Assert.Equal(0f, result.TeleportPosRot.RotX);
+        Assert.Equal(0f, result.TeleportPosRot.RotY);
+        Assert.Equal(-3.1415f, result.TeleportPosRot.RotZ);
+        Assert.Equal((byte)0x01, result.TeleportFlags);
         Assert.True(result.IsMapMarker);
         Assert.Equal((ushort)7, result.MarkerType);
         Assert.Equal("Camp Marker", result.MarkerName);
@@ -808,6 +819,46 @@ public sealed class RuntimeParityStructReaderTests : RuntimeStructReaderTestBase
         Assert.False(result.IsMapMarker);
         Assert.Null(result.MarkerType);
         Assert.Null(result.MarkerName);
+    }
+
+    /// <summary>
+    ///     An all-zero DoorTeleportData transform is a "never authored" sentinel, not a real
+    ///     arrival point (retail has 0 of 1,108 XTELs zeroed). The door link must survive; the
+    ///     transform must come back null so the encoder reports it as unavailable instead of
+    ///     presenting origin-of-the-cell as captured data.
+    /// </summary>
+    [Fact]
+    public void ReadRuntimeRefr_WithZeroedTeleportTransform_KeepsDoorButDropsTransform()
+    {
+        var data = new byte[DataSize];
+        const uint refrFormId = 0x00006200;
+        const int structOffset = 0;
+        const int extraTeleportOffset = 512;
+        const int baseObjectOffset = 2048;
+        const int parentCellOffset = 2304;
+        const int destinationDoorOffset = 2560;
+        const int teleportDataOffset = 2816;
+
+        WriteTesFormHeader(data, structOffset, 0x82010000, 0x3A, refrFormId);
+        WriteUInt32BE(data, structOffset + 48, FileOffsetToVa(baseObjectOffset));
+        WriteUInt32BE(data, structOffset + 80, FileOffsetToVa(parentCellOffset));
+        WriteUInt32BE(data, structOffset + 88, FileOffsetToVa(extraTeleportOffset));
+
+        WriteTesFormHeader(data, baseObjectOffset, 0x82010000, 0x1D, 0x00006210);
+        WriteTesFormHeader(data, parentCellOffset, 0x82010000, 0x39, 0x00006211);
+        WriteTesFormHeader(data, destinationDoorOffset, 0x82010000, 0x3A, 0x00006212);
+
+        WriteExtraPointerNode(data, extraTeleportOffset, ExtraTeleportType, 0,
+            FileOffsetToVa(teleportDataOffset));
+        // Door pointer valid, transform left all-zero.
+        WriteDoorTeleportData(data, teleportDataOffset, FileOffsetToVa(destinationDoorOffset));
+
+        var reader = CreateReader(data);
+        var result = reader.ReadRuntimeRefr(MakeEntry("ZeroTeleport", refrFormId, 0x3A, structOffset));
+
+        Assert.NotNull(result);
+        Assert.Equal(0x00006212u, result.DestinationDoorFormId);
+        Assert.Null(result.TeleportPosRot);
     }
 
     [Fact]
@@ -1427,9 +1478,25 @@ public sealed class RuntimeParityStructReaderTests : RuntimeStructReaderTestBase
         WriteUInt32BE(data, stageItemOffset + 124, ownerQuestVa);
     }
 
-    private static void WriteDoorTeleportData(byte[] data, int teleportDataOffset, uint linkedDoorVa)
+    /// <summary>
+    ///     DoorTeleportData is 32 bytes per the MemDebug PDB: pLinkedDoor @0, position NiPoint3 @4,
+    ///     rotation NiPoint3 @16, cFlags @28. The parser must read all of it — reading only the
+    ///     door pointer is the defect that shipped every runtime XTEL with a zeroed arrival
+    ///     transform (80 of 83 in xex21.v142, vs 0 of 1,108 zeroed in retail).
+    /// </summary>
+    private static void WriteDoorTeleportData(
+        byte[] data, int teleportDataOffset, uint linkedDoorVa,
+        float x = 0f, float y = 0f, float z = 0f,
+        float rotX = 0f, float rotY = 0f, float rotZ = 0f, byte flags = 0)
     {
         WriteUInt32BE(data, teleportDataOffset, linkedDoorVa);
+        WriteFloatBE(data, teleportDataOffset + 4, x);
+        WriteFloatBE(data, teleportDataOffset + 8, y);
+        WriteFloatBE(data, teleportDataOffset + 12, z);
+        WriteFloatBE(data, teleportDataOffset + 16, rotX);
+        WriteFloatBE(data, teleportDataOffset + 20, rotY);
+        WriteFloatBE(data, teleportDataOffset + 24, rotZ);
+        data[teleportDataOffset + 28] = flags;
     }
 
     private static void WriteRefrLockData(

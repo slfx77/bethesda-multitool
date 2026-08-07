@@ -159,6 +159,18 @@ internal readonly record struct GpuTonemapSettings
     ///     tonemap-operator A/Bs.
     /// </summary>
     public float SunlightScale { get; init; }
+
+    /// <summary>
+    ///     Scene GRASS multiplier — classic IMGS <c>hdrData[12] GrassDimmer</c>. This is not a
+    ///     display term: FO3/FNV's <c>TallGrassShader::SetupGeometryConstants</c> writes it into the
+    ///     grass vertex program's <c>AddlParams.x</c> (<c>c7.x</c>), which the shipped
+    ///     <c>GRASS2000/2002.vso</c> apply as the whole sun-term multiplier
+    ///     (<c>mul oT3.xyz, r1, c7.x</c>). It is deliberately separate from
+    ///     <see cref="SunlightScale" />, which grass never receives — that one is applied inside
+    ///     <c>BSShaderLightingProperty</c>, i.e. to statics/actors/LAND only.
+    /// </summary>
+    public float GrassScale { get; init; }
+
     public float SkyScale { get; init; }
     public string? LutTexturePath { get; init; }
 
@@ -181,6 +193,23 @@ internal readonly record struct GpuTonemapSettings
 
         var classicExterior = !isInterior && GameProfiles.For(game).UsesClassicHdrImagespace;
         return classicExterior ? settings.SunlightScale : 1f;
+    }
+
+    /// <summary>
+    ///     Resolves the GRASS sun multiplier. Same <c>bHDR &amp;&amp; !bInterior</c> guard as
+    ///     <see cref="ResolveSceneSunlightScale" /> — the write lives in the same
+    ///     <c>TallGrassShader::SetupGeometryConstants</c> HDR branch — but it is a distinct constant
+    ///     and it REPLACES rather than compounds the sunlight dimmer: retail hands the grass program
+    ///     the sun light's colour raw and multiplies the sun term by this value alone. Only the
+    ///     classic FO3/FNV grass program consumes it; every other game returns neutral.
+    /// </summary>
+    internal static float ResolveSceneGrassScale(
+        GpuTonemapSettings settings, BethesdaGame game, bool hdrActive, bool isInterior)
+    {
+        if (!hdrActive || isInterior) return 1f;
+        return game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3
+            ? settings.GrassScale
+            : 1f;
     }
 
     /// <summary>
@@ -239,6 +268,7 @@ internal readonly record struct GpuTonemapSettings
         BrightScale = 1.5f,
         BrightClamp = 0.35f,
         SunlightScale = 1.3f,
+        GrassScale = 1.3f,
     };
 
     /// <summary>Shipped FNV DefaultImageSpaceInterior (0x160): neutral cinematic.</summary>
@@ -265,6 +295,7 @@ internal readonly record struct GpuTonemapSettings
         BrightScale = 2f,
         BrightClamp = 0.35f,
         SunlightScale = 1.5f,
+        GrassScale = 1.5f,
     };
 
     /// <summary>
@@ -302,6 +333,7 @@ internal readonly record struct GpuTonemapSettings
         // TES4 HNAM's SunlightDimmer is retained on the record; this bounded consumer is recovered
         // only for the FO3/FNV scene-light path, so stay neutral here.
         SunlightScale = 1f,
+        GrassScale = 1f,
     };
 
     public static GpuTonemapSettings GammaAcesDefaults { get; } = new()
@@ -329,6 +361,7 @@ internal readonly record struct GpuTonemapSettings
         BrightScale = 1.5f,
         BrightClamp = 0.35f,
         SunlightScale = 1f,
+        GrassScale = 1f,
         SkyScale = 1f,
     };
 
@@ -348,6 +381,7 @@ internal readonly record struct GpuTonemapSettings
             White = 1f,
             EyeAdaptStrength = 1f,
             SunlightScale = 1f,
+            GrassScale = 1f,
             SkyScale = 1f,
             BloomEnabled = false,
         };
@@ -381,6 +415,7 @@ internal readonly record struct GpuTonemapSettings
                 EyeAdaptStrength = hdr.EyeAdaptStrength ?? 1f,
                 ReceiveBloomThreshold = hdr.ReceiveBloomThreshold ?? 0f,
                 SunlightScale = hdr.SunlightScale,
+                GrassScale = hdr.SunlightScale,
                 SkyScale = hdr.SkyScale,
                 // The recovered FO4 code proves these values are blended and handed to the manager,
                 // but not the bloom render topology. Keep it disabled until that shader oracle lands.

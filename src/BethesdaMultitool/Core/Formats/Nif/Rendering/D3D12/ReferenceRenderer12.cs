@@ -117,12 +117,43 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // Shadow-only caster ring (world units; 0 = off): frustum-rejected refs within it are kept as
     // casters for the shadow replay. Cached with the cull survivors (see _cachedShadowOnlyCasters).
     private float _shadowCasterRingRadius;
+
+    // Cascade geometry for this frame's capture (see ArmShadowCapture). Null ⇒ no per-cascade culling.
+    private (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps)? _cascadeFit;
+
+    // Scratch for the per-batch counting sort that orders instances by smallest containing cascade.
+    private readonly List<int> _cascadeBucketScratch = new(256);
+    private readonly List<Matrix4x4> _cascadeSortMatrices = new(256);
+    private readonly List<Vector4> _cascadeSortBounds = new(256);
+    private readonly List<uint> _cascadeSortSeeds = new(256);
+
     private readonly List<RenderableReference> _cachedShadowOnlyCasters = new(512);
     private float _cullCacheShadowRing;
+
+    /// <summary>Instance count this draw must submit for each cascade. Because the block is in cascade
+    /// order these are prefixes, so a cascade draws <c>[0, Count(i))</c> — exactly what the captured
+    /// per-draw CB's fixed instance base allows.</summary>
+    private readonly record struct CascadeCounts(int C0, int C1, int C2, int C3)
+    {
+        public int this[int index] => index switch
+        {
+            0 => C0,
+            1 => C1,
+            2 => C2,
+            _ => C3
+        };
+
+        public static CascadeCounts Uniform(int count) => new(count, count, count, count);
+
+        public static CascadeCounts From(ReadOnlySpan<int> counts, int fallback) => counts.Length < 4
+            ? Uniform(fallback)
+            : new CascadeCounts(counts[0], counts[1], counts[2], counts[3]);
+    }
 
     private readonly record struct ShadowDraw(
         VertexBufferView VertexBufferView, IndexBufferView IndexBufferView, int IndexCount,
         ulong PerDrawCbAddress, ulong InstanceSrvAddress, int DrawCount, bool AlphaTested,
+        CascadeCounts Cascades,
         bool UsesTallGrassWind);
 
     /// <summary>Bumped whenever the opaque batches are REBUILT (a new cull/build pass ran, i.e.
@@ -152,13 +183,26 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// <paramref name="casterRingRadius" /> (world units) bounds the SHADOW-ONLY caster set: refs
     /// within it that fail the camera frustum still cast (their shadows can land on-screen), at the
     /// cost of streaming their meshes. 0 disables the augmentation.</summary>
-    public void ArmShadowCapture(float casterRingRadius)
+    /// <param name="cascadeAnchor">
+    ///     World-space centre the cascades will be fitted around this frame, and the sun direction they
+    ///     will be fitted to. Supplied at ARM time so the per-cascade instance classification below uses
+    ///     bit-identical inputs to the frustums the pass later builds — classifying against a slightly
+    ///     different anchor would let a caster be sorted into a cascade whose box no longer contains it.
+    ///     Snaps carries each cascade's pose-key snap quantum: a cascade re-rendered in place replays
+    ///     its PUBLISHED frustum, whose fit anchor may lag the classification anchor by up to the snap
+    ///     per axis — the classifier widens each cascade's reach by its own quantum so those casters
+    ///     survive the prefix. Null keeps the whole caster set in every cascade (no per-cascade culling).
+    /// </param>
+    public void ArmShadowCapture(
+        float casterRingRadius,
+        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps)? cascadeFit = null)
     {
         _shadowDraws.Clear();
         ShadowDrawsIncludeAnimatedLeaves = false;
         ShadowDrawsIncludeAnimatedMeshes = false;
         _shadowCaptureArmed = true;
         _shadowCasterRingRadius = MathF.Max(casterRingRadius, 0f);
+        _cascadeFit = cascadeFit;
     }
 
     /// <summary>Disarms the capture (shadows off / interior): the next cull keeps no shadow-only
@@ -248,6 +292,68 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     // Candidates returned by the per-cell spatial broadphase before exact sphere/frustum cull.
     private readonly List<RenderableReference> _cullCandidateScratch = new(256);
+
+    // Visible cells materialized once per establishment so the cull can index (and partition) them.
+    private readonly List<CellRecord> _cullCellScratch = new(1024);
+
+    /// <summary>Outcome of one candidate's establishment test (see the cull's TestCandidate).</summary>
+    private enum CullVerdict
+    {
+        Culled,
+        Survivor,
+
+        /// <summary>Frustum-rejected but inside the sun-shadow caster ring: casts, never drawn.</summary>
+        ShadowOnlyCaster,
+    }
+
+    /// <summary>Per-partition scratch for the parallel establishment cull. Reused across frames —
+    /// an establishment allocating fresh lists would undo the frame's allocation budget.</summary>
+    private sealed class CullPartitionState
+    {
+        public readonly List<RenderableReference> Candidates = new(256);
+        public readonly List<RenderableReference> Survivors = new(1024);
+        public readonly List<RenderableReference> ShadowOnly = new(128);
+        public int CellsVisited;
+        public int CandidateCount;
+        public int Culled;
+
+        public void Reset()
+        {
+            Survivors.Clear();
+            ShadowOnly.Clear();
+            CellsVisited = 0;
+            CandidateCount = 0;
+            Culled = 0;
+        }
+    }
+
+    private CullPartitionState[]? _cullPartitions;
+
+    /// <summary>Upper bound on establishment partitions — past this the merge and the shared spatial
+    /// index dominate, and the render thread should not monopolise every core.</summary>
+    private const int MaxCullPartitions = 8;
+
+    /// <summary>Cells per partition below which threading costs more than it saves.</summary>
+    private const int ParallelCullMinCellsPerPartition = 24;
+
+    /// <summary>Parallel establishment cull (default ON). "0" restores the single-threaded loop —
+    /// the A/B lever for proving the partitioned merge is order-identical.</summary>
+    private static readonly bool ParallelCullEnabled =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.ParallelCull) != "0";
+
+    private void EnsureCullPartitions(int count)
+    {
+        if (_cullPartitions is not null && _cullPartitions.Length >= count) return;
+        var grown = new CullPartitionState[count];
+        for (var i = 0; i < count; i++)
+        {
+            grown[i] = _cullPartitions is not null && i < _cullPartitions.Length
+                ? _cullPartitions[i]
+                : new CullPartitionState();
+        }
+
+        _cullPartitions = grown;
+    }
 
     // Profiler fix #4 — cached cull survivors. The render loop runs the cull (broadphase + per-REFR
     // sphere/frustum tests) and the mesh-resolve/batch build as two SEPARATE passes. When the camera
@@ -564,6 +670,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // is where the loaded game first reaches the renderer; the pipeline factory is constructed
         // earlier, so its grass PSOs are built lazily on first grass draw.
         _pipelines.SetGrassShaderProfile(GrassShaderProfile.ForGame(renderCache.Game));
+        _pipelines.SetInstancedGrassShaderProfile(
+            GrassShaderProfile.InstancedForGame(renderCache.Game));
         if (_grassDistanceEnvelope.Enabled)
         {
             Core.Diagnostics.Logger.Instance.Info(
@@ -604,9 +712,18 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         if (_renderCache?.Game == Core.Games.BethesdaGame.FalloutNewVegas)
         {
             var eligibility = ResolveFnvActiveAdtBaseEligibility(submesh);
-            state.Z = FnvActiveAdtBasePolicy.ApplyRuntimeFlags(
+            var flags = FnvActiveAdtBasePolicy.ApplyRuntimeFlags(
                 eligibility,
                 (uint)MathF.Round(state.Z));
+            if (submesh.IsTallGrass)
+            {
+                // Shared-shader fallback only: retail shadows grass's SUN term but never its
+                // ambient (GRASS2002.pso), which the shared shader cannot express — exempting the
+                // draw entirely is the closer approximation there. The per-game grass shader
+                // implements the real split and ignores this bit.
+                flags |= FnvActiveAdtBasePolicy.RuntimeFnvGrassNoSunShadowFlag;
+            }
+            state.Z = flags;
         }
         return state;
     }
@@ -819,6 +936,39 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private const float CullPositionSlack = 512f;
 
     /// <summary>
+    ///     Max camera ROTATION (degrees) the tolerant cull cache absorbs, the angular twin of
+    ///     <see cref="CullPositionSlack" />. The establishment cull widens its frustum half-angles by
+    ///     the same amount, so the cached survivor set stays a provable SUPERSET for any orientation
+    ///     within the slack — the draw pass then trims it back with the frame's exact frustum
+    ///     (<see cref="PassesExactCull" />), so the drawn set is unchanged.
+    ///     <para>
+    ///         Without this the pose compare was byte-exact on the camera basis, so a single pixel of
+    ///         mouse movement re-culled the whole candidate set: measured at a 0% cache hit rate and
+    ///         ~55 ms of cull per frame for the entire duration of a turn, against 70-75% and ~0 ms
+    ///         while travelling in a straight line.
+    ///     </para>
+    ///     <para>
+    ///         4 deg is ~2x the slack a steady orbit needs before translation becomes the binding
+    ///         constraint again, and costs ~9% more survivors (the widened frustum's extra solid
+    ///         angle). Larger values buy longer reuse during fast turns at the cost of a bigger
+    ///         batched superset — hence the 20 deg clamp.
+    ///     </para>
+    /// </summary>
+    private static readonly float CullAngleSlackRadians =
+        EnvironmentVariables.GetClampedInt(EnvironmentVariables.Viewer.TolerantCullDegrees, 4, 0, 20)
+        * (MathF.PI / 180f);
+
+    /// <summary>Keeps the broadphase frustum armed while the shadow caster ring is active (see the
+    /// broadphase comment in Render). "0" restores the previous unfiltered broadphase.</summary>
+    private static readonly bool BroadphaseShadowFrustumEnabled =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.BroadphaseShadowFrustum) != "0";
+
+    /// <summary>Per-cascade culling of the shadow replay (see SortBatchInstancesByCascade).
+    /// "0" submits the whole caster set to every cascade — the pre-change behaviour.</summary>
+    private static readonly bool ShadowCascadeCullEnabled =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.ShadowCascadeCull) != "0";
+
+    /// <summary>
     ///     Tolerant-mode debounce for the mesh-bounds generation: a NEW mesh resolve tightens cull
     ///     spheres, which the exact path treats as an immediate invalidation — but during active
     ///     streaming that means a re-cull EVERY frame (each frame resolves something), which is
@@ -832,6 +982,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private CullCameraPose? _cullCachePose;
     private Vector3 _cullCachePosition;
     private float _cullCacheRadius;
+
+    /// <summary>
+    ///     cos(angular slack) the ESTABLISHMENT cull was widened by, captured when the cache was
+    ///     written. Storing the establishment-time value rather than reading the constant at compare
+    ///     time keeps the cache honest if the slack ever becomes dynamic, and lets a declined widening
+    ///     (orthographic) fall back to an exact compare via the 1f sentinel. Never read unless
+    ///     <see cref="_cullCacheValid" /> is set, so it needs no explicit reset.
+    /// </summary>
+    private float _cullCacheForwardCos = 1f;
+
     private int _framesSinceCull;
 
     /// <summary>Bumped on every fresh cull — identifies the survivor-set generation (batch reuse keys on it).</summary>
@@ -847,6 +1007,46 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // WIDENED batch stays visually exact while the camera drifts inside the cull slack.
     private static readonly bool BatchReuseEnabled =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.BatchReuse) != "0";
+
+    /// <summary>Unified transparency stream (default ON): blended reference draws and FNV water
+    /// batches merge into ONE back-to-front sequence — the engine's single depth-sorted alpha
+    /// stream (decompile-proven; see the fnv_alpha_zwrite_order_re memory note). "0" restores the
+    /// split hoisted-blend → below-water → water → deferred-blend pass order.</summary>
+    internal static readonly bool UnifiedTransparencyEnabled =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.UnifiedTransparency) != "0";
+
+    /// <summary>Engine z-write rule inside the unified stream (default ON): per-draw z-write is
+    /// the decompile-proven ambient-ON minus the authored exceptions baked into
+    /// <c>CachedSubmesh12.EngineZWriteOff</c> (decal / hair flag / NoLighting flags2-bit0-clear) —
+    /// so an ordinary blended LIT shape writes depth, which is what resolves WhiteHorseNettle.
+    /// "0" falls back to the legacy blend+test+threshold classification for the per-draw choice.
+    /// Effective ONLY while the stream is interleaving (stream-off routes always use the legacy
+    /// hoist, decided at routing time — the serialized bits are env-blind).</summary>
+    internal static readonly bool EngineZWriteEnabled =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.EngineZWrite) != "0";
+
+    /// <summary>Stable ascending sort for the blended index array: primary key from a parallel
+    /// float array, ties broken by the ORIGINAL draw index (the array is initialized 0..n-1, so
+    /// comparing element values IS comparing registration order) — the managed equivalent of the
+    /// engine's stable merge sort over alpha passes. Reused across frames; set
+    /// <see cref="Keys" /> before sorting.</summary>
+    private sealed class BlendedOrderComparer : IComparer<int>
+    {
+        public float[] Keys = [];
+
+        public int Compare(int left, int right)
+        {
+            var byKey = Keys[left].CompareTo(Keys[right]);
+            return byKey != 0 ? byKey : left.CompareTo(right);
+        }
+    }
+
+    private readonly BlendedOrderComparer _blendedOrderComparer = new();
+
+    // View-axis depth column (clip-space w row of the frame's scene viewProj), captured at Render
+    // so the blended sort keys use the SAME metric — numerically, not just ordinally — as the
+    // water renderer's batch depths. That is what makes the two streams mergeable.
+    private Vector4 _frameWColumn;
 
     /// <summary>
     ///     Ceiling on consecutive reuse frames (~1s at 60fps). Reuse frames never call GetOrUpload,
@@ -866,6 +1066,37 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// </summary>
     private const int QuietBuildStreakFrames = 30;
 
+    /// <summary>
+    ///     Reuse ceiling for a build made while content was still streaming (not settled).
+    ///     <para>
+    ///         Measured: with settling as a hard PRECONDITION, "not quiesced" was the first failing
+    ///         reuse clause on 58.7% of frames during motion — streaming never quiesces while the
+    ///         camera moves, so the 7-11 ms resolve+batch pass re-ran even on cull-cached frames.
+    ///         Reuse itself is safe mid-stream (the draw pass re-tests every instance against the
+    ///         frame's exact frustum, and eviction still invalidates separately); the only cost is
+    ///         that content resolved since the build appears late. So hold such a build on a SHORT
+    ///         leash rather than refusing to hold it at all.
+    ///     </para>
+    /// </summary>
+    private static readonly int BatchReuseStreamingMaxFrames = EnvironmentVariables.GetClampedInt(
+        EnvironmentVariables.Viewer.BatchReuseStreamingFrames, 4, 1, 60);
+
+    /// <summary>Why a frame did not reuse its frozen batches. Ordered as the gate tests them, so the
+    /// reported value is the FIRST failing clause.</summary>
+    internal enum BatchReuseBlocker
+    {
+        None = 0,
+        Disabled = 1,
+        CullCacheMiss = 2,
+        NoBuild = 3,
+        FrameCeiling = 4,
+        CullEpoch = 5,
+        RenderOrigin = 6,
+        NotQuiesced = 7,
+        Eviction = 8,
+        StreamRouting = 9
+    }
+
     private bool _lastBuildValid;
     private int _framesSinceBuild;
     // This frame's reuse decision, captured for the geometry draw validator's violation context.
@@ -873,6 +1104,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private int _quietBuildStreak;
     private int _lastBuildCullEpoch;
     private Vector3 _lastBuildRenderOrigin;
+    // Depth-writing blends route to the hoisted pre-water list OR the unified stream depending on
+    // _transparencyStreamActive AT BUILD TIME. Frozen lists built under the other routing must not
+    // be replayed after the flag flips (e.g. the last water cell leaves the gather) — the hoist
+    // would draw an empty list while the stream never sees the depth-writing draws, or vice versa.
+    private bool _lastBuildStreamActive;
     private bool _lastBuildQuiesced;
     private int _lastBuildEvictionGen;
     private int _lastBuildDrawn;
@@ -959,6 +1195,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         ReferencesDrawnLastFrame = 0;
         LastFrameDrawsTruncated = 0;
         LastStats.Reset();
+        // Clip-w row of the scene viewProj — the blended sort key's metric. The water renderer
+        // derives its batch depths from the SAME matrix, so the two streams merge numerically.
+        _frameWColumn = new Vector4(viewProj.M14, viewProj.M24, viewProj.M34, viewProj.M44);
         _tallGrassWaveMultipliers.Clear();
         var frameWindRig = _captureWindActive ? _captureWindRig : _windRig;
         LastStats.ReferenceSpeedTreeWindStrength = _windStrength;
@@ -1033,10 +1272,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
-        // Bindless: bind the unbounded SRV table once per frame to heap slot 0
+        // Bindless: bind the unbounded SRV alias tables once per frame to heap slot 0
         // (the persistent region's start). All bindless `textures[index]` accesses by the
-        // PS resolve through this single binding for the rest of the frame.
-        cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.BindlessSrvTable, _cbvSrvUavHeap.BindlessHeapStartGpu);
+        // PS resolve through these bindings for the rest of the frame.
+        GpuRootSignature12.SetGraphicsBindlessTables(cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
         LastStats.ReferenceStateSetupMilliseconds = ElapsedMilliseconds(segmentStarted);
 
         var drawn = 0;
@@ -1053,11 +1292,38 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var cullFrustumSource = cullViewProj ?? viewProj;
         var frustum = hasFrustum ? Frustum.FromViewProjection(cullFrustumSource) : default;
         // Shadow caster ring in effect for THIS render pass (0 when the shadow capture isn't
-        // armed — top-down/export/capture paths cull without shadow-only augmentation). While a
-        // ring is active the BROADPHASE must not frustum-filter, or off-screen casters never reach
-        // the per-REFR loop that collects them; the per-REFR frustum test still trims the main set.
+        // armed — top-down/export/capture paths cull without shadow-only augmentation). The
+        // broadphase keeps its frustum filter and WIDENS it by the ring instead of dropping it: a
+        // bucket outside the frustum-or-ring envelope can hold neither a visible ref nor a ring
+        // caster, so off-screen casters still reach the per-REFR loop that collects them. Dropping
+        // the filter (the previous behaviour) pushed every bucket in the full square through that
+        // loop — measured at ~540k candidates/frame against ~190k with the filter armed, i.e. the
+        // ring was silently costing 2.9x the cull time it needed to.
         var shadowRing = _shadowCaptureArmed ? _shadowCasterRingRadius : 0f;
-        Frustum? broadphaseFrustum = hasFrustum && shadowRing <= 0f ? frustum : null;
+
+        // === Establishment frustum (tolerant cull) ===
+        // The cached survivor set must remain a SUPERSET of the exact set for every camera pose the
+        // cache still accepts — including ROTATED ones. The draw pass re-tests each instance against
+        // the frame's EXACT frustum (PassesExactCull), so widening here can only add candidates, never
+        // change what is drawn. `frustum` itself stays exact and is what _frameFrustum is assigned.
+        var tolerant = cullCameraPose is not null;
+        var exitMargin = WorldGridConstants.CellSize;
+        var maxCullReach =
+            ((cylinder.Radius + exitMargin) * SquareBroadphaseFactor) + (CullPositionSlack * 1.41422f);
+        var angularWidened = false;
+        var establishmentFrustum = hasFrustum && tolerant && CullAngleSlackRadians > 0f
+            ? frustum.WidenAngular(CullAngleSlackRadians, maxCullReach, out angularWidened)
+            : frustum;
+        // Declined widening (orthographic capture paths) falls back to an exact-forward compare.
+        var effectiveAngleSlack = angularWidened ? CullAngleSlackRadians : 0f;
+
+        Frustum? broadphaseFrustum = hasFrustum && (BroadphaseShadowFrustumEnabled || shadowRing <= 0f)
+            ? establishmentFrustum
+            : null;
+        // Only forward a ring to the broadphase when it is actually filtering by frustum (a null
+        // frustum admits everything already) and a ring is genuinely active — otherwise the drift
+        // slack added at the call site would turn into a small always-on admit square.
+        var broadphaseRing = broadphaseFrustum is not null && shadowRing > 0f ? shadowRing : 0f;
 
         double cullMs = 0;
         double meshUploadMs = 0;
@@ -1080,8 +1346,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // unchanged. With a CullCameraPose the compare is translation-TOLERANT (see the type docs):
         // same basis/FOV/aspect + drift under CullPositionSlack reuses the widened establishment
         // cull, so walking a straight line stops re-testing ~100k candidates per frame. Without a
-        // pose (top-down / capture paths) the compare stays byte-exact on the viewProj.
-        var tolerant = cullCameraPose is not null;
+        // pose (top-down / capture paths) the compare stays byte-exact on the viewProj. Rotation is
+        // absorbed the same way: the establishment frustum was opened by CullAngleSlackRadians, so any
+        // orientation within that cone still describes a subset of the cached survivors.
         _framesSinceCull++;
         var meshBoundsCurrent = _cullCacheMeshRadiusCount == _meshLocalRadius.Count
                                 || (tolerant && _framesSinceCull < CullStreamingRefreshFrames);
@@ -1097,7 +1364,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             && _cullCacheShadowRing == shadowRing
             && (tolerant
                 ? _cullCachePose is not null
-                  && _cullCachePose.Value == cullCameraPose!.Value
+                  && _cullCachePose.Value.FovYRadians == cullCameraPose!.Value.FovYRadians
+                  && _cullCachePose.Value.Aspect == cullCameraPose.Value.Aspect
+                  && ForwardWithin(
+                      _cullCachePose.Value.Forward, cullCameraPose.Value.Forward, _cullCacheForwardCos)
                   && _cullCacheRadius == cylinder.Radius
                   && ChebyshevWithin(cylinder.Position, _cullCachePosition, CullPositionSlack)
                 : _cullCacheViewProj == cullFrustumSource && _cullCacheCylinder == cylinder);
@@ -1107,13 +1377,30 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // cullCacheValid ⇒ no re-cull this frame ⇒ _cullEpoch is stable, so an epoch match means
         // the frozen batches were built from exactly the survivor set this frame would iterate.
         _framesSinceBuild++;
-        var reuseBatches = BatchReuseEnabled && cullCacheValid
-                           && _lastBuildValid
-                           && _framesSinceBuild < BatchReuseMaxFrames
-                           && _lastBuildCullEpoch == _cullEpoch
-                           && _lastBuildRenderOrigin == renderOrigin
-                           && _lastBuildQuiesced
-                           && _lastBuildEvictionGen == _meshCache.EvictionGeneration;
+        // NOTE (measured 2026-08-02): during motion this evaluates false on ~97-100% of frames, so the
+        // 7-11 ms resolve+batch pass re-runs even on the ~40-80% of frames whose cull was cached. That
+        // is the largest single CPU cost left in the frame. Relaxing the quiescence requirement was
+        // tried and did NOT help (reuse rose only 0% -> ~3%), and pinning a 60,000-entry mesh cache to
+        // eliminate EvictionGeneration churn did not help either (~2.8%) — so neither quiescence nor
+        // eviction is the binding term. The blocker is still unidentified; instrument WHICH clause
+        // fails before changing this again.
+        // Which clause vetoed reuse this frame. Reported so the blocker is identified from data
+        // instead of inferred: two plausible-sounding candidates (quiescence, eviction churn) were
+        // each tried and measured to be irrelevant, which cost a full experiment cycle apiece.
+        var reuseBlocker =
+            !BatchReuseEnabled ? BatchReuseBlocker.Disabled
+            : !cullCacheValid ? BatchReuseBlocker.CullCacheMiss
+            : !_lastBuildValid ? BatchReuseBlocker.NoBuild
+            : _framesSinceBuild >= (_lastBuildQuiesced
+                ? BatchReuseMaxFrames
+                : BatchReuseStreamingMaxFrames) ? BatchReuseBlocker.FrameCeiling
+            : _lastBuildCullEpoch != _cullEpoch ? BatchReuseBlocker.CullEpoch
+            : _lastBuildRenderOrigin != renderOrigin ? BatchReuseBlocker.RenderOrigin
+            : _lastBuildEvictionGen != _meshCache.EvictionGeneration ? BatchReuseBlocker.Eviction
+            : _lastBuildStreamActive != _transparencyStreamActive ? BatchReuseBlocker.StreamRouting
+            : BatchReuseBlocker.None;
+        var reuseBatches = reuseBlocker == BatchReuseBlocker.None;
+        LastStats.ReferenceBatchReuseBlocker = (int)reuseBlocker;
         _frameReusedBatches = reuseBatches;
         if (!reuseBatches)
         {
@@ -1121,8 +1408,19 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             _blendedDraws.Clear();
             _depthWritingBlendDraws.Clear();
             _resolvedMeshesThisFrame.Clear();
-            unchecked { BatchContentVersion++; } // content may change → shadow map re-renders
+            // NOTE: the content version is deliberately NOT bumped here. A rebuild happens whenever the
+            // cull cache misses — i.e. on most frames while the camera moves — and treating that as
+            // "shadow content changed" kept the map's content trigger permanently armed, forcing a full
+            // 4-cascade re-render on a fixed cadence for the entire duration of any movement. Measured:
+            // 33% of frames took the Full path at 60.2 ms of GPU against 29.2 ms for the near-cascade
+            // refresh, a 31 ms swing that read as a pulsing frame rate while terrain streamed in.
+            // The camera's own movement is already covered by the pose key; what the shadow map
+            // actually needs to know is whether the RESIDENT GEOMETRY changed, which is bumped after
+            // the build below.
         }
+
+        LastStats.ReferenceCullCacheHit = cullCacheValid;
+        LastStats.ReferenceBatchesReused = reuseBatches;
 
         if (cullCacheValid)
         {
@@ -1142,48 +1440,41 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // frustum drift, 1× for the per-axis Chebyshev test and the small-prop LOD ring.
             var driftSlack = tolerant ? CullPositionSlack : 0f;
             var frustumSlack = tolerant ? CullPositionSlack * 1.7321f : 0f;
-            var cullCylinder = tolerant
-                ? new VisibilityCylinder(cylinder.Position, cylinder.Radius + CullPositionSlack)
-                : cylinder;
+            // exitMargin (one cell, hoisted above) matches the terrain/water gathers' draw hysteresis
+            // so a boundary cell's references leave the screen in lockstep with its terrain instead
+            // of popping a frame earlier at the strict square edge.
+            var cullCylinder = new VisibilityCylinder(
+                cylinder.Position, cylinder.Radius + exitMargin + driftSlack);
             var smallPropCutoff = (cylinderRadius * SmallPropDistanceFraction) + driftSlack;
             var smallPropCutoffSq = smallPropCutoff * smallPropCutoff;
-            foreach (var cell in EnumerateVisibleCells(cullCylinder))
-            {
-                _cullCandidateScratch.Clear();
-                var totalPlacements = _renderCache.QueryPlacementCandidates(
-                    cell,
-                    cylinderX,
-                    cylinderY,
-                    (cylinderRadius * SquareBroadphaseFactor) + (driftSlack * 1.41422f), // corner reach + drift
-                    broadphaseFrustum,
-                    FrustumCullMargin + frustumSlack,
-                    _cullCandidateScratch);
-                if (totalPlacements == 0 || _cullCandidateScratch.Count == 0) continue;
+            var broadphaseReach =
+                ((cylinderRadius + exitMargin) * SquareBroadphaseFactor) + (driftSlack * 1.41422f);
+            var broadphaseRingReach = broadphaseRing > 0f ? broadphaseRing + driftSlack : 0f;
 
-                cellsVisited++;
-                candidates += _cullCandidateScratch.Count;
-                foreach (var r in _cullCandidateScratch)
-                {
+            // Per-candidate verdict, hoisted out of the loop so the sequential and PARALLEL paths
+            // below run byte-identical logic. Reads only frame-constant locals and immutable-for-the
+            // -duration state (_meshLocalRadius is written by the resolve pass, which runs after this
+            // cull; the override/category tables are mutated only by UI actions on this same thread),
+            // so it is safe to call concurrently.
+            CullVerdict TestCandidate(in RenderableReference r)
+            {
                     // Authored state combines the REFR's own Initially Disabled flag with its resolved
                     // XESP parent chain. A scene-local per-instance On/Off preview wins over both that
                     // state and the global "show disabled" diagnostic; category/layer gates below stay
                     // independent. Count a hidden state as culled so the HUD reflects the filter.
                     if (!_enabledOverrides.IsVisible(r.FormId, r.IsInitiallyDisabled, ShowInitiallyDisabled))
                     {
-                        culled++;
-                        continue;
+                        return CullVerdict.Culled;
                     }
                     if (!ShowGrass && r.IsGrass)
                     {
-                        culled++;
-                        continue;
+                        return CullVerdict.Culled;
                     }
                     // Hide engine marker objects (XMarker, map/travel markers, etc.) unless toggled on.
                     // The game strips these in play; we match that for a clean render.
                     if (!ShowMarkers && r.IsMarker)
                     {
-                        culled++;
-                        continue;
+                        return CullVerdict.Culled;
                     }
                     // Hide imposter LOD stand-ins. Their real geometry (STAT/SCOL) lives elsewhere in
                     // the same worldspace (placed at a different origin, not exactly co-located), so in
@@ -1191,16 +1482,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     // redundant and the engine would have hidden it. Toggle back via ShowImposters.
                     if (!ShowImposters && r.IsImposter)
                     {
-                        culled++;
-                        continue;
+                        return CullVerdict.Culled;
                     }
                     // Per-category visibility (user-selected category toggles; 2D legend toggles for the
                     // top-down overlay). The set is empty in the common case so this is one HashSet
                     // count check per candidate.
                     if (_hiddenCategories.Count > 0 && _hiddenCategories.Contains(r.Category))
                     {
-                        culled++;
-                        continue;
+                        return CullVerdict.Culled;
                     }
                     // Cull bounds: once a mesh is resident, use its ACTUAL local bounding sphere (radius
                     // around the NIF origin, scaled into world) instead of the OBND-or-256-fallback baked
@@ -1227,7 +1516,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     // Include the same FrustumCullMargin the frustum test uses, so a reference whose OBND
                     // bounds underestimate its real extent (or whose center sits just outside the square)
                     // is not dropped at the cylinder edge a frame before its true mesh radius resolves.
-                    var maxDist = cylinderRadius + cullRadius + FrustumCullMargin + driftSlack;
+                    var maxDist = cylinderRadius + exitMargin + cullRadius + FrustumCullMargin + driftSlack;
                     // Square ("Dist") footprint: reject iff the object falls outside the half-extent box
                     // along either axis (Chebyshev), so references load as a square matching the terrain/
                     // grid footprint instead of a circle.
@@ -1259,17 +1548,119 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     // shadows pop when their caster leaves the frustum). Kept in a shadow-only list
                     // the resolve pass batches for the shadow replay; the main draw never sees it.
                     if (!rejected && hasFrustum &&
-                        !frustum.IntersectsSphere(cullCenter, cullRadius + FrustumCullMargin + frustumSlack))
+                        !establishmentFrustum.IntersectsSphere(
+                            cullCenter, cullRadius + FrustumCullMargin + frustumSlack))
                     {
-                        rejected = true;
                         var ringReach = shadowRing + cullRadius + driftSlack;
                         if (shadowRing > 0f && MathF.Abs(dx) <= ringReach && MathF.Abs(dy) <= ringReach)
                         {
-                            _cachedShadowOnlyCasters.Add(r);
+                            // Frustum-rejected but inside the caster ring: still counts as culled for
+                            // the HUD, and rides the shadow-only list.
+                            return CullVerdict.ShadowOnlyCaster;
+                        }
+
+                        rejected = true;
+                    }
+
+                    return rejected ? CullVerdict.Culled : CullVerdict.Survivor;
+            }
+
+            _cullCellScratch.Clear();
+            foreach (var cell in EnumerateVisibleCells(cullCylinder))
+            {
+                _cullCellScratch.Add(cell);
+            }
+
+            // The establishment is the turn-stutter spike: it re-tests every candidate in the visible
+            // square (~217k at 16 cells) whenever the pose leaves the cached tolerance, and it is the
+            // dominant term on slow frames while orbiting. The per-cell work is independent — the
+            // spatial index is a ConcurrentDictionary of immutable per-cell indexes and every test
+            // above is a pure read — so partition the CELLS across the pool and merge the per-partition
+            // results in cell order afterwards. Merging in order keeps the survivor sequence (and
+            // therefore batch/draw order) bit-identical to the sequential path, which matters because
+            // blended draw order is visible.
+            var cellCount = _cullCellScratch.Count;
+            var partitionCount = ParallelCullEnabled
+                ? Math.Clamp(Math.Min(Environment.ProcessorCount - 1, cellCount / ParallelCullMinCellsPerPartition), 1, MaxCullPartitions)
+                : 1;
+
+            if (partitionCount <= 1)
+            {
+                for (var ci = 0; ci < cellCount; ci++)
+                {
+                    _cullCandidateScratch.Clear();
+                    var totalPlacements = _renderCache.QueryPlacementCandidates(
+                        _cullCellScratch[ci], cylinderX, cylinderY, broadphaseReach, broadphaseFrustum,
+                        FrustumCullMargin + frustumSlack, _cullCandidateScratch, broadphaseRingReach);
+                    if (totalPlacements == 0 || _cullCandidateScratch.Count == 0) continue;
+
+                    cellsVisited++;
+                    candidates += _cullCandidateScratch.Count;
+                    foreach (var r in _cullCandidateScratch)
+                    {
+                        switch (TestCandidate(in r))
+                        {
+                            case CullVerdict.Survivor:
+                                _cachedCullSurvivors.Add(r);
+                                break;
+                            case CullVerdict.ShadowOnlyCaster:
+                                _cachedShadowOnlyCasters.Add(r);
+                                culled++;
+                                break;
+                            default:
+                                culled++;
+                                break;
                         }
                     }
-                    if (rejected) culled++;
-                    else _cachedCullSurvivors.Add(r);
+                }
+            }
+            else
+            {
+                EnsureCullPartitions(partitionCount);
+                var perPartition = (cellCount + partitionCount - 1) / partitionCount;
+                System.Threading.Tasks.Parallel.For(0, partitionCount, p =>
+                {
+                    var state = _cullPartitions![p];
+                    state.Reset();
+                    var start = p * perPartition;
+                    var end = Math.Min(start + perPartition, cellCount);
+                    for (var ci = start; ci < end; ci++)
+                    {
+                        state.Candidates.Clear();
+                        var totalPlacements = _renderCache.QueryPlacementCandidates(
+                            _cullCellScratch[ci], cylinderX, cylinderY, broadphaseReach, broadphaseFrustum,
+                            FrustumCullMargin + frustumSlack, state.Candidates, broadphaseRingReach);
+                        if (totalPlacements == 0 || state.Candidates.Count == 0) continue;
+
+                        state.CellsVisited++;
+                        state.CandidateCount += state.Candidates.Count;
+                        foreach (var r in state.Candidates)
+                        {
+                            switch (TestCandidate(in r))
+                            {
+                                case CullVerdict.Survivor:
+                                    state.Survivors.Add(r);
+                                    break;
+                                case CullVerdict.ShadowOnlyCaster:
+                                    state.ShadowOnly.Add(r);
+                                    state.Culled++;
+                                    break;
+                                default:
+                                    state.Culled++;
+                                    break;
+                            }
+                        }
+                    }
+                });
+
+                for (var p = 0; p < partitionCount; p++)
+                {
+                    var state = _cullPartitions![p];
+                    _cachedCullSurvivors.AddRange(state.Survivors);
+                    _cachedShadowOnlyCasters.AddRange(state.ShadowOnly);
+                    cellsVisited += state.CellsVisited;
+                    candidates += state.CandidateCount;
+                    culled += state.Culled;
                 }
             }
             cullMs = ElapsedMilliseconds(cullStarted);
@@ -1284,6 +1675,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             _cullCachePose = cullCameraPose;
             _cullCachePosition = cylinder.Position;
             _cullCacheRadius = cylinder.Radius;
+            // How far the survivor set above tolerates rotation. 1f (no widening applied) keeps the
+            // historical exact-forward compare.
+            _cullCacheForwardCos = effectiveAngleSlack > 0f ? MathF.Cos(effectiveAngleSlack) : 1f;
             _cullCacheMeshRadiusCount = _meshLocalRadius.Count;
             _cullCacheShowMarkers = ShowMarkers;
             _cullCacheShowGrass = ShowGrass;
@@ -1464,11 +1858,18 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         r.IsGrass,
                         r.GrassWaveMultiplier,
                         worldCenter.Z,
-                        worldRadius);
+                        worldRadius,
+                        ResolveWorldBoundsMaxZ(
+                            r.MeshId, sub, sampledSourceWorld, worldCenter.Z, worldRadius),
+                        r.MeshId,
+                        new Vector2(worldCenter.X, worldCenter.Y));
                     // Depth-writing blend foliage (e.g. NVSeaPlant02) draws inline BEFORE the water pass so
                     // water occludes it from above; everything else defers to after water. Billboards keep
                     // the deferred path — they need per-frame camera-facing matrices and aren't occluders.
-                    if (sub.DepthWritingBlend && !sub.IsBillboard)
+                    // With the unified transparency stream active (set per FRAME by the host, not the
+                    // static switch — non-streaming frames/games must keep the hoisted path), z-write
+                    // becomes a per-draw PSO choice inside the single sorted stream instead.
+                    if (sub.DepthWritingBlend && !sub.IsBillboard && !_transparencyStreamActive)
                     {
                         _depthWritingBlendDraws.Add(blendedDraw);
                     }
@@ -1491,8 +1892,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 {
                     // Grass cutouts take the alpha-to-coverage variants so MSAA antialiases the
                     // blade silhouettes (identical to the plain opaque PSOs when the scene is
-                    // single-sampled — the factory aliases them, so no fallback branch here).
-                    pso = sub.DoubleSided ? _pipelines.OpaqueDoubleA2CPso : _pipelines.OpaqueBackA2CPso;
+                    // single-sampled — the factory aliases them, so no fallback branch here), on
+                    // the per-game grass shader when the loaded game has a recovered pair.
+                    pso = _pipelines.GetGrassCutoutPso(sub.DoubleSided);
                 }
                 var usesGrassDistanceEnvelope =
                     GrassDistanceCullPolicy.UsesEnvelope(r.IsGrass, in _grassDistanceEnvelope);
@@ -1557,18 +1959,21 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             relWorldMatrix.Translation -= renderOrigin;
             foreach (var sub in mesh.Submeshes)
             {
-                if (sub.AlphaRenderMode == NifAlphaRenderMode.Blend || sub.IsBillboard || sub.IsDecal)
+                if (sub.AlphaRenderMode == NifAlphaRenderMode.Blend || sub.IsBillboard || sub.IsDecal
+                    || (_tallGrassWindSupported && sub.IsTallGrass))
                 {
+                    // TallGrass: retail FO3/FNV ships no grass caster permutation — do not stream
+                    // off-screen grass just to cast (mirrors the capture-side exclusion).
                     continue;
                 }
 
                 var pso = sub.DoubleSided ? _pipelines.OpaqueDoublePso : _pipelines.OpaqueBackPso;
                 if (r.IsGrass && sub.AlphaTest)
                 {
-                    // Mirror the main pass's A2C routing so the shadow-only instances join the
+                    // Mirror the main pass's routing so the shadow-only instances join the
                     // SAME batch (the PSO is part of the batch key) instead of splitting a
                     // second plain-PSO batch for the identical grass submesh.
-                    pso = sub.DoubleSided ? _pipelines.OpaqueDoubleA2CPso : _pipelines.OpaqueBackA2CPso;
+                    pso = _pipelines.GetGrassCutoutPso(sub.DoubleSided);
                 }
                 var usesGrassDistanceEnvelope =
                     GrassDistanceCullPolicy.UsesEnvelope(r.IsGrass, in _grassDistanceEnvelope);
@@ -1585,6 +1990,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     batch.ShadowOnlyPhysicsLiteSeeds.Add(r.FormId);
                 }
             }
+        }
+
+        if (!reuseBatches)
+        {
+            // Order each batch's instances by smallest containing cascade so the shadow replay can
+            // draw a per-cascade PREFIX. Done at BUILD time, not per frame: the copy pass stays a
+            // bulk memcpy, and reuse frames inherit the ordering for free.
+            SortBatchInstancesByCascade();
         }
 
         if (!reuseBatches)
@@ -1608,12 +2021,26 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                              && _meshCache.FrameDecodeRequests == 0 && _meshCache.FrameDecodeStarts == 0
                              && _meshCache.FrameActiveDecodes == 0;
             _quietBuildStreak = buildQuiet ? _quietBuildStreak + 1 : 0;
+
+            // Shadow content signal: bump ONLY when the resident geometry actually changed — a mesh
+            // became GPU-resident this frame, or the cache evicted something the frozen batches
+            // referenced. Rebuilding the batches because the camera moved does not change what casts
+            // a shadow within the cascade footprint (which is anchored to the camera anyway), so it
+            // must not force a re-render. Compared BEFORE _lastBuildEvictionGen is overwritten below.
+            var residencyChanged = _meshCache.FrameGpuUploads > 0
+                                   || _lastBuildEvictionGen != _meshCache.EvictionGeneration;
+            if (residencyChanged)
+            {
+                unchecked { BatchContentVersion++; }
+            }
+
             _lastBuildValid = true;
             _framesSinceBuild = 0;
             _lastBuildCullEpoch = _cullEpoch;
             _lastBuildRenderOrigin = renderOrigin;
             _lastBuildEvictionGen = _meshCache.EvictionGeneration;
             _lastBuildQuiesced = _quietBuildStreak >= QuietBuildStreakFrames;
+            _lastBuildStreamActive = _transparencyStreamActive;
             _lastBuildDrawn = referencesWithReadyMesh;
             _lastBuildMissing = missingMeshes;
             _lastBuildTexturePending = texturePending;
@@ -1699,32 +2126,122 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     the shader reproduces reversed-Z opaque occlusion and feathers only eligible effects.
     ///     Otherwise the established hardware-depth PSO remains active.
     /// </summary>
-    public void RenderBlendedDeferred() =>
-        RenderBlendedDeferredCore(DeferredWaterPartition.All, 0f, allowSceneDepth: true);
+    public void RenderBlendedDeferred()
+    {
+        // No split this frame: make that legible instead of leaving the previous frame's numbers
+        // standing. A stale non-zero count here is exactly what disguised the below-water split
+        // being disabled outdoors for a whole round of testing.
+        ResetBelowWaterPartitionTelemetry();
+        RenderBlendedDeferredCore(DeferredWaterPartition.All, probe: null, cameraZ: 0f, allowSceneDepth: true);
+    }
 
     /// <summary>
-    ///     Draws only translucent geometry whose conservative world bound is wholly below the
-    ///     generated-water plane.  The host invokes this before capturing WATER001's opaque-scene
-    ///     approximation so underwater decals/effects are refracted by the surface instead of being
-    ///     composited over it.  Scene-depth sampling is deliberately disabled here because the depth
-    ///     resource is still in its ordinary writable state.
+    ///     Blended submeshes classified as wholly below the water surface by the most recent
+    ///     below-water partition, alongside the candidate total and a representative surface height.
+    ///     Surfaced in the HUD and the capture telemetry so "are submerged decals actually being
+    ///     reordered?" is a readable number rather than a pixel-level judgement call. Reset whenever a
+    ///     frame does not partition, so zero always means "not splitting".
     /// </summary>
-    public void RenderBlendedDeferredBelowWater(float planeHeight) =>
+    public int LastBelowWaterBlendedDraws { get; private set; }
+
+    /// <inheritdoc cref="LastBelowWaterBlendedDraws" />
+    public int LastPartitionedBlendedCandidates { get; private set; }
+
+    /// <inheritdoc cref="LastBelowWaterBlendedDraws" />
+    public float LastBelowWaterPartitionPlane { get; private set; }
+
+    private void ResetBelowWaterPartitionTelemetry()
+    {
+        LastBelowWaterBlendedDraws = 0;
+        LastPartitionedBlendedCandidates = 0;
+        LastBelowWaterPartitionPlane = float.NaN;
+    }
+
+    /// <summary>
+    ///     Draws only translucent geometry lying wholly below the water surface local to its own XY.
+    ///     The host invokes this before the water pass so underwater decals and effects end up beneath
+    ///     the surface — water writes no depth, so anything issued afterwards composites on top of it
+    ///     regardless of where it sits in the world. Scene-depth sampling is deliberately disabled
+    ///     here because the depth resource is still in its ordinary writable state.
+    /// </summary>
+    public void RenderBlendedDeferredBelowWater(IWaterHeightProbe probe, float cameraZ) =>
         RenderBlendedDeferredCore(
             DeferredWaterPartition.WhollyBelow,
-            planeHeight,
+            probe,
+            cameraZ,
             allowSceneDepth: false);
 
     /// <summary>Draws the complementary intersecting/above-water translucent partition.</summary>
-    public void RenderBlendedDeferredAtOrAboveWater(float planeHeight) =>
+    public void RenderBlendedDeferredAtOrAboveWater(IWaterHeightProbe probe, float cameraZ) =>
         RenderBlendedDeferredCore(
             DeferredWaterPartition.NotWhollyBelow,
-            planeHeight,
+            probe,
+            cameraZ,
             allowSceneDepth: true);
+
+    // Set per frame by the host BEFORE Render: this frame's blended routing target. Deliberately
+    // per-frame rather than the static env switch — a non-streaming frame (other game, no visible
+    // FNV cell water) must keep the legacy hoisted depth-writing path.
+    private bool _transparencyStreamActive;
+
+    /// <summary>Tells the next <c>Render</c> whether this frame's transparency draws through the
+    /// unified stream (see <see cref="RenderBlendedDeferredUnified" />).</summary>
+    public void SetTransparencyStreamActive(bool active) => _transparencyStreamActive = active;
+
+    /// <summary>
+    ///     Unified transparency stream: draws the deferred blended submeshes back-to-front while
+    ///     interleaving the water renderer's queued batches at their depths (the host drains the
+    ///     remaining nearer water afterwards). Scene depth is the post-opaque snapshot, so soft
+    ///     particles work across the whole stream while the live DSV stays writable for
+    ///     depth-writing blends.
+    ///     <para>
+    ///         <paramref name="probe" /> restricts the stream to draws NOT wholly below the water
+    ///         surface; the host draws the submerged complement through
+    ///         <see cref="RenderBlendedDeferredBelowWater" /> beforehand. The global depth sort alone
+    ///         cannot order those: water is queued per CELL, so its sort key is a 4096-unit quad's
+    ///         CENTROID, and any submerged decal sitting in the near half of its own cell sorts
+    ///         nearer than the surface above it and composites on top. That is exactly the residual
+    ///         "decals underwater render above it, but not at all angles" — the submerged/above split
+    ///         is a classification, not a distance, so it has to stay one.
+    ///     </para>
+    /// </summary>
+    public void RenderBlendedDeferredUnified(
+        ITransparencyInterleave interleave, IWaterHeightProbe? probe = null, float cameraZ = 0f)
+    {
+        // No probe = no split this frame. Clear the counters rather than leaving the previous
+        // frame's standing, for the same reason RenderBlendedDeferred does: a stale non-zero is
+        // what once disguised the below-water split being off outdoors for a whole test round.
+        if (probe is null) ResetBelowWaterPartitionTelemetry();
+
+        // Address 0 = the opaque pass skipped this frame (ring exhaustion) — nothing valid to bind.
+        // The HOST still drains the water queue afterwards, so water survives such a frame.
+        if (_blendedDraws.Count == 0 || _deferredPerFrameCbvAddress == 0) return;
+        var cmd = _recorder.CommandList;
+
+        cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, _deferredPerFrameCbvAddress);
+        GpuRootSignature12.SetGraphicsBindlessTables(cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
+
+        ID3D12PipelineState? currentPso = null;
+        double cbUpdateMs = 0, drawCallMs = 0;
+        var submeshDraws = 0;
+        var sceneDepthSampled = _deferredSceneDepthIndex != NoSceneDepth;
+        DrawBlended(
+            cmd, _deferredFrameIndex, sceneDepthSampled,
+            ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws,
+            probe is null ? DeferredWaterPartition.All : DeferredWaterPartition.NotWhollyBelow,
+            probe, cameraZ,
+            interleave);
+
+        LastStats.ReferenceSubmeshDraws += submeshDraws;
+        LastStats.ReferenceCbUpdateMilliseconds += cbUpdateMs;
+        LastStats.ReferenceDrawCallMilliseconds += drawCallMs;
+    }
 
     private void RenderBlendedDeferredCore(
         DeferredWaterPartition waterPartition,
-        float waterPlaneHeight,
+        IWaterHeightProbe? probe,
+        float cameraZ,
         bool allowSceneDepth)
     {
         // Address 0 = the opaque pass skipped this frame (ring exhaustion) — nothing valid to bind.
@@ -1733,7 +2250,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, _deferredPerFrameCbvAddress);
-        cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.BindlessSrvTable, _cbvSrvUavHeap.BindlessHeapStartGpu);
+        GpuRootSignature12.SetGraphicsBindlessTables(cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
 
         ID3D12PipelineState? currentPso = null;
         double cbUpdateMs = 0, drawCallMs = 0;
@@ -1742,7 +2259,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         DrawBlended(
             cmd, _deferredFrameIndex, sceneDepthSampled,
             ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws,
-            waterPartition, waterPlaneHeight);
+            waterPartition, probe, cameraZ);
 
         LastStats.ReferenceSubmeshDraws += submeshDraws;
         LastStats.ReferenceCbUpdateMilliseconds += cbUpdateMs;
@@ -1770,7 +2287,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     <see cref="ArmShadowCapture" />). Returns false (drawing nothing) when there is nothing
     ///     to replay.
     /// </summary>
-    public bool RenderShadowDepth(in SunShadowMath.LightFrustum frustum)
+    /// <param name="cascadeIndex">
+    ///     Which cascade is being filled. Each captured draw carries a per-cascade instance count (a
+    ///     prefix into its cascade-ordered block), so a near cascade submits only the casters that can
+    ///     actually reach it instead of the whole scene.
+    /// </param>
+    public bool RenderShadowDepth(in SunShadowMath.LightFrustum frustum, int cascadeIndex = 0)
     {
         _shadowCaptureArmed = false;
         if (_shadowDraws.Count == 0) return false;
@@ -1794,13 +2316,20 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         }
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
-        cmd.SetGraphicsRootDescriptorTable(
-            GpuRootSignature12.Slots.BindlessSrvTable, _cbvSrvUavHeap.BindlessHeapStartGpu);
+        GpuRootSignature12.SetGraphicsBindlessTables(cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
 
         ID3D12PipelineState? currentPso = null;
         ulong currentInstanceAddress = 0;
         foreach (var draw in _shadowDraws)
         {
+            // Tested BEFORE any state binding: a batch that cannot reach this cascade should cost
+            // nothing at all, not a PSO/SRV/CB/IA setup followed by a zero-instance draw.
+            var cascadeInstances = Math.Min(draw.Cascades[cascadeIndex], draw.DrawCount);
+            if (cascadeInstances <= 0)
+            {
+                continue;
+            }
+
             var pso = draw.AlphaTested ? _pipelines.ShadowAlphaTestPso : _pipelines.ShadowOpaquePso;
             if (!ReferenceEquals(currentPso, pso))
             {
@@ -1818,11 +2347,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, draw.PerDrawCbAddress);
             cmd.IASetVertexBuffers(0, draw.VertexBufferView);
             cmd.IASetIndexBuffer(draw.IndexBufferView);
-            cmd.DrawIndexedInstanced((uint)draw.IndexCount, (uint)draw.DrawCount, 0, 0, 0);
+            cmd.DrawIndexedInstanced((uint)draw.IndexCount, (uint)cascadeInstances, 0, 0, 0);
             if (draw.UsesTallGrassWind)
             {
                 LastStats.ReferenceTallGrassShadowDraws++;
-                LastStats.ReferenceTallGrassShadowInstances += draw.DrawCount;
+                LastStats.ReferenceTallGrassShadowInstances += cascadeInstances;
             }
         }
 
@@ -1835,6 +2364,17 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _disposed = true;
         _pipelines.Dispose();
     }
+
+    /// <summary>
+    ///     Angular bound for the tolerant cull cache: true when the camera has rotated no further than
+    ///     the establishment frustum was widened. <paramref name="cosSlack" /> of 1 means "no widening
+    ///     was applied" (orthographic, or the slack is configured off) and degrades to an exact compare
+    ///     — a <c>Dot &gt;= 1f</c> test would be flaky at ~0.99999994, so it is spelled out.
+    ///     Both vectors are unit (CameraState.Forward, RendererCameraMotion.ForwardFromYawPitch), so
+    ///     <c>Dot &gt;= cos θ</c> is exactly "angle &lt;= θ".
+    /// </summary>
+    private static bool ForwardWithin(Vector3 cached, Vector3 current, float cosSlack) =>
+        cosSlack >= 1f ? cached == current : Vector3.Dot(cached, current) >= cosSlack;
 
     // Per-axis drift bound for the tolerant cull cache (see CullCameraPose).
     private static bool ChebyshevWithin(Vector3 a, Vector3 b, float slack)
@@ -1899,8 +2439,29 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 continue;
             }
 
-            _nifWaterPlanes.Add(placed);
+            // Water renders with the type of WHERE IT IS: stamp the surface with its own cell's
+            // XCWT at placement time (0 → the renderer falls back to the worldspace default).
+            // Without this, placed surfaces rendered with the CAMERA cell's sticky selection and
+            // changed look wholesale when the camera crossed an XCWT boundary mid-flight.
+            _nifWaterPlanes.Add(placed.WithWaterFormId(ResolveNifWaterPlaneFormId(placed)));
         }
+    }
+
+    /// <summary>The XCWT of the cell containing the placed surface's centroid, or 0 when the cell
+    /// is unknown or authors no override.</summary>
+    private uint ResolveNifWaterPlaneFormId(NifWaterGeometry placed)
+    {
+        if (_cells is null)
+        {
+            return 0;
+        }
+
+        var center = (placed.BoundsMin + placed.BoundsMax) * 0.5f;
+        var gx = (int)MathF.Floor(center.X / global::BethesdaMultitool.WorldGridConstants.CellSize);
+        var gy = (int)MathF.Floor(center.Y / global::BethesdaMultitool.WorldGridConstants.CellSize);
+        return _cells.TryGetValue((gx, gy), out var cell) && cell.WaterFormId is > 0
+            ? cell.WaterFormId.Value
+            : 0;
     }
 
     private void DrawOpaqueBatches(
@@ -1985,6 +2546,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         CollectionsMarshal.AsSpan(worlds).CopyTo(span.Slice(offset, worlds.Count));
                         offset += worlds.Count;
                         batchState.FrameDrawCount = worlds.Count;
+                        // Nothing was dropped, so the build-time prefixes still describe the block.
+                        Array.Copy(
+                            batchState.CascadePrefix, batchState.FrameCascadeCount,
+                            batchState.FrameCascadeCount.Length);
                     }
                     else
                     {
@@ -1992,8 +2557,18 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         var boundsSpan = CollectionsMarshal.AsSpan(batchState.InstanceBounds);
                         var physicsSeeds = CollectionsMarshal.AsSpan(batchState.PhysicsLiteSeeds);
                         var batchStart = offset;
+                        // Instances are in cascade order, so the prefixes only need re-deriving against
+                        // what SURVIVES the filters: as each source index crosses a build-time prefix
+                        // boundary, that cascade's frame count is the number written so far.
+                        var cascadeCursor = 0;
                         for (var i = 0; i < worldSpan.Length; i++)
                         {
+                            while (cascadeCursor < batchState.FrameCascadeCount.Length &&
+                                   i >= batchState.CascadePrefix[cascadeCursor])
+                            {
+                                batchState.FrameCascadeCount[cascadeCursor++] = offset - batchStart;
+                            }
+
                             if (filterMainGrassDistance && !PassesExactGrassDistance(
                                     new Vector3(boundsSpan[i].X, boundsSpan[i].Y, boundsSpan[i].Z),
                                     isGrass: true)) continue;
@@ -2004,7 +2579,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                                 ? ApplyPhysicsLiteSway(batchState.Submesh, physicsSeeds[i], worldSpan[i])
                                 : worldSpan[i];
                         }
+
                         batchState.FrameDrawCount = offset - batchStart;
+                        // Any cascade whose boundary was never crossed spans everything written.
+                        while (cascadeCursor < batchState.FrameCascadeCount.Length)
+                        {
+                            batchState.FrameCascadeCount[cascadeCursor++] = offset - batchStart;
+                        }
                     }
 
                     // Shadow-only casters go AFTER the main instances so the main draw's count
@@ -2021,6 +2602,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         {
                             CollectionsMarshal.AsSpan(shadowWorlds!).CopyTo(span.Slice(offset, shadowCount));
                             offset += shadowCount;
+                            Array.Copy(
+                                batchState.ShadowOnlyCascadePrefix, batchState.FrameShadowOnlyCascadeCount,
+                                batchState.FrameShadowOnlyCascadeCount.Length);
                         }
                         else
                         {
@@ -2028,8 +2612,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                             var shadowSpan = CollectionsMarshal.AsSpan(shadowWorlds!);
                             var shadowPhysicsSeeds =
                                 CollectionsMarshal.AsSpan(batchState.ShadowOnlyPhysicsLiteSeeds);
+                            var cascadeCursor = 0;
                             for (var i = 0; i < shadowSpan.Length; i++)
                             {
+                                while (cascadeCursor < batchState.FrameShadowOnlyCascadeCount.Length &&
+                                       i >= batchState.ShadowOnlyCascadePrefix[cascadeCursor])
+                                {
+                                    batchState.FrameShadowOnlyCascadeCount[cascadeCursor++] =
+                                        offset - shadowStart;
+                                }
+
                                 if (filterGrassDistance && !PassesExactGrassDistance(
                                         shadowSpan[i].Translation + _frameRenderOrigin,
                                         isGrass: true)) continue;
@@ -2041,6 +2633,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                             }
 
                             shadowCount = offset - shadowStart;
+                            while (cascadeCursor < batchState.FrameShadowOnlyCascadeCount.Length)
+                            {
+                                batchState.FrameShadowOnlyCascadeCount[cascadeCursor++] = shadowCount;
+                            }
                         }
                     }
                     batchState.FrameShadowOnlyCount = shadowCount;
@@ -2283,16 +2879,72 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     ObserveTallGrassWaveMultiplier(batchState.GrassWaveMultiplier);
                 }
             }
-            if (_shadowCaptureArmed && !sub.IsDecal && drawCount + shadowCount > 0 && drawLiveness)
+            // Retail FO3/FNV grass never casts: the shipped GRASS shader families (GRASS2000-2006
+            // + TMS/23x mirrors, shaderpackage019) contain no depth/caster permutation at all, so
+            // TallGrass submeshes stay out of the sun-shadow cascades. Gated on the FNV wind
+            // support axis so other games' vegetation is untouched.
+            var fnvGrassNeverCasts = _tallGrassWindSupported && sub.IsTallGrass;
+            if (_shadowCaptureArmed && !sub.IsDecal && !fnvGrassNeverCasts &&
+                drawCount + shadowCount > 0 && drawLiveness)
             {
                 // Record this draw for the frame-end shadow replay: the ring-buffer CB just bound
                 // (uInstanceBase et al.) + the t8 instance block it indexes stay valid until the
                 // frame's allocations are recycled, i.e. exactly the replay window. The replay's
                 // instance count INCLUDES the shadow-only casters appended after the main range.
-                _shadowDraws.Add(new ShadowDraw(
-                    sub.EffectiveVertexBufferView, sub.IndexBufferView, sub.IndexCount,
-                    instanceDrawAlloc.GpuAddress, boundInstanceAddress, drawCount + shadowCount,
-                    sub.AlphaTest, batchState.UsesTallGrassWind));
+                // The shadow-only casters sit AFTER the main range, so a cascade's set spans two
+                // disjoint sub-ranges — which the replay cannot express, since it may only truncate a
+                // draw's instance count from the tail (the start offset lives in the immutable CB just
+                // bound). Emit the tail as its own draw with its own instance base so each range stays
+                // a clean prefix. Its CB is allocated HERE, inside the main pass, so the shadow pass's
+                // protected ring reservation is unaffected.
+                var mainCascades = CascadeCounts.From(batchState.FrameCascadeCount, drawCount);
+                var shadowTailCb = 0UL;
+                if (shadowCount > 0 &&
+                    _ringBuffer.TryAllocate(
+                        frameIndex, InstanceDrawByteSize, out var shadowTailAlloc,
+                        GpuRingBuffer12.CbAlignment))
+                {
+                    unsafe
+                    {
+                        *(InstanceDrawConstants*)shadowTailAlloc.CpuPtr =
+                            instanceDraw with { InstanceBase = drawStartInstance + (uint)drawCount };
+                    }
+
+                    shadowTailCb = shadowTailAlloc.GpuAddress;
+                }
+
+                if (shadowCount > 0 && shadowTailCb == 0UL)
+                {
+                    // No room for the tail's own CB: fall back to one unculled draw covering both
+                    // ranges. Correct, just not cascade-culled for this batch this frame.
+                    _shadowDraws.Add(new ShadowDraw(
+                        sub.EffectiveVertexBufferView, sub.IndexBufferView, sub.IndexCount,
+                        instanceDrawAlloc.GpuAddress, boundInstanceAddress, drawCount + shadowCount,
+                        sub.AlphaTest, CascadeCounts.Uniform(drawCount + shadowCount),
+                        batchState.UsesTallGrassWind));
+                }
+                else
+                {
+                    if (drawCount > 0)
+                    {
+                        _shadowDraws.Add(new ShadowDraw(
+                            sub.EffectiveVertexBufferView, sub.IndexBufferView, sub.IndexCount,
+                            instanceDrawAlloc.GpuAddress, boundInstanceAddress, drawCount,
+                            sub.AlphaTest, mainCascades, batchState.UsesTallGrassWind));
+                    }
+
+                    if (shadowCount > 0)
+                    {
+                        _shadowDraws.Add(new ShadowDraw(
+                            sub.EffectiveVertexBufferView, sub.IndexBufferView, sub.IndexCount,
+                            shadowTailCb, boundInstanceAddress, shadowCount,
+                            sub.AlphaTest,
+                            CascadeCounts.From(batchState.FrameShadowOnlyCascadeCount, shadowCount),
+                            // Tall-grass shadow telemetry is attributed to the main draw only, so the
+                            // tail must not double-count it.
+                            UsesTallGrassWind: false));
+                    }
+                }
                 if (batchState.UsesTallGrassWind)
                 {
                     ObserveTallGrassWaveMultiplier(batchState.GrassWaveMultiplier);
@@ -2347,53 +2999,153 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         ref double drawCallMs,
         ref int submeshDraws,
         DeferredWaterPartition waterPartition = DeferredWaterPartition.All,
-        float waterPlaneHeight = 0f)
+        IWaterHeightProbe? probe = null,
+        float cameraZ = 0f,
+        ITransparencyInterleave? interleave = null)
     {
         if (_blendedDraws.Count == 0) return;
 
         var draws = _blendedDraws;
-        if (waterPartition != DeferredWaterPartition.All)
+        if (waterPartition != DeferredWaterPartition.All && probe is not null)
         {
             _waterPartitionedBlendedDraws.Clear();
+            var belowCount = 0;
+            var surfaceSum = 0f;
             foreach (var draw in _blendedDraws)
             {
+                // Each draw is tested against the water surface local to its OWN XY — no single
+                // global plane works across a view containing several water bodies at different
+                // heights (see WaterTransparencyPartition for the measured failure).
                 var below = WaterTransparencyPartition.IsWhollyBelow(
-                    draw.WorldBoundsCenterZ,
-                    draw.WorldBoundsRadius,
-                    waterPlaneHeight);
+                    probe,
+                    draw.WorldBoundsCenterXY.X,
+                    draw.WorldBoundsCenterXY.Y,
+                    draw.WorldBoundsMaxZ,
+                    cameraZ);
+                if (below)
+                {
+                    belowCount++;
+                    if (probe.TryGetWaterHeightAt(
+                            draw.WorldBoundsCenterXY.X, draw.WorldBoundsCenterXY.Y, out var surface))
+                    {
+                        surfaceSum += surface;
+                    }
+                }
+
                 if ((waterPartition == DeferredWaterPartition.WhollyBelow && below) ||
                     (waterPartition == DeferredWaterPartition.NotWhollyBelow && !below))
                 {
                     _waterPartitionedBlendedDraws.Add(draw);
                 }
             }
+
+            // Recorded on the below-water leg only, so the pair describes one classification rather
+            // than the complement overwriting it. Without this the split was invisible to every
+            // user-facing surface, which is what let it sit dead outdoors unnoticed. The reported
+            // height is the mean surface across the submerged draws — with per-XY lookup there is no
+            // longer a single plane to quote.
+            if (waterPartition == DeferredWaterPartition.WhollyBelow)
+            {
+                LastBelowWaterBlendedDraws = belowCount;
+                LastPartitionedBlendedCandidates = _blendedDraws.Count;
+                LastBelowWaterPartitionPlane = belowCount > 0 ? surfaceSum / belowCount : float.NaN;
+            }
+
             if (_waterPartitionedBlendedDraws.Count == 0) return;
             draws = _waterPartitionedBlendedDraws;
         }
 
-        draws.Sort(static (a, b) => b.DistanceSquared.CompareTo(a.DistanceSquared));
+        // Sort an INDEX array, not the draws themselves. BlendedReferenceDraw is ~220 bytes (two
+        // Matrix4x4 plus a dozen vectors), and List.Sort moves the elements: at the measured ~7,000
+        // blended draws that is ~90k comparisons each shuffling several hundred bytes, tens of MB of
+        // pure memory traffic per frame. Permuting 4-byte indices is the same ordering for ~1/50th of
+        // the movement, and leaves the draw list itself untouched.
+        var order = ArrayPool<int>.Shared.Rent(draws.Count);
+        var sortKeys = ArrayPool<float>.Shared.Rent(draws.Count);
         var reservations = ArrayPool<GpuRingBuffer12.RingAllocation>.Shared.Rent(draws.Count);
         try
         {
+            for (var i = 0; i < draws.Count; i++)
+            {
+                order[i] = i;
+                // View-axis depth (clip-space w of the draw's world bound center against the frame
+                // viewProj) — the engine's own alpha-sort metric, and the SAME metric the water
+                // batches carry, which is what lets the two streams merge. Negated so an ASCENDING
+                // sort yields farthest-first (back-to-front), which the blend pass and the
+                // nearest-first reservation plan both assume. Non-finite keys pin deterministically
+                // to the far end (drawn first) instead of NaN-poisoning the comparison.
+                var draw = draws[i];
+                var depth = (draw.WorldBoundsCenterXY.X * _frameWColumn.X)
+                            + (draw.WorldBoundsCenterXY.Y * _frameWColumn.Y)
+                            + (draw.WorldBoundsCenterZ * _frameWColumn.Z)
+                            + _frameWColumn.W;
+                sortKeys[i] = float.IsFinite(depth) ? -depth : float.NegativeInfinity;
+            }
+
+            // Sort the index array through a keyed comparer with an original-index tiebreak: the
+            // engine sorts alpha passes with a STABLE merge sort, so equal depths keep registration
+            // order — Array.Sort's introsort alone would let ties swap frame to frame.
+            _blendedOrderComparer.Keys = sortKeys;
+            Array.Sort(order, 0, draws.Count, _blendedOrderComparer);
             // Reserve per-draw CBs nearest-first, then issue the surviving suffix back-to-front.
             // Optional particle-sort index allocations happen only after every survivor's CB is safe,
             // so later transient allocations can degrade sorting but can never evict a nearer object.
             var reservationStarted = StartTiming();
             var firstSelected = ReserveNearestBlendedDrawConstants(
-                frameIndex, draws, reservations, out var truncated);
+                frameIndex, draws, order, reservations, out var truncated);
             cbUpdateMs += ElapsedMilliseconds(reservationStarted);
             LastFrameDrawsTruncated += truncated;
             for (var i = firstSelected; i < draws.Count; i++)
             {
-                var draw = draws[i];
+                // i walks the SORTED positions (reservations are keyed to them); order[i] maps back to
+                // the draw itself, which was never moved.
+                var draw = draws[order[i]];
+                // Unified stream merge: draw every queued water batch at least as far as this draw
+                // first (sortKeys holds the NEGATED depth, indexed by ORIGINAL draw index). Water
+                // clobbers the per-frame CBV/bindless tables, so rebind and force a PSO re-set.
+                if (interleave is not null && interleave.DrainDownTo(-sortKeys[order[i]]))
+                {
+                    cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+                    cmd.SetGraphicsRootConstantBufferView(
+                        GpuRootSignature12.Slots.PerFrameCbv, _deferredPerFrameCbvAddress);
+                    GpuRootSignature12.SetGraphicsBindlessTables(
+                        cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
+                    currentPso = null;
+                }
+
                 if (draw.Submesh.EffectiveIndexCount <= 0 ||
                     !PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)) continue;
-                var pso = _pipelines.GetBlendPipeline(
-                    draw.Submesh.SrcBlendMode,
-                    draw.Submesh.DstBlendMode,
-                    draw.Submesh.DoubleSided,
-                    draw.Submesh.IsDecal,
-                    grassRoute: draw.IsGrass);
+                // In the unified stream a depth-writing blend is a per-draw PSO choice (the hoisted
+                // pre-water list no longer exists there). With the ENGINE rule active (default),
+                // z-write is the decompile-proven ambient-ON minus the authored exceptions baked
+                // into EngineZWriteOff; FALLOUT_VIEWER_ENGINE_ZWRITE=0 falls back to the legacy
+                // blend+test+threshold classification. Billboards keep z-write off on BOTH arms —
+                // a deliberate viewer deviation (the engine's 16 SetZWriteEnable sites include no
+                // billboard case): their camera-facing quads are not occluders, and most are
+                // NoLighting (authored write-off) anyway.
+                var engineRule = interleave is not null && EngineZWriteEnabled;
+                var writesDepth = !draw.Submesh.IsBillboard &&
+                                  (engineRule
+                                      ? !draw.Submesh.EngineZWriteOff
+                                      : draw.Submesh.DepthWritingBlend);
+                // NoLighting "zbuffer test" bit 31 CLEAR ⇒ hardware depth test OFF. Applied only
+                // under the engine rule so stream-off frames stay byte-identical.
+                var depthTestOff = engineRule && draw.Submesh.DepthTestOff;
+                var pso = interleave is not null && writesDepth
+                    ? _pipelines.GetBlendDepthWritePipeline(
+                        draw.Submesh.SrcBlendMode,
+                        draw.Submesh.DstBlendMode,
+                        draw.Submesh.DoubleSided,
+                        draw.Submesh.IsDecal,
+                        grassRoute: draw.IsGrass,
+                        depthTestOff: depthTestOff)
+                    : _pipelines.GetBlendPipeline(
+                        draw.Submesh.SrcBlendMode,
+                        draw.Submesh.DstBlendMode,
+                        draw.Submesh.DoubleSided,
+                        draw.Submesh.IsDecal,
+                        grassRoute: draw.IsGrass,
+                        depthTestOff: depthTestOff);
                 DrawBlendedSubmesh(
                     cmd,
                     frameIndex,
@@ -2433,6 +3185,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         finally
         {
             ArrayPool<GpuRingBuffer12.RingAllocation>.Shared.Return(reservations);
+            ArrayPool<float>.Shared.Return(sortKeys);
+            ArrayPool<int>.Shared.Return(order);
         }
     }
 
@@ -2453,19 +3207,29 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     {
         if (_depthWritingBlendDraws.Count == 0) return;
 
-        _depthWritingBlendDraws.Sort(static (a, b) => b.DistanceSquared.CompareTo(a.DistanceSquared));
-        var reservations = ArrayPool<GpuRingBuffer12.RingAllocation>.Shared.Rent(
-            _depthWritingBlendDraws.Count);
+        // Index sort, same reasoning as DrawBlended: permute 4-byte indices rather than ~220-byte draws.
+        var count = _depthWritingBlendDraws.Count;
+        var order = ArrayPool<int>.Shared.Rent(count);
+        var sortKeys = ArrayPool<float>.Shared.Rent(count);
+        var reservations = ArrayPool<GpuRingBuffer12.RingAllocation>.Shared.Rent(count);
         try
         {
+            for (var i = 0; i < count; i++)
+            {
+                order[i] = i;
+                sortKeys[i] = -_depthWritingBlendDraws[i].DistanceSquared; // ascending => farthest first
+            }
+
+            Array.Sort(sortKeys, order, 0, count);
+
             var reservationStarted = StartTiming();
             var firstSelected = ReserveNearestBlendedDrawConstants(
-                frameIndex, _depthWritingBlendDraws, reservations, out var truncated);
+                frameIndex, _depthWritingBlendDraws, order, reservations, out var truncated);
             cbUpdateMs += ElapsedMilliseconds(reservationStarted);
             LastFrameDrawsTruncated += truncated;
-            for (var i = firstSelected; i < _depthWritingBlendDraws.Count; i++)
+            for (var i = firstSelected; i < count; i++)
             {
-                var draw = _depthWritingBlendDraws[i];
+                var draw = _depthWritingBlendDraws[order[i]];
                 if (draw.Submesh.EffectiveIndexCount <= 0 ||
                     !PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)) continue;
                 // BOTH blend sites must pass grassRoute. Oblivion grass authors 0x12ED (blend AND
@@ -2499,6 +3263,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         finally
         {
             ArrayPool<GpuRingBuffer12.RingAllocation>.Shared.Return(reservations);
+            ArrayPool<float>.Shared.Return(sortKeys);
+            ArrayPool<int>.Shared.Return(order);
         }
     }
 
@@ -2507,9 +3273,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     back-to-front suffix that survived. Quiet live-particle entries require no reservation and
     ///     are not counted as truncated draws.
     /// </summary>
+    /// <param name="order">
+    ///     Sorted positions into <paramref name="draws" /> (farthest first). Everything here — the
+    ///     drawable mask, the capacity plan and <paramref name="reservations" /> — is keyed to the
+    ///     SORTED position, not to the draw's index in the list.
+    /// </param>
     private int ReserveNearestBlendedDrawConstants(
         int frameIndex,
         List<BlendedReferenceDraw> draws,
+        int[] order,
         Span<GpuRingBuffer12.RingAllocation> reservations,
         out int truncated)
     {
@@ -2518,10 +3290,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         {
             for (var i = 0; i < draws.Count; i++)
             {
-                drawable[i] = draws[i].Submesh.EffectiveIndexCount > 0 &&
+                var draw = draws[order[i]];
+                drawable[i] = draw.Submesh.EffectiveIndexCount > 0 &&
                               PassesExactGrassDistance(
-                                  draws[i].SourceWorld.Translation,
-                                  draws[i].IsGrass)
+                                  draw.SourceWorld.Translation,
+                                  draw.IsGrass)
                     ? (byte)1
                     : (byte)0;
             }
@@ -2988,6 +3761,49 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     }
 
     /// <summary>
+    ///     The world-space TOP of a blended submesh, used to decide whether it lies under a water
+    ///     surface. Prefers the exact maximum of the mesh's transformed local AABB; the bounding
+    ///     SPHERE's top (<c>centerZ + radius</c>) is far too pessimistic for the flat decal cards this
+    ///     mainly exists to classify — measured NiBound radii are 70-125 units (ssLogoDecal 70.7,
+    ///     DamageDecal01 125.5), so a wide decal lying a few units under the surface never qualified as
+    ///     submerged and composited on top of the water instead of being refracted by it.
+    ///     <para>
+    ///         Billboards keep the sphere bound: their world matrix is rebuilt to face the camera every
+    ///         frame, so a placement-matrix AABB would not describe the geometry actually drawn.
+    ///     </para>
+    ///     <para>
+    ///         The cached AABB spans the whole mesh, not this one submesh, so a multi-submesh mesh
+    ///         over-estimates the top. That errs toward "not below", i.e. toward the previous
+    ///         behaviour, which is the safe direction: it can only fail to submerge something, never
+    ///         wrongly bury geometry that straddles the surface.
+    ///     </para>
+    /// </summary>
+    private float ResolveWorldBoundsMaxZ(
+        uint meshId, CachedSubmesh12 submesh, Matrix4x4 world, float worldCenterZ, float worldRadius)
+    {
+        var sphereTop = worldCenterZ + worldRadius;
+        if (submesh.IsBillboard || !_meshLocalBounds.TryGetValue(meshId, out var bounds))
+        {
+            return sphereTop;
+        }
+
+        // A degenerate/empty mesh is recorded as Min > Max (see CachedNifMesh12.LocalBoundsMin);
+        // running the corner arithmetic on an inverted box yields a meaningless top.
+        if (bounds.Min.X > bounds.Max.X || bounds.Min.Y > bounds.Max.Y || bounds.Min.Z > bounds.Max.Z)
+        {
+            return sphereTop;
+        }
+
+        // Max Z of the transformed box: worldZ = x·M13 + y·M23 + z·M33 + M43, so take the larger
+        // endpoint of each axis independently. No need to materialize all eight corners.
+        var maxZ = world.M43
+                   + MathF.Max(bounds.Min.X * world.M13, bounds.Max.X * world.M13)
+                   + MathF.Max(bounds.Min.Y * world.M23, bounds.Max.Y * world.M23)
+                   + MathF.Max(bounds.Min.Z * world.M33, bounds.Max.Z * world.M33);
+        return float.IsFinite(maxZ) ? MathF.Min(maxZ, sphereTop) : sphereTop;
+    }
+
+    /// <summary>
     ///     Batch-reuse frames keep the frozen blended draw lists but must refresh what the camera
     ///     moves: every entry's sort distance (back-to-front order stays correct across in-cell
     ///     drift) and, for billboards, the camera-facing world matrix. Everything else on the entry
@@ -3020,12 +3836,18 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     cameraPosition, cameraForward,
                     renderOrigin)
                 : sampledRelativeWorld;
+            var worldRadius = ResolveWorldBoundsRadius(draw.Submesh, sampledSourceWorld);
             draw = draw with
             {
                 World = world,
                 DistanceSquared = Vector3.DistanceSquared(worldCenter, cameraPosition),
                 WorldBoundsCenterZ = worldCenter.Z,
-                WorldBoundsRadius = ResolveWorldBoundsRadius(draw.Submesh, sampledSourceWorld),
+                WorldBoundsRadius = worldRadius,
+                // Recomputed rather than carried over: physics-lite sway rotates the placement, which
+                // moves the box top independently of its centre.
+                WorldBoundsMaxZ = ResolveWorldBoundsMaxZ(
+                    draw.MeshId, draw.Submesh, sampledSourceWorld, worldCenter.Z, worldRadius),
+                WorldBoundsCenterXY = new Vector2(worldCenter.X, worldCenter.Y),
             };
         }
     }
@@ -3060,6 +3882,226 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     The grass hard end is intentionally separate in the copy loops so disabling reference
     ///     frustum culling cannot call <c>IntersectsSphere</c> on an uninitialized frustum.
     /// </summary>
+    /// <summary>
+    ///     Reorders every active batch's instances so that all casters belonging to cascade 0 come
+    ///     first, then those first reached by cascade 1, and so on — leaving
+    ///     <see cref="OpaqueBatchState.CascadePrefix" /> as the count each cascade must draw.
+    ///     <para>
+    ///         Without this the replay submits the ENTIRE caster set to every cascade. Cascade 0 spans
+    ///         2048 units of a 65,536-unit render radius, so ~99.7% of what it received was clipped
+    ///         after full vertex shading; measured, the two near cascades cost ~11 ms of GPU each,
+    ///         every frame.
+    ///     </para>
+    ///     <para>
+    ///         A per-batch UNION bound would be useless here: batches key on submesh, so one common
+    ///         rock model's batch spans the whole world and would never cull. Sorting works because
+    ///         the cascades are concentric and nested, making "smallest containing cascade" a total
+    ///         order whose prefixes are exactly the per-cascade sets.
+    ///     </para>
+    /// </summary>
+    private void SortBatchInstancesByCascade()
+    {
+        // No fit (capture/export paths, or the kill switch): every cascade keeps the whole caster set.
+        // The prefixes MUST be filled explicitly — they are zeroed per frame, and leaving them at zero
+        // would mean "no caster reaches any cascade", i.e. silently no shadows at all.
+        if (!ShadowCascadeCullEnabled || _cascadeFit is not { } fit || fit.Radii.Length == 0)
+        {
+            foreach (var batch in _opaqueBatches.ActiveBatches)
+            {
+                batch.CascadePrefix.AsSpan().Fill(batch.Instances.Count);
+                batch.ShadowOnlyCascadePrefix.AsSpan().Fill(batch.ShadowOnlyInstances.Count);
+            }
+
+            return;
+        }
+
+        var cascades = Math.Min(fit.Radii.Length, ShadowMapRenderer12.CascadeCount);
+        // Batches are frozen and re-drawn for up to BatchReuseMaxFrames while the camera drifts inside
+        // the cull slack (the base term below), and each cascade's own anchor can additionally lag by
+        // its snap quantum whenever an in-place refresh replays the PUBLISHED frustum — the classifier
+        // adds each cascade's own quantum (fit.Snaps) on top so a caster sorted against this frame's
+        // anchor still lies inside the older box that later draws it.
+        var slack = CullPositionSlack * 1.7321f;
+
+        foreach (var batch in _opaqueBatches.ActiveBatches)
+        {
+            SortInstanceListByCascade(
+                batch.Instances, batch.InstanceBounds, batch.PhysicsLiteSeeds,
+                batch.CascadePrefix, fit, cascades, slack);
+
+            // Shadow-only casters are a SEPARATE range appended after the main instances, and the
+            // main draw's count excludes them — so they must be sorted independently and never
+            // interleaved with the block above.
+            SortShadowOnlyListByCascade(
+                batch.ShadowOnlyInstances, batch.ShadowOnlyPhysicsLiteSeeds,
+                batch.ShadowOnlyCascadePrefix, fit, cascades, slack);
+        }
+    }
+
+    /// <summary>Counting-sorts one instance list (plus its parallel bounds/seed lists) into cascade
+    /// order and fills <paramref name="prefix" />.</summary>
+    private void SortInstanceListByCascade(
+        List<Matrix4x4> instances,
+        List<Vector4> bounds,
+        List<uint> seeds,
+        int[] prefix,
+        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps) fit,
+        int cascades,
+        float slack)
+    {
+        Array.Clear(prefix);
+        var count = instances.Count;
+        if (count == 0)
+        {
+            return;
+        }
+
+        // Bounds are parallel to instances by construction; seeds only when physics-lite is present.
+        var hasBounds = bounds.Count == count;
+        var hasSeeds = seeds.Count == count;
+        if (!hasBounds)
+        {
+            // No per-instance bounds to classify against — keep every caster in every cascade.
+            prefix.AsSpan().Fill(count);
+            return;
+        }
+
+        _cascadeBucketScratch.Clear();
+        Span<int> bucketCounts = stackalloc int[ShadowMapRenderer12.CascadeCount + 1];
+        for (var i = 0; i < count; i++)
+        {
+            var bucket = ClassifyCascade(bounds[i], fit, cascades, slack);
+            _cascadeBucketScratch.Add(bucket);
+            bucketCounts[bucket]++;
+        }
+
+        // Prefix[c] = instances in cascades 0..c. Bucket `cascades` is "outside every cascade" and is
+        // deliberately excluded — those casters are drawn by the main pass but by no shadow map.
+        var running = 0;
+        Span<int> writeCursor = stackalloc int[ShadowMapRenderer12.CascadeCount + 1];
+        for (var c = 0; c <= cascades; c++)
+        {
+            writeCursor[c] = running;
+            running += bucketCounts[c];
+            if (c < cascades) prefix[c] = running;
+        }
+
+        // Any cascade beyond the supplied radii inherits the widest prefix rather than zero.
+        for (var c = cascades; c < prefix.Length; c++) prefix[c] = prefix[cascades - 1];
+
+        // Stable scatter into the cascade order.
+        _cascadeSortMatrices.Clear();
+        _cascadeSortBounds.Clear();
+        _cascadeSortSeeds.Clear();
+        EnsureCapacity(_cascadeSortMatrices, count);
+        EnsureCapacity(_cascadeSortBounds, count);
+        if (hasSeeds) EnsureCapacity(_cascadeSortSeeds, count);
+
+        var matrixSpan = CollectionsMarshal.AsSpan(_cascadeSortMatrices);
+        var boundsSpan = CollectionsMarshal.AsSpan(_cascadeSortBounds);
+        var seedSpan = hasSeeds ? CollectionsMarshal.AsSpan(_cascadeSortSeeds) : default;
+        for (var i = 0; i < count; i++)
+        {
+            var slot = writeCursor[_cascadeBucketScratch[i]]++;
+            matrixSpan[slot] = instances[i];
+            boundsSpan[slot] = bounds[i];
+            if (hasSeeds) seedSpan[slot] = seeds[i];
+        }
+
+        matrixSpan.CopyTo(CollectionsMarshal.AsSpan(instances));
+        boundsSpan.CopyTo(CollectionsMarshal.AsSpan(bounds));
+        if (hasSeeds) seedSpan.CopyTo(CollectionsMarshal.AsSpan(seeds));
+    }
+
+    /// <summary>Shadow-only casters carry no bounds list, so they are classified from their world
+    /// translation (converted back to absolute) plus the submesh's own radius.</summary>
+    private void SortShadowOnlyListByCascade(
+        List<Matrix4x4> instances,
+        List<uint> seeds,
+        int[] prefix,
+        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps) fit,
+        int cascades,
+        float slack)
+    {
+        Array.Clear(prefix);
+        var count = instances.Count;
+        if (count == 0)
+        {
+            return;
+        }
+
+        var hasSeeds = seeds.Count == count;
+        _cascadeBucketScratch.Clear();
+        Span<int> bucketCounts = stackalloc int[ShadowMapRenderer12.CascadeCount + 1];
+        for (var i = 0; i < count; i++)
+        {
+            // Instance matrices are render-origin relative; the fit is absolute.
+            var center = instances[i].Translation + _frameRenderOrigin;
+            var bucket = ClassifyCascade(new Vector4(center, 0f), fit, cascades, slack);
+            _cascadeBucketScratch.Add(bucket);
+            bucketCounts[bucket]++;
+        }
+
+        var running = 0;
+        Span<int> writeCursor = stackalloc int[ShadowMapRenderer12.CascadeCount + 1];
+        for (var c = 0; c <= cascades; c++)
+        {
+            writeCursor[c] = running;
+            running += bucketCounts[c];
+            if (c < cascades) prefix[c] = running;
+        }
+
+        for (var c = cascades; c < prefix.Length; c++) prefix[c] = prefix[cascades - 1];
+
+        _cascadeSortMatrices.Clear();
+        _cascadeSortSeeds.Clear();
+        EnsureCapacity(_cascadeSortMatrices, count);
+        if (hasSeeds) EnsureCapacity(_cascadeSortSeeds, count);
+        var matrixSpan = CollectionsMarshal.AsSpan(_cascadeSortMatrices);
+        var seedSpan = hasSeeds ? CollectionsMarshal.AsSpan(_cascadeSortSeeds) : default;
+        for (var i = 0; i < count; i++)
+        {
+            var slot = writeCursor[_cascadeBucketScratch[i]]++;
+            matrixSpan[slot] = instances[i];
+            if (hasSeeds) seedSpan[slot] = seeds[i];
+        }
+
+        matrixSpan.CopyTo(CollectionsMarshal.AsSpan(instances));
+        if (hasSeeds) seedSpan.CopyTo(CollectionsMarshal.AsSpan(seeds));
+    }
+
+    /// <summary>Index of the smallest cascade containing this caster, or <paramref name="cascades" />
+    /// when it lies outside every one of them.</summary>
+    private static int ClassifyCascade(
+        Vector4 bounds,
+        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps) fit,
+        int cascades,
+        float slack)
+    {
+        var delta = new Vector3(bounds.X, bounds.Y, bounds.Z) - fit.Anchor;
+        for (var c = 0; c < cascades; c++)
+        {
+            // A replayed cascade renders through its PUBLISHED frustum, whose anchor may lag this
+            // frame's classification anchor by up to the cascade's own snap quantum per axis — widen
+            // this cascade's reach by that quantum so the lag cannot truncate a caster out of the box
+            // that actually draws it.
+            var snap = c < fit.Snaps.Length ? fit.Snaps[c] : 0f;
+            if (SunShadowMath.CascadeContains(
+                    delta, fit.SunDirection, fit.Radii[c], bounds.W, slack + snap))
+            {
+                return c;
+            }
+        }
+
+        return cascades;
+    }
+
+    private static void EnsureCapacity<T>(List<T> list, int count)
+    {
+        if (list.Capacity < count) list.Capacity = count;
+        CollectionsMarshal.SetCount(list, count);
+    }
+
     private bool PassesExactCull(Vector4 bounds)
     {
         var rdx = MathF.Abs(bounds.X - _frameCylinderX);
@@ -3164,7 +4206,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         bool IsGrass,
         float GrassWaveMultiplier,
         float WorldBoundsCenterZ,
-        float WorldBoundsRadius);
+        float WorldBoundsRadius,
+        float WorldBoundsMaxZ,
+        uint MeshId,
+        Vector2 WorldBoundsCenterXY);
 }
 #endif
 

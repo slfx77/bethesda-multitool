@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Numerics;
 using BethesdaMultitool;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using Windows.Graphics;
 using Windows.UI;
@@ -212,19 +213,12 @@ internal sealed partial class MainWindow : Window, IDisposable
                 return;
             }
 
-            // Aim the live profile at an explicit landmark when requested (--capture-center-x/y +
-            // optional --capture-z) — the same aim the frame-capture path honors. Without it the
-            // camera sits at the worldspace/stress bookmark, which can land in an empty corner
-            // (the FNV-tuned density finder has no FO4 knowledge), making dense-area profiles
-            // impossible to target headlessly.
-            if (_options.CaptureCenterX is float profileAimX && _options.CaptureCenterY is float profileAimY)
-            {
-                var aimPose = _worldView.Profiler_CameraPose;
-                var aimZ = _options.CaptureZ ?? aimPose.Position.Z;
-                _worldView.Profiler_SetCameraPose(
-                    aimPose with { Position = new Vector3(profileAimX, profileAimY, aimZ) });
-                Log.Info("Profiler: camera aimed at ({0:0}, {1:0}, {2:0}).", profileAimX, profileAimY, aimZ);
-            }
+            // Frame the live profile exactly as the capture path does — position AND orientation.
+            // This used to apply only --capture-center-x/y/z, silently dropping --capture-yaw/pitch/fov,
+            // so a P-key pose replayed as a live session pointed somewhere else entirely. That makes a
+            // live session useless for reproducing anything view-dependent (water flicker, grazing-angle
+            // shading), which is the main reason to run one at a recorded pose in the first place.
+            ApplyRequestedFraming("Profiler");
 
             _scenario = Renderer3DScenario.Start(_worldView, DispatcherQueue, _options);
 
@@ -237,6 +231,58 @@ internal sealed partial class MainWindow : Window, IDisposable
             Log.Error("Renderer profiler startup failed: {0}", ex);
             ExitProfiler("startup-exception", 1);
         }
+    }
+
+    /// <summary>
+    ///     Applies the requested camera framing — position, yaw, pitch and FOV — to the live camera.
+    ///     Shared by the live-profile and frame-capture paths so the two can never diverge: the live
+    ///     path previously honoured only <c>--capture-center-x/y/z</c> and silently dropped the
+    ///     orientation, so replaying a recorded P-key pose as a live session pointed the camera
+    ///     somewhere else and could not reproduce anything view-dependent.
+    ///     <para>
+    ///         A null yaw/pitch preserves the selected scene's own framing (an interior's bounds
+    ///         framing, or the worldspace bookmark) rather than forcing a value.
+    ///     </para>
+    /// </summary>
+    private RendererProfilerCameraPose ApplyRequestedFraming(string logPrefix) =>
+        ApplyRequestedFraming(logPrefix, out _);
+
+    private RendererProfilerCameraPose ApplyRequestedFraming(string logPrefix, out bool movedCamera)
+    {
+        var pose = _worldView.Profiler_CameraPose;
+        movedCamera = false;
+        if (_options.CaptureCenterX is float aimX && _options.CaptureCenterY is float aimY)
+        {
+            var aimZ = _options.CaptureZ ?? pose.Position.Z;
+            pose = pose with { Position = new Vector3(aimX, aimY, aimZ) };
+            movedCamera = true;
+        }
+
+        if (_options.CapturePitchDegrees is float pitchDegrees)
+        {
+            pose = pose with { Pitch = pitchDegrees * (MathF.PI / 180f) };
+        }
+
+        if (_options.CaptureYawDegrees is float yawDegrees)
+        {
+            pose = pose with { Yaw = yawDegrees * (MathF.PI / 180f) };
+        }
+
+        _worldView.Profiler_SetCameraPose(pose);
+
+        // FOV is not part of the pose record; apply it explicitly so a P-key pose reproduces the live
+        // zoom (a non-default live FOV otherwise renders at the camera's 60° default → wrong framing).
+        if (_options.CaptureFovDegrees is float fovDegrees)
+        {
+            _worldView.Profiler_SetCameraFov(fovDegrees);
+        }
+
+        Log.Info(
+            "{0}: framed at ({1:0}, {2:0}, {3:0}) yaw={4:0.#} pitch={5:0.#}.",
+            logPrefix,
+            pose.Position.X, pose.Position.Y, pose.Position.Z,
+            pose.Yaw * (180f / MathF.PI), pose.Pitch * (180f / MathF.PI));
+        return pose;
     }
 
     private async Task<bool> WaitForProfileSceneReadyAsync()
@@ -390,7 +436,20 @@ internal sealed partial class MainWindow : Window, IDisposable
                 return;
             }
 
-            if (!string.IsNullOrWhiteSpace(_options.CaptureWorldspaceName))
+            // An interior selection already ran through NavigateToCell during startup, which clears the
+            // worldspace combo. Re-selecting a worldspace here would tear that single-cell scene back down
+            // and strand the capture in the exterior, so an interior capture owns the scene outright.
+            var capturingInterior = !string.IsNullOrWhiteSpace(_options.CaptureInterior);
+            if (capturingInterior && !string.IsNullOrWhiteSpace(_options.CaptureWorldspaceName))
+            {
+                Console.WriteLine(
+                    "[Capture] FAILED: --capture-interior and --capture-worldspace-name are mutually " +
+                    "exclusive (selecting a worldspace discards the interior scene).");
+                ExitProfiler("capture-interior-worldspace-conflict", 2);
+                return;
+            }
+
+            if (!capturingInterior && !string.IsNullOrWhiteSpace(_options.CaptureWorldspaceName))
             {
                 _worldView.Profiler_TrySelectWorldspaceByName(_options.CaptureWorldspaceName);
             }
@@ -405,7 +464,8 @@ internal sealed partial class MainWindow : Window, IDisposable
                 return;
             }
 
-            if (!ValidateCaptureSelection(
+            if (!capturingInterior &&
+                !ValidateCaptureSelection(
                     "worldspace",
                     _options.CaptureWorldspaceName,
                     _worldView.Profiler_SelectedWorldspaceEditorId))
@@ -438,18 +498,23 @@ internal sealed partial class MainWindow : Window, IDisposable
             _worldView.Profiler_SetGameHour(_options.CaptureHour);
             _worldView.Profiler_SetGameDay(_options.CaptureDay);
 
-            // Aim the camera at an explicit landmark BEFORE the phase-2 settle, so cell/mesh streaming
-            // happens around the target rather than the worldspace bookmark (--capture-center-x/y in
-            // world units; --capture-z overrides the height, e.g. to hover above a lava plane).
-            var movedCamera = false;
-            if (_options.CaptureCenterX is float aimX && _options.CaptureCenterY is float aimY)
-            {
-                var aimPose = _worldView.Profiler_CameraPose;
-                var aimZ = _options.CaptureZ ?? aimPose.Position.Z;
-                _worldView.Profiler_SetCameraPose(
-                    aimPose with { Position = new Vector3(aimX, aimY, aimZ) });
-                movedCamera = true;
-            }
+            // Apply the ENTIRE capture framing — position, yaw, pitch and FOV — before the phase-2 settle.
+            // These used to be split: position here, orientation moments before the offscreen render. That
+            // split caused two real defects. (1) Cell/mesh streaming settled against the pre-capture
+            // orientation, so the frustum culled away exactly the content the final frame would need.
+            // (2) The live window showed a different angle from the saved PNG for the whole run, so the
+            // window was not a preview of the capture and could not be used to sanity-check framing —
+            // which is precisely how an interior capture aimed at a ceiling got read as "renders nothing".
+            // Applying the pose first also lets the phase-2 scenario snapshot it and pin it against
+            // incidental input for the rest of the run.
+            var framedPose = ApplyRequestedFraming("Capture", out var movedCamera);
+
+            Console.WriteLine(
+                $"[Capture] framing pos=({framedPose.Position.X:0},{framedPose.Position.Y:0}," +
+                $"{framedPose.Position.Z:0}) yaw={framedPose.Yaw * (180f / MathF.PI):0.#}° " +
+                $"pitch={framedPose.Pitch * (180f / MathF.PI):0.#}° " +
+                $"fov={(_options.CaptureFovDegrees is float f ? $"{f:0.#}" : "scene")}° " +
+                $"(pitch/yaw {(_options.CapturePitchDegrees is null ? "from scene" : "requested")}).");
 
             // Phase 2 — run the loop again so the SELECTED weather's cloud textures stream in + upload to
             // the GPU before the single (render-loop-paused) capture frame. A moved camera needs the
@@ -495,11 +560,16 @@ internal sealed partial class MainWindow : Window, IDisposable
 
             // Verify again after the settle loop. A late climate/worldspace refresh must not silently
             // replace the authored weather requested by an unattended parity capture.
-            if (!ValidateCaptureSelection(
+            if (!capturingInterior &&
+                !ValidateCaptureSelection(
                     "worldspace",
                     _options.CaptureWorldspaceName,
-                    _worldView.Profiler_SelectedWorldspaceEditorId) ||
-                !ValidateCaptureSelection(
+                    _worldView.Profiler_SelectedWorldspaceEditorId))
+            {
+                return;
+            }
+
+            if (!ValidateCaptureSelection(
                     "weather",
                     _options.CaptureWeatherName,
                     _worldView.Profiler_ActiveWeatherEditorId))
@@ -507,19 +577,26 @@ internal sealed partial class MainWindow : Window, IDisposable
                 return;
             }
 
-            // Apply an explicit celestial framing. Pitch is always authored by the capture request;
-            // yaw remains bookmark-compatible unless --capture-yaw is provided.
-            var pose = _worldView.Profiler_CameraPose;
-            var pitchRadians = _options.CapturePitchDegrees * (MathF.PI / 180f);
-            var yawRadians = _options.CaptureYawDegrees is float yawDegrees
-                ? yawDegrees * (MathF.PI / 180f)
-                : pose.Yaw;
-            _worldView.Profiler_SetCameraPose(pose with { Pitch = pitchRadians, Yaw = yawRadians });
-            // FOV is not part of the pose record; apply it explicitly so a P-key pose reproduces the live
-            // zoom (a non-default live FOV otherwise renders at the camera's 60° default → wrong framing).
-            if (_options.CaptureFovDegrees is float captureFov)
+            // Re-assert the framing after the settle. The pose was applied before phase 2 so streaming and
+            // the live window both tracked it; this only guards against a late atmosphere/worldspace
+            // refresh or incidental input having moved the camera during the settle. It is idempotent when
+            // nothing drifted, and it reports when something did rather than silently capturing elsewhere.
+            // Compare on framing only. RenderDistance is also part of the pose record and the phase-2
+            // scenario legitimately rewrites it from --render-distance, so restoring framedPose wholesale
+            // would silently revert the requested view distance.
+            var settledPose = _worldView.Profiler_CameraPose;
+            var restoredPose = settledPose with
             {
-                _worldView.Profiler_SetCameraFov(captureFov);
+                Position = framedPose.Position, Yaw = framedPose.Yaw, Pitch = framedPose.Pitch
+            };
+            if (settledPose != restoredPose)
+            {
+                Console.WriteLine(
+                    $"[Capture] camera drifted during settle: pos=({settledPose.Position.X:0}," +
+                    $"{settledPose.Position.Y:0},{settledPose.Position.Z:0}) " +
+                    $"yaw={settledPose.Yaw * (180f / MathF.PI):0.#}° " +
+                    $"pitch={settledPose.Pitch * (180f / MathF.PI):0.#}° — restoring the requested framing.");
+                _worldView.Profiler_SetCameraPose(restoredPose);
             }
 
             var capturePose = _worldView.Profiler_CameraPose;
@@ -527,9 +604,92 @@ internal sealed partial class MainWindow : Window, IDisposable
             // Collapse the live view so the capture frame doesn't share the command recorder with a live one.
             _worldView.Visibility = Visibility.Collapsed;
             await Task.Delay(400);
+            var motionLiveFrames = _options.CaptureMotionLiveFrames;
 
-            var bgra = await _worldView.Profiler_CaptureSceneAsync(
-                px, pyh, _options.CaptureAnimationTimeSeconds);
+            // MOTION frames. A single static frame reproduces nothing that lives in frame-to-frame
+            // renderer state — snapshot prepare/restore pairing, cloud scroll, batch reuse, cascade
+            // throttles — which is precisely the class of artefact a user can only describe as
+            // "it happens while I pan". Each iteration is a full capture, so the renderer advances
+            // exactly as it does between live frames; only the trailing frame is compared/saved to
+            // the requested path, with the whole run written alongside it for inspection.
+            byte[]? bgra = null;
+            var motionFrames = Math.Max(1, _options.CaptureMotionFrames);
+            var capturePose0 = capturePose;
+            for (var motionFrame = 0; motionFrame < motionFrames; motionFrame++)
+            {
+                if (motionFrame > 0)
+                {
+                    const float deg = MathF.PI / 180f;
+                    var previous = _worldView.Profiler_CameraPose;
+                    // Linear steps accumulate off the PREVIOUS frame; the circular sweep is absolute
+                    // off the ORIGINAL pose, so one revolution lands exactly back where it started
+                    // (which is what makes same-pose frames comparable for flicker detection).
+                    var yaw = previous.Yaw + (_options.CaptureMotionYawStepDegrees * deg);
+                    var pitch = previous.Pitch + (_options.CaptureMotionPitchStepDegrees * deg);
+                    if (_options.CaptureMotionOrbitDegrees != 0f)
+                    {
+                        var radius = _options.CaptureMotionOrbitDegrees * deg;
+                        var theta = MathF.Tau * motionFrame / motionFrames;
+                        yaw = capturePose0.Yaw + (radius * MathF.Sin(theta)) +
+                              (_options.CaptureMotionYawStepDegrees * deg * motionFrame);
+                        // cos(theta) - 1 keeps frame 0 ON the requested pose rather than a radius
+                        // above it, so the circle passes through the pose the report cited.
+                        pitch = capturePose0.Pitch + (radius * (MathF.Cos(theta) - 1f)) +
+                                (_options.CaptureMotionPitchStepDegrees * deg * motionFrame);
+                    }
+
+                    var position = previous.Position;
+                    if (_options.CaptureMotionForwardStep != 0f)
+                    {
+                        var forward = new System.Numerics.Vector3(
+                            MathF.Sin(yaw) * MathF.Cos(pitch),
+                            MathF.Cos(yaw) * MathF.Cos(pitch),
+                            MathF.Sin(pitch));
+                        position += forward * _options.CaptureMotionForwardStep;
+                    }
+
+                    _worldView.Profiler_SetCameraPose(
+                        previous with { Yaw = yaw, Pitch = pitch, Position = position });
+                    capturePose = _worldView.Profiler_CameraPose;
+
+                    // Run the LIVE render loop at the new pose before capturing it. Without this the
+                    // "motion" was a series of isolated offscreen frames — the live path never ran
+                    // with a moving camera at all, which is precisely the path a "it only happens
+                    // while I move the mouse" report is about. Frame-to-frame state the live loop
+                    // owns (snapshot latches, cloud scroll, batch reuse, cascade throttles) now
+                    // advances the same way it does for a user, and whatever it leaves behind is
+                    // what the following capture reads. The window is un-collapsed for these frames
+                    // so the motion is also VISIBLE while the harness runs.
+                    if (motionLiveFrames > 0)
+                    {
+                        _worldView.Visibility = Visibility.Visible;
+                        for (var live = 0; live < motionLiveFrames; live++)
+                        {
+                            await Task.Delay(16);
+                        }
+
+                        _worldView.Visibility = Visibility.Collapsed;
+                        await Task.Delay(32);
+                    }
+                }
+
+                bgra = await _worldView.Profiler_CaptureSceneAsync(
+                    px, pyh, _options.CaptureAnimationTimeSeconds);
+                if (bgra is null) break;
+                if (motionFrames > 1)
+                {
+                    var framePath = Path.ChangeExtension(path, null) +
+                                    string.Create(CultureInfo.InvariantCulture, $".{motionFrame:000}.png");
+                    Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(framePath))!);
+                    BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry.PngWriter.SaveRgba(
+                        BgraToRgba(bgra), px, pyh, framePath);
+                    Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                        $"[Capture] motion frame {motionFrame:000} yaw={capturePose.Yaw * (180f / MathF.PI):0.#}° " +
+                        $"pitch={capturePose.Pitch * (180f / MathF.PI):0.#}° " +
+                        $"-> {framePath} sha={CaptureImageFingerprint.Compute(bgra)[..16]}"));
+                }
+            }
+
             if (bgra is null)
             {
                 Console.WriteLine("[Capture] FAILED: capture returned null.");
@@ -568,7 +728,7 @@ internal sealed partial class MainWindow : Window, IDisposable
                 _options.CaptureHour,
                 capturePose.Pitch * (180f / MathF.PI),
                 capturePose.Yaw * (180f / MathF.PI),
-                _options.CaptureAnimationTimeSeconds,
+                _options.CaptureAnimationTimeSeconds ?? 0f,
                 Coverage(bgra),
                 pixelSha256,
                 pngSha256);
@@ -585,6 +745,7 @@ internal sealed partial class MainWindow : Window, IDisposable
             captureFields["pngSha256"] = pngSha256;
             captureFields["animationClockPinned"] = true;
             captureFields["animationClockSeconds"] = _options.CaptureAnimationTimeSeconds;
+            captureFields["animationClockPinned"] = _options.CaptureAnimationTimeSeconds is not null;
             captureFields["worldspace"] = _worldView.Profiler_SelectedWorldspaceEditorId;
             captureFields["weather"] = _worldView.Profiler_ActiveWeatherEditorId;
             captureFields["gameHour"] = _options.CaptureHour;

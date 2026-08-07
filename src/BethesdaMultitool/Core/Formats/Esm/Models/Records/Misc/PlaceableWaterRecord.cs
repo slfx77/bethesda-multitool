@@ -19,10 +19,10 @@ public record PlaceableWaterRecord
     /// <summary>Model texture data (MODT subrecord, opaque binary blob — unparsed).</summary>
     public byte[]? ModelTextureData { get; init; }
 
-    /// <summary>FormID of the parent WATR record. DNAM bytes 0..3.</summary>
+    /// <summary>FormID of the parent WATR record. DNAM bytes 4..7.</summary>
     public uint WaterFormId { get; init; }
 
-    /// <summary>Placement-override flags. DNAM bytes 4..7.</summary>
+    /// <summary>Placement-override flags (reflect/refract/depth). DNAM bytes 0..3.</summary>
     public uint Flags { get; init; }
 
     public long Offset { get; init; }

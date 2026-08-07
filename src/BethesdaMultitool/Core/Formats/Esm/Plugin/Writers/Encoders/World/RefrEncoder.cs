@@ -32,6 +32,16 @@ public sealed class RefrEncoder : IRecordEncoder
         ["TimesUnlocked"] = m => m.LockTimesUnlocked ?? 0u,
     };
 
+    // XRDO schema: Range + Type + StaticPercentage + PositionRef (16 bytes). A validated
+    // PositionRef is patched onto the record via `with { }` before serialization.
+    private static readonly Dictionary<string, Func<PlacedReference, object?>> XrdoExtractors = new(StringComparer.Ordinal)
+    {
+        ["Range"] = m => m.RadioData?.Radius ?? 0f,
+        ["Type"] = m => m.RadioData?.RangeType ?? 0u,
+        ["StaticPercentage"] = m => m.RadioData?.StaticPercentage ?? 0f,
+        ["PositionRef"] = m => m.RadioData?.PositionRefFormId ?? 0u,
+    };
+
     // XESP schema: ParentRef + Flags. The resolved FormID is patched onto the record via
     // `with { EnableParentFormId = resolved }` before serialization.
     private static readonly Dictionary<string, Func<PlacedReference, object?>> XespExtractors = new(StringComparer.Ordinal)
@@ -126,6 +136,13 @@ public sealed class RefrEncoder : IRecordEncoder
 
         // NAME — base form FormID. Required for the engine to know what to spawn.
         subs.Add(EncodeFormIdSubrecord("NAME", placed.BaseFormId));
+
+        // XRDO goes immediately after NAME: that is where all 19 radio references in retail
+        // FalloutNV.esm carry it (13 as EDID NAME XRDO DATA, 6 as NAME XRDO DATA).
+        if (placed.RadioData is not null)
+        {
+            subs.Add(BuildXrdoSubrecord(placed, validFormIds, remapTable, warnings));
+        }
 
         if (placed.EncounterZoneFormId.HasValue)
         {
@@ -274,6 +291,48 @@ public sealed class RefrEncoder : IRecordEncoder
     private static EncodedSubrecord BuildXlocSubrecord(PlacedReference placed)
     {
         return SchemaModelSerializer.SerializeSubrecord("XLOC", "", 20, placed, XlocExtractors);
+    }
+
+    /// <summary>
+    ///     XRDO — 16 bytes: Range, Type, StaticPercentage, PositionRef.
+    ///     <para>
+    ///     Unlike the other FormID-bearing subrecords the whole subrecord is never dropped: XRDO
+    ///     is what tells the engine how a radio broadcasts, and a radio reference without one gets
+    ///     defaulted to Type 0 (Radius) with a NULL anchor — the exact state that makes the engine
+    ///     log "Radio station exterior position ref … is not placed in an exterior". A dangling
+    ///     Position Reference is zeroed instead, which is the retail-normal value (17 of 19 retail
+    ///     radios have no anchor at all).
+    ///     </para>
+    /// </summary>
+    private static EncodedSubrecord BuildXrdoSubrecord(
+        PlacedReference placed,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        List<string> warnings)
+    {
+        var radio = placed.RadioData!;
+        var positionRef = radio.PositionRefFormId is { } captured && captured != 0
+            ? ResolveOptionalFormId(captured, validFormIds, remapTable)
+            : null;
+
+        if (radio.PositionRefFormId is { } original && original != 0 && positionRef is null)
+        {
+            warnings.Add($"REFR 0x{placed.FormId:X8} XRDO position reference " +
+                $"0x{original:X8} dangles — emitting NULL.");
+        }
+
+        // Only Radius broadcasts need an exterior anchor at all. Whether this reference's own cell
+        // is exterior is not knowable here — PlacedReference carries no cell context — so the
+        // unanchored-radius case is flagged without asserting it is wrong.
+        if (radio.RequiresExteriorAnchor && positionRef is null)
+        {
+            warnings.Add($"REFR 0x{placed.FormId:X8} broadcasts by radius (XRDO type 0) with no " +
+                "position reference — the engine anchors it to the reference itself and will log " +
+                "if that lands in an interior.");
+        }
+
+        var mutated = placed with { RadioData = radio with { PositionRefFormId = positionRef ?? 0u } };
+        return SchemaModelSerializer.SerializeSubrecord("XRDO", "", 16, mutated, XrdoExtractors);
     }
 
     /// <summary>

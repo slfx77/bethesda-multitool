@@ -329,6 +329,21 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private int _topDownTargetW;
     private int _topDownTargetH;
 
+    /// <summary>Planar sky-reflection target: the sky drawn once per frame with the view's Z axis
+    /// mirrored, sampled by the water shaders. Small (the reflection is heavily perturbed by ripple
+    /// normals, so resolution buys little) and re-created only when the scene ASPECT changes — the
+    /// water samples it by normalized screen UV, so only the aspect must track the viewport.</summary>
+    private GpuOffscreenSceneTarget12? _waterReflectionTarget;
+    private int _waterReflectionTargetW;
+    private int _waterReflectionTargetH;
+    private Vortice.Direct3D12.ID3D12Resource? _waterReflectionSrvResource;
+    private GpuDescriptorHeapAllocator12.PersistentAllocation? _waterReflectionSrv;
+
+    /// <summary>SRV over the surface's 1-sample post-opaque depth snapshot — the unified
+    /// transparency stream's depth source (live depth stays writable through the stream).</summary>
+    private GpuDescriptorHeapAllocator12.PersistentAllocation? _opaqueDepthSnapshotSrv;
+    private Vortice.Direct3D12.ID3D12Resource? _opaqueDepthSnapshotSrvResource;
+
     public WorldView3DControl()
     {
         // The settings panel exists for the control's whole lifetime (accessor shims like
@@ -512,6 +527,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             ? $"Interiors ({data.InteriorCells.Count})"
             : "Interiors";
         InteriorsButton.IsEnabled = data.InteriorCells.Count > 0;
+        AllCellsButton.Content = data.AllCells.Count > 0
+            ? $"All Cells ({data.AllCells.Count})"
+            : "All Cells";
+        AllCellsButton.IsEnabled = data.AllCells.Count > 0;
 
         // Weather dropdown: "(Climate default)" + all weathers. Built once here; the worldspace
         // selection below refreshes the climate default + timing it resolves against.

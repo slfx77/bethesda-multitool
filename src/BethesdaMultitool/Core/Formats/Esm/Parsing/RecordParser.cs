@@ -455,6 +455,7 @@ public sealed class RecordParser
         var lights = _miscWorldObjects.ParseLights();
         var statics = _miscStaticObjects.ParseStatics();
         var staticCollections = _miscStaticObjects.ParseStaticCollections();
+        var placeableWaters = _miscStaticObjects.ParsePlaceableWaters();
         Logger.Instance.Debug($"  [Semantic] Game data: {phaseSw.Elapsed} (16 types)");
 
         progressReporter?.ReportPhase(85, "Parsing generic records...");
@@ -463,8 +464,10 @@ public sealed class RecordParser
         {
             "MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR",
             "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE",
-            "IDLM", "PWAT",
+            "IDLM",
             // SCOL is parsed via the typed _miscStaticObjects.ParseStaticCollections() path.
+            // PWAT likewise via ParsePlaceableWaters() — the generic path cannot recover its
+            // parent WATR, which sits behind a pointer inside an embedded 8-byte struct.
             // CLMT is parsed via the typed _miscEnvironment.ParseClimate() path (atmosphere data).
             // Small PDB-defined types with no parity-relevant fields beyond identity.
             "IMGS", "GRAS", "AMEF",
@@ -543,7 +546,7 @@ public sealed class RecordParser
         var modelIndex = new Dictionary<uint, string>();
         ObjectIndexBuilder.BuildAndEnrich(
             statics, activators, doors, lights, furniture,
-            staticCollections,
+            staticCollections, placeableWaters,
             weapons, armor, ammo, consumables, miscItems, books,
             containers, keys, notes, weaponMods, sounds, genericRecords,
             cells, worldspaces, modelIndex, phaseSw);
@@ -637,6 +640,7 @@ public sealed class RecordParser
             Doors = doors,
             Statics = statics,
             StaticCollections = staticCollections,
+            PlaceableWaters = placeableWaters,
             Furniture = furniture,
 
             // AI

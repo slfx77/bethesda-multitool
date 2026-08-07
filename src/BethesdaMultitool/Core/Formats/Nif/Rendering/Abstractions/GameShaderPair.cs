@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Vegetation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
+using Vortice.Direct3D;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
 
@@ -35,14 +36,25 @@ internal readonly record struct GameShaderPair(
     ///     game's pair. Disabled pairs also return null.
     /// </summary>
     /// <param name="consumerName">Names the consumer in the fallback log line.</param>
-    internal (byte[] Vs, byte[] Ps)? TryCompile(string consumerName)
+    internal (byte[] Vs, byte[] Ps)? TryCompile(string consumerName) =>
+        TryCompile(consumerName, [], []);
+
+    /// <summary>
+    ///     Macro-parameterized overload for pairs whose pixel stage ships more than one permutation
+    ///     (the instanced grass pair compiles a plain and an ALPHA_TO_COVERAGE variant of the same
+    ///     source). Same fail-soft contract as <see cref="TryCompile(string)" />.
+    /// </summary>
+    internal (byte[] Vs, byte[] Ps)? TryCompile(
+        string consumerName,
+        ShaderMacro[] vertexMacros,
+        ShaderMacro[] pixelMacros)
     {
         if (!Enabled) return null;
 
         try
         {
-            var vs = GpuShaderCompiler12.Compile(VertexShaderName!, "main", "vs_5_1");
-            var ps = GpuShaderCompiler12.Compile(PixelShaderName!, "main", "ps_5_1");
+            var vs = GpuShaderCompiler12.Compile(VertexShaderName!, "main", "vs_5_1", vertexMacros);
+            var ps = GpuShaderCompiler12.Compile(PixelShaderName!, "main", "ps_5_1", pixelMacros);
             return (vs, ps);
         }
         catch (Exception ex) when (ex is InvalidOperationException or FileNotFoundException)

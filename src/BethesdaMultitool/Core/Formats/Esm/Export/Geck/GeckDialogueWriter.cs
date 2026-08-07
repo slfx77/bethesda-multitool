@@ -459,6 +459,23 @@ internal static class GeckDialogueWriter
         {
             sb.AppendLine($"{indent}      [{string.Join("] [", flags)}]");
         }
+
+        // Captured link edges, raw. "-> Links to:" only renders TCLT targets the tree builder
+        // RESOLVED into ChoiceTopics; captured edges on a content-less INFO (or edges to topics
+        // outside the tree) were invisible, which is exactly what hid the Ulysses greeting
+        // stub's authored menu (0x00133FCD) during the 2026-08-05 playtest analysis. AddTopics
+        // never rendered here at all.
+        if (info.LinkToTopics.Count > infoNode.ChoiceTopics.Count)
+        {
+            sb.AppendLine(
+                $"{indent}      TCLT (raw): {string.Join(", ", info.LinkToTopics.Select(resolver.FormatFull))}");
+        }
+
+        if (info.AddTopics.Count > 0)
+        {
+            sb.AppendLine(
+                $"{indent}      AddTopics: {string.Join(", ", info.AddTopics.Select(resolver.FormatFull))}");
+        }
     }
 
     /// <summary>

@@ -114,6 +114,17 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // fill by distance ("assets stream in very slowly downtown", and frozen batch-reuse fills).
     private double _frameUploadMsBudget;
     private double _frameUploadMsConsumed;
+
+    /// <summary>Weight of the newest observation in <see cref="_uploadMillisecondsPerByte" />.</summary>
+    private const double UploadThroughputAlpha = 0.25;
+
+    /// <summary>
+    ///     Observed render-thread upload cost per byte, used to predict whether the NEXT upload fits
+    ///     in what remains of the frame's allowance. Seeded at roughly 1 ms per MiB — deliberately
+    ///     pessimistic, so early frames pace conservatively and the EMA relaxes it once real
+    ///     throughput is known.
+    /// </summary>
+    private double _uploadMillisecondsPerByte = 1.0 / (1024.0 * 1024.0);
     // When true, LoadData resizes _meshLru to the worldspace's working set (default). False when the
     // FALLOUT_VIEWER_REFERENCE_MESH_CAPACITY env knob pins a fixed cap for eviction-cascade stress gates.
     private readonly bool _autoSizeMeshCapacity;
@@ -317,6 +328,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
     private long _lastFrameTimestamp;
 
+    /// <summary>EMA of the observed frame duration that drives the streaming budget scale. Smoothed
+    /// because the raw previous frame is partly a RESULT of this budget — see StreamingFrameBudgetScaler.</summary>
+    private double _smoothedFrameSeconds;
+
     private int EffectiveMaxDecodeStartsPerFrame =>
         StreamingThrottled
             ? Core.Resources.StreamingFrameBudgetScaler.ScaleCount(MaxDecodeStartsPerFrame, FrameBudgetScale)
@@ -355,20 +370,31 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         FrameGpuUploads = 0;
         FrameByteBudgetDeferrals = 0;
 
-        // Self-measured frame duration → the time-based streaming pace for this frame. First frame
-        // (no prior timestamp) stays at 1.0.
+        // Self-measured frame duration → the time-based streaming pace for this frame. Driven from a
+        // SMOOTHED frame time: the raw previous frame is the output of a loop this budget feeds, so
+        // using it directly let one hitch license a burst that sustained the hitch. First frame (no
+        // prior timestamp) stays at 1.0.
         var now = Stopwatch.GetTimestamp();
-        FrameBudgetScale = _lastFrameTimestamp == 0
-            ? 1.0
-            : Core.Resources.StreamingFrameBudgetScaler.Scale(
+        if (_lastFrameTimestamp == 0)
+        {
+            FrameBudgetScale = 1.0;
+        }
+        else
+        {
+            _smoothedFrameSeconds = Core.Resources.StreamingFrameBudgetScaler.SmoothFrameSeconds(
+                _smoothedFrameSeconds,
                 Stopwatch.GetElapsedTime(_lastFrameTimestamp, now).TotalSeconds);
+            FrameBudgetScale = Core.Resources.StreamingFrameBudgetScaler.Scale(_smoothedFrameSeconds);
+        }
+
         _lastFrameTimestamp = now;
 
         _frameUploadByteBudget = new FrameByteBudget(StreamingThrottled
             ? Core.Resources.StreamingFrameBudgetScaler.ScaleBytes(MaxUploadBytesPerFrame, FrameBudgetScale)
             : long.MaxValue);
         _frameUploadMsBudget = StreamingThrottled
-            ? UploadMillisecondsPerFrame * FrameBudgetScale
+            ? Core.Resources.StreamingFrameBudgetScaler.TimeBudgetMilliseconds(
+                UploadMillisecondsPerFrame, FrameBudgetScale, _smoothedFrameSeconds * 1000.0)
             : double.MaxValue;
         _frameUploadMsConsumed = 0;
         _textureCache.ResetFrameStats(FrameBudgetScale);
@@ -380,7 +406,20 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     ///     when throttled; see the <c>_frameUploadMsConsumed</c> field notes). Set by the renderer from
     ///     its FALLOUT_VIEWER_REFERENCE_UPLOAD_MS_PER_FRAME knob.
     /// </summary>
-    public double UploadMillisecondsPerFrame { get; set; } = 2.0;
+    /// <summary>
+    ///     Base per-frame render-thread upload allowance, before time-based scaling.
+    ///     <para>
+    ///         Raised from 2.0 when the budget gate became PREDICTIVE. Previously a frame spent the
+    ///         whole allowance and then started one more upload on top, so the effective spend was
+    ///         roughly double the nominal figure — the budget said 2 ms and the frame took ~12 ms of
+    ///         resolve on the frames that hit it. Removing that overshoot without adjusting the base
+    ///         therefore cut real streaming throughput ~3x (measured: 2.94 -> 0.90 uploads/frame),
+    ///         which just trades a pacing spike for a longer stretch of half-loaded scene. The base is
+    ///         set to the old EFFECTIVE spend so throughput is preserved and only the variance is
+    ///         removed.
+    ///     </para>
+    /// </summary>
+    public double UploadMillisecondsPerFrame { get; set; } = 4.0;
 
     public CachedNifMesh12? GetOrUpload(
         string modelPath,
@@ -608,7 +647,14 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
         // Accumulated-upload-time gate (same first-unit rule): paces real upload WORK per frame.
         // Deliberately not a wall-clock deadline — see the _frameUploadMsConsumed field notes.
-        if (_frameUploadByteBudget.Count > 0 && _frameUploadMsConsumed >= _frameUploadMsBudget)
+        // PROJECTED, not just consumed: testing only what has already been spent let a frame use its
+        // whole budget and then start one more upload on top, overshooting by that mesh's full cost.
+        // Measured, that turned a ~3.6 ms allowance into ~8.5 ms of extra resolve time on the frames
+        // that hit it — a burst landing on exactly the frames where new content appears, which is
+        // what a heartbeat while loading feels like. The estimate self-calibrates from observed
+        // throughput, so it needs no hardware assumptions.
+        if (_frameUploadByteBudget.Count > 0 &&
+            _frameUploadMsConsumed + EstimateUploadMilliseconds(decoded.ByteSize) > _frameUploadMsBudget)
         {
             FrameByteBudgetDeferrals++;
             return true;
@@ -621,7 +667,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         // independent, so all variants of a NIF share one collision entry keyed on DecodePath).
         var uploadStarted = Stopwatch.GetTimestamp();
         mesh = UploadDecodedMesh(node.DecodePath, decoded.Mesh);
-        _frameUploadMsConsumed += Stopwatch.GetElapsedTime(uploadStarted).TotalMilliseconds;
+        var uploadMs = Stopwatch.GetElapsedTime(uploadStarted).TotalMilliseconds;
+        _frameUploadMsConsumed += uploadMs;
+        RecordUploadThroughput(decoded.ByteSize, uploadMs);
         if (mesh is null)
         {
             node.ResolvedNull = true;
@@ -631,6 +679,30 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
         node.Mesh = mesh;
         return true;
+    }
+
+    /// <summary>
+    ///     Predicted render-thread cost of uploading <paramref name="byteSize" />, from the observed
+    ///     throughput of previous uploads. Seeded pessimistically so the very first uploads of a
+    ///     session are paced conservatively rather than let through unmeasured.
+    /// </summary>
+    private double EstimateUploadMilliseconds(long byteSize) =>
+        byteSize <= 0 ? 0 : byteSize * _uploadMillisecondsPerByte;
+
+    /// <summary>
+    ///     Folds one observed upload into the throughput estimate. An EMA rather than a running mean:
+    ///     the cost per byte shifts with residency pressure and heap state, and the estimate needs to
+    ///     track that rather than average over the whole session.
+    /// </summary>
+    private void RecordUploadThroughput(long byteSize, double milliseconds)
+    {
+        if (byteSize <= 0 || !double.IsFinite(milliseconds) || milliseconds <= 0)
+        {
+            return;
+        }
+
+        var observed = milliseconds / byteSize;
+        _uploadMillisecondsPerByte += (observed - _uploadMillisecondsPerByte) * UploadThroughputAlpha;
     }
 
     private void QueueDecode(string modelPath, Node node, float priority)
@@ -1179,6 +1251,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     SpeedTreeWindSpeeds = sub.SpeedTreeWindSpeeds,
                     SpeedTreeLod = sub.SpeedTreeLod,
                     DepthWritingBlend = sub.DepthWritingBlend,
+                    EngineZWriteOff = sub.EngineZWriteOff,
+                    DepthTestOff = sub.DepthTestOff,
                     IsDecal = sub.IsDecal,
                     // default(Vector3) = a pre-effect-fields payload (or a caller that skipped the
                     // arg); black would tint everything out, so normalize to the no-op white.
@@ -1218,7 +1292,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
         success = true;
         var cached = new CachedNifMesh12(
-            submeshes, geometry, _geometryArena, _deletionQueue, _textureCache, MathF.Sqrt(meshLocalRadiusSq),
+            // Materialized once at upload; the render thread then walks it allocation-free every frame.
+            submeshes.ToArray(),
+            geometry, _geometryArena, _deletionQueue, _textureCache, MathF.Sqrt(meshLocalRadiusSq),
             aabbMin, aabbMax,
             (IReadOnlyList<NifWaterGeometry>?)waterPlanesLocal ?? Array.Empty<NifWaterGeometry>())
         {

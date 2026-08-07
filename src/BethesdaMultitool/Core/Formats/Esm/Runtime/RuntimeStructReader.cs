@@ -21,6 +21,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime;
 /// </summary>
 public sealed class RuntimeStructReader
 {
+    /// <summary>ASPC — read by a typed reader but still delivered as a <c>GenericEsmRecord</c>.</summary>
+    private const byte AspcFormType = 0x0E;
+
+    private readonly RuntimeAcousticSpaceReader _acousticSpaces;
     private readonly RuntimeActorReader _actors;
     private readonly RuntimeActorWeaponReader _actorWeapons;
     private readonly RuntimeCharacterAppearanceReader _appearance;
@@ -57,6 +61,8 @@ public sealed class RuntimeStructReader
     private readonly RuntimeMessageReader _messages;
     private readonly RuntimeMsttReader _movableStatics;
     private readonly RuntimeMusicTypeReader _musicTypes;
+    private readonly RuntimeStaticCollectionReader _staticCollections;
+    private readonly RuntimePlaceableWaterReader _placeableWaters;
     private readonly RuntimeNavMeshReader _navMeshes;
     private readonly RuntimeNavMeshInfoMapReader _navMeshInfoMaps;
     private readonly RuntimeNavMeshDiscovery _navMeshDiscovery;
@@ -122,12 +128,15 @@ public sealed class RuntimeStructReader
         _collections = new RuntimeCollectionReader(_context);
         _worldObjects = new RuntimeWorldObjectReader(_context);
         _races = new RuntimeRaceReader(_context, probeResults?.RaceLayout);
+        _acousticSpaces = new RuntimeAcousticSpaceReader(_context, probeResults?.AcousticSpaceLayout);
         _magic = new RuntimeMagicReader(_context);
         _globals = new RuntimeGlobalReader(_context);
         _classes = new RuntimeClassReader(_context);
         _appearance = new RuntimeCharacterAppearanceReader(_context);
         _reputations = new RuntimeReputationReader(_context);
         _musicTypes = new RuntimeMusicTypeReader(_context);
+        _staticCollections = new RuntimeStaticCollectionReader(_context);
+        _placeableWaters = new RuntimePlaceableWaterReader(_context);
         _sounds = new RuntimeSoundReader(_context);
         _books = new RuntimeBookReader(_context);
         _weaponMods = new RuntimeWeaponModReader(_context);
@@ -258,6 +267,7 @@ public sealed class RuntimeStructReader
                     msg => Logger.Instance.Info(msg),
                     editorIdsByFormId),
                 AmmoDataLayout = RuntimeAmmoDataProbe.Probe(context, allEntries),
+                AcousticSpaceLayout = RuntimeAcousticSpaceProbe.Probe(context, allEntries),
                 GenericTypeShifts = RuntimeGenericReader.ProbeAllTypeShifts(context, allEntries),
                 // Surface the dict on the context (via the reader constructor) so specialized
                 // readers can resolve candidate Script* pointers to their EditorIds. The
@@ -330,10 +340,18 @@ public sealed class RuntimeStructReader
     /// <summary>
     ///     Reads a record with no specialized reader as a generic, PDB-layout-driven record
     ///     (identity and schema fields only) for the given DMP entry.
+    ///     <para>
+    ///     ASPC is intercepted here rather than being added to
+    ///     <c>PdbStructLayouts.SpecializedFormTypes</c>: that set <i>suppresses</i> the generic
+    ///     path, and since acoustic spaces have no record model of their own this is the only route
+    ///     by which they reach the writer at all. Excluding it would strand them entirely.
+    ///     </para>
     /// </summary>
     public GenericEsmRecord? ReadGenericRecord(RuntimeEditorIdEntry entry)
     {
-        return _generic.ReadGenericRecord(entry);
+        return entry.FormType == AspcFormType
+            ? _acousticSpaces.ReadRuntimeAcousticSpace(entry)
+            : _generic.ReadGenericRecord(entry);
     }
 
     /// <summary>
@@ -481,6 +499,24 @@ public sealed class RuntimeStructReader
     public MusicTypeRecord? ReadRuntimeMusicType(RuntimeEditorIdEntry entry)
     {
         return _musicTypes.ReadRuntimeMusicType(entry);
+    }
+
+    /// <summary>
+    ///     Reads a runtime static collection (SCOL) — baked model + bounds + identity; the
+    ///     PDB layout has no part list, so ONAM/DATA parts are never runtime-recoverable.
+    /// </summary>
+    public StaticCollectionRecord? ReadRuntimeStaticCollection(RuntimeEditorIdEntry entry)
+    {
+        return _staticCollections.ReadRuntimeStaticCollection(entry);
+    }
+
+    /// <summary>
+    ///     Reads a runtime placeable water (PWAT) — identity, model, bounds, and the parent
+    ///     WATR pointer that lives inside the embedded 8-byte data struct.
+    /// </summary>
+    public PlaceableWaterRecord? ReadRuntimePlaceableWater(RuntimeEditorIdEntry entry)
+    {
+        return _placeableWaters.ReadRuntimePlaceableWater(entry);
     }
 
     /// <summary>Reads the runtime sound record for the given DMP entry, or null if it can't be read.</summary>

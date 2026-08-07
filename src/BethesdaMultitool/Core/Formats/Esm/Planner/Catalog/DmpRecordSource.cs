@@ -120,7 +120,40 @@ public sealed class DmpRecordSource
             ["CMNY"] = c => c.CaravanMoney.Select(r => (r.FormId, (object)r)),
             ["CDCK"] = c => c.CaravanDecks.Select(r => (r.FormId, (object)r)),
             ["FLST"] = c => c.FormLists.Select(r => (r.FormId, (object)r)),
+            ["PWAT"] = c => c.PlaceableWaters.Select(r => (r.FormId, (object)r)),
+            // Tier 5d — last ordinary top-level types off the legacy encode path.
+            ["CLMT"] = c => c.Climate.Select(r => (r.FormId, (object)r)),
+            ["GRAS"] = c => c.Grasses.Select(r => (r.FormId, (object)r)),
+            ["IMGS"] = c => c.ImageSpaces.Select(r => (r.FormId, (object)r)),
+            ["RADS"] = c => c.RadiationStages.Select(r => (r.FormId, (object)r)),
+            ["DEHY"] = c => c.DehydrationStages.Select(r => (r.FormId, (object)r)),
+            ["HUNG"] = c => c.HungerStages.Select(r => (r.FormId, (object)r)),
+            ["SLPD"] = c => c.SleepDeprivationStages.Select(r => (r.FormId, (object)r)),
+            // Tier 5c — generic-record types. These share one untyped RecordCollection list
+            // and are told apart by GenericEsmRecord.RecordType, mirroring the legacy
+            // EnumerateModelsByType filters exactly (PluginBuilder's FLOR/MSTT/ANIO/TACT/
+            // ASPC/ADDN yields). Without a row here the planner would silently emit an empty
+            // GRUP for the type: Enumerate skips unmapped types, every catalog entry stays
+            // master-only, and PlanWriter returns no bytes.
+            ["FLOR"] = c => GenericsOfType(c, "FLOR"),
+            ["MSTT"] = c => GenericsOfType(c, "MSTT"),
+            ["ANIO"] = c => GenericsOfType(c, "ANIO"),
+            ["TACT"] = c => GenericsOfType(c, "TACT"),
+            ["ASPC"] = c => GenericsOfType(c, "ASPC"),
+            ["ADDN"] = c => GenericsOfType(c, "ADDN"),
         };
+
+    /// <summary>
+    ///     Yields the generic records of one signature out of the shared
+    ///     <see cref="RecordCollection.GenericRecords" /> list, in list order.
+    /// </summary>
+    private static IEnumerable<(uint FormId, object Model)> GenericsOfType(
+        RecordCollection collection, string recordType)
+    {
+        return collection.GenericRecords
+            .Where(r => string.Equals(r.RecordType, recordType, StringComparison.Ordinal))
+            .Select(r => (r.FormId, (object)r));
+    }
 
     private readonly RecordCollection _collection;
 

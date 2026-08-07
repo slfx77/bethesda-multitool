@@ -76,6 +76,7 @@ internal static class RuntimeDataEnricher
                     Position = existing.Position ?? runtimeRefr.Position,
                     Scale = Math.Abs(existing.Scale - 1.0f) > 0.001f ? existing.Scale : runtimeRefr.Scale,
                     Radius = existing.Radius ?? runtimeRefr.Radius,
+                    RadioData = existing.RadioData ?? runtimeRefr.RadioData,
                     ParentCellFormId = existing.ParentCellFormId ?? runtimeRefr.ParentCellFormId,
                     ParentCellIsInterior = existing.ParentCellIsInterior ?? runtimeRefr.ParentCellIsInterior,
                     PersistentCellFormId = existing.PersistentCellFormId ?? runtimeRefr.PersistentCellFormId,
@@ -108,6 +109,8 @@ internal static class RuntimeDataEnricher
                         : runtimeRefr.LinkedRefChildrenFormIds,
                     OwnerFormId = existing.OwnerFormId ?? runtimeRefr.OwnerFormId,
                     DestinationDoorFormId = existing.DestinationDoorFormId ?? runtimeRefr.DestinationDoorFormId,
+                    TeleportPosRot = existing.TeleportPosRot ?? runtimeRefr.TeleportPosRot,
+                    TeleportFlags = existing.TeleportFlags ?? runtimeRefr.TeleportFlags,
                     StructuralData = existing.StructuralData ?? runtimeRefr.StructuralData
                 };
                 mergedCount++;

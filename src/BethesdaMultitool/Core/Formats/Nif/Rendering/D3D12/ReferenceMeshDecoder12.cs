@@ -484,7 +484,9 @@ internal sealed class ReferenceMeshDecoder12
                         ? FnvClassicBasicShaderPolicy.Resolve(nif, sub, diffusePath, normalPath)
                         : FnvClassicBasicShaderMode.None,
                     SourceBlockIndex: sub.SourceBlockIndex,
-                    BillboardMode: sub.BillboardMode));
+                    BillboardMode: sub.BillboardMode,
+                    EngineZWriteOff: alphaState.EngineZWriteOff,
+                    DepthTestOff: alphaState.DepthTestOff));
             }
 
             if (submeshes.Count == 0)
@@ -577,7 +579,9 @@ internal sealed class ReferenceMeshDecoder12
                 sub.ClassicParallaxHeightMapTexturePath,
                 sub.ClassicBasicShaderMode,
                 sub.SourceBlockIndex,
-                sub.BillboardMode));
+                sub.BillboardMode,
+                sub.EngineZWriteOff,
+                sub.DepthTestOff));
         }
 
         return new ReferenceDecodedMeshPayload12(
@@ -651,7 +655,9 @@ internal sealed class ReferenceMeshDecoder12
                 SourceBlockIndex:
                     sub.SourceBlockIndex,
                 BillboardMode:
-                    sub.BillboardMode));
+                    sub.BillboardMode,
+                EngineZWriteOff: sub.EngineZWriteOff,
+                DepthTestOff: sub.DepthTestOff));
         }
 
         return new DecodedNifMesh12(

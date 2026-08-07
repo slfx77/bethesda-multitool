@@ -23,6 +23,9 @@ public record ExtractedRefrRecord
     /// <summary>XRDS - signed ExtraRadius adjustment.</summary>
     public float? Radius { get; init; }
 
+    /// <summary>XRDO - radio broadcast configuration from ExtraRadioData (BSExtraData type 0x68).</summary>
+    public RadioData? RadioData { get; init; }
+
     /// <summary>XOWN - Owner FormID.</summary>
     public uint? OwnerFormId { get; init; }
 

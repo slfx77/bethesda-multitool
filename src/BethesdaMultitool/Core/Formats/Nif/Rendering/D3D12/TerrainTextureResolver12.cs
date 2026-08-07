@@ -28,6 +28,10 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     // Timestamp of the previous ResetFrameStats call (time-based streaming pace; 0 = first frame).
     private long _lastFrameTimestamp;
 
+    /// <summary>EMA of the observed frame duration that drives the streaming budget scale. Smoothed
+    /// because the raw previous frame is partly a RESULT of this budget — see StreamingFrameBudgetScaler.</summary>
+    private double _smoothedFrameSeconds;
+
     public TerrainTextureResolver12(
         GpuDevice12 gpu,
         GpuCommandRecorder12 recorder,
@@ -99,11 +103,21 @@ internal sealed class TerrainTextureResolver12 : IDisposable
         // Self-measured frame duration → time-based dispatch pace (StreamingFrameBudgetScaler), so
         // terrain texture streaming keeps its throughput when the frame rate collapses under GPU
         // contention. Same pattern as ReferenceMeshCache12.ResetFrameStats.
+        // Driven from a SMOOTHED frame time so one hitch cannot license the burst that sustains it.
         var now = System.Diagnostics.Stopwatch.GetTimestamp();
-        var scale = _lastFrameTimestamp == 0
-            ? 1.0
-            : Core.Resources.StreamingFrameBudgetScaler.Scale(
+        double scale;
+        if (_lastFrameTimestamp == 0)
+        {
+            scale = 1.0;
+        }
+        else
+        {
+            _smoothedFrameSeconds = Core.Resources.StreamingFrameBudgetScaler.SmoothFrameSeconds(
+                _smoothedFrameSeconds,
                 System.Diagnostics.Stopwatch.GetElapsedTime(_lastFrameTimestamp, now).TotalSeconds);
+            scale = Core.Resources.StreamingFrameBudgetScaler.Scale(_smoothedFrameSeconds);
+        }
+
         _lastFrameTimestamp = now;
         _textureCache.ResetFrameStats(scale);
     }

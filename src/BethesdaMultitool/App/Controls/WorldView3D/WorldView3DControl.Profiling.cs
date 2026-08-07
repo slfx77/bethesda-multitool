@@ -17,15 +17,30 @@ public sealed partial class WorldView3DControl
 
         while (_gpuTimestampProfiler12.TryCollectCompleted(out var timings))
         {
-            RendererProfilerTrace.Event("gpu-frame", new Dictionary<string, object?>
+            var fields = new Dictionary<string, object?>
             {
                 ["frame"] = timings.FrameNumber,
                 ["gpuFrameMs"] = timings.FrameMilliseconds,
                 ["gpuTerrainMs"] = timings.TerrainMilliseconds,
                 ["gpuReferencesMs"] = timings.ReferencesMilliseconds,
                 ["gpuWaterMs"] = timings.WaterMilliseconds,
-                ["gpuWireframeMs"] = timings.WireframeMilliseconds
-            });
+                ["gpuWireframeMs"] = timings.WireframeMilliseconds,
+                ["gpuSkyMs"] = timings.SkyMilliseconds,
+                ["gpuBlendedMs"] = timings.BlendedMilliseconds,
+                ["gpuShadowMs"] = timings.ShadowMilliseconds,
+                ["gpuResolveMs"] = timings.ResolveMilliseconds,
+                // The residual. If this is not ~0 the frame still contains unmeasured GPU work — the
+                // exact condition that hid a 43 ms shadow pass behind an otherwise plausible profile.
+                ["gpuOtherMs"] = timings.OtherMilliseconds
+            };
+            for (var i = 0; i < Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount; i++)
+            {
+                var cascade = timings.Cascade(i);
+                fields[$"gpuShadowC{i}RefMs"] = cascade.ReferencesMilliseconds;
+                fields[$"gpuShadowC{i}TerrainMs"] = cascade.TerrainMilliseconds;
+            }
+
+            RendererProfilerTrace.Event("gpu-frame", fields);
         }
     }
 
@@ -88,6 +103,14 @@ public sealed partial class WorldView3DControl
         fields["gcGen2"] = sample.GcGen2Collections;
         fields["managedMemoryBytes"] = sample.ManagedMemoryBytes;
         fields["allocatedBytes"] = sample.AllocatedBytes;
+        // The camera's integration timestep. This is the quantity the reported motion "heartbeat" IS
+        // — apparent speed is MoveSpeed x dt — yet no sink recorded it, so the symptom could only be
+        // inferred from frame time. Captured before the pathological-delta clamp.
+        fields["deltaSeconds"] = sample.DeltaSeconds;
+        fields["shadowMode"] = _lastShadowMode.ToString();
+        fields["shadowCascadeMask"] = _lastShadowCascadeMask;
+        fields["shadowDrawCount"] = _lastShadowDrawCount;
+        fields["shadowTerrainCellDraws"] = _lastShadowTerrainCellDraws;
         return fields;
     }
 

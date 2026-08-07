@@ -61,6 +61,16 @@ public static class RecordMergeEngine
             {
                 consumed[dmpIndex] = true;
                 var dmpBytes = dmpEncoded.Subrecords[dmpIndex].Bytes;
+
+                // Field reconcilers splice authoritative master lanes into a captured payload
+                // whose runtime write-back is only partially trustworthy (NPC_ AIDT radius,
+                // NAM6 materialized height). Applied only when both sides carry the signature.
+                if (policy.FieldReconcilers is { } reconcilers
+                    && reconcilers.TryGetValue(sig, out var reconcile))
+                {
+                    dmpBytes = reconcile(esmSub.Data, dmpBytes);
+                }
+
                 SubrecordEncoder.WriteSubrecord(writer, sig, dmpBytes);
                 dmpSignaturesUsed.Add(sig);
             }
@@ -81,6 +91,15 @@ public static class RecordMergeEngine
 
             var sub = dmpEncoded.Subrecords[i];
             if (policy.DoNotAppendFromDmp.Contains(sub.Signature))
+            {
+                continue;
+            }
+
+            // Value-aware append gate: a signature the master omits is only grafted on when the
+            // captured value is worth adding (e.g. skip runtime-materialized NAM6 defaults).
+            if (policy.AppendFilters is { } filters
+                && filters.TryGetValue(sub.Signature, out var shouldAppend)
+                && !shouldAppend(sub.Bytes))
             {
                 continue;
             }

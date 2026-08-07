@@ -25,6 +25,7 @@ internal static class ObjectIndexBuilder
         List<LightRecord> lights,
         List<FurnitureRecord> furniture,
         List<StaticCollectionRecord> staticCollections,
+        List<PlaceableWaterRecord> placeableWaters,
         List<WeaponRecord> weapons,
         List<ArmorRecord> armor,
         List<AmmoRecord> ammo,
@@ -52,6 +53,12 @@ internal static class ObjectIndexBuilder
         // SCOL (static collection, e.g. SSHQExterior03) — a placed ref to a SCOL resolves to its
         // merged meshes\scol\*.nif. Without this entry SCOL refs get no ModelPath and never render.
         AddToIndexes(staticCollections, s => s.FormId, s => s.Bounds, s => s.ModelPath, boundsIndex, modelIndex);
+        // PWAT (placeable water, e.g. NVCleanWater1x402) — the water planes that sit in ponds, sewers
+        // and craters, whose surface is NOT the cell's XCLW plane. PWAT used to ride the generic-record
+        // list; once it moved to the typed ParsePlaceableWaters() path it stopped reaching this index,
+        // so every placed water plane lost its MODL and the renderer dropped it. Same failure the SCOL
+        // line above exists to prevent.
+        AddToIndexes(placeableWaters, p => p.FormId, p => p.Bounds, p => p.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(weapons, w => w.FormId, w => w.Bounds, w => w.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(armor, a => a.FormId, a => a.Bounds, a => a.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(ammo, a => a.FormId, a => a.Bounds, a => a.ModelPath, boundsIndex, modelIndex);

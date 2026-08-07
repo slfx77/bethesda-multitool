@@ -39,12 +39,17 @@ internal sealed class GpuDescriptorHeapAllocator12 : Diagnostics.ITrackableResou
     // what bounds the bindless texture heap: without it, every streamed texture consumed a slot
     // forever and the heap exhausted after sustained streaming (the ~5-minute walk-mode crash).
     private readonly Stack<uint> _persistentFreeList = new();
+    // Diagnostic mirror of the free-list (same membership) so double-frees — which would put the
+    // same slot into two owners' hands and let one owner's descriptor write clobber the other's —
+    // are caught at the Free call instead of surfacing as timing-dependent wrong-texture sampling.
+    private readonly HashSet<uint> _persistentFreeSet = new();
     private uint _persistentBump;
     private uint _persistentPeak;
     private uint _bumpOffset;
     private uint _currentFrameStart;
     private uint _currentFramePeak;
     private int _currentFrame;
+    private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
     private bool _disposed;
 
     public GpuDescriptorHeapAllocator12(
@@ -155,11 +160,18 @@ internal sealed class GpuDescriptorHeapAllocator12 : Diagnostics.ITrackableResou
     /// </summary>
     public PersistentAllocation AllocatePersistent()
     {
+        if (Environment.CurrentManagedThreadId != _ownerThreadId)
+        {
+            Core.Diagnostics.Logger.Instance.Warn(
+                "GpuDescriptorHeapAllocator12.AllocatePersistent from thread {0} (owner {1}):\n{2}",
+                Environment.CurrentManagedThreadId, _ownerThreadId, Environment.StackTrace);
+        }
         uint index;
         if (_persistentFreeList.Count > 0)
         {
             // Reuse a reclaimed slot before growing the bump pointer.
             index = _persistentFreeList.Pop();
+            _persistentFreeSet.Remove(index);
         }
         else
         {
@@ -187,8 +199,21 @@ internal sealed class GpuDescriptorHeapAllocator12 : Diagnostics.ITrackableResou
     /// </summary>
     public void FreePersistent(uint index)
     {
+        if (Environment.CurrentManagedThreadId != _ownerThreadId)
+        {
+            Core.Diagnostics.Logger.Instance.Warn(
+                "GpuDescriptorHeapAllocator12.FreePersistent({0}) from thread {1} (owner {2}):\n{3}",
+                index, Environment.CurrentManagedThreadId, _ownerThreadId, Environment.StackTrace);
+        }
         if (index >= _persistentCapacity)
             throw new ArgumentOutOfRangeException(nameof(index), index, "Slot index is outside the persistent region.");
+        if (!_persistentFreeSet.Add(index))
+        {
+            throw new InvalidOperationException(
+                $"GpuDescriptorHeapAllocator12: persistent slot {index} freed twice. A double-free hands the " +
+                "same bindless slot to two owners; the second owner's descriptor write silently clobbers the " +
+                "first's and the shader samples the wrong resource (timing-dependent).");
+        }
         _persistentFreeList.Push(index);
     }
 

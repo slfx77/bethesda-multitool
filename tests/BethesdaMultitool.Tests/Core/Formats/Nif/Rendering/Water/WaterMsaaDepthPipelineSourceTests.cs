@@ -19,7 +19,7 @@ public sealed class WaterMsaaDepthPipelineSourceTests
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             "GpuRootSignature12.cs");
         var rangeStart = source.IndexOf("var bindlessDepthMsaa = new DescriptorRange1", StringComparison.Ordinal);
-        var tableEnd = source.IndexOf("ShaderVisibility.All);", rangeStart, StringComparison.Ordinal);
+        var tableEnd = source.IndexOf("var referenceInstanceSrv = new RootParameter1(", rangeStart, StringComparison.Ordinal);
 
         Assert.True(rangeStart >= 0);
         Assert.True(tableEnd > rangeStart);
@@ -28,10 +28,16 @@ public sealed class WaterMsaaDepthPipelineSourceTests
         Assert.Contains("BaseShaderRegister = 0", contract, StringComparison.Ordinal);
         Assert.Contains("RegisterSpace = 3", contract, StringComparison.Ordinal);
         Assert.Contains("OffsetInDescriptorsFromTableStart = 0", contract, StringComparison.Ordinal);
-        Assert.Contains(
-            "new RootDescriptorTable1(bindlessTextures, bindlessCubemaps, bindlessDepthMsaa)",
-            contract,
-            StringComparison.Ordinal);
+        // One unbounded range per descriptor table: stacking the three aliases inside a single
+        // table left the later ones misresolving on shipped drivers (stale low-slot content —
+        // the live-window-sized water depth "rectangle"). Each alias owns a root parameter and
+        // every pass binds the trio together at the heap start.
+        Assert.Contains("new RootDescriptorTable1(bindlessTextures)", contract, StringComparison.Ordinal);
+        Assert.Contains("new RootDescriptorTable1(bindlessCubemaps)", contract, StringComparison.Ordinal);
+        Assert.Contains("new RootDescriptorTable1(bindlessDepthMsaa)", contract, StringComparison.Ordinal);
+        Assert.Contains("public const int BindlessCubeSrvTable = 9;", source, StringComparison.Ordinal);
+        Assert.Contains("public const int BindlessDepthMsaaSrvTable = 10;", source, StringComparison.Ordinal);
+        Assert.Contains("public static void SetGraphicsBindlessTables(", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -66,7 +72,11 @@ public sealed class WaterMsaaDepthPipelineSourceTests
         var captureWaterEnd = captureRoute.IndexOf(");", captureWaterStart, StringComparison.Ordinal);
         Assert.True(captureWaterEnd > captureWaterStart);
         var captureWaterCall = captureRoute[captureWaterStart..(captureWaterEnd + 2)];
-        Assert.Contains("target.SampleCount);", captureWaterCall, StringComparison.Ordinal);
+        // The capture reports the sample count of the depth SRV it actually bound: 1 whenever the
+        // single-sample MAX-resolved depth copy is in use (the preferred MSAA path — the bindless
+        // Texture2DMS alias misresolved late-written slots on shipped drivers), the raw target
+        // count only on the legacy multisampled-binding fallback.
+        Assert.Contains("_captureDepthSampleCount);", captureWaterCall, StringComparison.Ordinal);
         Assert.DoesNotContain("!target.IsMsaa", captureRoute, StringComparison.Ordinal);
     }
 
@@ -94,7 +104,12 @@ public sealed class WaterMsaaDepthPipelineSourceTests
         Assert.True(captureFactoryStart >= 0);
         Assert.True(captureFactoryEnd > captureFactoryStart);
         var captureFactory = capture[captureFactoryStart..captureFactoryEnd];
-        Assert.Contains("ViewDimension = target.IsMsaa", captureFactory, StringComparison.Ordinal);
+        // MSAA captures prefer the single-sample MAX-resolved depth copy (bound as Texture2D);
+        // the multisampled view remains only as the fail-soft fallback when the resolve
+        // resource cannot be created.
+        Assert.Contains("target.TryEnsureResolvedDepthResource()", captureFactory, StringComparison.Ordinal);
+        Assert.Contains("var msaaView = target.IsMsaa && !useResolved;", captureFactory, StringComparison.Ordinal);
+        Assert.Contains("ViewDimension = msaaView", captureFactory, StringComparison.Ordinal);
         Assert.Contains("ShaderResourceViewDimension.Texture2DMultisampled", captureFactory,
             StringComparison.Ordinal);
 

@@ -6,19 +6,27 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Inspection;
 
 /// <summary>
-///     Covers the engine-accurate alpha classification in <see cref="NifAlphaClassifier" />, decompiled from
-///     BSShader::SetupGeometryAlphaBlending + BSShader::SetupGeometryRenderStates (MemDebug XEX —
-///     tools/GhidraProject/shader_zwrite_decompiled.txt):
+///     Covers the alpha classification in <see cref="NifAlphaClassifier" /> — BOTH bits:
 ///     <list type="bullet">
-///         <item>Alpha BLEND is enabled by NiAlphaProperty bit 0.</item>
+///         <item>Alpha BLEND is enabled by NiAlphaProperty bit 0 (decompiled from
+///             BSShader::SetupGeometryAlphaBlending).</item>
 ///         <item>
-///             Depth WRITE in the alpha pass follows the alpha-TEST bit: alpha-tested geometry writes depth;
-///             plain alpha-blend does not.
+///             LEGACY <c>DepthWritingBlend</c> (blend + test + cutting threshold) — the viewer
+///             heuristic serving every stream-off route. NOTE the 2026-08-04 RE round proved the
+///             old "z-write follows the alpha-test bit" reading FALSE (that call site sets cull +
+///             alpha test); the heuristic is retained as the legacy fallback, not as engine truth.
 ///         </item>
 ///         <item>
-///             BSShaderFlags2 ZBuffer_Write does NOT drive the per-draw Z-write and does NOT demote
-///             alpha-blend to opaque — that earlier rule was a workaround for a hull leak the engine actually
-///             avoids by back-to-front sorting + back-face culling (both of which the renderer already does).
+///             ENGINE <c>EngineZWriteOff</c> / <c>DepthTestOff</c> (memory note
+///             fnv_alpha_zwrite_order_re_2026_08_04): z-write is ambient-ON minus decals, the hair
+///             flag (bit 18 + blend), and NoLighting honoring ShaderFlags2 bit 0 "zbuffer write"
+///             (CLEAR ⇒ OFF); NoLighting also honors ShaderFlags bit 31 "zbuffer test" (CLEAR ⇒
+///             test OFF). Lit geometry IGNORES the flag pair — blended LIT shapes keep z-write.
+///             Shapes with no flag evidence MIRROR the legacy bit.
+///         </item>
+///         <item>
+///             ZBuffer_Write never demotes alpha-blend to opaque — the engine renders sorted
+///             blends; back-to-front sorting + back-face culling handle closed-hull see-through.
 ///         </item>
 ///     </list>
 /// </summary>
@@ -143,9 +151,128 @@ public sealed class NifAlphaClassifierZBufferWriteTests
         Assert.False(state.WritesDepth);
     }
 
+    [Fact]
+    public void Classify_EngineRule_LitBlendWithTest_KeepsZWrite()
+    {
+        // The WhiteHorseNettle pin: a blended LIT shape that ALSO alpha-tests keeps engine
+        // z-write — lit geometry ignores the zbuffer-write/test flag pair entirely, even with
+        // flags2 bit 0 authored either way — and it does so at ANY threshold, which is the whole
+        // point of replacing the old texel-histogram heuristic (the nettle authors threshold 0).
+        var submesh = CreateSubmesh(true, true, 0x1u, shaderFlags: 0x82000000u);
+        submesh.AlphaTestThreshold = 0;
+
+        var state = NifAlphaClassifier.Classify(submesh, null);
+
+        Assert.False(state.EngineZWriteOff);
+        Assert.False(state.DepthTestOff);
+    }
+
+    [Fact]
+    public void Classify_EngineRule_PureBlendCannotWriteDepth()
+    {
+        // VIEWER SAFETY RESTRICTION, deliberately NOT the engine's rule: the depth-writing blend
+        // PSO's only discard is the alpha test, so a pure blend that wrote depth would deposit it
+        // across fully transparent texels. Measured at render distance 32, letting these write
+        // depth differed from the legacy pass order by 328,701 of 328,704 px; restricting them
+        // brings the same frame back to 1,093 px. Lift only with a shader-side alpha discard.
+        var submesh = CreateSubmesh(true, false, 0x1u, shaderFlags: 0x82000000u);
+
+        var state = NifAlphaClassifier.Classify(submesh, null);
+
+        Assert.True(state.EngineZWriteOff);
+        // The legacy bit is UNCHANGED (plain blend stays non-depth-writing on stream-off routes).
+        Assert.False(state.DepthWritingBlend);
+    }
+
+    [Fact]
+    public void Classify_EngineRule_NoLightingBit0Clear_TurnsZWriteOff()
+    {
+        // FXMistLow01Long's SmokeWispsTile sheet, byte-verified from the shipped NIF: NoLighting
+        // with ShaderFlags 0xA2000148 (bit 31 SET ⇒ z-test stays ON) and ShaderFlags2 0x0 (bit 0
+        // CLEAR ⇒ z-write OFF). This is why retail mist never punches water.
+        var submesh = CreateSubmesh(true, false, 0x0u,
+            propertyType: "BSShaderNoLightingProperty", shaderFlags: 0xA2000148u);
+
+        var state = NifAlphaClassifier.Classify(submesh, null);
+
+        Assert.True(state.EngineZWriteOff);
+        Assert.False(state.DepthTestOff);
+    }
+
+    [Fact]
+    public void Classify_EngineRule_NoLightingBit0Set_KeepsZWrite()
+    {
+        // The authored NoLighting DEFAULT (0x82000000 / flags2 bit 0 SET) writes depth — the
+        // engine honors the flag in BOTH directions, so bit0-SET sheets are depth-writing blends.
+        // Carries an alpha test so the viewer's pure-blend safety restriction does not apply.
+        var submesh = CreateSubmesh(true, true, 0x1u,
+            propertyType: "BSShaderNoLightingProperty", shaderFlags: 0x82000000u);
+
+        var state = NifAlphaClassifier.Classify(submesh, null);
+
+        Assert.False(state.EngineZWriteOff);
+        Assert.False(state.DepthTestOff);
+    }
+
+    [Fact]
+    public void Classify_EngineRule_ZBufferTestBit31_IsNoLightingOnlyAndClearMeansOff()
+    {
+        // Polarity is load-bearing: bit 31 CLEAR disables the depth test (the authored default
+        // 0x82000000 has it SET — an inverted read would kill the test for nearly every
+        // NoLighting sheet in the game). And it is honored for the NoLighting family ONLY.
+        var noLighting = CreateSubmesh(true, false, 0x1u,
+            propertyType: "BSShaderNoLightingProperty", shaderFlags: 0x00000148u);
+        Assert.True(NifAlphaClassifier.Classify(noLighting, null).DepthTestOff);
+
+        var lit = CreateSubmesh(true, false, 0x1u, shaderFlags: 0x00000148u);
+        Assert.False(NifAlphaClassifier.Classify(lit, null).DepthTestOff);
+    }
+
+    [Fact]
+    public void Classify_EngineRule_DecalAndHairFlag_TurnZWriteOff()
+    {
+        // Decals (ShaderFlags bits 26/27, pre-folded into IsDecal) and the hair flag (bit 18,
+        // 0x40000, with blend) are the remaining engine off-switches.
+        var decal = CreateSubmesh(true, false, 0x1u, shaderFlags: 0x82000000u);
+        decal.IsDecal = true;
+        Assert.True(NifAlphaClassifier.Classify(decal, null).EngineZWriteOff);
+
+        var hair = CreateSubmesh(true, false, 0x1u, shaderFlags: 0x82040000u);
+        Assert.True(NifAlphaClassifier.Classify(hair, null).EngineZWriteOff);
+
+        // The hair leg is blend-gated (the engine's tech-6/8 hair pass only exists for blends).
+        var hairNoBlend = CreateSubmesh(false, true, 0x1u, shaderFlags: 0x82040000u);
+        Assert.False(NifAlphaClassifier.Classify(hairNoBlend, null).EngineZWriteOff);
+    }
+
+    [Fact]
+    public void Classify_EngineRule_MissingEvidence_MirrorsLegacyBit()
+    {
+        // No authored flags = no engine evidence: particle-system submeshes never populate
+        // ShaderMetadata, and NiTexturing-era games yield null. The engine bit MIRRORS the legacy
+        // classification instead of guessing a lit default — a feathered pure-blend particle
+        // cloud must not gain a full-quad depth footprint, and Morrowind's authored write-OFF
+        // channel (NiZBufferProperty) is not parsed yet.
+        var mirrorOff = CreateSubmesh(true, false, null);
+        var mirrorOffState = NifAlphaClassifier.Classify(mirrorOff, null);
+        Assert.False(mirrorOffState.DepthWritingBlend);
+        Assert.True(mirrorOffState.EngineZWriteOff);
+
+        var mirrorOn = CreateSubmesh(true, true, null,
+            "NVSeaPlant02:0", @"textures\effects\nv\NVSeaPlant02.dds");
+        var mirrorOnState = NifAlphaClassifier.Classify(mirrorOn, null);
+        Assert.True(mirrorOnState.DepthWritingBlend);
+        Assert.False(mirrorOnState.EngineZWriteOff);
+
+        // Metadata WITHOUT the flag words (the ShaderFlags-null case) is equally evidence-less.
+        var flagsMissing = CreateSubmesh(true, false, 0x1u);
+        Assert.True(NifAlphaClassifier.Classify(flagsMissing, null).EngineZWriteOff);
+    }
+
     private static RenderableSubmesh CreateSubmesh(
         bool hasAlphaBlend, bool hasAlphaTest, uint? shaderFlags2,
-        string? shapeName = null, string? diffusePath = null, string propertyType = "BSShaderPPLightingProperty")
+        string? shapeName = null, string? diffusePath = null,
+        string propertyType = "BSShaderPPLightingProperty", uint? shaderFlags = null)
     {
         return new RenderableSubmesh
         {
@@ -163,6 +290,7 @@ public sealed class NifAlphaClassifierZBufferWriteTests
                 : new NifShaderTextureMetadata
                 {
                     PropertyType = propertyType,
+                    ShaderFlags = shaderFlags,
                     ShaderFlags2 = shaderFlags2
                 }
         };

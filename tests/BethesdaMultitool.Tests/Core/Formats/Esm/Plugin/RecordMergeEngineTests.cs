@@ -240,6 +240,120 @@ public class RecordMergeEngineTests
         return count;
     }
 
+    // ===================================================================================
+    // Actor-policy field reconcilers + append filters (USER POLICY 2026-08-03:
+    // AIDT matches the proto FILE, not the runtime write-back; NAM6 materialized
+    // heights never fabricate or clobber master data).
+    // ===================================================================================
+
+    private static byte[] MasterAidt()
+    {
+        var aidt = new byte[20];
+        aidt[0] = 5; // Aggression
+        aidt[1] = 4; // Confidence
+        aidt[5] = 0xAA; // unused pad — uninitialized GECK noise the file actually carries
+        aidt[6] = 0xBB;
+        aidt[7] = 0xCC;
+        aidt[15] = 0; // AggroRadiusBehavior
+        BinaryPrimitives.WriteUInt32LittleEndian(aidt.AsSpan(16, 4), 500); // AggroRadius
+        return aidt;
+    }
+
+    [Fact]
+    public void Merge_NpcAidt_RestoresMasterRadiusAndPads_WhenCaptureZeroedThem()
+    {
+        var esm = MakeEsmRecord("NPC_", ("AIDT", MasterAidt()));
+
+        var captured = new byte[20];
+        captured[0] = 7; // genuinely-changed aggression must survive
+        // pads, behavior and radius all zero — the runtime write-back signature
+        var merge = RecordMergeEngine.Merge(esm,
+            new EncodedRecord { Subrecords = [new EncodedSubrecord("AIDT", captured)], Warnings = [] },
+            SubrecordMergePolicy.ForRecordType("NPC_"));
+
+        var payload = ReadNthSubrecordPayload(merge.SubrecordBytes, "AIDT", 0);
+        Assert.Equal(7, payload[0]); // captured lane kept
+        Assert.Equal([0xAA, 0xBB, 0xCC], payload[5..8]); // master pads restored
+        Assert.Equal(500u, BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(16, 4)));
+    }
+
+    [Fact]
+    public void Merge_NpcAidt_KeepsCapturedRadius_WhenGenuinelySet()
+    {
+        var esm = MakeEsmRecord("NPC_", ("AIDT", MasterAidt()));
+
+        var captured = new byte[20];
+        captured[15] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(captured.AsSpan(16, 4), 200);
+
+        var merge = RecordMergeEngine.Merge(esm,
+            new EncodedRecord { Subrecords = [new EncodedSubrecord("AIDT", captured)], Warnings = [] },
+            SubrecordMergePolicy.ForRecordType("NPC_"));
+
+        var payload = ReadNthSubrecordPayload(merge.SubrecordBytes, "AIDT", 0);
+        Assert.Equal(1, payload[15]);
+        Assert.Equal(200u, BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(16, 4)));
+    }
+
+    [Theory]
+    [InlineData(1.0f)] // adult runtime default
+    [InlineData(0.8f)] // child-race runtime default
+    public void Merge_NpcHeight_KeepsMasterZero_WhenCaptureHoldsMaterializedDefault(float materialized)
+    {
+        var esm = MakeEsmRecord("NPC_", ("NAM6", new byte[4])); // master stores 0.0
+
+        var captured = new byte[4];
+        BinaryPrimitives.WriteSingleLittleEndian(captured, materialized);
+
+        var merge = RecordMergeEngine.Merge(esm,
+            new EncodedRecord { Subrecords = [new EncodedSubrecord("NAM6", captured)], Warnings = [] },
+            SubrecordMergePolicy.ForRecordType("NPC_"));
+
+        var payload = ReadNthSubrecordPayload(merge.SubrecordBytes, "NAM6", 0);
+        Assert.Equal(0.0f, BinaryPrimitives.ReadSingleLittleEndian(payload));
+    }
+
+    [Fact]
+    public void Merge_NpcHeight_KeepsGenuineProtoHeight()
+    {
+        var esm = MakeEsmRecord("NPC_", ("NAM6", new byte[4]));
+
+        var captured = new byte[4];
+        BinaryPrimitives.WriteSingleLittleEndian(captured, 1.15f);
+
+        var merge = RecordMergeEngine.Merge(esm,
+            new EncodedRecord { Subrecords = [new EncodedSubrecord("NAM6", captured)], Warnings = [] },
+            SubrecordMergePolicy.ForRecordType("NPC_"));
+
+        var payload = ReadNthSubrecordPayload(merge.SubrecordBytes, "NAM6", 0);
+        Assert.Equal(1.15f, BinaryPrimitives.ReadSingleLittleEndian(payload));
+    }
+
+    [Fact]
+    public void Merge_NpcHeight_NeverAppendsMaterializedDefault_WhenMasterOmitsNam6()
+    {
+        // xex44 class: baseline AND proto-360 carry no NAM6 at all; the capture materializes 1.0.
+        var esm = MakeEsmRecord("NPC_", ("EDID", new byte[] { (byte)'n', 0 }));
+
+        var materialized = new byte[4];
+        BinaryPrimitives.WriteSingleLittleEndian(materialized, 1.0f);
+
+        var merge = RecordMergeEngine.Merge(esm,
+            new EncodedRecord { Subrecords = [new EncodedSubrecord("NAM6", materialized)], Warnings = [] },
+            SubrecordMergePolicy.ForRecordType("NPC_"));
+
+        Assert.DoesNotContain("NAM6", merge.DmpSignaturesAppended);
+
+        // A genuine proto height on the same shape must still append.
+        var genuine = new byte[4];
+        BinaryPrimitives.WriteSingleLittleEndian(genuine, 1.15f);
+        merge = RecordMergeEngine.Merge(esm,
+            new EncodedRecord { Subrecords = [new EncodedSubrecord("NAM6", genuine)], Warnings = [] },
+            SubrecordMergePolicy.ForRecordType("NPC_"));
+
+        Assert.Contains("NAM6", merge.DmpSignaturesAppended);
+    }
+
     private static byte[] ReadNthSubrecordPayload(byte[] stream, string sig, int occurrence)
     {
         var seen = 0;

@@ -86,6 +86,8 @@ internal static class EncodedSubrecordFormIdRemapper
             {
                 "NAME" or "XEZN" or "XOWN" or "XESP" or "XTEL" => Offset0WhenAtLeast4(subrecord),
                 "XLOC" => subrecord.Bytes.Length >= 8 ? [4] : [],
+                // XRDO: Range(0) Type(4) StaticPercentage(8) PositionRef(12).
+                "XRDO" => subrecord.Bytes.Length >= 16 ? [12] : [],
                 "XLKR" when subrecord.Bytes.Length >= 8 => [0, 4],
                 "XLKR" => Offset0WhenAtLeast4(subrecord),
                 _ => []
@@ -153,12 +155,43 @@ internal static class EncodedSubrecordFormIdRemapper
             "FACT" => signature == "XNAM" ? Offset0WhenAtLeast4(subrecord) : [],
             "FLST" => signature == "LNAM" ? Offset0WhenAtLeast4(subrecord) : [],
             "LVLC" or "LVLI" or "LVLN" => signature == "LVLO" && subrecord.Bytes.Length >= 8 ? [4] : [],
+            // Generic-only types added 2026-08-03. Each ref is a single FormID at offset 0;
+            // without these arms a ref to a proto-new target keeps its stale source FormID.
+            "MSTT" or "ADDN" => signature == "SNAM" ? Offset0WhenAtLeast4(subrecord) : [],
+            "TACT" => signature is "SCRI" or "SNAM" or "VNAM" or "INAM"
+                ? Offset0WhenAtLeast4(subrecord)
+                : [],
+            "ASPC" => signature is "SNAM" or "RDAT" ? Offset0WhenAtLeast4(subrecord) : [],
+            // PWAT DNAM is { WATR FormID @0, flags @4 } — only the first word is a reference.
+            "PWAT" => signature == "DNAM" && subrecord.Bytes.Length >= 8 ? [0] : [],
+            // ANIO DATA is the IDLE animation FormID (not a data blob, despite the signature).
+            "ANIO" => signature == "DATA" ? Offset0WhenAtLeast4(subrecord) : [],
+            // CLMT WLST is an array of 12-byte entries: WTHR FormID @0, chance @4, GLOB FormID @8.
+            "CLMT" => signature == "WLST" ? WlstFormIdOffsets(subrecord) : [],
             _ => signature == "SCRI" ? Offset0WhenAtLeast4(subrecord) : []
         };
     }
 
     private static IReadOnlyList<int> Offset0WhenAtLeast4(EncodedSubrecord subrecord)
         => subrecord.Bytes.Length >= 4 ? [0] : [];
+
+    /// <summary>CLMT WLST: per 12-byte entry, FormIDs sit at +0 (WTHR) and +8 (GLOB).</summary>
+    private static IReadOnlyList<int> WlstFormIdOffsets(EncodedSubrecord subrecord)
+    {
+        if (subrecord.Bytes.Length < 12 || subrecord.Bytes.Length % 12 != 0)
+        {
+            return [];
+        }
+
+        var offsets = new List<int>(subrecord.Bytes.Length / 12 * 2);
+        for (var entry = 0; entry < subrecord.Bytes.Length; entry += 12)
+        {
+            offsets.Add(entry);
+            offsets.Add(entry + 8);
+        }
+
+        return offsets;
+    }
 
     private static int[] FourByteArrayOffsets(EncodedSubrecord subrecord)
     {

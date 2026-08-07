@@ -17,7 +17,7 @@ internal sealed class CachedNifMesh12 : IDisposable
     private bool _disposed;
 
     public CachedNifMesh12(
-        IReadOnlyList<CachedSubmesh12> submeshes,
+        CachedSubmesh12[] submeshes,
         GeometryAllocation12 geometry,
         GpuGeometryArena12 arena,
         GpuDeletionQueue12 deletionQueue,
@@ -38,7 +38,16 @@ internal sealed class CachedNifMesh12 : IDisposable
         WaterPlanesLocal = waterPlanesLocal;
     }
 
-    public IReadOnlyList<CachedSubmesh12> Submeshes { get; }
+    /// <summary>
+    ///     The mesh's submeshes, as a concrete ARRAY rather than an interface.
+    ///     <para>
+    ///         Deliberate: the render thread walks this list once per cull survivor per frame
+    ///         (~24k times in a dense FNV exterior). Through <see cref="IReadOnlyList{T}" /> each
+    ///         <c>foreach</c> boxes a fresh enumerator and every step is an interface dispatch; over an
+    ///         array the compiler emits a plain indexed loop and allocates nothing.
+    ///     </para>
+    /// </summary>
+    public CachedSubmesh12[] Submeshes { get; }
 
     /// <summary>Model path this mesh was uploaded for — names the mesh in geometry diagnostics.</summary>
     public string? SourcePath { get; init; }

@@ -97,7 +97,7 @@ public sealed class RenderingShaderCompilationTests
     }
 
     [Fact]
-    public void FnvRtFreeWaterKeepsRecoveredWater003ReflectionAndBodyLightTerms()
+    public void FnvRtFreeWaterKeepsRecoveredWater003BodyFogAndSkyReflectionContract()
     {
         var source = ReadEmbeddedShader("water_fnv.frag.hlsl");
 
@@ -105,9 +105,64 @@ public sealed class RenderingShaderCompilationTests
             "float3 fnvBodyLightDir = normalize(float3(sunDir.x, 4.0 * sunDir.y, sunDir.z));",
             source,
             StringComparison.Ordinal);
-        Assert.Contains("float3 refl = uReflection.rgb;", source, StringComparison.Ordinal);
+        // WATER000 asm 109-111 `mad_pp r0.xyw, c8.y, r0, r6.xyzz`:
+        //   refl = lerp(ReflectionColor, ReflectionMap_RT, VarAmounts.y)
+        // c8.y = VarAmounts.y = DNAM@20 ReflectivityAmount is a LERP WEIGHT toward the mirror, NOT a
+        // brightness multiplier — FresnelRI.w (c5.w) is the separate DNAM@160 ReflectionHDRMult,
+        // which the engine clamps to >= 1.0 and so can never darken. Multiplying by
+        // ReflectivityAmount made every "no reflect" record (NVCleanWaterNoReflect authors 0.0)
+        // reflect pure black, which with FresnelAmount 0.75 owned ~79% of the pixel and rendered the
+        // Colorado near-black. The sky-off fallback keeps WATER003's unscaled ReflectionColor.
+        Assert.Contains(
+            "? lerp(uReflection.rgb, skyReflectionStandIn, reflectivity)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(": uReflection.rgb;", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("saturate(R.z)) * reflectivity", source, StringComparison.Ordinal);
+        // Engine shoreline edge gate on the reflection weight (WATER003 asm 96): reflections die
+        // over thin water so a down-look into shallows shows the body + bed.
+        Assert.Contains("float fresneled = saturate(F * corrD.x);", source, StringComparison.Ordinal);
+        // WATER000's composite solved for destination blending. Retail's WATER000 is opaque and gets
+        // its see-through by sampling the RefractionMap in RGB; our destination already holds that
+        // scene, so matching the refraction coefficient gives alpha = 1-(1-Fe)(1-W) and a
+        // premultiplied source. WATER003's alpha (= W alone) is NOT the right port while a reflection
+        // term is present — it drops the reflection's share and the bed shows through at grazing
+        // angles where retail is opaque.
+        Assert.Contains(
+            "float alpha = saturate(1.0 - (1.0 - fresneled) * (1.0 - W));",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "float3 premultiplied = (1.0 - fresneled) * W * body + fresneled * refl + spec;",
+            source,
+            StringComparison.Ordinal);
+        // Straight (non-premultiplied) SrcAlpha/InvSrcAlpha blending — the source colour must be
+        // divided back out by the coverage it was premultiplied against.
+        Assert.Contains("premultiplied / max(alpha, 1e-4)", source, StringComparison.Ordinal);
+        // Specular is added to the NUMERATOR only and must never reach alpha. SunPower reaches 826 on
+        // these records, so the glint lobe flips 0->1 as the animated ripple normal moves; as a
+        // coverage term it swung alpha per-frame and the premultiplied divide amplified it into a
+        // visible shimmer. Scoped to the expression, not the prose in the header comment.
+        Assert.DoesNotContain("float specCoverage =", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("(1.0 - specCoverage)", source, StringComparison.Ordinal);
+        // Body color deepens over the vertical fog lane (corrD.y), not the shoreline feather.
+        Assert.Contains(
+            "float3 body = lerp(uShallow.rgb, uDeep.rgb, corrD.y);",
+            source,
+            StringComparison.Ordinal);
+        // The fog weight W (WATER000 asm 136-141, and WATER003's whole alpha): depthT x linear fog
+        // of the slant column over the above-water FogNear/Far x FogAmount. Here it is one of the
+        // two coverage terms rather than the alpha itself.
+        Assert.Contains(
+            "float aboveFog = 1.0 - saturate(fogFar * (1.0 - corrD.x) / max(fogFar - fogNear, 1e-3));",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "float W = saturate(depthT * aboveFog * saturate(uFnvWater001Surface.z));",
+            source,
+            StringComparison.Ordinal);
         Assert.DoesNotContain(
-            "float3 refl = uReflection.rgb * reflectivity;",
+            "max(max(saturate(depthT), fresneled), 0.15)",
             source,
             StringComparison.Ordinal);
     }
@@ -135,8 +190,10 @@ public sealed class RenderingShaderCompilationTests
             StringComparison.Ordinal);
         Assert.Contains("nearestNdc = max(nearestNdc,", helper, StringComparison.Ordinal);
 
+        // Bounded to the heap's persistent region: the unbounded `[]` Texture2DMS alias
+        // misresolved late-written descriptor slots on shipped drivers (see water_common.hlsli).
         Assert.Contains(
-            "Texture2DMS<float> gWaterDepthTexturesMsaa[] : register(t0, space3);",
+            "Texture2DMS<float> gWaterDepthTexturesMsaa[16384] : register(t0, space3);",
             common,
             StringComparison.Ordinal);
         var source = ReadEmbeddedShader("water_fnv.frag.hlsl");

@@ -47,8 +47,21 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // v66: NiTexturingProperty ≤ 10.0.1.2 leading-Flags fix (Oblivion GroundCover* grass diffuse) +
     // TES4-era Y-up billboard erect + texture-aware bone-attached-proxy drop. Warm v65 entries
     // cache the null-diffuse decodes (white grass) and the pre-fix drop/billboard states.
+    // v67: TallGrassShaderProperty forces ClampTextureU/V (engine CLAMP_S_CLAMP_T stage state).
+    // Warm v66 entries keep wrap-flagged FO3/FNV grass whose overshooting card-corner UVs wrap
+    // onto the wrong atlas islands.
+    // v68: persist the ENGINE z-write rule bits (EngineZWriteOff + DepthTestOff — decompile-proven
+    // decal/hair/NoLighting-flag exceptions; consumed by the unified transparency stream's per-draw
+    // PSO choice). Warm v67 entries would default both bits false, silently giving every blended
+    // shape engine z-write ON — including authored-write-off NoLighting sheets (mist over water).
+    // v69: load-time rest-state resolve for triggered FX — particle emitters bound only by
+    // activation-triggered NiControllerSequences now bake DORMANT (rate 0), so explosion/burst
+    // clouds no longer bake at full density. Warm v68 entries carry the always-playing bakes.
+    // v70: EngineZWriteOff now also covers pure blends (no alpha test) — they cannot discard
+    // their transparent texels, so letting them write depth wrecked dense frames. Warm v69
+    // entries carry the unrestricted bit.
     // (Full bump history for this constant lives in git blame.)
-    internal const int DecoderVersion = 66;
+    internal const int DecoderVersion = 70;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -461,6 +474,8 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write((byte)submesh.ClassicBasicShaderMode);
         writer.Write(submesh.SourceBlockIndex);
         writer.Write((ushort)submesh.BillboardMode);
+        writer.Write(submesh.EngineZWriteOff);
+        writer.Write(submesh.DepthTestOff);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -549,7 +564,9 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             ReadNullableString(reader, MaxStringBytes),
             (FnvClassicBasicShaderMode)reader.ReadByte(),
             reader.ReadInt32(),
-            (NifBillboardMode)reader.ReadUInt16());
+            (NifBillboardMode)reader.ReadUInt16(),
+            reader.ReadBoolean(),
+            reader.ReadBoolean());
         if (!Enum.IsDefined(payload.ClassicBasicShaderMode))
         {
             throw new InvalidDataException("Invalid FNV classic basic shader mode in decoded mesh cache.");
@@ -887,4 +904,7 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     // Stable source shape provenance (v63+); -1 means unavailable.
     int SourceBlockIndex = -1,
     // Authored NiBillboardNode mode (v64+). RotateAboutUp preserves pre-v64 behavior.
-    NifBillboardMode BillboardMode = NifBillboardMode.RotateAboutUp);
+    NifBillboardMode BillboardMode = NifBillboardMode.RotateAboutUp,
+    // ENGINE z-write rule bits (v68+; see NifAlphaClassifier). Stream-only consumers.
+    bool EngineZWriteOff = false,
+    bool DepthTestOff = false);

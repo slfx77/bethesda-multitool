@@ -58,7 +58,9 @@ public sealed class RendererProfilerOptionsTests
             Assert.Equal(480, options.CaptureHeight);
             Assert.Null(options.CaptureYawDegrees);
             Assert.Equal(60, options.CaptureSettleTimeoutSeconds);
-            Assert.Equal(0f, options.CaptureAnimationTimeSeconds);
+            // NULL by default = the LIVE animation clock. Pinning it froze every time-varying path
+            // (water noise scroll above all), so a capture could not show anything that animates.
+            Assert.Null(options.CaptureAnimationTimeSeconds);
             Assert.Null(options.ScenarioName);
             Assert.Null(options.ScenarioOutputDirectory);
         });
@@ -240,11 +242,33 @@ public sealed class RendererProfilerOptionsTests
             Assert.Equal(6.5f, options.CaptureHour);
             Assert.Equal(17f, options.CaptureDay);
             Assert.Equal(42.125f, options.CaptureAnimationTimeSeconds);
-            Assert.Equal(-15.25f, options.CapturePitchDegrees);
+            Assert.Equal(-15.25f, options.CapturePitchDegrees!.Value);
             Assert.Equal(-90.5f, options.CaptureYawDegrees!.Value);
             Assert.Equal(1024, options.CaptureWidth);
             Assert.Equal(512, options.CaptureHeight);
             Assert.Equal(90, options.CaptureSettleTimeoutSeconds);
+        });
+    }
+
+    /// <summary>
+    ///     Pitch and yaw must both default to "preserve the selected scene's framing". Pitch used to
+    ///     default to 80° (nearly straight up) because the capture path began as a sky check; once it
+    ///     became the general render-verification path that default silently aimed every unqualified
+    ///     capture at the sky — and an interior capture at its ceiling, which reads as an empty scene.
+    /// </summary>
+    [Fact]
+    public void TryParse_PerspectiveCaptureDefaultsPitchAndYawToTheScenePose()
+    {
+        WithInput(input =>
+        {
+            var capture = Path.Combine(Path.GetTempPath(), $"capture-{Guid.NewGuid():N}.png");
+            Assert.True(RendererProfilerOptions.TryParse(
+                ["--input", input, "--capture-frame", capture],
+                out var options,
+                out var error));
+            Assert.Null(error);
+            Assert.Null(options.CapturePitchDegrees);
+            Assert.Null(options.CaptureYawDegrees);
         });
     }
 

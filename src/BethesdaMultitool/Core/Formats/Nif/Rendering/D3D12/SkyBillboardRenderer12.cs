@@ -217,7 +217,7 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
         cmd.SetPipelineState(pso);
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleStrip);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, alloc.GpuAddress);
-        cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.BindlessSrvTable, _cbvSrvUavHeap.BindlessHeapStartGpu);
+        GpuRootSignature12.SetGraphicsBindlessTables(cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
         cmd.DrawInstanced(4, 1, 0, 0); // triangle-strip quad
     }
 

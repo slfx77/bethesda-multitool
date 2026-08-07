@@ -169,7 +169,7 @@ public static class EsmParsedRecordTypes
         new("ADDN", nameof(RecordCollection.GenericRecords)),
         new("TREE", nameof(RecordCollection.GenericRecords)),
         new("IDLM", nameof(RecordCollection.GenericRecords)),
-        new("PWAT", nameof(RecordCollection.GenericRecords)),
+        new("PWAT", nameof(RecordCollection.PlaceableWaters)),
         // IMGS/IMAD moved to typed image-space lists (viewer tonemap stage) — see the entries above.
         new("AMEF", nameof(RecordCollection.GenericRecords)),
     ];

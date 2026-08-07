@@ -556,9 +556,14 @@ internal static class SubrecordCellAndMiscSchemas
         // DNAM - IMGS (variable float array, DoF parameters)
         schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "IMGS")] = SubrecordSchema.FloatArray;
 
-        // DNAM - PWAT (8 bytes)
+        // DNAM - PWAT (8 bytes). Per xEdit wbRecord(PWAT) this is the reflection/refraction
+        // flag word FOLLOWED BY the WATR FormID, not the two floats declared here before.
+        // (An intermediate revision had these two the other way round and wrongly cited xEdit
+        // for it; retail confirms flags first — bytes 4..7 resolve to a WATR in 29/29.)
+        // Byte-neutral for the endian swap either way — all field kinds here are a 4-byte
+        // swap — but the field names surfaced by semdiff and report validate were wrong.
         schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "PWAT", 8)] =
-            new SubrecordSchema(F.Float("Value1"), F.Float("Value2"))
+            new SubrecordSchema(F.UInt32("Flags"), F.FormId("Water"))
             {
                 Description = "Placeable Water Data"
             };

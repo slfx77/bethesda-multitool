@@ -13,8 +13,9 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         <item>1: root CBV at <c>b1</c> — per-draw uniforms (world matrix + flags). VS + PS.</item>
 ///         <item>2: root CBV at <c>b2</c> — per-mode/debug uniforms. VS + PS.</item>
 ///         <item>3: legacy descriptor table for <c>t0..t7, space0</c> — water and transition SRVs. VS + PS.</item>
-///         <item>4: aliased unbounded descriptor table for <c>t0..</c> in spaces 1/2/3 —
-///         bindless Texture2D, TextureCube, and Texture2DMS views. VS + PS.</item>
+///         <item>4: unbounded descriptor table for <c>t0..</c> in space 1 — bindless Texture2D
+///         views. VS + PS. (The TextureCube space-2 and Texture2DMS space-3 aliases over the same
+///         heap live in slots 9/10 — one unbounded range per table; see those slots.)</item>
 ///         <item>5: root SRV at <c>t8, space0</c> — reference instance structured buffer. VS.</item>
 ///         <item>6: root CBV at <c>b3</c> — shared scene atmosphere. VS + PS.</item>
 ///         <item>7: root SRV at <c>t9, space0</c> — placed point-light buffer. PS.</item>
@@ -62,6 +63,23 @@ internal sealed class GpuRootSignature12 : IDisposable
         /// <summary>One-UAV descriptor table used by water compute prepasses. Existing graphics
         /// root slots retain their original indices.</summary>
         public const int WaterNoiseUavTable = 8;
+
+        /// <summary>
+        ///     Unbounded <c>TextureCube cubemaps[] : register(t0, space2)</c> alias over the same
+        ///     bindless heap. Split into its own root parameter (appended, so existing slots keep
+        ///     their indices): stacking three OVERLAPPING unbounded ranges inside ONE descriptor
+        ///     table put the later aliases into undefined-behavior territory in practice — the
+        ///     water shader's space3 MSAA depth loads resolved to unrelated low heap slots (the
+        ///     live view's depth/snapshot descriptors) instead of the indexed slot, nondeterministically,
+        ///     while the FIRST range (space1) always worked. Reflection and root-signature layout
+        ///     both looked correct; one-unbounded-range-per-table is the robust shape. Bind alongside
+        ///     <see cref="BindlessSrvTable" /> at the heap start.</summary>
+        public const int BindlessCubeSrvTable = 9;
+
+        /// <summary>Unbounded <c>Texture2DMS&lt;float&gt; ... : register(t0, space3)</c> multisampled
+        /// scene-depth alias — own root parameter for the same reason as
+        /// <see cref="BindlessCubeSrvTable" />. Bind alongside <see cref="BindlessSrvTable" />.</summary>
+        public const int BindlessDepthMsaaSrvTable = 10;
     }
 
     /// <summary>SRV slots <c>t0..t(N-1)</c> reserved in the legacy table at slot
@@ -81,6 +99,21 @@ internal sealed class GpuRootSignature12 : IDisposable
     /// <summary>The underlying D3D12 root signature. Bind via
     /// <c>commandList.SetGraphicsRootSignature(rs.RootSignature)</c> at frame start.</summary>
     public ID3D12RootSignature RootSignature { get; }
+
+    /// <summary>
+    ///     Binds all three bindless alias tables (space1 Texture2D, space2 TextureCube, space3
+    ///     Texture2DMS scene depth) to <paramref name="heapStart" /> on the GRAPHICS root. The
+    ///     aliases live in separate root parameters (one unbounded range per table — see
+    ///     <see cref="Slots.BindlessCubeSrvTable" />), so every pass that previously bound
+    ///     <see cref="Slots.BindlessSrvTable" /> alone must bind the trio together.
+    /// </summary>
+    public static void SetGraphicsBindlessTables(
+        ID3D12GraphicsCommandList cmd, GpuDescriptorHandle heapStart)
+    {
+        cmd.SetGraphicsRootDescriptorTable(Slots.BindlessSrvTable, heapStart);
+        cmd.SetGraphicsRootDescriptorTable(Slots.BindlessCubeSrvTable, heapStart);
+        cmd.SetGraphicsRootDescriptorTable(Slots.BindlessDepthMsaaSrvTable, heapStart);
+    }
 
     public static GpuRootSignature12 Create(GpuDevice12 gpu)
     {
@@ -161,8 +194,21 @@ internal sealed class GpuRootSignature12 : IDisposable
             Flags = DescriptorRangeFlags.DescriptorsVolatile,
             OffsetInDescriptorsFromTableStart = 0,
         };
+        // One unbounded range per descriptor table. The three aliases used to share ONE table
+        // (ranges space1+space2+space3, all at table offset 0); reflection and layout were legal
+        // (explicit offsets), but in practice the LATER unbounded aliases misresolved — the water
+        // shader's space3 Texture2DMS loads returned unrelated low heap slots (live depth/snapshot
+        // descriptors) instead of the indexed slot, nondeterministically, while space1 always
+        // worked. Splitting each alias into its own root parameter (all bound to the same heap
+        // start) is the robust, driver-proof shape. See Slots.BindlessCubeSrvTable.
         var bindlessTable = new RootParameter1(
-            new RootDescriptorTable1(bindlessTextures, bindlessCubemaps, bindlessDepthMsaa),
+            new RootDescriptorTable1(bindlessTextures),
+            ShaderVisibility.All);
+        var bindlessCubeTable = new RootParameter1(
+            new RootDescriptorTable1(bindlessCubemaps),
+            ShaderVisibility.All);
+        var bindlessDepthMsaaTable = new RootParameter1(
+            new RootDescriptorTable1(bindlessDepthMsaa),
             ShaderVisibility.All);
 
         // Slot 5: reference instance structured buffer root SRV. It lives at t8, space 0 so
@@ -333,7 +379,7 @@ internal sealed class GpuRootSignature12 : IDisposable
             new[]
             {
                 perFrame, perDraw, perMode, srvTable, bindlessTable, referenceInstanceSrv,
-                atmosphere, pointLights, waterNoiseUav,
+                atmosphere, pointLights, waterNoiseUav, bindlessCubeTable, bindlessDepthMsaaTable,
             },
             staticSamplers);
         var rs = gpu.Device.CreateRootSignature(desc);

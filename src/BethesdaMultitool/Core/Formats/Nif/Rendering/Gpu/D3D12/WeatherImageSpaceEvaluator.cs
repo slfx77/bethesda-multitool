@@ -129,6 +129,11 @@ internal static class WeatherImageSpaceEvaluator
             BrightClamp = Apply(ImageSpaceModifierParameter.HdrBrightClamp, baseSettings.BrightClamp),
             SunlightScale = Apply(ImageSpaceModifierParameter.HdrSunlightDimmer,
                 baseSettings.SunlightScale),
+            // The grass dimmer is a SCENE term, not telemetry: TallGrassShader::SetupGeometryConstants
+            // writes it into the grass VS AddlParams.x (c7.x), which GRASS2000/2002 apply as the whole
+            // sun-term multiplier (mul oT3.xyz, r1, c7.x).
+            GrassScale = Apply(ImageSpaceModifierParameter.HdrGrassDimmer,
+                baseSettings.GrassScale),
             Saturation = Apply(ImageSpaceModifierParameter.CinematicSaturation, baseSettings.Saturation),
             ContrastAvgLum = Apply(ImageSpaceModifierParameter.CinematicContrastAvgLum,
                 baseSettings.ContrastAvgLum),
@@ -202,6 +207,7 @@ internal static class WeatherImageSpaceEvaluator
             BrightClamp = Apply(ImageSpaceModifierParameter.HdrBrightClamp, settings.BrightClamp),
             BrightScale = Apply(ImageSpaceModifierParameter.HdrBrightScale, settings.BrightScale),
             SunlightScale = Apply(ImageSpaceModifierParameter.HdrSunlightDimmer, settings.SunlightScale),
+            GrassScale = Apply(ImageSpaceModifierParameter.HdrGrassDimmer, settings.GrassScale),
             Saturation = Apply(ImageSpaceModifierParameter.CinematicSaturation, settings.Saturation),
             ContrastAvgLum = Apply(ImageSpaceModifierParameter.CinematicContrastAvgLum,
                 settings.ContrastAvgLum),
@@ -267,6 +273,7 @@ internal static class WeatherImageSpaceEvaluator
             EyeAdaptStrength = W(static s => s.EyeAdaptStrength),
             ReceiveBloomThreshold = W(static s => s.ReceiveBloomThreshold),
             SunlightScale = W(static s => s.SunlightScale),
+            GrassScale = W(static s => s.GrassScale),
             SkyScale = W(static s => s.SkyScale),
             Saturation = W(static s => s.Saturation),
             Brightness = W(static s => s.Brightness),
@@ -613,9 +620,9 @@ internal static class WeatherImageSpaceEvaluator
                $"lum={F(settings.TargetLum)}..{F(settings.UpperLumClamp)} " +
                $"cin={F(settings.Saturation)}/{F(settings.Brightness)}/{F(settings.Contrast)} " +
                $"tint={F(settings.TintR)},{F(settings.TintG)},{F(settings.TintB)},{F(settings.TintAmount)} " +
-               $"scene(sun={F(settings.SunlightScale)}[{F(sun.Multiply)}+{F(sun.Add)}]) " +
-               $"unmapped(grass={F(grass.Multiply)}+{F(grass.Add)}," +
-               $"tree={F(tree.Multiply)}+{F(tree.Add)})";
+               $"scene(sun={F(settings.SunlightScale)}[{F(sun.Multiply)}+{F(sun.Add)}]," +
+               $"grass={F(settings.GrassScale)}[{F(grass.Multiply)}+{F(grass.Add)}]) " +
+               $"unmapped(tree={F(tree.Multiply)}+{F(tree.Add)})";
     }
 
     private static string FormatModernTelemetry(

@@ -293,6 +293,11 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             ["SunPower"] = ReadFloat(d, 16, isBigEndian),
             ["ReflectivityAmount"] = ReadFloat(d, 20, isBigEndian),
             ["FresnelAmount"] = ReadFloat(d, 24, isBigEndian),
+            // Above-water fog Near@32/Far@36 — the same canonical keys the classic water shader's
+            // alpha fog law reads, so Skyrim water runs on its own authored planes rather than the
+            // FNV NVCleanWater defaults.
+            ["FogNear"] = ReadFloat(d, 32, isBigEndian),
+            ["FogFar"] = ReadFloat(d, 36, isBigEndian),
             ["ShallowColor"] = Color(d, 40),
             ["DeepColor"] = Color(d, 44),
             ["ReflectionColor"] = Color(d, 48),

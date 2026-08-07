@@ -27,6 +27,7 @@ internal static class ObjectBoundsIndex
         AddModels(records.Lights, l => l.FormId, l => l.ModelPath, models);
         AddModels(records.Furniture, f => f.FormId, f => f.ModelPath, models);
         AddModels(records.StaticCollections, s => s.FormId, s => s.ModelPath, models);
+        AddModels(records.PlaceableWaters, p => p.FormId, p => p.ModelPath, models);
         AddModels(records.Weapons, w => w.FormId, w => w.ModelPath, models);
         AddModels(records.Armor, a => a.FormId, a => a.ModelPath, models);
         AddModels(records.Ammo, a => a.FormId, a => a.ModelPath, models);
@@ -74,6 +75,10 @@ internal static class ObjectBoundsIndex
         Process(records.Doors, d => (d.FormId, d.Bounds), PlacedObjectCategory.Door, bounds, categories);
         Process(records.Lights, l => (l.FormId, l.Bounds), PlacedObjectCategory.Light, bounds, categories);
         Process(records.Furniture, f => (f.FormId, f.Bounds), PlacedObjectCategory.Furniture, bounds, categories);
+        // PWAT reached this index through GenericRecords until it moved to the typed
+        // ParsePlaceableWaters() path; the "PWAT" => Landscape arm below is now unreachable for TES4+.
+        Process(records.PlaceableWaters, p => (p.FormId, p.Bounds), PlacedObjectCategory.Landscape, bounds,
+            categories);
 
         // Items (have bounds, all categorized as Item)
         Process(records.Weapons, w => (w.FormId, w.Bounds), PlacedObjectCategory.Item, bounds, categories);

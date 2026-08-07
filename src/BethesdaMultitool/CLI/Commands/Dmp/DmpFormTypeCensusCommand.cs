@@ -1,8 +1,14 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
+using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Minidump;
+using BethesdaMultitool.Core.VersionTracking.Extraction;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Dmp;
@@ -22,23 +28,32 @@ internal static class DmpFormTypeCensusCommand
             Description = "Show per-DMP detail table",
             DefaultValueFactory = _ => false
         };
+        var csvOpt = new Option<string?>("--csv")
+        {
+            Description =
+                "Write the machine-readable corpus audit to this directory: dump_inventory.csv, " +
+                "formtype_by_dump.csv, esm_record_by_dump.csv, mapping_coverage.csv."
+        };
 
         var command = new Command("formtype-census",
             "Audit FormType byte distributions across all DMP files to detect enum drift");
         command.Arguments.Add(dirArg);
         command.Options.Add(verboseOpt);
+        command.Options.Add(csvOpt);
 
         command.SetAction(async (parseResult, cancellationToken) =>
         {
             var dir = parseResult.GetValue(dirArg)!;
             var verbose = parseResult.GetValue(verboseOpt);
-            await RunAsync(dir, verbose, cancellationToken);
+            var csv = parseResult.GetValue(csvOpt);
+            await RunAsync(dir, verbose, csv, cancellationToken);
         });
 
         return command;
     }
 
-    private static async Task RunAsync(string dirPath, bool verbose, CancellationToken cancellationToken)
+    private static async Task RunAsync(
+        string dirPath, bool verbose, string? csvDir, CancellationToken cancellationToken)
     {
         if (!Directory.Exists(dirPath))
         {
@@ -109,7 +124,267 @@ internal static class DmpFormTypeCensusCommand
             RenderPerDmpDetail(entries, allFormTypes);
         }
 
-        await Task.CompletedTask;
+        if (!string.IsNullOrEmpty(csvDir))
+        {
+            await WriteCsvAsync(csvDir, dirPath, entries, allFormTypes, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    ///     Emits the corpus audit as CSV. Build dates come from the PE timestamp of the game
+    ///     module inside each dump (the build's identity); the file's last-write time is the
+    ///     capture date (when that build actually crashed), which is the axis content questions
+    ///     want. The two differ by 0-3 days.
+    /// </summary>
+    private static async Task WriteCsvAsync(
+        string csvDir,
+        string dumpsDir,
+        List<CensusEntry> entries,
+        List<byte> allFormTypes,
+        CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(csvDir);
+
+        var buildsByFile = BuildDiscovery.DiscoverBuilds(null, dumpsDir)
+            .Where(b => b.SourcePath != null)
+            .GroupBy(b => Path.GetFileName(b.SourcePath!), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        string BuildDate(CensusEntry e) =>
+            buildsByFile.TryGetValue(e.FileName, out var b) && b.BuildDate.HasValue
+                ? b.BuildDate.Value.ToString("yyyy-MM-dd")
+                : "";
+
+        string BuildType(CensusEntry e) =>
+            buildsByFile.TryGetValue(e.FileName, out var b) ? b.BuildType ?? "" : "";
+
+        string PeStamp(CensusEntry e) =>
+            buildsByFile.TryGetValue(e.FileName, out var b) && b.PeTimestamp.HasValue
+                ? $"0x{b.PeTimestamp.Value:X8}"
+                : "";
+
+        var ordered = entries.OrderBy(e => BuildDate(e), StringComparer.Ordinal)
+            .ThenBy(e => e.FileDate)
+            .ToList();
+
+        // Every CSV below reports canonical FormType codes. allFormTypes is the raw-byte union
+        // built for the drift report, so recompute the union over corrected codes.
+        var canonicalTypes = ordered
+            .SelectMany(e => e.CorrectedFormTypeCounts.Keys)
+            .Where(f => f != 0)
+            .Distinct()
+            .OrderBy(f => f)
+            .ToList();
+
+        static string DriftSummary(CensusEntry e)
+        {
+            if (e.DriftRemap is not { Count: > 0 })
+            {
+                return "none";
+            }
+
+            var deltas = e.DriftRemap.Select(kv => kv.Value - kv.Key).Distinct().ToList();
+            var delta = deltas.Count == 1 ? $"{deltas[0]:+0;-0}" : "mixed";
+            return $"{delta}@0x{e.DriftRemap.Keys.Min():X2}-0x{e.DriftRemap.Keys.Max():X2}";
+        }
+
+        // 1. Per-dump inventory — the "is this dump worth anything" table.
+        var inventory = new StringBuilder();
+        inventory.AppendLine(
+            "dump,build_date,pe_timestamp,build_type,capture_date,file_size,has_runtime_form_data," +
+            "pallforms_va,runtime_editorids,runtime_refr_forms,runtime_land_forms,distinct_formtypes," +
+            "esm_main_records,esm_records_be,esm_records_le,esm_record_types,sctx_count,sctx_bytes," +
+            "formtype_drift");
+        foreach (var e in ordered)
+        {
+            inventory.AppendLine(string.Join(',',
+                Csv(e.FileName),
+                BuildDate(e),
+                PeStamp(e),
+                Csv(BuildType(e)),
+                e.FileDate.ToString("yyyy-MM-dd"),
+                e.FileSize.ToString(),
+                e.HasRuntimeFormData ? "yes" : "no",
+                e.PAllFormsVa != 0 ? $"0x{e.PAllFormsVa:X8}" : "",
+                e.TotalEditorIds.ToString(),
+                e.RuntimeRefrForms.ToString(),
+                e.RuntimeLandForms.ToString(),
+                e.CorrectedFormTypeCounts.Count(kv => kv.Key != 0).ToString(),
+                e.EsmRecordCounts.Values.Sum(t => t.Total).ToString(),
+                e.EsmRecordCounts.Values.Sum(t => t.BigEndian).ToString(),
+                e.EsmRecordCounts.Values.Sum(t => t.LittleEndian).ToString(),
+                e.EsmRecordCounts.Count.ToString(),
+                e.SctxCount.ToString(),
+                e.SctxBytes.ToString(),
+                DriftSummary(e)));
+        }
+
+        // 2. Long-format runtime FormType counts, canonical codes.
+        var byDump = new StringBuilder();
+        byDump.AppendLine("dump,build_date,capture_date,formtype_byte,signature,count");
+        foreach (var e in ordered)
+        {
+            foreach (var ft in canonicalTypes.Where(f => e.CorrectedFormTypeCounts.ContainsKey(f)))
+            {
+                byDump.AppendLine(string.Join(',',
+                    Csv(e.FileName),
+                    BuildDate(e),
+                    e.FileDate.ToString("yyyy-MM-dd"),
+                    $"0x{ft:X2}",
+                    RuntimeBuildOffsets.GetRecordTypeCode(ft) ?? "",
+                    e.CorrectedFormTypeCounts[ft].ToString()));
+            }
+        }
+
+        // 3. Long-format embedded-ESM-record counts (the other half of a dump's content:
+        //    raw record bytes the engine kept around, distinct from live TESForm objects).
+        var esmByDump = new StringBuilder();
+        esmByDump.AppendLine("dump,build_date,capture_date,record_type,total,big_endian,little_endian");
+        foreach (var e in ordered)
+        {
+            foreach (var (type, tally) in e.EsmRecordCounts.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            {
+                esmByDump.AppendLine(string.Join(',',
+                    Csv(e.FileName),
+                    BuildDate(e),
+                    e.FileDate.ToString("yyyy-MM-dd"),
+                    Csv(type),
+                    tally.Total.ToString(),
+                    tally.BigEndian.ToString(),
+                    tally.LittleEndian.ToString()));
+            }
+        }
+
+        // 4. The gap table: what we observe vs what the converter can actually emit.
+        //
+        // "Has an encoder" is NOT the same as "is emitted", and using the registry alone as the
+        // oracle produces errors in both directions: it over-reports (GRAS/IMGS/PWAT/TREE were
+        // all registered but unreachable) and under-reports (LAND and NAVM are emitted with no
+        // registry entry, via the cell-child-static and byte-rewriter paths). The reachability
+        // gate is PluginBuilder's yield set; emission additionally needs a registry entry, and
+        // new (non-override) records need a dispatcher row.
+        var encoders = RecordEncoderRegistry.CreateDefault().SupportedRecordTypes
+            .ToHashSet(StringComparer.Ordinal);
+        var planners = PlannedEncoders.KnownRecordTypes().ToHashSet(StringComparer.Ordinal);
+        var reachable = PluginBuilder.EmittableTopLevelRecordTypes;
+        var dispatchable = NewTopLevelRecordEncoderDispatcher.GetSupportedRecordTypes()
+            .ToHashSet(StringComparer.Ordinal);
+
+        // Types that reach disk outside the top-level loop, so they are absent from the yield set
+        // by design rather than by omission. Each is cited in the audit doc.
+        var nonTopLevelEmission = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["LAND"] = "cell-child-static (PlannedLandEncoder -> LandEncoder)",
+            ["NAVM"] = "byte-rewriter (Plugin/Nav)",
+            ["NAVI"] = "EsmAssembler fallback",
+            ["REFR"] = "cell-children pipeline",
+            ["ACHR"] = "cell-children pipeline",
+            ["ACRE"] = "cell-children pipeline",
+            ["CELL"] = "cell hierarchy",
+            ["DIAL"] = "DialogGrupBuilder",
+            ["INFO"] = "DialogGrupBuilder"
+        };
+
+        string EmissionStatus(string sig)
+        {
+            if (nonTopLevelEmission.TryGetValue(sig, out var path))
+            {
+                return path;
+            }
+
+            if (!reachable.Contains(sig))
+            {
+                return encoders.Contains(sig) ? "UNREACHABLE (encoder exists, never yielded)" : "none";
+            }
+
+            if (!encoders.Contains(sig))
+            {
+                return "yielded but NO ENCODER";
+            }
+
+            return dispatchable.Contains(sig) ? "emitted" : "overrides only (no dispatcher row)";
+        }
+        var dumpsWithData = entries.Count(e => e.HasRuntimeFormData);
+
+        // Key on the union of both evidence channels. A type can be recoverable purely as
+        // embedded ESM record bytes with no live TESForm ever seen (LAND and the navmesh types
+        // carry no EditorID, so they never enter the EditorID-keyed hash table) — keying on
+        // runtime FormTypes alone would hide exactly the types the terrain/navmesh work needs.
+        var byFormType = canonicalTypes
+            .ToDictionary(ft => RuntimeBuildOffsets.GetRecordTypeCode(ft) ?? $"0x{ft:X2}", ft => ft);
+        var allSignatures = byFormType.Keys
+            .Concat(entries.SelectMany(e => e.EsmRecordCounts.Keys))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+
+        var coverage = new StringBuilder();
+        coverage.AppendLine(
+            "signature,formtype_byte,runtime_dumps,dumps_with_form_data,runtime_min,runtime_max," +
+            "struct_size,emission_status,has_encoder,reachable,has_dispatcher,has_planner," +
+            "esm_record_dumps,esm_record_max,evidence");
+        foreach (var sig in allSignatures)
+        {
+            var hasFt = byFormType.TryGetValue(sig, out var ft);
+            var present = hasFt
+                ? entries.Where(e => e.CorrectedFormTypeCounts.ContainsKey(ft)).ToList()
+                : [];
+            var counts = present.Select(e => e.CorrectedFormTypeCounts[ft]).ToList();
+            var esmDumps = entries.Where(e => e.EsmRecordCounts.ContainsKey(sig)).ToList();
+
+            var evidence = (present.Count > 0, esmDumps.Count > 0) switch
+            {
+                (true, true) => "runtime+esm",
+                (true, false) => "runtime",
+                (false, true) => "esm-only",
+                _ => "none"
+            };
+
+            coverage.AppendLine(string.Join(',',
+                Csv(sig),
+                hasFt ? $"0x{ft:X2}" : "",
+                present.Count.ToString(),
+                dumpsWithData.ToString(),
+                counts.Count > 0 ? counts.Min().ToString() : "0",
+                counts.Count > 0 ? counts.Max().ToString() : "0",
+                hasFt ? RuntimeBuildOffsets.GetStructSize(ft).ToString() : "",
+                Csv(EmissionStatus(sig)),
+                encoders.Contains(sig) ? "yes" : "NO",
+                reachable.Contains(sig) || nonTopLevelEmission.ContainsKey(sig) ? "yes" : "NO",
+                dispatchable.Contains(sig) ? "yes" : "NO",
+                planners.Contains(sig) ? "yes" : "NO",
+                esmDumps.Count.ToString(),
+                esmDumps.Count > 0 ? esmDumps.Max(e => e.EsmRecordCounts[sig].Total).ToString() : "0",
+                evidence));
+        }
+
+        var files = new (string Name, StringBuilder Content)[]
+        {
+            ("dump_inventory.csv", inventory),
+            ("formtype_by_dump.csv", byDump),
+            ("esm_record_by_dump.csv", esmByDump),
+            ("mapping_coverage.csv", coverage)
+        };
+
+        foreach (var (name, content) in files)
+        {
+            var path = Path.Combine(csvDir, name);
+            await File.WriteAllTextAsync(path, content.ToString(), cancellationToken);
+            AnsiConsole.MarkupLine($"[green]Wrote:[/] {Markup.Escape(path)}");
+        }
+    }
+
+    private static string Csv(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return "";
+        }
+
+        value = value.Replace("\r", " ").Replace("\n", " ");
+        return value.Contains(',') || value.Contains('"')
+            ? "\"" + value.Replace("\"", "\"\"") + "\""
+            : value;
     }
 
     private static CensusEntry ProcessDmp(string dmpFile)
@@ -154,12 +429,43 @@ internal static class DmpFormTypeCensusCommand
             }
         }
 
+        var esmCounts = new Dictionary<string, EsmRecordTally>(StringComparer.Ordinal);
+        foreach (var record in scanResult.MainRecords)
+        {
+            esmCounts.TryGetValue(record.RecordType, out var tally);
+            esmCounts[record.RecordType] = tally.Add(record.IsBigEndian);
+        }
+
+        // The raw histogram above is what the drift report needs — it must see the bytes exactly
+        // as this build wrote them. Every other consumer wants canonical (final-build) codes, so
+        // apply the same correction MinidumpAnalyzer does and keep a second, corrected histogram.
+        // Without this, an enum shift reads as "this record type is absent from the build", which
+        // is indistinguishable from the content genuinely not existing yet.
+        var remap = RuntimeBuildOffsets.ApplyDriftCorrection(scanResult);
+        var correctedCounts = new Dictionary<byte, int>();
+        foreach (var entry in scanResult.RuntimeEditorIds)
+        {
+            correctedCounts.TryGetValue(entry.FormType, out var count);
+            correctedCounts[entry.FormType] = count + 1;
+        }
+
         return new CensusEntry(
             fileName,
             fileInfo.LastWriteTimeUtc,
             scanResult.RuntimeEditorIds.Count,
             counts,
-            samples);
+            samples)
+        {
+            FileSize = fileInfo.Length,
+            RuntimeRefrForms = scanResult.RuntimeRefrFormEntries.Count,
+            RuntimeLandForms = scanResult.RuntimeLandFormEntries.Count,
+            PAllFormsVa = scanResult.PAllFormsVa,
+            EsmRecordCounts = esmCounts,
+            SctxCount = scanResult.ScriptSources.Count,
+            SctxBytes = scanResult.ScriptSources.Sum(s => (long)s.Length),
+            CorrectedFormTypeCounts = correctedCounts,
+            DriftRemap = remap
+        };
     }
 
     private static void RenderOverviewTable(List<CensusEntry> entries, List<byte> allFormTypes)
@@ -458,5 +764,44 @@ internal static class DmpFormTypeCensusCommand
         DateTime FileDate,
         int TotalEditorIds,
         Dictionary<byte, int> FormTypeCounts,
-        Dictionary<byte, List<string>> SampleEditorIds);
+        Dictionary<byte, List<string>> SampleEditorIds)
+    {
+        public long FileSize { get; init; }
+        public int RuntimeRefrForms { get; init; }
+        public int RuntimeLandForms { get; init; }
+        public uint PAllFormsVa { get; init; }
+        public Dictionary<string, EsmRecordTally> EsmRecordCounts { get; init; } = [];
+        public int SctxCount { get; init; }
+        public long SctxBytes { get; init; }
+
+        /// <summary>
+        ///     FormType histogram after <see cref="RuntimeBuildOffsets.ApplyDriftCorrection" />, so
+        ///     codes are comparable across builds. <see cref="FormTypeCounts" /> stays raw for the
+        ///     drift report.
+        /// </summary>
+        public Dictionary<byte, int> CorrectedFormTypeCounts { get; init; } = [];
+
+        /// <summary>Raw→canonical FormType remap applied to this dump, or null if no drift.</summary>
+        public Dictionary<byte, byte>? DriftRemap { get; init; }
+
+        /// <summary>
+        ///     True when the engine's pAllForms hash table was found and yielded forms. Dumps
+        ///     captured before the master finished loading parse cleanly as minidumps but hold
+        ///     no TESForm objects at all, so they contribute nothing to recovery.
+        /// </summary>
+        public bool HasRuntimeFormData => TotalEditorIds > 0;
+    }
+
+    /// <summary>Big/little-endian split of embedded ESM main records for one record type.</summary>
+    private readonly record struct EsmRecordTally(int BigEndian, int LittleEndian)
+    {
+        public int Total => BigEndian + LittleEndian;
+
+        public EsmRecordTally Add(bool isBigEndian)
+        {
+            return isBigEndian
+                ? this with { BigEndian = BigEndian + 1 }
+                : this with { LittleEndian = LittleEndian + 1 };
+        }
+    }
 }

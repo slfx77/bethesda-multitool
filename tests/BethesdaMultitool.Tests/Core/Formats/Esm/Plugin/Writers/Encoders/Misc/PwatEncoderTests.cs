@@ -24,12 +24,13 @@ public sealed class PwatEncoderTests : SubrecordEncoderTestBase<PwatEncoderTests
 
     protected override byte[] GetExpectedBytes()
     {
-        // PWAT DNAM canonical layout (8 bytes, little-endian):
-        //   0..3  uint32  WaterFormId
-        //   4..7  uint32  Flags
+        // PWAT DNAM canonical layout (8 bytes, little-endian) per xEdit wbRecord(PWAT),
+        // confirmed against all 29 retail FalloutNV.esm PWATs:
+        //   0..3  uint32  Flags
+        //   4..7  uint32  WaterFormId   (a WATR FormID resolves here in 29/29 retail records)
         var expected = new byte[8];
-        BinaryPrimitives.WriteUInt32LittleEndian(expected.AsSpan(0, 4), 0x000A1B2Cu);
-        BinaryPrimitives.WriteUInt32LittleEndian(expected.AsSpan(4, 4), 0x80000001u);
+        BinaryPrimitives.WriteUInt32LittleEndian(expected.AsSpan(0, 4), 0x80000001u);
+        BinaryPrimitives.WriteUInt32LittleEndian(expected.AsSpan(4, 4), 0x000A1B2Cu);
         return expected;
     }
 
@@ -45,8 +46,8 @@ public sealed class PwatEncoderTests : SubrecordEncoderTestBase<PwatEncoderTests
             return (false, null);
         }
 
-        var formId = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0, 4));
-        var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4, 4));
+        var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0, 4));
+        var formId = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4, 4));
         return (true, new PwatModel(formId, flags));
     }
 

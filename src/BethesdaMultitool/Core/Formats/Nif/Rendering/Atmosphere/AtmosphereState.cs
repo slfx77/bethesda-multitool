@@ -248,9 +248,15 @@ public static class AtmosphereState
             MathF.Sin(pitchRad));
         dir = dir.LengthSquared() > 1e-6f ? Vector3.Normalize(dir) : Vector3.UnitZ;
 
-        if (fogFar <= fogNear)
+        // A degenerate authored range means the cell wants NO fog — FO3/FNV interiors very commonly
+        // author XCLL FogNear == FogFar == 0, which the engine reads as "fog disabled". Converting
+        // it to a 1-unit ramp (the old behaviour) saturated the fog term for every fragment past one
+        // world unit and painted the whole room flat fog colour: the reported interior "hard cutoff".
+        var fogEnabled = fogFar > fogNear;
+        if (!fogEnabled)
         {
-            fogFar = fogNear + 1f;
+            fogNear = DefaultFogNear;
+            fogFar = DefaultFogFar;
         }
 
         var sunColor = lightingEnabled ? directional * Math.Clamp(fade, 0f, 4f) : Vector3.Zero;
@@ -267,7 +273,10 @@ public static class AtmosphereState
             fogNear,
             fogFar,
             MathF.Max(fogPower, 0.01f),
-            1f,
+            // Max fog opacity. A fully opaque interior far-fog is a hard wall: past FogFar nothing
+            // is visible at all, which is what made rooms unreadable when the camera started back
+            // from the geometry. Cells that authored no usable range get none of it.
+            fogEnabled ? 1f : 0f,
             Vector4.One,
             Vector4.Zero,
             Vector4.One,

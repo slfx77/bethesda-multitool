@@ -156,6 +156,122 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     /// </summary>
     public ID3D12Resource DepthResource => _depthTex;
 
+    /// <summary>Single-sample post-opaque depth copy: a MAX resolve of the MSAA depth (reversed-Z:
+    /// max = nearest covered sample — the exact semantics of the shader-side per-sample loop it
+    /// replaces), or a plain copy on 1x targets.
+    /// Null until <see cref="TryEnsureResolvedDepthResource" /> succeeds.</summary>
+    public ID3D12Resource? ResolvedDepthResource => _disposed ? null : _resolvedDepthTex;
+
+    private ID3D12Resource? _resolvedDepthTex;
+    private bool _resolvedDepthPrepared;
+    private bool _resolvedDepthUnavailable;
+
+    /// <summary>
+    ///     Lazily creates the 1-sample R32 destination for the post-opaque depth copy: a MAX
+    ///     resolve on MSAA targets, a plain CopyResource on 1x targets (the unified transparency
+    ///     stream samples this copy while the live DSV stays WRITABLE — the same model as
+    ///     GpuSwapChainSurface12's opaque depth snapshot). The
+    ///     capture path binds THIS as water/reference scene depth (as a plain Texture2D with
+    ///     sampleCount 1) instead of the multisampled alias: descriptor reads through the bindless
+    ///     Texture2DMS space-3 alias proved unreliable for late-written slots on shipped drivers
+    ///     (stale prior content — the live-window-sized "rectangle" capture corruption), while the
+    ///     space-1 Texture2D path never misresolved. Allocation failure falls back to the legacy
+    ///     multisampled binding.
+    /// </summary>
+    public bool TryEnsureResolvedDepthResource()
+    {
+        if (_disposed || _resolvedDepthUnavailable) return false;
+        if (_resolvedDepthTex is not null) return true;
+
+        try
+        {
+            // Baseline state matches the record step's source op: ResolveDest for the MSAA MAX
+            // resolve, CopyDest for the 1x CopyResource arm.
+            _resolvedDepthTex = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
+                HeapProperties.DefaultHeapProperties, HeapFlags.None,
+                ResourceDescription.Texture2D(Format.R32_Typeless, (uint)Width, (uint)Height,
+                    arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0,
+                    ResourceFlags.None),
+                IsMsaa ? ResourceStates.ResolveDest : ResourceStates.CopyDest,
+                optimizedClearValue: null);
+            _resolvedDepthTex.Name = "Capture Depth MAX Resolve";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _resolvedDepthTex?.Dispose();
+            _resolvedDepthTex = null;
+            _resolvedDepthUnavailable = true;
+            Log.Warn("GpuOffscreenSceneTarget12: resolved-depth allocation failed: {0}", ex.Message);
+            return false;
+        }
+    }
+
+    /// <summary>
+    ///     Records the MAX depth resolve. Call while the depth texture is in DEPTH_WRITE, after
+    ///     every opaque depth writer and before the depth-sampling water/reference passes; leaves
+    ///     depth back in DEPTH_WRITE and the resolved copy in PIXEL_SHADER_RESOURCE until
+    ///     <see cref="RestoreResolvedDepth" />.
+    /// </summary>
+    public bool TryRecordDepthMaxResolve(ID3D12GraphicsCommandList cmd)
+    {
+        if (_disposed || _resolvedDepthTex is null || _resolvedDepthPrepared)
+        {
+            return false;
+        }
+
+        if (!IsMsaa)
+        {
+            // 1x arm: a straight copy carries the identical per-texel depth; there is nothing to
+            // resolve. Same DepthWrite round-trip so later passes see the documented baseline.
+            cmd.ResourceBarrierTransition(_depthTex,
+                ResourceStates.DepthWrite, ResourceStates.CopySource);
+            cmd.CopyResource(_resolvedDepthTex, _depthTex);
+            cmd.ResourceBarrierTransition(_depthTex,
+                ResourceStates.CopySource, ResourceStates.DepthWrite);
+            cmd.ResourceBarrierTransition(_resolvedDepthTex,
+                ResourceStates.CopyDest, ResourceStates.PixelShaderResource);
+            _resolvedDepthPrepared = true;
+            return true;
+        }
+
+        using var cmd1 = cmd.QueryInterfaceOrNull<ID3D12GraphicsCommandList1>();
+        if (cmd1 is null)
+        {
+            _resolvedDepthUnavailable = true;
+            Log.Warn("GpuOffscreenSceneTarget12: ID3D12GraphicsCommandList1 unavailable; " +
+                     "captures keep the multisampled depth binding.");
+            return false;
+        }
+
+        cmd.ResourceBarrierTransition(_depthTex,
+            ResourceStates.DepthWrite, ResourceStates.ResolveSource);
+        cmd1.ResolveSubresourceRegion(
+            _resolvedDepthTex, 0, 0, 0, _depthTex, 0,
+            new Vortice.RawRect(0, 0, Width, Height), Format.D32_Float, ResolveMode.Max);
+        cmd.ResourceBarrierTransition(_depthTex,
+            ResourceStates.ResolveSource, ResourceStates.DepthWrite);
+        cmd.ResourceBarrierTransition(_resolvedDepthTex,
+            ResourceStates.ResolveDest, ResourceStates.PixelShaderResource);
+        _resolvedDepthPrepared = true;
+        return true;
+    }
+
+    /// <summary>Returns the resolved depth to its baseline (ResolveDest on MSAA targets, CopyDest
+    /// on 1x — records the barrier).</summary>
+    public void RestoreResolvedDepth(ID3D12GraphicsCommandList cmd)
+    {
+        if (!_resolvedDepthPrepared || _resolvedDepthTex is null) return;
+        cmd.ResourceBarrierTransition(_resolvedDepthTex,
+            ResourceStates.PixelShaderResource,
+            IsMsaa ? ResourceStates.ResolveDest : ResourceStates.CopyDest);
+        _resolvedDepthPrepared = false;
+    }
+
+    /// <summary>Clears resolve preparation state for a command list discarded without submission
+    /// (the barriers never executed, so the GPU resource keeps its ResolveDest baseline).</summary>
+    public void DiscardResolvedDepthPreparation() => _resolvedDepthPrepared = false;
+
     public GpuOffscreenSceneTarget12(GpuDevice12 gpu, int width, int height)
     {
         _gpu = gpu;
@@ -442,6 +558,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         _ldrOutputTex.Dispose();
         _waterOpaqueCopy?.Dispose();
         _hdrResolveTex?.Dispose();
+        _resolvedDepthTex?.Dispose();
         _depthTex.Dispose();
         _colorTex.Dispose();
     }

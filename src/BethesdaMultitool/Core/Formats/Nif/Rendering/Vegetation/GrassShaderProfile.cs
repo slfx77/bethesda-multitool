@@ -36,6 +36,39 @@ internal static class GrassShaderProfile
         return Select(game);
     }
 
+    /// <summary>
+    ///     The INSTANCED-opaque axis, distinct from <see cref="ForGame" />'s blended per-draw axis.
+    ///     A pair returned here is compiled against the instance ABI (SV_InstanceID + the t8 world
+    ///     matrix buffer) and is consumed by the pipeline factory's grass cutout PSOs; it must never
+    ///     be handed to the blended route, whose shaders take their world matrix from the per-draw
+    ///     constant buffer instead. One env knob opts out of both axes.
+    /// </summary>
+    internal static GameShaderPair InstancedForGame(BethesdaGame game)
+    {
+        if (string.Equals(
+                EnvironmentVariables.Get(EnvironmentVariables.Viewer.PerGameGrassShader),
+                "0",
+                StringComparison.Ordinal))
+        {
+            return default;
+        }
+
+        return SelectInstanced(game);
+    }
+
+    private static GameShaderPair SelectInstanced(BethesdaGame game) => game switch
+    {
+        // FO3/FNV: retail Shaders\shaderpackage019.sdp, GRASS2002.vso + GRASS2002.pso. The engine
+        // lights grass from terrain data baked into each instance (land normal + land-colour
+        // luminance), composes ambient ADDITIVELY without vertex colour, applies a 1.5x sun boost,
+        // and attenuates ONLY the sun term by the shadow map. Both games share TallGrassShader.cpp
+        // and every shipped GRAS record in both authors DATA flags 0x06, so one pair serves both.
+        BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 => new(
+            true, "reference_grass_fnv.vert.hlsl", "reference_grass_fnv.frag.hlsl"),
+
+        _ => default,
+    };
+
     private static GameShaderPair Select(BethesdaGame game) => game switch
     {
         // Oblivion: retail Shaders\shaderpackage019.sdp, GRASS2020.vso + GRASS2002.pso, disassembled
@@ -50,8 +83,8 @@ internal static class GrassShaderProfile
         // passes (NifHeadlessRenderer hands ReferenceRenderer12 a default WorldRenderCache). The
         // fallback is STRUCTURAL rather than a branch at the call site: disabled simply means the
         // existing shared shaders are used, so no path needs to know a per-game shader might exist.
-        // FNV deliberately stays here: its grass goes through the recovered GRASS2000 TallGrass wind
-        // route on the shared shaders, and nothing about that has been shown to need its own pair.
+        // FO3/FNV grass is not here because it draws INSTANCED, not blended — its recovered pair
+        // lives on the instanced axis (see InstancedForGame).
         _ => default,
     };
 }

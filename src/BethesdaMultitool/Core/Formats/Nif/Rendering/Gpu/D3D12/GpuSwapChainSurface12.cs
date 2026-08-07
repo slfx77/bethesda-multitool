@@ -67,6 +67,13 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     // layout and is idle in ResolveDest until the ordinary final resolve.
     private ID3D12Resource? _waterOpaqueCopy;
     private bool _waterOpaqueSnapshotPrepared;
+    // 1-sample post-opaque DEPTH snapshot for the unified transparency stream: water's column fog
+    // and soft particles sample THIS copy while the live DSV stays WRITABLE, so depth-writing
+    // blended draws and depth-sampling draws coexist in one stream. Engine-equivalent: Xenon
+    // resolves depth after the opaque phase and keeps rasterizing against live EDRAM depth.
+    private ID3D12Resource? _opaqueDepthCopy;
+    private bool _opaqueDepthSnapshotPrepared;
+    private bool _opaqueDepthSnapshotUnavailable;
     private readonly GpuTonemapPass12 _tonemap;
     private readonly bool _tonemapEnabled;
     private uint _width;
@@ -182,6 +189,128 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         return true;
     }
 
+    /// <summary>
+    ///     Stable 1-sample R32 copy of the post-opaque depth. Sampled (as R32_FLOAT Texture2D,
+    ///     sampleCount 1) by water/soft-particles during the unified transparency stream while the
+    ///     live depth stays in DEPTH_WRITE. Changes identity on <see cref="Resize" /> — persistent
+    ///     SRV owners must recreate their descriptor. Null until
+    ///     <see cref="TryEnsureOpaqueDepthSnapshotResource" /> succeeds.
+    /// </summary>
+    public ID3D12Resource? OpaqueDepthSnapshotResource => _opaqueDepthCopy;
+
+    /// <summary>Lazily creates the 1-sample depth snapshot destination. Allocation failure is a
+    /// local fallback to the read-only-DSV path, not a frame or device failure.</summary>
+    public bool TryEnsureOpaqueDepthSnapshotResource()
+    {
+        if (_opaqueDepthCopy is not null) return true;
+        if (_opaqueDepthSnapshotUnavailable || _depthTexture is null || _width == 0 || _height == 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            _opaqueDepthCopy = _device.CreateCommittedResource<ID3D12Resource>(
+                HeapProperties.DefaultHeapProperties, HeapFlags.None,
+                ResourceDescription.Texture2D(Format.R32_Typeless, _width, _height,
+                    arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0,
+                    ResourceFlags.None),
+                // Baseline matches the prepare path: ResolveDest under MSAA, CopyDest at 1x.
+                IsMsaa ? ResourceStates.ResolveDest : ResourceStates.CopyDest,
+                optimizedClearValue: null);
+            _opaqueDepthCopy.Name = "Scene Depth Post-Opaque Snapshot";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _opaqueDepthCopy?.Dispose();
+            _opaqueDepthCopy = null;
+            _opaqueDepthSnapshotUnavailable = true;
+            Log.Warn("GpuSwapChainSurface12: opaque depth snapshot allocation failed: {0}", ex.Message);
+            return false;
+        }
+    }
+
+    /// <summary>True between a successful <see cref="TryPrepareOpaqueDepthSnapshot" /> and
+    /// <see cref="RestoreOpaqueDepthSnapshot" />, while the snapshot is PIXEL_SHADER_RESOURCE.</summary>
+    public bool IsOpaqueDepthSnapshotPrepared => _opaqueDepthSnapshotPrepared;
+
+    /// <summary>
+    ///     Records the post-opaque depth snapshot. Call while depth is in DEPTH_WRITE, after every
+    ///     opaque depth writer and before the transparency stream. MSAA uses a MAX resolve
+    ///     (reversed-Z: max = nearest covered sample — the exact semantics of the shader-side
+    ///     per-sample loop it replaces); 1x is a plain copy. Leaves live depth in DEPTH_WRITE and
+    ///     the snapshot in PIXEL_SHADER_RESOURCE until <see cref="RestoreOpaqueDepthSnapshot" />.
+    /// </summary>
+    public bool TryPrepareOpaqueDepthSnapshot(ID3D12GraphicsCommandList cmd)
+    {
+        if (_opaqueDepthCopy is null || _depthTexture is null || _opaqueDepthSnapshotPrepared)
+        {
+            return false;
+        }
+
+        if (IsMsaa)
+        {
+            using var cmd1 = cmd.QueryInterfaceOrNull<ID3D12GraphicsCommandList1>();
+            if (cmd1 is null)
+            {
+                _opaqueDepthSnapshotUnavailable = true;
+                Log.Warn("GpuSwapChainSurface12: ID3D12GraphicsCommandList1 unavailable; " +
+                         "the transparency stream keeps the read-only-DSV depth binding.");
+                return false;
+            }
+
+            cmd.ResourceBarrierTransition(_depthTexture,
+                ResourceStates.DepthWrite, ResourceStates.ResolveSource);
+            cmd1.ResolveSubresourceRegion(
+                _opaqueDepthCopy, 0, 0, 0, _depthTexture, 0,
+                new Vortice.RawRect(0, 0, (int)_width, (int)_height),
+                Format.D32_Float, ResolveMode.Max);
+            cmd.ResourceBarrierTransition(_depthTexture,
+                ResourceStates.ResolveSource, ResourceStates.DepthWrite);
+            cmd.ResourceBarrierTransition(_opaqueDepthCopy,
+                ResourceStates.ResolveDest, ResourceStates.PixelShaderResource);
+        }
+        else
+        {
+            cmd.ResourceBarrierTransition(_depthTexture,
+                ResourceStates.DepthWrite, ResourceStates.CopySource);
+            cmd.CopyResource(_opaqueDepthCopy, _depthTexture);
+            cmd.ResourceBarrierTransition(_depthTexture,
+                ResourceStates.CopySource, ResourceStates.DepthWrite);
+            cmd.ResourceBarrierTransition(_opaqueDepthCopy,
+                ResourceStates.CopyDest, ResourceStates.PixelShaderResource);
+        }
+
+        _opaqueDepthSnapshotPrepared = true;
+        return true;
+    }
+
+    /// <summary>Returns the depth snapshot to its ResolveDest/CopyDest baseline (records the barrier).</summary>
+    public void RestoreOpaqueDepthSnapshot(ID3D12GraphicsCommandList cmd)
+    {
+        if (!_opaqueDepthSnapshotPrepared || _opaqueDepthCopy is null) return;
+        cmd.ResourceBarrierTransition(_opaqueDepthCopy,
+            ResourceStates.PixelShaderResource,
+            IsMsaa ? ResourceStates.ResolveDest : ResourceStates.CopyDest);
+        _opaqueDepthSnapshotPrepared = false;
+    }
+
+    /// <summary>Clears preparation state for a command list discarded without submission (its
+    /// barriers never executed, so the resource keeps its baseline state).</summary>
+    public void DiscardOpaqueDepthSnapshotPreparation() => _opaqueDepthSnapshotPrepared = false;
+
+    /// <summary>Releases the snapshot when host-side descriptor creation fails before any command
+    /// list can reference it.</summary>
+    public bool ReleaseOpaqueDepthSnapshotResource()
+    {
+        if (_opaqueDepthSnapshotPrepared || _opaqueDepthCopy is null) return false;
+
+        _opaqueDepthCopy.Dispose();
+        _opaqueDepthCopy = null;
+        return true;
+    }
+
     /// <summary>RTV for the scene's MSAA color target (valid only when <see cref="IsMsaa" />). Lives
     /// at RTV-heap slot <see cref="BufferCount" /> (after the per-frame back-buffer RTVs).</summary>
     public CpuDescriptorHandle MsaaColorRtv =>
@@ -226,6 +355,9 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         _waterOpaqueCopy?.Dispose();
         _waterOpaqueCopy = null;
         _waterOpaqueSnapshotPrepared = false;
+        _opaqueDepthCopy?.Dispose();
+        _opaqueDepthCopy = null;
+        _opaqueDepthSnapshotPrepared = false;
         _tonemap.Dispose();
         _dsvHeap.Dispose();
         _rtvHeap.Dispose();
@@ -375,6 +507,9 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         _waterOpaqueCopy?.Dispose();
         _waterOpaqueCopy = null;
         _waterOpaqueSnapshotPrepared = false;
+        _opaqueDepthCopy?.Dispose();
+        _opaqueDepthCopy = null;
+        _opaqueDepthSnapshotPrepared = false;
 
         _swapChain.ResizeBuffers(BufferCount, width, height, Format.Unknown, SwapChainFlags.None).CheckError();
 

@@ -238,6 +238,9 @@ public record RecordCollection
     /// <summary>Parsed Static Collection (SCOL) records.</summary>
     public List<StaticCollectionRecord> StaticCollections { get; init; } = [];
 
+    /// <summary>Parsed Placeable Water (PWAT) records.</summary>
+    public List<PlaceableWaterRecord> PlaceableWaters { get; init; } = [];
+
     /// <summary>Parsed Furniture (FURN) records.</summary>
     public List<FurnitureRecord> Furniture { get; init; } = [];
 
@@ -406,7 +409,8 @@ public record RecordCollection
         CaravanMoney.Count + Ingredients.Count + NavMeshInfoMaps.Count + CaravanDecks.Count +
         RadiationStages.Count + DehydrationStages.Count + HungerStages.Count + SleepDeprivationStages.Count +
         FormLists.Count + Activators.Count +
-        Lights.Count + Doors.Count + Statics.Count + StaticCollections.Count + Furniture.Count +
+        Lights.Count + Doors.Count + Statics.Count + StaticCollections.Count + PlaceableWaters.Count +
+        Furniture.Count +
         Packages.Count +
         GenericRecords.Count +
         Sounds.Count + MusicTypes.Count + TextureSets.Count + MaterialSwaps.Count + LandTextures.Count + Grasses.Count + ArmorAddons.Count + Water.Count +
@@ -508,6 +512,7 @@ public record RecordCollection
             Doors = MergeList(Doors, overlay.Doors, r => r.FormId),
             Statics = MergeList(Statics, overlay.Statics, r => r.FormId),
             StaticCollections = MergeList(StaticCollections, overlay.StaticCollections, r => r.FormId),
+            PlaceableWaters = MergeList(PlaceableWaters, overlay.PlaceableWaters, r => r.FormId),
             Furniture = MergeList(Furniture, overlay.Furniture, r => r.FormId),
 
             // AI

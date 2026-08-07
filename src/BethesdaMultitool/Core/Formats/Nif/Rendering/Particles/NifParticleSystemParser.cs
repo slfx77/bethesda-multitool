@@ -20,6 +20,14 @@ internal static class NifParticleSystemParser
     // NiPSysModifier base (FO3/FNV string-table): Name(int32 index) + Order(uint) + Target(int32) + Active(bool).
     private const int ModifierBaseSize = 4 + 4 + 4 + 1;
 
+    /// <summary>
+    ///     "1" restores the pre-rest-state behavior: bind the first activation-triggered sequence
+    ///     as if it were playing. Default OFF = the load-time rest-state resolve (see
+    ///     <see cref="EnvironmentVariables.Viewer.TriggeredFx" />).
+    /// </summary>
+    private static readonly bool TriggeredFxForced =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.TriggeredFx) == "1";
+
     // NiControllerSequence's verified Bethesda 20.2.0.7 controlled-block form: interpolator ref,
     // controller ref, priority byte, then five string-table indices. The fixed sequence tail follows it.
     private const int ControlledBlockStride = 29;
@@ -351,8 +359,8 @@ internal static class NifParticleSystemParser
                     continue;
                 }
 
-                // Passive embedded effects conventionally auto-play Idle. Retain the first valid sequence as
-                // a deterministic fallback for older exports which do not name their sole sequence.
+                // Passive embedded effects conventionally auto-play Idle. Any other sequence only
+                // plays when something ACTIVATES the object (door groups, one-shot quest FX).
                 if (isIdle)
                 {
                     return managed;
@@ -363,7 +371,21 @@ internal static class NifParticleSystemParser
 
             if (firstManaged is not null)
             {
-                return firstManaged;
+                // Load-time rest-state resolve: this emitter is bound ONLY by activation-triggered
+                // sequences, so at game start — before any script or door has fired it — the engine
+                // has never advanced its rate curve and the emitter is DORMANT. Binding the first
+                // triggered sequence as if it were playing rendered explosion/burst FX permanently
+                // (and paid their bake/sim/overdraw cost every frame). The dormant definition keeps
+                // IsActive so the system still decodes (a per-instance "preview activation" can
+                // re-bind the curve later); FALLOUT_VIEWER_TRIGGERED_FX=1 restores the old behavior.
+                return TriggeredFxForced
+                    ? firstManaged
+                    : new ParticleRateControllerDefinition
+                    {
+                        IsActive = true,
+                        ConstantValue = 0f,
+                        DormantTriggeredFx = true,
+                    };
             }
 
             // Non-manager-controlled legacy files can attach NiFloatInterpolator directly after the shared

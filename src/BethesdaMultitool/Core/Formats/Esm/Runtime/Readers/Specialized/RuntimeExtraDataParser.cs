@@ -99,8 +99,18 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
                     break;
                 }
                 case ExtraTeleportType:
-                    result.DestinationDoorFormId ??= ReadTeleportDestinationDoorFormId(nodeFileOffset.Value);
+                {
+                    var (destinationDoorFormId, teleportPosRot, teleportFlags) =
+                        ReadTeleportData(nodeFileOffset.Value);
+                    if (result.DestinationDoorFormId is null)
+                    {
+                        result.DestinationDoorFormId = destinationDoorFormId;
+                        result.TeleportPosRot = teleportPosRot;
+                        result.TeleportFlags = teleportFlags;
+                    }
+
                     break;
+                }
                 case ExtraEnableStateParentType:
                 {
                     var (enableParentFormId, enableParentFlags) = ReadEnableStateParent(nodeFileOffset.Value);
@@ -137,6 +147,9 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
                 }
                 case ExtraRadiusType:
                     result.Radius ??= ReadRadius(nodeFileOffset.Value);
+                    break;
+                case ExtraRadioDataType:
+                    result.RadioData ??= ReadRadioData(nodeFileOffset.Value);
                     break;
                 case ExtraCountType:
                     result.Count ??= ReadCount(nodeFileOffset.Value);
@@ -337,6 +350,50 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
             : null;
     }
 
+    /// <summary>
+    ///     Reads an <c>ExtraRadioData</c> node (28 bytes: the 12-byte BSExtraData base plus a
+    ///     16-byte <c>RADIO_DATA</c>). Returns null when the block fails validation rather than
+    ///     handing the encoder a partly-garbage broadcast configuration.
+    /// </summary>
+    private RadioData? ReadRadioData(long nodeFileOffset)
+    {
+        var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraRadioDataNodeSize);
+        if (nodeBuffer == null)
+        {
+            return null;
+        }
+
+        var radius = BinaryUtils.ReadFloatBE(nodeBuffer, RadioDataRadiusOffset);
+        var rangeType = BinaryUtils.ReadUInt32BE(nodeBuffer, RadioDataRangeTypeOffset);
+        var staticPct = BinaryUtils.ReadFloatBE(nodeBuffer, RadioDataStaticPctOffset);
+
+        // RADIO_RANGE_COUNT is 5, so anything at or above it is not a range type — the surest
+        // sign the node is not what we think it is.
+        if (rangeType >= RadioRangeTypeCount)
+        {
+            return null;
+        }
+
+        if (!RuntimeMemoryContext.IsNormalFloat(radius) && radius != 0f)
+        {
+            return null;
+        }
+
+        if (!RuntimeMemoryContext.IsNormalFloat(staticPct) && staticPct != 0f)
+        {
+            return null;
+        }
+
+        return new RadioData
+        {
+            Radius = radius,
+            RangeType = rangeType,
+            StaticPercentage = staticPct,
+            PositionRefFormId = _context.FollowPointerVaToFormId(
+                BinaryUtils.ReadUInt32BE(nodeBuffer, RadioDataPositionRefOffset))
+        };
+    }
+
     private short? ReadCount(long nodeFileOffset)
     {
         var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
@@ -353,34 +410,77 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         return _context.ReadBsStringT(nodeFileOffset, ExtraPayloadPtrOffset);
     }
 
-    private uint? ReadTeleportDestinationDoorFormId(long nodeFileOffset)
+    /// <summary>
+    ///     Reads the full <c>DoorTeleportData</c> the ExtraTeleport node points at — 32 bytes per
+    ///     the MemDebug PDB: <c>pLinkedDoor</c> @0, <c>position</c> NiPoint3 @4, <c>rotation</c>
+    ///     NiPoint3 @16, <c>cFlags</c> @28 — a 1:1 match for the on-disk XTEL subrecord.
+    ///     <para>
+    ///     Before v143 only the first 4 bytes (the door pointer) were read, so every
+    ///     runtime-recovered XTEL shipped with a zeroed arrival transform and the player landed at
+    ///     the destination cell's origin instead of in front of the return door. The transform was
+    ///     in the dump all along.
+    ///     </para>
+    /// </summary>
+    private (uint? DestinationDoorFormId, PositionSubrecord? PosRot, byte? Flags) ReadTeleportData(
+        long nodeFileOffset)
     {
         var nodeBuffer = _context.ReadBytes(nodeFileOffset, ExtraPointerNodeSize);
         if (nodeBuffer == null)
         {
-            return null;
+            return (null, null, null);
         }
 
         var teleportDataVa = BinaryUtils.ReadUInt32BE(nodeBuffer, ExtraPayloadPtrOffset);
         if (teleportDataVa == 0 || !_context.IsValidPointer(teleportDataVa))
         {
-            return null;
+            return (null, null, null);
         }
 
         var teleportDataFileOffset = _context.VaToFileOffset(teleportDataVa);
         if (teleportDataFileOffset == null)
         {
-            return null;
+            return (null, null, null);
         }
 
-        var teleportBuffer = _context.ReadBytes(teleportDataFileOffset.Value, DoorTeleportLinkedDoorPtrSize);
+        var teleportBuffer = _context.ReadBytes(teleportDataFileOffset.Value, DoorTeleportDataSize);
         if (teleportBuffer == null)
         {
-            return null;
+            return (null, null, null);
         }
 
         var linkedDoorVa = BinaryUtils.ReadUInt32BE(teleportBuffer);
-        return ReadPlacedRefFormId(linkedDoorVa);
+        var destinationDoorFormId = ReadPlacedRefFormId(linkedDoorVa);
+        if (destinationDoorFormId is null)
+        {
+            return (null, null, null);
+        }
+
+        // Validate each axis independently (zero is legal — RotX/RotY usually are zero). Any
+        // implausible axis means the block is not what we think it is, so keep the door link but
+        // decline the transform rather than emit a partly-garbage arrival point.
+        var x = ReadValidatedWorldCoord(teleportBuffer, DoorTeleportPositionOffset);
+        var y = ReadValidatedWorldCoord(teleportBuffer, DoorTeleportPositionOffset + 4);
+        var z = ReadValidatedWorldCoord(teleportBuffer, DoorTeleportPositionOffset + 8);
+        var rotX = ReadValidatedRotation(teleportBuffer, DoorTeleportRotationOffset);
+        var rotY = ReadValidatedRotation(teleportBuffer, DoorTeleportRotationOffset + 4);
+        var rotZ = ReadValidatedRotation(teleportBuffer, DoorTeleportRotationOffset + 8);
+
+        PositionSubrecord? posRot = null;
+        if (x.HasValue && y.HasValue && z.HasValue && rotX.HasValue && rotY.HasValue && rotZ.HasValue)
+        {
+            // An all-zero transform is a sentinel for "never authored", not a real arrival point
+            // (retail has 0 of 1,108 XTELs zeroed) — treat it as absent.
+            var allZero = x.Value == 0f && y.Value == 0f && z.Value == 0f &&
+                          rotX.Value == 0f && rotY.Value == 0f && rotZ.Value == 0f;
+            if (!allZero)
+            {
+                posRot = new PositionSubrecord(
+                    x.Value, y.Value, z.Value, rotX.Value, rotY.Value, rotZ.Value,
+                    teleportDataFileOffset.Value + DoorTeleportPositionOffset, true);
+            }
+        }
+
+        return (destinationDoorFormId, posRot, teleportBuffer[DoorTeleportFlagsOffset]);
     }
 
     private (uint? ParentFormId, byte? Flags) ReadEnableStateParent(long nodeFileOffset)
@@ -602,6 +702,22 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
     private const byte ExtraLinkedRefType = 0x51;
     private const byte ExtraLinkedRefChildrenType = 0x52;
     private const byte ExtraEditorIDType = 0x62;
+
+    /// <summary>
+    ///     <c>EXTRA_RADIO_DATA = 104</c> in the MemDebug PDB's EXTRA_DATA_TYPE enum. The node is
+    ///     28 bytes: the 12-byte BSExtraData base plus a 16-byte <c>RADIO_DATA</c> at +12, whose
+    ///     four members line up exactly with the on-disk XRDO subrecord.
+    /// </summary>
+    private const byte ExtraRadioDataType = 0x68;
+
+    private const int ExtraRadioDataNodeSize = 28;
+    private const int RadioDataRadiusOffset = 12;
+    private const int RadioDataRangeTypeOffset = 16;
+    private const int RadioDataStaticPctOffset = 20;
+    private const int RadioDataPositionRefOffset = 24;
+
+    /// <summary>RADIO_RANGE_COUNT from the PDB's RADIO_RANGE_TYPE enum — the first invalid value.</summary>
+    private const uint RadioRangeTypeCount = 5;
     private const int ExtraLinkedRefChildrenNodeSize = 20;
     private const int ExtraStartingPositionNodeSize = 36;
     private const int ExtraPackageStartLocationNodeSize = 32;
@@ -612,8 +728,12 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
     private const int MapMarkerNameFieldOffset = 4;
     private const int MapMarkerTypeOffset = 14;
 
-    // DoorTeleportData
-    private const int DoorTeleportLinkedDoorPtrSize = 4;
+    // DoorTeleportData — 32 bytes per the MemDebug PDB:
+    // pLinkedDoor @0, position NiPoint3 @4, rotation NiPoint3 @16, cFlags @28.
+    private const int DoorTeleportDataSize = 32;
+    private const int DoorTeleportPositionOffset = 4;
+    private const int DoorTeleportRotationOffset = 16;
+    private const int DoorTeleportFlagsOffset = 28;
 
     // REFR_LOCK
     private const int RefrLockSize = 20;
@@ -649,6 +769,8 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         public uint? LockNumTries { get; set; }
         public uint? LockTimesUnlocked { get; set; }
         public uint? DestinationDoorFormId { get; set; }
+        public PositionSubrecord? TeleportPosRot { get; set; }
+        public byte? TeleportFlags { get; set; }
         public uint? EnableParentFormId { get; set; }
         public byte? EnableParentFlags { get; set; }
         public uint? PersistentCellFormId { get; set; }
@@ -656,6 +778,7 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         public List<uint>? LinkedRefChildrenFormIds { get; set; }
         public short? Count { get; set; }
         public string? EditorId { get; set; }
+        public RadioData? RadioData { get; set; }
     }
 
     internal readonly record struct RuntimeLockData

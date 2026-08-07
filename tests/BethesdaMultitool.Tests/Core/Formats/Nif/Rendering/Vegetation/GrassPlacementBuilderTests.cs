@@ -227,7 +227,9 @@ public sealed class GrassPlacementBuilderTests
             new Vector3(0.8f, 0f, 0.6f),
             true,
             1.25f,
-            false);
+            false,
+            new Vector3(0.1f, 0.2f, 0.97f),
+            0.5f);
 
         // |X| is not the smallest component, so GRASS2002 chooses N cross Y for T.
         AssertAxis(sloped, 1, new Vector3(0f, 1f, 0f));
@@ -240,13 +242,59 @@ public sealed class GrassPlacementBuilderTests
             Vector3.UnitZ,
             true,
             1.2f,
-            true);
+            true,
+            Vector3.UnitZ,
+            0f);
 
         // abs(Y) >= abs(X) is true on the 0 == 0 tie. The packed normal's upper clamp decodes
         // retail +Z as 0.94, and the resulting flat basis is the shader's deterministic 180° turn.
         AssertAxis(flat, 1, new Vector3(-0.94f * 1.2f, 0f, 0f));
         AssertAxis(flat, 2, new Vector3(0f, -1.2f, 0f));
         AssertAxis(flat, 3, new Vector3(0f, 0f, 0.94f * 1.2f));
+    }
+
+    [Fact]
+    public void ComposeFnvWorldMatrix_CarriesTheLightingPayloadInTheMatrixWLanes()
+    {
+        var world = GrassPlacementBuilder.ComposeFnvWorldMatrix(
+            new Vector3(5f, 6f, 7f),
+            Vector3.UnitZ,
+            false,
+            1f,
+            true,
+            new Vector3(0.25f, -0.5f, 0.99f),
+            0.625f);
+
+        // xyz = the lighting normal under the engine's packing clamp (min(N, 0.94), component-wise
+        // and deliberately not renormalized); w = the baked light. The basis and translation are
+        // untouched by the payload.
+        Assert.Equal(0.25f, world.M14, 5);
+        Assert.Equal(-0.5f, world.M24, 5);
+        Assert.Equal(0.94f, world.M34, 5);
+        Assert.Equal(0.625f, world.M44, 5);
+        Assert.Equal(new Vector3(5f, 6f, 7f), world.Translation);
+    }
+
+    [Theory]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    [InlineData(2f)]
+    [InlineData(-1f)]
+    public void ComposeFnvWorldMatrix_ClampsTheBakedLightSoTheMatrixStaysFinite(float bakedLight)
+    {
+        var world = GrassPlacementBuilder.ComposeFnvWorldMatrix(
+            Vector3.Zero,
+            Vector3.UnitZ,
+            false,
+            1f,
+            true,
+            Vector3.UnitZ,
+            bakedLight);
+
+        // GeometryDrawValidator12 rejects a non-finite instance matrix outright, and the shader's
+        // frac() would alias an out-of-range value into the wrong brightness.
+        Assert.True(float.IsFinite(world.M44));
+        Assert.InRange(world.M44, 0f, FnvGrassLighting.BakedLightMaximum);
     }
 
     [Fact]

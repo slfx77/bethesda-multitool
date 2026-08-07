@@ -442,7 +442,8 @@ public sealed class PluginBuilder
                 inputs.Options.CellWorldspaceAuthorityWorldspaceNames,
                 inputs.Options.CellMetadataAuthority,
                 inputs.Options.CellReferenceParentAuthority,
-                inputs.Options.CellReferenceParentWindows);
+                inputs.Options.CellReferenceParentWindows,
+                inputs.Options.InferUnresolvedCellPlacements);
             FilterDmpRecordsByExcludedWorldspaces(dmpRecords, inputs.Options.SkipWorldspaceFormIds);
             _dmpBaseFormIdToRecordType = ReferenceBaseRemapper.BuildDmpBaseFormIdToRecordType(dmpRecords);
             _sink.Info("Reading DMP", "DMP semantic load complete.");
@@ -1799,6 +1800,13 @@ public sealed class PluginBuilder
                 .Where(pair => _masterFormIds.Contains(pair.Value))
                 .ToDictionary(static pair => pair.Key, static pair => pair.Value);
 
+        // The non-master remainder: legacy-emitted NEW records (MSTT/TACT/PWAT/... — types with
+        // no planner extractor row) whose plugin-space allocations the planner must still be
+        // able to resolve placed-ref bases against (see EsmPlanner's legacy-pipeline bridge).
+        var legacyPipelineAllocations = _newRecordSourceToAllocated
+            .Where(pair => _masterFormIds is null || !_masterFormIds.Contains(pair.Value))
+            .ToDictionary(static pair => pair.Key, static pair => pair.Value);
+
         _emitPlan = esmPlanner.Build(
             pcRecords,
             dmpRecords,
@@ -1822,7 +1830,8 @@ public sealed class PluginBuilder
             },
             diagnosticKeepMasterFormIds: inputs.Options.DiagnosticKeepMasterFormIds,
             diagnosticRetainMasterSubrecords: inputs.Options.DiagnosticRetainMasterSubrecords,
-            masterFormIdAliases: plannerMasterAliases);
+            masterFormIdAliases: plannerMasterAliases,
+            legacyPipelineAllocations: legacyPipelineAllocations);
 
         if (_scriptVariableAugmentations.Count > 0 && enabled.Contains("SCPT"))
         {
@@ -5964,6 +5973,30 @@ public sealed class PluginBuilder
     }
 
     /// <summary>
+    ///     Every record-type signature <see cref="EnumerateModelsByType" /> yields — i.e. the set
+    ///     of types that can reach a top-level GRUP at all.
+    ///     <para>
+    ///     This is the authoritative reachability oracle, and it is <b>not</b> the same as
+    ///     "has a registered encoder". A type absent from here is structurally unemittable no
+    ///     matter what encoders exist: the merge loop only iterates what this yields, so such a
+    ///     type is dropped before the "No encoder for {type}" warning can even fire, leaving no
+    ///     diagnostic. GRAS/IMGS/PWAT/TREE all had registered encoders while being unreachable
+    ///     exactly this way. Conversely, membership here is necessary but not sufficient — the
+    ///     type still needs a registry entry to be encoded, and a
+    ///     <c>NewTopLevelRecordEncoderDispatcher</c> row for its <i>new</i> records.
+    ///     </para>
+    ///     <para>
+    ///     Types emitted outside the top-level loop are deliberately absent: cell children
+    ///     (REFR/ACHR/ACRE/LAND, via the cell pipeline), NAVM (byte-rewriter) and NAVI
+    ///     (<c>EsmAssembler</c> fallback).
+    ///     </para>
+    /// </summary>
+    public static IReadOnlySet<string> EmittableTopLevelRecordTypes { get; } =
+        EnumerateModelsByType(new RecordCollection())
+            .Select(entry => entry.RecordType)
+            .ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>
     ///     Walks the digested record collection and yields per-type model lists for the
     ///     simple-type set. Cell children (REFR/ACHR/ACRE) are NOT yielded here — they have
     ///     their own pipeline (see <see cref="BuildCellOverrideBundles" />).
@@ -6059,7 +6092,18 @@ public sealed class PluginBuilder
         yield return ("CSTY", records.CombatStyles);
         yield return ("LGTM", records.LightingTemplates);
         yield return ("WATR", records.Water);
+        // PWAT after WATR so its DNAM parent-water FormID resolves against just-emitted new
+        // WATR records. PWAT had a registered encoder and a typed model but no yield and no
+        // producer, so it was structurally unemittable — refs on a proto-only placeable water
+        // dropped as refr.dangling-base.
+        yield return ("PWAT", records.PlaceableWaters);
         yield return ("WTHR", records.Weather);
+        // CLMT after WTHR so its WLST weather links resolve against just-emitted new WTHR
+        // FormIDs; GRAS next to LTEX because LTEX GNAM points at GRAS. Both had encoders that
+        // nothing ever fed — this yield is what makes them reachable.
+        yield return ("CLMT", records.Climate);
+        yield return ("GRAS", records.Grasses);
+        yield return ("IMGS", records.ImageSpaces);
         // Close encoder coverage for every type with a runtime reader.
         yield return ("ECZN", records.EncounterZones);
         yield return ("MICN", records.MenuIcons);
@@ -6072,6 +6116,20 @@ public sealed class PluginBuilder
         // Yielded after SCPT/SOUN/INGR so its PFIG (ingredient) / SCRI (script) / SNAM (sound)
         // references are remapped against already-allocated new FormIDs.
         yield return ("FLOR", records.GenericRecords.Where(g => g.RecordType == "FLOR"));
+        // MSTT/ANIO share FLOR's shape: no typed model, decoded by RuntimeGenericReader into the
+        // shared GenericRecords list. Yielded after SOUN and IDLE respectively so MSTT's SNAM
+        // (sound) and ANIO's DATA (idle animation) references remap against already-allocated new
+        // FormIDs. Before these yields existed the records were dropped here with no diagnostic —
+        // the encoder-missing warning at the top of the merge loop can only fire for a type that
+        // is yielded at all.
+        yield return ("MSTT", records.GenericRecords.Where(g => g.RecordType == "MSTT"));
+        yield return ("ANIO", records.GenericRecords.Where(g => g.RecordType == "ANIO"));
+        // TACT after SCPT/SOUN/VTYP so its SCRI, SNAM/INAM and VNAM references remap against
+        // already-allocated new FormIDs; ASPC after SOUN and REGN for its five SNAM slots and
+        // RDAT; ADDN after SOUN for its SNAM.
+        yield return ("TACT", records.GenericRecords.Where(g => g.RecordType == "TACT"));
+        yield return ("ASPC", records.GenericRecords.Where(g => g.RecordType == "ASPC"));
+        yield return ("ADDN", records.GenericRecords.Where(g => g.RecordType == "ADDN"));
         yield return ("LSCT", records.LoadScreenTypes);
         yield return ("IDLE", records.IdleAnimations);
         yield return ("IPCT", records.ImpactData);
@@ -6169,7 +6227,8 @@ public sealed class PluginBuilder
         IReadOnlyDictionary<uint, string>? worldspaceNames,
         IReadOnlyDictionary<uint, CellAuthorityMetadata>? cellMetadata,
         IReadOnlyDictionary<uint, uint>? refToCell,
-        IReadOnlyList<CellReferenceParentWindow>? refWindows)
+        IReadOnlyList<CellReferenceParentWindow>? refWindows,
+        bool inferUnresolvedPlacements)
     {
         var result = CellWorldspaceAuthorityApplier.Apply(
             records,
@@ -6178,7 +6237,8 @@ public sealed class PluginBuilder
             scanResult,
             cellMetadata,
             refToCell,
-            refWindows);
+            refWindows,
+            inferUnresolvedPlacements: inferUnresolvedPlacements);
         if (result.Applied > 0 || result.ReferencesReattached > 0)
         {
             _sink.Info("Reading DMP",

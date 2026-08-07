@@ -34,6 +34,13 @@ internal static class HavokCollisionExtractor
     /// </summary>
     private const float HavokToWorldScale = 7f;
 
+    /// <summary>
+    ///     <c>OL_NONCOLLIDABLE</c> / <c>FOL_NONCOLLIDABLE</c> — Havok layer 15 in every Bethesda
+    ///     layer table (Oblivion through Fallout 4; see <c>nif.xml</c>). Bodies on this layer exist
+    ///     in the Havok world but collide with nothing.
+    /// </summary>
+    private const byte NoncollidableHavokLayer = 15;
+
     private const int MaxShapeDepth = 16;
     private const int PrimitiveRadialSegments = 12;
     private const int SphereStacks = 6;
@@ -96,6 +103,18 @@ internal static class HavokCollisionExtractor
 
             // bhkWorldObject.Shape is the rigid body's first field.
             if (!TryReadInt32(data, bodyBlock, 0, bigEndian, out var shapeRef)) continue;
+
+            // bhkWorldObject.HavokFilter.Layer is the byte immediately after the shape ref. A body
+            // on the NONCOLLIDABLE layer is registered with the Havok world but collides with
+            // nothing, so the engine lets the player walk straight through it — harvestable flora
+            // (clutter/junk/NV/WhiteHorseNettle.nif: layer 15) is authored exactly this way. Its
+            // shape is still a real bhkBoxShape, so extracting it produced collision (and a debug
+            // outline) around plants that have none in game.
+            if (TryReadByte(data, bodyBlock, 4, out var havokLayer) &&
+                havokLayer == NoncollidableHavokLayer)
+            {
+                continue;
+            }
 
             var nodeWorld = worldTransforms.TryGetValue(targetIdx, out var w) ? w : Matrix4x4.Identity;
             Matrix4x4 rbTransform;
@@ -774,6 +793,15 @@ internal static class HavokCollisionExtractor
         value = 0;
         if (rel < 0 || rel + 4 > block.Size) return false;
         value = BinaryUtils.ReadInt32(data, block.DataOffset + rel, be);
+        return true;
+    }
+
+    /// <summary>Reads one byte at a block-relative offset. Endian-independent by construction.</summary>
+    private static bool TryReadByte(byte[] data, BlockInfo block, int rel, out byte value)
+    {
+        value = 0;
+        if (rel < 0 || rel + 1 > block.Size) return false;
+        value = data[block.DataOffset + rel];
         return true;
     }
 

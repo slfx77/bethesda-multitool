@@ -904,6 +904,7 @@ internal static class CellLinkageHandler
             RotZ = r.Position?.RotZ ?? 0,
             Scale = r.Scale,
             Radius = r.Radius,
+            RadioData = r.RadioData,
             Count = r.Count,
             OwnerFormId = r.OwnerFormId,
             EncounterZoneFormId = r.EncounterZoneFormId,

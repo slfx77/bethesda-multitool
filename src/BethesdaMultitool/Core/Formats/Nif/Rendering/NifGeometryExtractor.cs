@@ -438,6 +438,18 @@ internal static class NifGeometryExtractor
                     staticUvScale = shaderMetadata.UvScale;
                     softParticleFalloffDepth = shaderMetadata.SoftEffectFalloffDepth ?? 0f;
                     useVertexAlpha = NifVertexColorPolicy.UsesAlphaForOpacity(shaderMetadata);
+                    if (shaderMetadata.PropertyType == "TallGrassShaderProperty")
+                    {
+                        // FO3/FNV grass parity: TallGrassShader::PresetStages (0x82A9A810) sets the
+                        // diffuse stage via BSShader::SetupDefaultStage(stage, 0, /*mode*/ 2, 1, 0),
+                        // and SetupDefaultStage (0x82AD6420) maps mode==2 to NiD3D clamp byte 0 =
+                        // CLAMP_S_CLAMP_T (tools/GhidraProject/tallgrass_stages_decompiled.txt).
+                        // Grass card UVs intentionally overshoot the atlas (grasswasteland07 has 6
+                        // corner verts at u up to 1.2324); a WRAP sampler wraps those corners onto
+                        // the opposite atlas islands — stray wrong-island fragments on the cards.
+                        clampTextureU = true;
+                        clampTextureV = true;
+                    }
                 }
                 // Self-illuminated (unlit) shaders: FO3/FNV BSShaderNoLightingProperty AND the Skyrim/
                 // SE/FO4 BSEffectShaderProperty (fire, magic, glow, light shafts). Without the effect

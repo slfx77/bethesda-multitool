@@ -21,7 +21,13 @@ public sealed class WaterBatchInstanceWindowSourceContractTests
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "WaterRenderer12.cs");
 
-        Assert.Contains("FirstElement = (ulong)startInstance", renderer, StringComparison.Ordinal);
+        // The window's base also carries the recorder's frame slot: the instance buffer is
+        // frame-slotted (FramesInFlight regions) so the CPU never overwrites packets an in-flight
+        // frame's draws are still reading.
+        Assert.Contains(
+            "((ulong)_recorder.FrameIndex * (ulong)_instanceCapacity) + (ulong)startInstance",
+            renderer,
+            StringComparison.Ordinal);
         Assert.Contains(
             "cmd.DrawInstanced(6, (uint)drawInstanceCount, 0, 0);", renderer, StringComparison.Ordinal);
         // The buggy shape must never come back: no draw may pass a non-zero start-instance while

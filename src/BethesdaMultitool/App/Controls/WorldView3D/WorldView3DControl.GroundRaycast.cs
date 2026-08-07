@@ -281,7 +281,15 @@ public sealed partial class WorldView3DControl
                     // arrive. Effect paths may receive one bounded decode because some carry authored
                     // Havok, but they never receive speculative OBND/visual collision. A decoded-null
                     // path is remembered by the mesh cache so it cannot steal warmup slots forever.
-                    var allowsBoundsFallback =
+                    //
+                    // The OBND box is a COLD approximation only: a RESOLVED verdict — including
+                    // resolved-to-None — is authoritative and must end it. CreosoteBushLg authors NO
+                    // bhk blocks at all (its STAT even carries a BRUS passthrough sound: designed
+                    // walk-through) and its blend-only visual yields no fallback soup, so the model
+                    // resolves to None — yet its valid 245×229×179 OBND kept synthesizing a phantom
+                    // collider every frame. (WhiteHorseNettle never hit this only because its ACTI
+                    // OBND is all zeros.)
+                    var allowsBoundsFallback = !resolution.IsResolved &&
                         WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(p.ModelPath, category);
                     var allowsWarmup = _referenceMeshCache12 is not null && !resolution.IsResolved;
                     if (!allowsBoundsFallback && !allowsWarmup)
@@ -345,6 +353,13 @@ public sealed partial class WorldView3DControl
             if (resolution.Mesh is { } collision)
             {
                 TryAddWarmRaycastCandidate(p, collision, centerX, centerY, reach, into);
+                continue;
+            }
+
+            // The warmup above can complete synchronously: a model that just resolved to NONE is
+            // now authoritative no-collision and must not fall through to the OBND box.
+            if (resolution.IsResolved)
+            {
                 continue;
             }
 

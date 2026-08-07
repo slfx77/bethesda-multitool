@@ -44,6 +44,14 @@ cbuffer Atmosphere : register(b3)
     float4 uAmbientNegativeY;
     float4 uAmbientPositiveZ;
     float4 uAmbientNegativeZ;
+    // Appended: the classic FO3/FNV GRASS sun term. Retail hands TallGrassShader the sun light's
+    // NiLight m_kDiffuseColor RAW — the imagespace SunlightDimmer that ordinary geometry receives
+    // through BSShaderLightingProperty is never applied to grass — and multiplies the grass sun
+    // term by the imagespace GrassDimmer instead (written into the grass VS AddlParams.x / c7.x,
+    // consumed as `mul oT3.xyz, r1, c7.x`). uSunColorLighting.rgb already has SunlightDimmer folded
+    // in, so grass needs both lanes below rather than either alone.
+    float4 uGrassSunColorScale; // rgb = sun colour WITHOUT SunlightDimmer, w = IMGS GrassDimmer
+                                // (w == 0 marks the lane unset; consumers then fall back)
 };
 
 #endif // ATMOSPHERE_HLSLI

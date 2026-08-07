@@ -26,7 +26,23 @@
         <Button x:Name="InteriorsButton" Content="Interiors" IsEnabled="False"
                 Click="InteriorsButton_Click"
                 ToolTipService.ToolTip="Browse interior cells" />
+        <Button x:Name="AllCellsButton" Content="All Cells" IsEnabled="False"
+                Click="AllCellsButton_Click"
+                ToolTipService.ToolTip="Browse every cell; picking an exterior switches worldspace and centres the camera on it" />
       </StackPanel>
+      <!-- Diagnostics-overlay toggle. Lives in the TOOLBAR rather than over the viewport so that
+           switching the overlay off leaves the 3D view completely unobstructed — the button itself
+           used to remain floating in the top-right corner, which is exactly what "off" should not
+           look like. -->
+      <ToggleButton x:Name="HudToggleButton" Grid.Column="1"
+                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                    Padding="6" MinWidth="0"
+                    IsChecked="True"
+                    ToolTipService.ToolTip="Show/hide the diagnostics overlay"
+                    AutomationProperties.Name="Show/hide diagnostics overlay"
+                    Checked="HudToggleButton_Changed" Unchecked="HudToggleButton_Changed">
+        <FontIcon Glyph="&#xE946;" FontSize="14" />
+      </ToggleButton>
       <!-- The former toolbar controls (Lighting / Layers / Visibility / Projection dropdowns and the
            Export button) all live in the host's right-panel tabs now: Settings = WorldView3DSettingsPanel
            and Export = WorldView3DExportPanel, both constructed + wired by this control. -->
@@ -58,11 +74,12 @@
                    Text="" />
       </Border>
 
-      <!-- 90°-snap rotate buttons for the projection modes — sit to the LEFT of the diagnostics toggle
-           (extra right margin clears it). Collapsed in perspective mode (SetProjectionMode toggles it). -->
+      <!-- 90°-snap rotate buttons for the projection modes. Collapsed in perspective mode
+           (SetProjectionMode toggles it). The former extra right margin cleared the diagnostics
+           toggle, which now lives in the toolbar. -->
       <StackPanel x:Name="ProjectionSnapPanel" Orientation="Horizontal" Spacing="4"
                   HorizontalAlignment="Right" VerticalAlignment="Top"
-                  Margin="8,8,52,8" Visibility="Collapsed">
+                  Margin="8" Visibility="Collapsed">
         <Button x:Name="RotateLeftButton" Padding="6" MinWidth="0"
                 ToolTipService.ToolTip="Rotate view 90° left"
                 AutomationProperties.Name="Rotate view 90 degrees left"
@@ -79,18 +96,6 @@
         </Button>
       </StackPanel>
 
-      <!-- Hide/show toggle for the diagnostics overlay (top-right, away from the HUD). Stays visible
-           when the HUD is hidden so it can be brought back. -->
-      <ToggleButton x:Name="HudToggleButton"
-                    HorizontalAlignment="Right" VerticalAlignment="Top"
-                    Margin="8" Padding="6" MinWidth="0"
-                    IsChecked="True"
-                    ToolTipService.ToolTip="Show/hide the diagnostics overlay"
-                    AutomationProperties.Name="Show/hide diagnostics overlay"
-                    Checked="HudToggleButton_Changed" Unchecked="HudToggleButton_Changed">
-        <FontIcon Glyph="&#xE946;" FontSize="14" />
-      </ToggleButton>
-
       <!-- Interior cell browser — the shared CellListControl (same list the 2D viewer uses). Overlays the
            viewport while browsing; picking a cell loads it into the 3D scene and hides the panel. -->
       <Grid x:Name="CellBrowserPanel" Visibility="Collapsed" Padding="8"
@@ -104,11 +109,11 @@
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <TextBlock Grid.Column="0" Text="Interior cells" VerticalAlignment="Center"
-                     FontWeight="SemiBold" />
+          <TextBlock Grid.Column="0" x:Name="CellBrowserHeader" Text="Interior cells"
+                     VerticalAlignment="Center" FontWeight="SemiBold" />
           <Button Grid.Column="1" x:Name="CellBrowserCloseButton" Content="Close"
                   Click="CellBrowserCloseButton_Click"
-                  AutomationProperties.Name="Close interior browser" />
+                  AutomationProperties.Name="Close cell browser" />
         </Grid>
         <local:CellListControl x:Name="CellList" Grid.Row="1" />
       </Grid>

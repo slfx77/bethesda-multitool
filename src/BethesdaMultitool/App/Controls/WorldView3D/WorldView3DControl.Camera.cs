@@ -204,35 +204,73 @@ public sealed partial class WorldView3DControl
     }
 
     /// <summary>
-    ///     Frames the camera on an interior cell's placed-object bounds (absolute coords; interiors
-    ///     have no grid). Sizes the pull-back + streaming render distance to the cell extent so the
-    ///     cylinder snugly covers it. Same pitched-down posture as the exterior framing.
+    ///     Frames the camera on an interior cell's contents. Interiors are sealed shells, so the
+    ///     camera is placed INSIDE the room rather than pulled back from it — the original framing
+    ///     sat the camera outside and 4096 units above the bounding box, which for any enclosed
+    ///     interior meant staring at the outside of the walls (and, with fog, at nothing at all).
+    ///     <para>
+    ///         Position comes from robust statistics over placement ORIGINS, deliberately not from a
+    ///         min/max box: an intermediate version of this method min/maxed the OBND bounding
+    ///         <em>spheres</em> (centre ± radius), and a single room-shell or trigger placement with a
+    ///         multi-thousand-unit radius blew the box out far enough to push the camera back outside
+    ///         the shell again. Measured on NovacMotelLobby, whose contents sit at Z≈8960-9214 and
+    ///         Y≈859-1456, that produced a camera at Y=-1483, Z=4976 and a 100%-frustum-culled frame.
+    ///         A mean centre with a low-percentile floor cannot be dragged that way by one outlier.
+    ///     </para>
     /// </summary>
     private void ResetCameraToInteriorBounds(CellRecord interior)
     {
-        float minX = float.MaxValue, minY = float.MaxValue, minZ = float.MaxValue;
-        float maxX = float.MinValue, maxY = float.MinValue, maxZ = float.MinValue;
-        var count = 0;
-        foreach (var o in interior.PlacedObjects)
+        // Prefer the render cache's resolved world-space placements; fall back to the raw record
+        // origins when the cell has not been baked yet. Radii are read for the extent only.
+        var origins = new List<Vector3>();
+        var placements = _data?.RenderCache?.GetPlacementList(interior);
+        if (placements is { Count: > 0 })
         {
-            if (!float.IsFinite(o.X) || !float.IsFinite(o.Y) || !float.IsFinite(o.Z)) continue;
-            minX = MathF.Min(minX, o.X); minY = MathF.Min(minY, o.Y); minZ = MathF.Min(minZ, o.Z);
-            maxX = MathF.Max(maxX, o.X); maxY = MathF.Max(maxY, o.Y); maxZ = MathF.Max(maxZ, o.Z);
-            count++;
+            foreach (var placement in placements)
+            {
+                var c = placement.BoundsCenter;
+                if (float.IsFinite(c.X) && float.IsFinite(c.Y) && float.IsFinite(c.Z)) origins.Add(c);
+            }
         }
-        if (count == 0) return;
 
-        var centerX = (minX + maxX) * 0.5f;
-        var centerY = (minY + maxY) * 0.5f;
-        var centerZ = (minZ + maxZ) * 0.5f;
-        var extent = MathF.Max(maxX - minX, maxY - minY);
-        var dist = MathF.Max(extent, _cellSize) * 0.75f;
+        if (origins.Count == 0)
+        {
+            foreach (var o in interior.PlacedObjects)
+            {
+                if (float.IsFinite(o.X) && float.IsFinite(o.Y) && float.IsFinite(o.Z))
+                {
+                    origins.Add(new Vector3(o.X, o.Y, o.Z));
+                }
+            }
+        }
 
-        // No render-distance change: the default streaming radius (16 cells) dwarfs any interior,
-        // and only this single cell exists in the index, so there's nothing else to stream in.
-        _camera.Position = new Vector3(centerX, centerY - dist, centerZ + extent * 0.5f + 4096f);
+        if (origins.Count == 0) return;
+
+        // Mean X/Y puts the camera among the room's contents rather than at the centre of whatever
+        // box the outliers describe (markers, triggers and audio emitters are routinely placed well
+        // outside the visible room and would otherwise pull the framing off the playable space).
+        var centerX = 0f;
+        var centerY = 0f;
+        foreach (var o in origins)
+        {
+            centerX += o.X;
+            centerY += o.Y;
+        }
+
+        centerX /= origins.Count;
+        centerY /= origins.Count;
+
+        // Floor = a low percentile of Z, not the minimum: interiors commonly carry a marker or
+        // sound emitter far below the walkable floor, and standing eye-height above THAT is still
+        // beneath the room. The 25th percentile lands on the floor clutter that rests on the floor.
+        var zs = origins.Select(o => o.Z).Order().ToArray();
+        var floorZ = zs[Math.Clamp((int)(zs.Length * 0.25f), 0, zs.Length - 1)];
+
+        // Level gaze from inside — an interior reads far better at eye level than from a pitched-down
+        // overhead vantage, and there is no back-off: any offset risks leaving the shell.
+        _camera.Position = new Vector3(centerX, centerY, floorZ + _controller.EyeHeight);
         _camera.Yaw = 0f;
-        _camera.Pitch = -MathF.PI / 6f;
+        _camera.Pitch = 0f;
     }
 
     private int SelectInitialWorldspaceIndex(WorldViewData data)

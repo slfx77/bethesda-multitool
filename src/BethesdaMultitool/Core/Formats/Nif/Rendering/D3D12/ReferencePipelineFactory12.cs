@@ -30,6 +30,17 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     private readonly ShaderRoutePsos _sharedRoute;
     private readonly ShaderRoutePsos _grassRoute = new();
 
+    // The INSTANCED grass route. Separate from _grassRoute because the ABIs differ: _grassRoute
+    // serves blended per-draw PSOs (world matrix from the per-draw CB) while these shaders take
+    // SV_InstanceID + the t8 instance buffer. Built lazily because the profile is only known once a
+    // game loads, which is after this constructor runs.
+    private GameShaderPair _instancedGrassProfile;
+    private bool _instancedGrassCompileAttempted;
+    private ID3D12PipelineState? _grassOpaqueBackPso;
+    private ID3D12PipelineState? _grassOpaqueDoublePso;
+    private ID3D12PipelineState? _grassOpaqueBackA2CPso;
+    private ID3D12PipelineState? _grassOpaqueDoubleA2CPso;
+
     private bool _disposed;
 
     public ReferencePipelineFactory12(GpuDevice12 gpu, GpuRootSignature12 rootSignature)
@@ -125,16 +136,112 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     /// <summary>True when a per-game grass pair compiled and is available to <c>grassRoute</c> callers.</summary>
     public bool GrassShaderAvailable => _grassRoute.Active;
 
+    /// <summary>
+    ///     Selects the per-game INSTANCED grass pair (the opaque cutout route FO3/FNV grass draws
+    ///     through). Call once per ESM load, before any draw. Compilation is deferred to the first
+    ///     grass draw and is FAIL-SOFT: on failure the shared instanced PSOs are used instead.
+    /// </summary>
+    public void SetInstancedGrassShaderProfile(GameShaderPair profile)
+    {
+        if (profile.Equals(_instancedGrassProfile)) return;
+
+        DisposeInstancedGrassPipelines();
+        _instancedGrassProfile = profile;
+        _instancedGrassCompileAttempted = false;
+    }
+
+    /// <summary>True when the per-game instanced grass pair compiled and its PSOs are live.</summary>
+    public bool InstancedGrassShaderAvailable => EnsureInstancedGrassPipelines();
+
+    /// <summary>
+    ///     The PSO for an alpha-tested grass cutout submesh: the per-game instanced grass pair when
+    ///     one is available, else the shared A2C pipelines this route has always used. Both grass
+    ///     draw sites call this so the batch key (which includes the PSO) stays coherent.
+    /// </summary>
+    public ID3D12PipelineState GetGrassCutoutPso(bool doubleSided)
+    {
+        if (EnsureInstancedGrassPipelines())
+        {
+            return doubleSided ? _grassOpaqueDoubleA2CPso! : _grassOpaqueBackA2CPso!;
+        }
+
+        return doubleSided ? OpaqueDoubleA2CPso : OpaqueBackA2CPso;
+    }
+
+    private bool EnsureInstancedGrassPipelines()
+    {
+        if (_grassOpaqueBackA2CPso is not null) return true;
+        if (_instancedGrassCompileAttempted || !_instancedGrassProfile.Enabled) return false;
+
+        _instancedGrassCompileAttempted = true;
+        var plain = _instancedGrassProfile.TryCompile(
+            nameof(ReferencePipelineFactory12) + " instanced grass route", [], []);
+        if (plain is not ({ } vs, { } ps)) return false;
+
+        _grassOpaqueBackPso = CreatePipelineState(vs, ps, doubleSided: false, blendAttachment: null,
+            depthWriteEnabled: true);
+        _grassOpaqueDoublePso = CreatePipelineState(vs, ps, doubleSided: true, blendAttachment: null,
+            depthWriteEnabled: true);
+
+        if (!AlphaToCoverageAvailable)
+        {
+            // Single-sampled scene: A2C aliases the plain variants exactly as the shared PSOs do,
+            // so grass keeps its per-game shader when MSAA is off instead of silently reverting.
+            _grassOpaqueBackA2CPso = _grassOpaqueBackPso;
+            _grassOpaqueDoubleA2CPso = _grassOpaqueDoublePso;
+            return true;
+        }
+
+        var a2c = _instancedGrassProfile.TryCompile(
+            nameof(ReferencePipelineFactory12) + " instanced grass A2C route",
+            [],
+            [new ShaderMacro("ALPHA_TO_COVERAGE", "1")]);
+        if (a2c is not (_, { } a2cPs))
+        {
+            DisposeInstancedGrassPipelines();
+            return false;
+        }
+
+        _grassOpaqueBackA2CPso = CreatePipelineState(vs, a2cPs, doubleSided: false, blendAttachment: null,
+            depthWriteEnabled: true, alphaToCoverage: true);
+        _grassOpaqueDoubleA2CPso = CreatePipelineState(vs, a2cPs, doubleSided: true, blendAttachment: null,
+            depthWriteEnabled: true, alphaToCoverage: true);
+        return true;
+    }
+
+    private void DisposeInstancedGrassPipelines()
+    {
+        // A2C aliases the plain PSOs when the scene is single-sampled — dispose each object once.
+        if (!ReferenceEquals(_grassOpaqueBackA2CPso, _grassOpaqueBackPso))
+        {
+            _grassOpaqueBackA2CPso?.Dispose();
+        }
+
+        if (!ReferenceEquals(_grassOpaqueDoubleA2CPso, _grassOpaqueDoublePso))
+        {
+            _grassOpaqueDoubleA2CPso?.Dispose();
+        }
+
+        _grassOpaqueBackPso?.Dispose();
+        _grassOpaqueDoublePso?.Dispose();
+        _grassOpaqueBackA2CPso = null;
+        _grassOpaqueDoubleA2CPso = null;
+        _grassOpaqueBackPso = null;
+        _grassOpaqueDoublePso = null;
+    }
+
     public ID3D12PipelineState GetBlendPipeline(
-        byte srcBlendMode, byte dstBlendMode, bool doubleSided, bool decal = false, bool grassRoute = false)
+        byte srcBlendMode, byte dstBlendMode, bool doubleSided, bool decal = false, bool grassRoute = false,
+        bool depthTestOff = false)
     {
         var route = grassRoute && GrassShaderAvailable ? _grassRoute : _sharedRoute;
         return route.GetOrCreate(
-            new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal),
+            new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal, depthTestOff),
             depthWrite: false,
-            (self: this, srcBlendMode, dstBlendMode, doubleSided, decal),
+            (self: this, srcBlendMode, dstBlendMode, doubleSided, decal, depthTestOff),
             static (s, vs, ps) => s.self.CreateBlendPipelineState(
-                vs, ps, s.srcBlendMode, s.dstBlendMode, s.doubleSided, s.decal, depthWriteEnabled: false));
+                vs, ps, s.srcBlendMode, s.dstBlendMode, s.doubleSided, s.decal, depthWriteEnabled: false,
+                depthTestEnabled: !s.depthTestOff));
     }
 
     /// <summary>
@@ -144,15 +251,16 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     ///     above — which a no-depth blend (drawn after water) can't do.
     /// </summary>
     public ID3D12PipelineState GetBlendDepthWritePipeline(byte srcBlendMode, byte dstBlendMode, bool doubleSided,
-        bool decal = false, bool grassRoute = false)
+        bool decal = false, bool grassRoute = false, bool depthTestOff = false)
     {
         var route = grassRoute && GrassShaderAvailable ? _grassRoute : _sharedRoute;
         return route.GetOrCreate(
-            new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal),
+            new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal, depthTestOff),
             depthWrite: true,
-            (self: this, srcBlendMode, dstBlendMode, doubleSided, decal),
+            (self: this, srcBlendMode, dstBlendMode, doubleSided, decal, depthTestOff),
             static (s, vs, ps) => s.self.CreateBlendPipelineState(
-                vs, ps, s.srcBlendMode, s.dstBlendMode, s.doubleSided, s.decal, depthWriteEnabled: true));
+                vs, ps, s.srcBlendMode, s.dstBlendMode, s.doubleSided, s.decal, depthWriteEnabled: true,
+                depthTestEnabled: !s.depthTestOff));
     }
 
     /// <summary>
@@ -162,7 +270,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     /// </summary>
     private ID3D12PipelineState CreateBlendPipelineState(
         byte[] vsBytecode, byte[] psBytecode, byte srcBlendMode, byte dstBlendMode, bool doubleSided,
-        bool decal, bool depthWriteEnabled)
+        bool decal, bool depthWriteEnabled, bool depthTestEnabled = true)
     {
         var rtBlend = new D12.RenderTargetBlendDescription
         {
@@ -176,7 +284,9 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             RenderTargetWriteMask = D12.ColorWriteEnable.All
         };
 
-        return CreatePipelineState(vsBytecode, psBytecode, doubleSided, rtBlend, depthWriteEnabled, decal);
+        return CreatePipelineState(
+            vsBytecode, psBytecode, doubleSided, rtBlend, depthWriteEnabled, decal,
+            depthTestEnabled: depthTestEnabled);
     }
 
     private ID3D12PipelineState CreatePipelineState(
@@ -186,7 +296,8 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         D12.RenderTargetBlendDescription? blendAttachment,
         bool depthWriteEnabled,
         bool decal = false,
-        bool alphaToCoverage = false)
+        bool alphaToCoverage = false,
+        bool depthTestEnabled = true)
     {
         var rasterizer = new D12.RasterizerDescription
         {
@@ -211,7 +322,9 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
 
         var depth = new D12.DepthStencilDescription
         {
-            DepthEnable = true,
+            // NoLighting "zbuffer test" Shader Flags bit 31 CLEAR ⇒ test OFF (engine-honored for
+            // the NoLighting family only; every other route passes the default true).
+            DepthEnable = depthTestEnabled,
             DepthWriteMask = depthWriteEnabled ? D12.DepthWriteMask.All : D12.DepthWriteMask.Zero,
             DepthFunc = ComparisonFunction.GreaterEqual, // reversed-Z (near→1, far→0); depth clear = 0
             StencilEnable = false,
@@ -312,6 +425,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         _disposed = true;
         _sharedRoute.DisposeAll();
         _grassRoute.DisposeAll();
+        DisposeInstancedGrassPipelines();
         ShadowAlphaTestPso.Dispose();
         ShadowOpaquePso.Dispose();
         if (AlphaToCoverageAvailable)
@@ -326,7 +440,8 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         OpaqueBackPso.Dispose();
     }
 
-    private readonly record struct BlendPipelineKey(byte SrcBlendMode, byte DstBlendMode, bool DoubleSided, bool Decal);
+    private readonly record struct BlendPipelineKey(
+        byte SrcBlendMode, byte DstBlendMode, bool DoubleSided, bool Decal, bool DepthTestOff = false);
 
     /// <summary>
     ///     One blend shader route: a vertex+pixel bytecode pair plus its OWN blend and

@@ -84,3 +84,33 @@ void mainNormal(uint3 dispatchId : SV_DispatchThreadID)
     // but preserving the instruction keeps this entry point independently faithful.
     gWaterNoiseOutput[dispatchId.xy] = float4(normal * 0.5 + 0.5, centerGreen);
 }
+
+// Builds one mip level of the finished normal tile. The authored NNAM DDS the retail shader
+// samples ships WITH a mip chain; regenerating only mip 0 every frame and sampling it mipless
+// at the macro tile makes each grazing-view pixel an uncorrelated per-frame draw across many
+// texels — visible as water glint shimmer at a static camera.
+//
+// One dispatch per level: uSourceIndex = a single-mip SRV over the PREVIOUS level, u0 = this
+// level's UAV, uPadding0 = this level's texel dimension. Normals are decoded, 2x2 box-averaged
+// and RE-NORMALIZED — averaging the packed bytes would shorten the vector and read as flattened
+// rather than filtered ripples. z keeps its positive bias, so the average cannot degenerate.
+[numthreads(8, 8, 1)]
+void mainDownsample(uint3 dispatchId : SV_DispatchThreadID)
+{
+    uint destDimension = (uint)uPadding0;
+    if (dispatchId.x >= destDimension || dispatchId.y >= destDimension)
+    {
+        return;
+    }
+
+    uint sourceIndex = NonUniformResourceIndex(uSourceIndex);
+    uint2 src = dispatchId.xy * 2;
+    float4 s00 = gWaterNoiseTextures[sourceIndex][src];
+    float4 s10 = gWaterNoiseTextures[sourceIndex][src + uint2(1, 0)];
+    float4 s01 = gWaterNoiseTextures[sourceIndex][src + uint2(0, 1)];
+    float4 s11 = gWaterNoiseTextures[sourceIndex][src + uint2(1, 1)];
+
+    float3 average = (s00.xyz + s10.xyz + s01.xyz + s11.xyz) * 0.25 * 2.0 - 1.0;
+    float alpha = (s00.w + s10.w + s01.w + s11.w) * 0.25;
+    gWaterNoiseOutput[dispatchId.xy] = float4(normalize(average) * 0.5 + 0.5, alpha);
+}

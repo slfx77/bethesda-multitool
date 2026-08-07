@@ -17,6 +17,21 @@ internal static class FnvActiveAdtBasePolicy
     internal const uint RuntimeActiveAdtFlag = 1u << 10;
     internal const uint RuntimeActiveAdtVertexColorFlag = 1u << 11;
 
+    /// <summary>
+    ///     Runtime-only (FNV branch of ResolveTextureState): suppresses the sun-cascade lookup for
+    ///     TallGrass draws on the SHARED shader path.
+    ///     <para>
+    ///         Retail does shadow grass, but only its SUN term — <c>GRASS2002.pso</c> composes
+    ///         <c>lit = sun * shadowFactor + ambient</c>, leaving ambient unattenuated. The shared
+    ///         reference shader applies its cascade term to the whole shade, which drives shadowed
+    ///         grass toward black; this bit is the blunt stand-in for that path. The per-game
+    ///         instanced grass shader (reference_grass_fnv.frag.hlsl) implements the real law and
+    ///         ignores this bit, so the flag now only matters when that pair is unavailable
+    ///         (FALLOUT_VIEWER_PER_GAME_GRASS_SHADER=0 or a compile failure).
+    ///     </para>
+    /// </summary>
+    internal const uint RuntimeFnvGrassNoSunShadowFlag = 1u << 12;
+
     internal static bool IsEligible(in FnvActiveAdtBaseEligibility eligibility) =>
         eligibility.Game == BethesdaGame.FalloutNewVegas &&
         eligibility.LightingEnabled &&

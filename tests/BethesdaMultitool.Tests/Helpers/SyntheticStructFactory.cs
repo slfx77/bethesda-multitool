@@ -147,6 +147,37 @@ internal static class SyntheticStructFactory
     }
 
     /// <summary>
+    ///     Builds a synthetic BGSAcousticSpace (FormType 0x0E) using explicit offsets, because
+    ///     ASPC's layout differs per captured build by which trailing members exist rather than by
+    ///     a uniform shift — see <c>RuntimeAcousticSpaceLayout</c>. Callers pass the offsets of the
+    ///     era they are exercising so a production layout change forces a test update.
+    /// </summary>
+    /// <param name="soundOffsets">Sound-slot offsets for the era, in Dawn/Noon/Dusk/Night/Walla order.</param>
+    /// <param name="soundVas">Parallel VAs to write; 0 leaves the slot NULL. Shorter arrays leave the rest NULL.</param>
+    public static byte[] BuildAspc(
+        uint formId,
+        IReadOnlyList<int> soundOffsets,
+        IReadOnlyList<uint> soundVas,
+        int regionOffset,
+        uint regionVa,
+        int envTypeOffset,
+        uint envType,
+        int bufferSize = 0x200)
+    {
+        var buf = new byte[bufferSize];
+        WriteFormHeader(buf, 0, 0x0E, formId);
+
+        for (var i = 0; i < soundOffsets.Count && i < soundVas.Count; i++)
+        {
+            WriteUInt32BE(buf, soundOffsets[i], soundVas[i]);
+        }
+
+        WriteUInt32BE(buf, regionOffset, regionVa);
+        WriteUInt32BE(buf, envTypeOffset, envType);
+        return buf;
+    }
+
+    /// <summary>
     ///     Builds a synthetic TESObjectWEAP (FormType 0x28). PDB-aligned
     ///     core region (+16 build shift baked in). Per Phase 1B.11 anchors.
     /// </summary>

@@ -261,7 +261,8 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         Vector3 skyUpper, Vector3 skyLower, Vector3 skyHorizon, Vector3 fallbackHorizon,
         Vector3 cloudTint, float cloudOpacity, Vector3 starTint, float starFade,
         float gameHour, AtmosphereState.ClimateTiming? cloudTiming, BethesdaGame game,
-        float? animationTimeSeconds = null)
+        float? animationTimeSeconds = null,
+        bool advanceCloudScroll = true)
     {
         if (_disposed) return;
 
@@ -274,7 +275,11 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
                               float.IsFinite(captureTime) && captureTime >= 0f;
         var scrollDeltaSeconds = 0f;
         var scrollFrame = 0L;
-        if (!pinnedAnimation)
+        // advanceCloudScroll = false for a SECOND draw of the same frame's sky (the planar water
+        // reflection). The integration below advances once per Render call, so re-running it would
+        // scroll the clouds at 2x; skipping it re-uses this frame's retained offsets, which also
+        // keeps the reflected clouds exactly where the sky's clouds are.
+        if (!pinnedAnimation && advanceCloudScroll)
         {
             var now = Stopwatch.GetTimestamp();
             scrollDeltaSeconds = (float)Stopwatch.GetElapsedTime(_lastScrollTimestamp, now).TotalSeconds;
@@ -308,7 +313,7 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
             }
         }
 
-        cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.BindlessSrvTable, _cbvSrvUavHeap.BindlessHeapStartGpu);
+        GpuRootSignature12.SetGraphicsBindlessTables(cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
 
         // The procedural dome is strictly a missing-asset fallback. An authored Atmosphere.nif owns the
         // background whenever one was decoded, including its non-linear vertex blend bands.

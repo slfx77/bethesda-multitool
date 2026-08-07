@@ -52,7 +52,7 @@ public sealed class WeapEncoder : IRecordEncoder
         // ConditionLevel + EmbeddedConditionValue not in model → zero-fill.
         ["Projectile"] = m => m.ProjectileFormId ?? 0u,
         ["VatToHitChance"] = m => m.VatsToHitChance,
-        ["AttackAnim"] = m => (byte)m.AttackAnim,
+        ["AttackAnim"] = m => NormalizeAttackAnim((byte)m.AttackAnim),
         ["NumProjectiles"] = m => m.NumProjectiles,
         ["MinRange"] = m => m.MinRange,
         ["MaxRange"] = m => m.MaxRange,
@@ -100,6 +100,31 @@ public sealed class WeapEncoder : IRecordEncoder
         ["ModRequired"] = m => m.RequiresMod ? (byte)1 : (byte)0,
         ["Flags"] = m => m.ExtraFlags,
     };
+
+    /// <summary>
+    ///     The engine-valid DNAM Attack Animation bytes, per xEdit <c>wbDefinitionsFNV</c>
+    ///     (sparse enum: 26=AttackLeft … 162=AttackThrow8, 255=DEFAULT). The value is NOT
+    ///     dense — a captured runtime byte outside this set (observed: 0 on the proto-only
+    ///     "Atomic Baby Machinegun" 0x010060F1) makes the engine resolve the attack to the
+    ///     non-attack 'Idle' group: the weapon can never fire and the reload cycle never
+    ///     completes (425 COMBAT log lines per session).
+    /// </summary>
+    private static readonly HashSet<byte> ValidAttackAnimations =
+    [
+        26, 32, 38, 44, 50, 56, 62, 68, 74, 80, 86,
+        102, 108, 114, 120, 126, 132, 138, 144, 150, 156, 162,
+        255
+    ];
+
+    /// <summary>
+    ///     Clamp an out-of-enum attack-animation byte to 255 (DEFAULT — the animation type
+    ///     picks its standard attack group). 0 is uninitialized runtime state, not data;
+    ///     emitting it verbatim ships an unfireable weapon.
+    /// </summary>
+    private static byte NormalizeAttackAnim(byte value)
+    {
+        return ValidAttackAnimations.Contains(value) ? value : (byte)255;
+    }
 
     public string RecordType => "WEAP";
     public Type ModelType => typeof(WeaponRecord);
@@ -169,6 +194,13 @@ public sealed class WeapEncoder : IRecordEncoder
         if (weap.TextureHashData is { Length: > 0 } modt)
         {
             subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("MODT", modt));
+        }
+
+        if (!ValidAttackAnimations.Contains((byte)weap.AttackAnim))
+        {
+            warnings.Add(
+                $"New WEAP 0x{weap.FormId:X8} captured invalid Attack Animation " +
+                $"{(byte)weap.AttackAnim} — normalized to 255 (DEFAULT) so the weapon can fire.");
         }
 
         if (!string.IsNullOrEmpty(weap.InventoryIconPath))

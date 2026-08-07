@@ -86,7 +86,6 @@ public sealed class RecordEncoderRegistry
             new TxstEncoder(),
             new LtexEncoder(),
             new GrasEncoder(),
-            new PwatEncoder(),
             new TreeEncoder(),
             new ImgsEncoder(),
             new ImadEncoder(),
@@ -98,7 +97,6 @@ public sealed class RecordEncoderRegistry
             new CmnyEncoder(),
             new CdckEncoder(),
             new RcctEncoder(),
-            new FlorEncoder(),
             // SCPT MUST be registered before any record type that carries a SCRI subrecord
             // (NPC_, CREA, QUST, ACTI, etc.). EsmAssembler emits GRUPs in registration order,
             // and the FNV engine resolves SCRI inline during load — forward references to a
@@ -166,9 +164,33 @@ public sealed class RecordEncoderRegistry
             new FurnEncoder(),
             new TermEncoder(),
             new WatrEncoder(),
+            // PWAT after WATR: its DNAM names a parent WATR, the same inline-resolution
+            // constraint the SCPT comment above describes. It previously sat in the Misc
+            // block far ahead of WATR, which was harmless only because it never emitted.
+            new PwatEncoder(),
             new WthrEncoder(),
+            // CLMT has a typed model (ClimateRecord) populated by the ESM carve path; it was
+            // parsed on every load and never written. Yielded after WTHR so its WLST weather
+            // references resolve against already-emitted new WTHR FormIDs.
+            new ClmtEncoder(),
             new LgtmEncoder(),
             new IdleEncoder(),
+            // Generic-only types: decoded on every DMP load by RuntimeGenericReader into
+            // RecordCollection.GenericRecords, previously dropped at the writer boundary because
+            // no encoder existed. Each emits from GenericEsmRecord exactly like FLOR.
+            //
+            // Registered LAST of the reference-bearing types because every subrecord they emit
+            // is an inline-resolved forward reference under the same constraint the SCPT comment
+            // above describes: FLOR.SCRI and TACT.SCRI need SCPT, MSTT/TACT/ASPC/ADDN.SNAM need
+            // SOUN, TACT.VNAM needs VTYP, ASPC.RDAT needs REGN, and ANIO.DATA needs IDLE. Their
+            // first home was the Misc block at the top of this list, which put all five of those
+            // edges backwards.
+            new FlorEncoder(),
+            new MsttEncoder(),
+            new AnioEncoder(),
+            new TactEncoder(),
+            new AspcEncoder(),
+            new AddnEncoder(),
             new DebrEncoder(),
             new EczEncoder(),
             new CpthEncoder(),

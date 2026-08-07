@@ -159,6 +159,12 @@ public sealed partial class WorldView3DControl
                 // recovered five-unit minimum bend at zero weather strength; Animations controls rest.
                 _references.SetLeafBillboardBasis(leafRight, leafUp);
                 _references.SetWind(WindDirection, 0f, 0f);
+                // This path renders the legacy split (below-water partition + deferred blends) by
+                // design — ortho exports never stream. The routing flag is per-frame host state on
+                // the SHARED renderer: without this reset, an export after a live FNV water frame
+                // built its batches under a stale-true flag and depth-writing blends drew after
+                // water with no z-write (neither the stream nor the legacy order).
+                _references.SetTransparencyStreamActive(false);
 
                 if (opts.ShowTerrain) _terrain!.Render(viewProj, cylinder);
                 // Defer blended reference submeshes until after water so water never paints over them
@@ -170,10 +176,22 @@ public sealed partial class WorldView3DControl
                         cameraPosition: shadingEye,
                         cameraForward: Vector3.Normalize(Vector3.Cross(leafUp, leafRight)));
                 }
+                var exportWaterPartitioned = false;
                 if (opts.ShowWater && _water is not null)
                 {
                     _water.SetNifWaterPlanes(_references.NifWaterPlanes);
                     _water.SetSceneDepth(NoDepthSrv, _camera.NearPlane, _camera.FarPlane);
+                    // Same below-water split as the live frame: water writes no depth, so submerged
+                    // translucent geometry has to be issued BEFORE the surface or it composites on
+                    // top of it. Exports previously had no split at all, so every underwater decal
+                    // came out sitting on the water.
+                    if (opts.ShowReferences && _water.HasVisibleWaterToPartition(cylinder))
+                    {
+                        _references.SetSceneDepth(NoDepthSrv, _camera.NearPlane, _camera.FarPlane);
+                        _references.RenderBlendedDeferredBelowWater(_water, _camera.Position.Z);
+                        exportWaterPartitioned = true;
+                    }
+
                     _water.Render(viewProj, cylinder);
                 }
                 if (opts.ShowReferences)
@@ -181,7 +199,14 @@ public sealed partial class WorldView3DControl
                     // Orthographic exports have no perspective-compatible scene-depth SRV; clear
                     // any live-frame binding retained on the shared renderer and use its DSV PSO.
                     _references.SetSceneDepth(NoDepthSrv, _camera.NearPlane, _camera.FarPlane);
-                    _references.RenderBlendedDeferred();
+                    if (exportWaterPartitioned && _water is not null)
+                    {
+                        _references.RenderBlendedDeferredAtOrAboveWater(_water, _camera.Position.Z);
+                    }
+                    else
+                    {
+                        _references.RenderBlendedDeferred();
+                    }
                 }
                 if (opts.ShowNavMesh) _navMesh?.Render(viewProj, cylinder);
                 // Analytic line width is in render-target pixels: a supersampled export draws

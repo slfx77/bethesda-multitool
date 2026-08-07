@@ -42,6 +42,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                 RotZ = refr.Position?.RotZ ?? 0,
                 Scale = refr.Scale,
                 Radius = refr.Radius,
+                RadioData = refr.RadioData,
                 OwnerFormId = refr.OwnerFormId,
                 EncounterZoneFormId = refr.EncounterZoneFormId,
                 MaterialSwapFormId = refr.MaterialSwapFormId,

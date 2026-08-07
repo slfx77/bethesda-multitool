@@ -27,6 +27,17 @@ internal sealed class NifWaterGeometry
         BoundsMax = boundsMax;
     }
 
+    /// <summary>
+    ///     WATR FormID this surface renders with — resolved at PLACEMENT time from where the water
+    ///     IS (its own cell's XCWT), never from the camera's cell. 0 = unresolved; the renderer then
+    ///     falls back to the worldspace default (WRLD NAM2).
+    /// </summary>
+    public uint WaterFormId { get; private init; }
+
+    /// <summary>Copy sharing the vertex/index payloads, stamped with the resolved water identity.</summary>
+    public NifWaterGeometry WithWaterFormId(uint waterFormId) =>
+        new(_positions, _indices, BoundsMin, BoundsMax) { WaterFormId = waterFormId };
+
     /// <summary>The authored (or placement-transformed) vertex positions.</summary>
     public ReadOnlyMemory<Vector3> Positions => _positions;
 

@@ -80,7 +80,10 @@ cbuffer InstanceDraw : register(b1)
     float4 uSpecularLodParams;
 };
 
-// Per-instance data is now JUST the world matrix (64 bytes). Everything else is per-batch.
+// Per-instance data is JUST the world matrix (64 bytes). Everything else is per-batch.
+// FO3/FNV grass additionally rides its recovered lighting payload in the matrix's otherwise-unused
+// w-lanes — HLSL world[3] = (min(terrainNormal, 0.94), bakedLight) — read only by
+// reference_grass_fnv.vert.hlsl. This shader ignores it and restores worldPos.w after transforming.
 StructuredBuffer<float4x4> uInstanceWorlds : register(t8);
 
 struct VSInput
@@ -302,6 +305,10 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
         }
 #endif
         worldPos = mul(world, float4(modelCorner, 1.0));
+        // FO3/FNV grass instances carry their lighting payload in the matrix's w-lanes (HLSL
+        // world[3]), so the transform's w must be restored. Every other instance is affine
+        // (w-lanes 0,0,0,1), for which this is already exactly 1.0 — value-identical.
+        worldPos.w = 1.0;
         // STLEAF per-corner normal puff (PC STLEAF000.vso: N = normalize(normalize(cornerDir) ·
         // LeafLighting.y + leafNormal)): each corner's normal leans outward along its card offset,
         // so the card shades like a rounded leaf cluster instead of a flat plate. uCameraRight.w
@@ -331,6 +338,8 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
         // world's translation is CPU-folded to the render origin, so this is already the camera-relative
         // position (absolute when renderOrigin == 0). The prior post-multiply "-= uCameraOrigin" is gone.
         worldPos = mul(world, float4(modelPosition, 1.0));
+        // See the card path above: restore w so a grass payload in world[3] cannot reach clip space.
+        worldPos.w = 1.0;
         o.vWorldNormal = mul((float3x3)world, modelNormal);
     }
 

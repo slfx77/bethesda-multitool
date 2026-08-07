@@ -105,13 +105,22 @@ internal sealed record RendererProfilerOptions
     internal float CaptureDay { get; init; }
 
     /// <summary>
-    ///     Pinned renderer animation clock for an unattended perspective capture. Drives NIF UV
-    ///     controllers/live particles, SpeedTree wind, cloud scrolling, and water animation. Default 0.
+    ///     Pinned renderer animation clock, or NULL (the DEFAULT) to run the live clock. Pinning
+    ///     freezes every time-varying path — water noise scroll, UV animation, wind sway — at one
+    ///     phase, so nothing that animates can be observed. Opt in only when byte-comparable repeat
+    ///     captures are the actual goal.
     /// </summary>
-    internal float CaptureAnimationTimeSeconds { get; init; }
+    internal float? CaptureAnimationTimeSeconds { get; init; }
 
-    /// <summary>Camera pitch in degrees for the capture; positive looks UP (90 ≈ straight up at the sky).</summary>
-    internal float CapturePitchDegrees { get; init; } = 80f;
+    /// <summary>
+    ///     Optional camera pitch in degrees for the capture; positive looks UP (90 ≈ straight up at the sky).
+    ///     Null preserves the selected scene's pitch — the interior framing from <see cref="CaptureInterior" />,
+    ///     or the worldspace bookmark. This used to default to 80° because the capture path began life as a
+    ///     sky/celestial check, but it has since become the general render-verification path: an unqualified
+    ///     capture of water, grass or an interior was silently aimed at the sky (or at an interior's ceiling),
+    ///     which reads as "the scene renders nothing". Sky captures now ask for <c>--capture-pitch 80</c>.
+    /// </summary>
+    internal float? CapturePitchDegrees { get; init; }
 
     /// <summary>
     ///     Optional camera yaw in degrees for the capture. Null preserves the selected scene bookmark's yaw.
@@ -124,6 +133,51 @@ internal sealed record RendererProfilerOptions
     ///     reproduces the on-screen zoom instead of silently reframing at 60°.
     /// </summary>
     internal float? CaptureFovDegrees { get; init; }
+
+    /// <summary>
+    ///     Number of consecutive frames a perspective capture renders, each with the camera advanced
+    ///     by <see cref="CaptureMotionYawStepDegrees" /> / <see cref="CaptureMotionForwardStep" />.
+    ///     Default 1 (a single static frame).
+    ///     <para>
+    ///         A one-shot static frame cannot reproduce anything that depends on FRAME-TO-FRAME
+    ///         renderer state — snapshot prepare/restore pairing, cloud scroll, batch reuse, cascade
+    ///         re-render throttles, or any artefact the user only sees while panning. Those are
+    ///         exactly the reports that arrive with a camera pose attached, so the harness has to be
+    ///         able to move the camera the way the live view does.
+    ///     </para>
+    /// </summary>
+    internal int CaptureMotionFrames { get; init; } = 1;
+
+    /// <summary>Yaw advance in degrees applied between consecutive motion-capture frames.</summary>
+    internal float CaptureMotionYawStepDegrees { get; init; }
+
+    /// <summary>Forward translation in world units applied between consecutive motion-capture frames.</summary>
+    internal float CaptureMotionForwardStep { get; init; }
+
+    /// <summary>
+    ///     Live render-loop frames driven at each new pose BEFORE the offscreen capture of that pose
+    ///     (default 6, i.e. ~100 ms of real motion). Zero reverts to isolated offscreen frames.
+    ///     <para>
+    ///         A capture detaches the render loop and collapses the view, so a motion run built only
+    ///         from captures never exercises the live path with a moving camera — the exact thing a
+    ///         "only happens while I move" report describes. It also made the harness window look
+    ///         frozen while it ran.
+    ///     </para>
+    /// </summary>
+    internal int CaptureMotionLiveFrames { get; init; } = 6;
+
+    /// <summary>Pitch advance in degrees applied between consecutive motion-capture frames.</summary>
+    internal float CaptureMotionPitchStepDegrees { get; init; }
+
+    /// <summary>
+    ///     Angular radius, in degrees, of a CIRCULAR look pattern: yaw and pitch sweep 90° out of
+    ///     phase, one full revolution over <see cref="CaptureMotionFrames" />, starting and ending on
+    ///     the requested pose. This is what a user circling the mouse actually produces, and it is
+    ///     not reachable by stepping yaw alone — a pure pan holds pitch constant, so anything that
+    ///     depends on the pitch axis (view-angle-dependent depth, grazing-angle terms, per-frame
+    ///     re-fit heuristics keyed on the view vector) never varies.
+    /// </summary>
+    internal float CaptureMotionOrbitDegrees { get; init; }
 
     /// <summary>Pixel width of a perspective frame capture. Default 768.</summary>
     internal int CaptureWidth { get; init; } = 768;
@@ -184,10 +238,27 @@ internal sealed record RendererProfilerOptions
           --capture-weather <id>      Select this Weather EditorID for --capture-frame; mismatch fails.
           --capture-hour <n>          Capture time of day from 0 through 24. Default: 12.
           --capture-day <n>           Day of the lunar cycle for the capture (moon phase + orbit). Default: 0.
-          --capture-animation-time <s>
+          --capture-animation-time <s>   (OPT-IN; default is the LIVE clock, same as the on-screen view)
                                       Pin UV/particle/tree/cloud/water animation time. Default: 0 seconds.
-          --capture-pitch <degrees>   Camera pitch; positive looks up. Default: 80.
+          --capture-pitch <degrees>   Camera pitch; positive looks up. Default: preserve the selected
+                                      scene's pitch (interior framing / worldspace bookmark). Sky and
+                                      celestial captures want an explicit --capture-pitch 80.
           --capture-yaw <degrees>     Camera yaw. Default: preserve the selected scene bookmark yaw.
+          --capture-motion-frames <n> Render n consecutive frames, advancing the camera between each, and
+                                      write <out>.NNN.png per frame (default 1 = one static frame). Needed
+                                      for anything that only appears while the camera MOVES.
+          --capture-motion-yaw-step <degrees>
+                                      Yaw advance per motion frame (e.g. 2 = a slow pan).
+          --capture-motion-live-frames <n>
+                                      Live render-loop frames driven at each pose before capturing it
+                                      (default 6). 0 = isolated offscreen frames only.
+          --capture-motion-pitch-step <degrees>
+                                      Pitch advance per motion frame.
+          --capture-motion-orbit-degrees <degrees>
+                                      Circular look: yaw+pitch sweep 90 degrees out of phase, one full
+                                      revolution over --capture-motion-frames (what circling the mouse does).
+          --capture-motion-forward-step <units>
+                                      Forward translation per motion frame.
           --capture-fov <degrees>     Perspective vertical FOV (30-110). Default: 60 (the camera default).
           --capture-settle-timeout-seconds <n>
                                       Fail unless reference streaming quiesces within n seconds. Default: 60.
@@ -238,9 +309,15 @@ internal sealed record RendererProfilerOptions
         string? captureWeatherName = null;
         var captureHour = 12f;
         var captureDay = 0f;
-        var captureAnimationTimeSeconds = 0f;
-        var capturePitchDegrees = 80f;
+        float? captureAnimationTimeSeconds = null;
+        float? capturePitchDegrees = null;
         float? captureYawDegrees = null;
+        var captureMotionFrames = 1;
+        var captureMotionYawStepDegrees = 0f;
+        var captureMotionForwardStep = 0f;
+        var captureMotionPitchStepDegrees = 0f;
+        var captureMotionLiveFrames = 6;
+        var captureMotionOrbitDegrees = 0f;
         float? captureFovDegrees = null;
         var captureWidth = 768;
         var captureHeight = 480;
@@ -501,22 +578,24 @@ internal sealed record RendererProfilerOptions
                     break;
 
                 case "--capture-animation-time":
-                    if (!TryReadNonNegativeFloat(args, ref i, arg, out captureAnimationTimeSeconds, out error))
+                    if (!TryReadNonNegativeFloat(args, ref i, arg, out var pinnedAnimationClock, out error))
                     {
                         return Fail(out options);
                     }
 
+                    captureAnimationTimeSeconds = pinnedAnimationClock;
                     break;
 
                 // Pitch can be negative (look down), so read the value directly rather than via RequireValue.
                 case "--capture-pitch":
                     if (!TryReadFiniteFloat(
                             args, ref i, arg, "a finite number (degrees; positive looks up)",
-                            out capturePitchDegrees, out error))
+                            out var pitchDegrees, out error))
                     {
                         return Fail(out options);
                     }
 
+                    capturePitchDegrees = pitchDegrees;
                     break;
 
                 // Yaw can be negative, so read the value directly rather than via RequireValue.
@@ -528,6 +607,58 @@ internal sealed record RendererProfilerOptions
                     }
 
                     captureYawDegrees = yawDegrees;
+                    break;
+
+                case "--capture-motion-frames":
+                    if (!TryReadPositiveInt(args, ref i, arg, out captureMotionFrames, out error))
+                    {
+                        return Fail(out options);
+                    }
+
+                    break;
+
+                case "--capture-motion-yaw-step":
+                    if (!TryReadFiniteFloat(args, ref i, arg, "a finite number (degrees per frame)",
+                            out captureMotionYawStepDegrees, out error))
+                    {
+                        return Fail(out options);
+                    }
+
+                    break;
+
+                case "--capture-motion-live-frames":
+                    if (!TryReadNonNegativeInt(args, ref i, arg, out captureMotionLiveFrames, out error))
+                    {
+                        return Fail(out options);
+                    }
+
+                    break;
+
+                case "--capture-motion-pitch-step":
+                    if (!TryReadFiniteFloat(args, ref i, arg, "a finite number (degrees per frame)",
+                            out captureMotionPitchStepDegrees, out error))
+                    {
+                        return Fail(out options);
+                    }
+
+                    break;
+
+                case "--capture-motion-orbit-degrees":
+                    if (!TryReadFiniteFloat(args, ref i, arg, "a finite number (degrees)",
+                            out captureMotionOrbitDegrees, out error))
+                    {
+                        return Fail(out options);
+                    }
+
+                    break;
+
+                case "--capture-motion-forward-step":
+                    if (!TryReadFiniteFloat(args, ref i, arg, "a finite number (world units per frame)",
+                            out captureMotionForwardStep, out error))
+                    {
+                        return Fail(out options);
+                    }
+
                     break;
 
                 case "--capture-fov":
@@ -728,6 +859,12 @@ internal sealed record RendererProfilerOptions
             CaptureAnimationTimeSeconds = captureAnimationTimeSeconds,
             CapturePitchDegrees = capturePitchDegrees,
             CaptureYawDegrees = captureYawDegrees,
+            CaptureMotionFrames = captureMotionFrames,
+            CaptureMotionYawStepDegrees = captureMotionYawStepDegrees,
+            CaptureMotionForwardStep = captureMotionForwardStep,
+            CaptureMotionPitchStepDegrees = captureMotionPitchStepDegrees,
+            CaptureMotionLiveFrames = captureMotionLiveFrames,
+            CaptureMotionOrbitDegrees = captureMotionOrbitDegrees,
             CaptureFovDegrees = captureFovDegrees,
             CaptureWidth = captureWidth,
             CaptureHeight = captureHeight,
@@ -806,6 +943,32 @@ internal sealed record RendererProfilerOptions
         if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out value) || value <= 0)
         {
             error = $"{option} requires a positive integer.";
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    /// <summary>As <see cref="TryReadPositiveInt" /> but admits 0, which is a meaningful setting for
+    /// counts that mean "none" (e.g. driving no live frames between motion poses).</summary>
+    private static bool TryReadNonNegativeInt(
+        string[] args,
+        ref int index,
+        string option,
+        out int value,
+        out string? error)
+    {
+        var raw = RequireValue(args, ref index, option, out error);
+        if (error != null)
+        {
+            value = 0;
+            return false;
+        }
+
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out value) || value < 0)
+        {
+            error = $"{option} requires a non-negative integer.";
             return false;
         }
 

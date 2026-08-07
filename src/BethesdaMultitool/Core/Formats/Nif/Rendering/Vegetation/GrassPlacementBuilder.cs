@@ -61,7 +61,15 @@ internal static class GrassPlacementBuilder
         var quadrantLayers = new List<(LandTextureLayer Layer, bool IsAlpha)>(9);
         Span<float> textureWeights = stackalloc float[9];
         Span<float> density = stackalloc float[9];
-        var useFnvPlacementTransform = game == BethesdaGame.FalloutNewVegas;
+        // FO3 and FNV share TallGrassShader.cpp (Platforms\Common) and every shipped GRAS record in
+        // both games authors the same DATA flags (0x06), so both take the engine placement
+        // transform and the recovered lighting bake.
+        var useFnvPlacementTransform =
+            game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3;
+        // Authored LAND inputs for the lighting bake (see FnvGrassLighting). Missing VCLR means the
+        // engine's white default; missing VNML falls back to the sampled heightmap normal.
+        var landVertexColors = cell.LandVisualData?.VertexColors;
+        var landVertexNormals = cell.LandVisualData?.VertexNormals;
 
         for (var quadrant = 0; quadrant < 4; quadrant++)
         {
@@ -159,7 +167,9 @@ internal static class GrassPlacementBuilder
                                 useFnvPlacementTransform,
                                 useFnvPlacementTransform
                                     ? FnvTallGrassWind.SanitizeWaveMultiplier(data.WavePeriod)
-                                    : 0f);
+                                    : 0f,
+                                landVertexColors,
+                                landVertexNormals);
                             grassEntriesRemaining--;
                             grassParameterCount++;
                         }
@@ -192,7 +202,9 @@ internal static class GrassPlacementBuilder
         int centerY,
         uint textureFormId,
         bool useFnvPlacementTransform,
-        float grassWaveMultiplier)
+        float grassWaveMultiplier,
+        byte[]? landVertexColors,
+        byte[]? landVertexNormals)
     {
         var positionRangeCount = data.PositionRange > 0f
             ? (int)(chunkSpan / data.PositionRange)
@@ -274,14 +286,33 @@ internal static class GrassPlacementBuilder
                 Matrix4x4 world;
                 if (useFnvPlacementTransform)
                 {
-                    // FNV's TallGrassShader receives one packed float4 per instance. AddGrass puts
-                    // floor(signedRandom * HeightRange * 100) in W's integer component and every
-                    // GRASS2000-2007 vertex permutation applies 1 + 0.01 * W * ScaleMask. Unlike the
-                    // recovered Skyrim/FO4 CreateGrass paths, no FNV permutation consumes or applies
-                    // a yaw value. The omitted fractional W payload is terrain/color lighting; it is
-                    // deliberately not fabricated as morphology data here.
+                    // FO3/FNV's TallGrassShader receives one packed float4 per instance. AddGrass
+                    // puts floor(signedRandom * HeightRange * 100) in W's integer component and
+                    // every GRASS2000-2007 vertex permutation applies 1 + 0.01 * W * ScaleMask.
+                    // Unlike the recovered Skyrim/FO4 CreateGrass paths, no FO3/FNV permutation
+                    // consumes or applies a yaw value.
                     heightScale = ComputeFnvHeightScale(Random01(ref candidateSeed), data.HeightRange);
-                    world = ComposeFnvWorldMatrix(position, normal, fitToSlope, heightScale, uniformScale);
+
+                    // W's FRACTIONAL component is the baked terrain light the GRASS vertex shaders
+                    // remap to L = 0.25 + 0.75 * frac(W); the packed XYZ fractions carry the terrain
+                    // normal the sun term is lit by. Both ride this instance's world-matrix w-lanes
+                    // (see FnvGrassLighting + reference_grass_fnv.vert.hlsl). This random draw is
+                    // APPENDED after the four existing draws (chance, x jitter, y jitter, height) so
+                    // every previously placed blade keeps its exact position, height and basis.
+                    var bakedLight = FnvGrassLighting.ComputeBakedLight(
+                        Random01(ref candidateSeed),
+                        data.ColorRange,
+                        FnvGrassLighting.SampleLandLuminance(
+                            landVertexColors, x - originX, y - originY, spacing));
+
+                    // The engine lights with the LOADED land normal (authored VNML); the
+                    // heightmap-derived normal remains the placement/slope-gate input so blade
+                    // morphology is untouched.
+                    var lightingNormal = FnvGrassLighting.SampleLandNormal(
+                        landVertexNormals, x - originX, y - originY, spacing) ?? normal;
+
+                    world = ComposeFnvWorldMatrix(
+                        position, normal, fitToSlope, heightScale, uniformScale, lightingNormal, bakedLight);
                 }
                 else
                 {
@@ -472,9 +503,10 @@ internal static class GrassPlacementBuilder
     }
 
     /// <summary>
-    ///     Replays the integer height component packed by FNV's
+    ///     Replays the integer height component packed by FO3/FNV's
     ///     <c>TallGrassShaderProperty::AddGrass</c>. The fractional color/terrain-light component of
-    ///     InstanceData.w is intentionally outside this world-matrix approximation.
+    ///     InstanceData.w is baked separately by <see cref="FnvGrassLighting.ComputeBakedLight" />
+    ///     and rides the world matrix's w-lanes.
     /// </summary>
     internal static float ComputeFnvHeightScale(float random01, float heightRange)
     {
@@ -494,7 +526,9 @@ internal static class GrassPlacementBuilder
         Vector3 terrainNormal,
         bool fitToSlope,
         float heightScale,
-        bool uniformScale)
+        bool uniformScale,
+        Vector3 lightingNormal,
+        float bakedLight)
     {
         var xAxis = Vector3.UnitX;
         var yAxis = Vector3.UnitY;
@@ -523,11 +557,25 @@ internal static class GrassPlacementBuilder
         xAxis *= xyScale;
         yAxis *= xyScale;
         zAxis *= heightScale;
+
+        // The engine's per-instance lighting payload rides the otherwise-unused w-lanes: the
+        // terrain normal clamped exactly as CreateGrass packs it (min(N, 0.94) after the shader's
+        // decode) plus the baked light in [0, 0.99]. reference_grass_fnv.vert.hlsl reads these as
+        // HLSL world[3]; every other consumer only reads the basis and translation, and the shared
+        // vertex shaders force worldPos.w = 1.0 so the transform stays affine.
+        var payload = new Vector3(
+            MathF.Min(lightingNormal.X, FnvPackedNormalComponentMaximum),
+            MathF.Min(lightingNormal.Y, FnvPackedNormalComponentMaximum),
+            MathF.Min(lightingNormal.Z, FnvPackedNormalComponentMaximum));
+        var light = float.IsFinite(bakedLight)
+            ? Math.Clamp(bakedLight, 0f, FnvGrassLighting.BakedLightMaximum)
+            : 0f;
+
         return new Matrix4x4(
-            xAxis.X, xAxis.Y, xAxis.Z, 0f,
-            yAxis.X, yAxis.Y, yAxis.Z, 0f,
-            zAxis.X, zAxis.Y, zAxis.Z, 0f,
-            position.X, position.Y, position.Z, 1f);
+            xAxis.X, xAxis.Y, xAxis.Z, payload.X,
+            yAxis.X, yAxis.Y, yAxis.Z, payload.Y,
+            zAxis.X, zAxis.Y, zAxis.Z, payload.Z,
+            position.X, position.Y, position.Z, light);
     }
 
     private static uint Seed(

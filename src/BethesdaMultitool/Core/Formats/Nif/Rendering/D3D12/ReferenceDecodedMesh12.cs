@@ -135,5 +135,14 @@ internal sealed record DecodedSubmesh12(
     // property-associated light observations; -1 means the source block is unavailable.
     int SourceBlockIndex = -1,
     // Authored NiBillboardNode mode (v64+). RotateAboutUp preserves pre-v64 behavior.
-    NifBillboardMode BillboardMode = NifBillboardMode.RotateAboutUp);
+    NifBillboardMode BillboardMode = NifBillboardMode.RotateAboutUp,
+    // ENGINE z-write rule bit (v68+, decompile-proven — see NifAlphaClassifier): TRUE when the
+    // engine turns z-write OFF for this shape (decal / hair flag / NoLighting flags2-bit0-clear);
+    // FALSE for lit geometry, which KEEPS z-write even when blended. Metadata-less shapes mirror
+    // the legacy DepthWritingBlend. Consumed only by the unified transparency stream's per-draw
+    // PSO choice — every stream-off route keeps reading DepthWritingBlend above.
+    bool EngineZWriteOff = false,
+    // NoLighting Shader Flags bit 31 "zbuffer test": CLEAR ⇒ depth test OFF (v68+). Same
+    // stream-only consumer; the authored default 0x82000000 has the bit SET, so this is rare.
+    bool DepthTestOff = false);
 #endif

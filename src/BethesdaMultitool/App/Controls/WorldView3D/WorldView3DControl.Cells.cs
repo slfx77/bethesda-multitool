@@ -106,7 +106,9 @@ public sealed partial class WorldView3DControl
         var initialWaterSelection = WaterAppearanceSelectionResolver.Resolve(
             cell: null,
             worldspace: activeWorldspace,
-            watersByFormId: _data.WatersByFormId);
+            watersByFormId: _data.WatersByFormId,
+            game: _data.Game,
+            isInterior: false);
         var appearance = WaterAppearance.FromWaterRecord(initialWaterSelection.Water);
         var normalIndices = ResolveWaterNormalIndices(appearance);
         var oblivionDetailIndex = WaterProfile.ForGame(_data.Game).UsesWatrDetailTexture &&
@@ -251,7 +253,9 @@ public sealed partial class WorldView3DControl
         var selection = WaterAppearanceSelectionResolver.Resolve(
             cellContext.Cell,
             worldspace,
-            _data.WatersByFormId);
+            _data.WatersByFormId,
+            _data.Game,
+            isInterior: _selectedInterior is not null);
         _waterAppearanceSelection = selection;
 
         if (!force && _hasBoundWaterAppearance &&
@@ -277,29 +281,42 @@ public sealed partial class WorldView3DControl
     private async void InteriorsButton_Click(object sender, RoutedEventArgs e)
     {
         if (_data is null || _data.InteriorCells.Count == 0) return;
+        CellBrowserHeader.Text = "Interior cells";
         CellBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
         // groupInteriors (Interiors mode) → group by first letter (A..Z), like the 2D viewer.
         await CellList.PopulateAsync(_data.InteriorCells, CellListControl.CellListMode.Interiors, _data);
+    }
+
+    /// <summary>
+    ///     The 3D counterpart of the 2D map's All Cells browser
+    ///     (<see cref="WorldMapControl.AllCellsButton_Click" />). Activation routes through
+    ///     <see cref="NavigateToCell" />, which already handles all three outcomes: interior →
+    ///     single-cell scene, exterior in another worldspace → switch and re-frame, exterior in the
+    ///     current one → just centre the camera.
+    /// </summary>
+    private async void AllCellsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_data is null || _data.AllCells.Count == 0) return;
+        CellBrowserHeader.Text = "All cells";
+        CellBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
+        await CellList.PopulateAsync(_data.AllCells, CellListControl.CellListMode.AllCells, _data);
     }
 
     private void CellBrowserCloseButton_Click(object sender, RoutedEventArgs e) => HideInteriorBrowser();
 
     private void HideInteriorBrowser() => CellBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
 
+    /// <summary>
+    ///     Handles a pick from either browser mode. This deliberately does NOT assume the cell is an
+    ///     interior: it used to set <c>_selectedInterior</c> and clear the worldspace combo
+    ///     unconditionally, which was harmless while only the Interiors list existed but would load an
+    ///     exterior as a synthetic single-cell interior — no terrain neighbours, no worldspace, no sky.
+    ///     <see cref="NavigateToCell" /> dispatches on the cell's own grid coordinates instead.
+    /// </summary>
     private void CellList_CellActivated(object? sender, CellRecord cell)
     {
-        var selectionGeneration = BeginSceneSelection();
-        _selectedInterior = cell;
-        // Drop the combo selection so re-picking the same worldspace later still returns to exterior.
-        _suppressWorldspaceSelectionEvent = true;
-        WorldspaceComboBox.SelectedIndex = -1;
-        _suppressWorldspaceSelectionEvent = false;
-
         HideInteriorBrowser();
-        TryBuildCellGrid();
-        ResetCameraToInteriorBounds(cell);
-        RefreshAtmosphereForCurrentWorldspace();
-        MarkSceneSelectionReady(selectionGeneration);
+        NavigateToCell(cell);
         HideStatus();
     }
 
@@ -328,7 +345,9 @@ public sealed partial class WorldView3DControl
         var waterSelection = WaterAppearanceSelectionResolver.Resolve(
             cell: interior,
             worldspace: null,
-            watersByFormId: _data.WatersByFormId);
+            watersByFormId: _data.WatersByFormId,
+            game: _data.Game,
+            isInterior: true);
         var appearance = WaterAppearance.FromWaterRecord(waterSelection.Water);
         if (_water is not null) _water.DefaultWaterRequiresCellHasWater = false;
         _water?.LoadData(

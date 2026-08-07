@@ -49,6 +49,8 @@ float4 FnvWater003LocalFallback(
     float distXY,
     float column,
     float depthT,
+    float2 corrD,
+    bool hasSceneDepth,
     float3 sunDir,
     float3 sunCol,
     float sunGate)
@@ -56,8 +58,8 @@ float4 FnvWater003LocalFallback(
     // Same manual foreground rejection and shader math as the normal FNV WATER003 route. This
     // function is compiled only into the WATER001 program; the standalone WATER003 bytecode
     // (water_fnv.frag.hlsl) remains its own compile and is not rewritten by this feature.
-    if (!isfinite(column) || !isfinite(depthT) || !all(isfinite(perturbation)) ||
-        !all(isfinite(V)))
+    if (!isfinite(column) || !isfinite(depthT) || !all(isfinite(corrD)) ||
+        !all(isfinite(perturbation)) || !all(isfinite(V)))
     {
         // A nonfinite main-depth sample cannot support either safe foreground rejection or the
         // WATER003 depth fade. Fail closed instead of relying on undefined clip(NaN) behavior.
@@ -74,18 +76,52 @@ float4 FnvWater003LocalFallback(
     float3 N = normalize(n3);
     float ndotv = saturate(dot(N, V));
 
-    float3 body = lerp(uShallow.rgb, uDeep.rgb, depthT);
+    // Body by the vertical fog-lane column, reflection gated by the slant edge lane — the same
+    // WATER003 lanes as the standalone program (see water_fnv.frag.hlsl for the asm citations).
+    float3 body = lerp(uShallow.rgb, uDeep.rgb, corrD.y);
     float3 bodyLightDirection = normalize(float3(sunDir.x, 4.0 * sunDir.y, sunDir.z));
     body *= saturate(dot(N, bodyLightDirection));
     float fresnel = saturate(uSurface0.y) +
         (1.0 - saturate(uSurface0.y)) * pow(1.0 - ndotv, 5.0);
-    float3 color = lerp(body, uReflection.rgb, saturate(fresnel));
-
+    // WATER000 asm 109-111: refl = lerp(ReflectionColor, ReflectionMap_RT, c8.y), where
+    // c8.y = VarAmounts.y = DNAM@20 ReflectivityAmount is a LERP WEIGHT, not a multiplier.
+    // Multiplying by it instead made every ReflectivityAmount = 0 record (NVCleanWaterNoReflect)
+    // reflect pure black. WATER003's unscaled ReflectionColor otherwise (night/sky-off preserved).
     float3 reflectedView = reflect(-V, N);
+    float3 refl = uSkyTopSkyEnabled.w > 0.5
+        ? lerp(uReflection.rgb,
+               SampleSkyReflection(input.Position.xy, N, reflectedView),
+               saturate(uSurface0.z))
+        : uReflection.rgb;
+    float fresneled = saturate(fresnel * corrD.x);
+
     float sunSpec = pow(saturate(dot(reflectedView, sunDir)), max(uSurface0.w, 1.0));
     float skyGlint = pow(saturate(dot(float2(N.x, N.z), float2(-0.57, 0.82))), 100.0);
-    color += (sunSpec + skyGlint) * sunCol * sunGate;
-    return float4(ApplyFog(color, input.vWorldPos), 1.0);
+    float3 spec = (sunSpec + skyGlint) * sunCol * sunGate;
+
+    // Same WATER000-solved-for-destination-blend composite as the standalone program (see
+    // water_fnv.frag.hlsl for the full derivation): the fog weight W and the Fresnel reflection
+    // BOTH become coverage, because our destination holds the scene retail would have sampled
+    // from its RefractionMap. WATER003's alpha (W alone) was the too-transparent bug.
+    float fogNear = uLegacySurface1.x;
+    float fogFar = max(uLegacySurface1.y, fogNear + 1.0);
+    float aboveFog = 1.0 - saturate(fogFar * (1.0 - corrD.x) / max(fogFar - fogNear, 1e-3));
+    float W = saturate(depthT * aboveFog * saturate(uFnvWater001Surface.z));
+    if (fogFar - fogNear <= 1.0)
+    {
+        // Degenerate authored fog range (interior WATRs author FogNear == FogFar) — fall back to
+        // the WATR ANAM opacity so the water does not vanish. See water_fnv.frag.hlsl.
+        W = saturate(depthT * saturate(asfloat(uNoiseParams.w)));
+    }
+    float specCoverage = saturate(max(spec.r, max(spec.g, spec.b)));
+    float alpha = saturate(1.0 - (1.0 - fresneled) * (1.0 - W) * (1.0 - specCoverage));
+    if (!hasSceneDepth)
+    {
+        // No column information (ortho/export paths): keep the opaque output.
+        return float4(ApplyFog(lerp(body, refl, fresneled) + spec, input.vWorldPos), 1.0);
+    }
+    float3 premultiplied = (1.0 - fresneled) * W * body + fresneled * refl + spec;
+    return float4(ApplyFog(premultiplied / max(alpha, 1e-4), input.vWorldPos), alpha);
 }
 
 float FnvWater001SceneFogAmount(float distanceToEye)
@@ -145,40 +181,58 @@ float4 main(PSInput input) : SV_Target
     float sceneDistance = LinearizeDepth(sceneNdc, near, far);
     float waterDistance = LinearizeDepth(input.Position.z, near, far);
     float column = sceneDistance - waterDistance;
-    float fallbackDepthT = saturate((column - uSurface1.y) / max(uSurface1.z - uSurface1.y, 1e-3));
+    // Same engine depth-writer lanes as the standalone WATER003 program (see water_fnv.frag.hlsl):
+    // slant + vertical water columns normalized by the ACTIVE (above-water) FogFar — the engine
+    // only switches to the UnderWater fog trio when the camera itself is submerged, which this
+    // route never renders. Normalizing by UnderwaterFogFar (5500) was the "still can't see
+    // through the water" bug: it drove body/alpha from the wrong constants entirely.
+    bool hasSceneDepth = depthIndex != 0xFFFFFFFFu;
+    float aboveFogNear = uLegacySurface1.x;                         // DNAM@32 above-water FogNear
+    float aboveFogFar = max(uLegacySurface1.y, aboveFogNear + 1.0); // DNAM@36 above-water FogFar
+    float noiseFade = saturate((8192.0 - distXY) / 4096.0);
+    float fallbackRayScale = sceneDistance / max(waterDistance, 1e-4);
+    float3 fallbackScenePoint = uCamPosTime.xyz +
+        (input.vWorldPos - uCamPosTime.xyz) * fallbackRayScale;
+    float2 fallbackD = float2(
+        max(length(fallbackScenePoint - input.vWorldPos), 0.0),
+        max(input.vWorldPos.z - fallbackScenePoint.z, 0.0)) / aboveFogFar;
+    float2 fallbackCorrD = hasSceneDepth
+        ? saturate(lerp(float2(1.0, 1.0), fallbackD, noiseFade))
+        : float2(1.0, 1.0);
+    float fallbackDepthT = hasSceneDepth
+        ? saturate((fallbackD.y - uSurface1.y) / max(uSurface1.z - uSurface1.y, 1e-6))
+        : saturate(dot(float3(0.0, 0.0, 1.0), V));
     float3 perturbation = FnvWater001Perturbation(noiseIndex, input.vWorldPos.xy, t);
 
     uint snapshotIndex = uFnvWater001Snapshot.x;
     float planeHeight = asfloat(uFnvWater001Snapshot.w);
-    float underwaterFogNear = uFnvWater001Surface.x;
-    float underwaterFogFar = uFnvWater001Surface.y;
     float aboveWaterFogAmount = uFnvWater001Surface.z;
     float distortionAmount = uFnvWater001Surface.w;
 
-    // Reconstruct the exact WATERDEPTH writer lanes from the main perspective depth ray:
+    // Reconstruct the exact depth-writer lanes from the main perspective depth ray:
     //   P = E + (W-E)*(sceneDist/waterDist)
-    //   D.x = |P-W|/UnderwaterFogFar, D.y = dot(W-P,+Z)/UnderwaterFogFar.
+    //   D.x = |P-W|/FogFar, D.y = dot(W-P,+Z)/FogFar   (FogFar = the active above-water DNAM@36)
     // No saturation occurs here; WATER001 applies its recovered distance correction below.
-    bool validDepth = depthIndex != 0xFFFFFFFFu && snapshotIndex != 0xFFFFFFFFu &&
+    bool validDepth = hasSceneDepth && snapshotIndex != 0xFFFFFFFFu &&
         sceneNdc > 0.0 && sceneNdc <= 1.0 &&
         isfinite(sceneDistance) && isfinite(waterDistance) && waterDistance > 0.0 &&
-        sceneDistance > waterDistance && isfinite(underwaterFogFar) && underwaterFogFar > 0.0;
+        sceneDistance > waterDistance && isfinite(aboveFogFar) && aboveFogFar > 0.0;
     float rayScale = sceneDistance / waterDistance;
     float3 scenePoint = uCamPosTime.xyz + (input.vWorldPos - uCamPosTime.xyz) * rayScale;
     float2 rawDepth = float2(
-        length(scenePoint - input.vWorldPos) / underwaterFogFar,
-        dot(input.vWorldPos - scenePoint, float3(0.0, 0.0, 1.0)) / underwaterFogFar);
+        length(scenePoint - input.vWorldPos) / aboveFogFar,
+        dot(input.vWorldPos - scenePoint, float3(0.0, 0.0, 1.0)) / aboveFogFar);
     validDepth = validDepth && all(isfinite(scenePoint)) && all(isfinite(rawDepth)) &&
         abs(input.vWorldPos.z - planeHeight) <= 1e-3 && scenePoint.z < planeHeight &&
         rawDepth.x >= 0.0 && rawDepth.y > 0.0;
     if (!validDepth)
     {
         return FnvWater003LocalFallback(
-            input, perturbation, V, distXY, column, fallbackDepthT, sunDir, sunCol, sunGate);
+            input, perturbation, V, distXY, column, fallbackDepthT, fallbackCorrD,
+            hasSceneDepth, sunDir, sunCol, sunGate);
     }
 
-    float depthT = saturate((rawDepth.y - uSurface1.y) / (uSurface1.z - uSurface1.y));
-    float noiseFade = saturate((8192.0 - distXY) / 4096.0);
+    float depthT = saturate((rawDepth.y - uSurface1.y) / max(uSurface1.z - uSurface1.y, 1e-6));
     float distFade = saturate(distXY / 5000.0);
     float distortionScale = lerp(4.0, distortionAmount, distFade);
     float3 normalSource = perturbation * depthT + float3(0.0, 0.0, 1.0);
@@ -205,7 +259,8 @@ float4 main(PSInput input) : SV_Target
     if (!validProjection)
     {
         return FnvWater003LocalFallback(
-            input, perturbation, V, distXY, column, fallbackDepthT, sunDir, sunCol, sunGate);
+            input, perturbation, V, distXY, column, fallbackDepthT, fallbackCorrD,
+            hasSceneDepth, sunDir, sunCol, sunGate);
     }
 
     // The approximation snapshot contains the whole opaque scene, unlike retail's selectively
@@ -247,7 +302,8 @@ float4 main(PSInput input) : SV_Target
     if (!all(isfinite(refractionSample)))
     {
         return FnvWater003LocalFallback(
-            input, perturbation, V, distXY, column, fallbackDepthT, sunDir, sunCol, sunGate);
+            input, perturbation, V, distXY, column, fallbackDepthT, fallbackCorrD,
+            hasSceneDepth, sunDir, sunCol, sunGate);
     }
 
     // The opaque snapshot already contains scene distance fog. WATER001 first removes that fog at
@@ -262,17 +318,18 @@ float4 main(PSInput input) : SV_Target
     float bodyLight = saturate(dot(N, bodyLightDirection));
     float3 litBody = body * bodyLight;
 
-    float underwaterFogRange = underwaterFogFar - underwaterFogNear;
-    bool validWaterFog = isfinite(underwaterFogNear) && isfinite(underwaterFogRange) &&
-        underwaterFogRange > 0.0 && isfinite(aboveWaterFogAmount) &&
+    float aboveFogRange = aboveFogFar - aboveFogNear;
+    bool validWaterFog = isfinite(aboveFogNear) && isfinite(aboveFogRange) &&
+        aboveFogRange > 0.0 && isfinite(aboveWaterFogAmount) &&
         aboveWaterFogAmount >= 0.0 && aboveWaterFogAmount <= 1.0;
     if (!validWaterFog)
     {
         return FnvWater003LocalFallback(
-            input, perturbation, V, distXY, column, fallbackDepthT, sunDir, sunCol, sunGate);
+            input, perturbation, V, distXY, column, fallbackDepthT, fallbackCorrD,
+            hasSceneDepth, sunDir, sunCol, sunGate);
     }
     float aboveWaterFog = (1.0 - saturate(
-        underwaterFogFar * (1.0 - correctedDepth.x) / underwaterFogRange)) *
+        aboveFogFar * (1.0 - correctedDepth.x) / aboveFogRange)) *
         aboveWaterFogAmount;
     float3 transmitted = lerp(refracted, litBody, depthT * aboveWaterFog);
 
@@ -283,10 +340,22 @@ float4 main(PSInput input) : SV_Target
     fresnel5 *= oneMinusNdotV;
     float fresnel = saturate(uSurface0.y) +
         (1.0 - saturate(uSurface0.y)) * fresnel5;
-    float3 bodyReflection = lerp(litBody, uReflection.rgb, correctedDepth.x * fresnel);
-    float3 color = lerp(transmitted, bodyReflection, correctedDepth.y);
-
+    // WATER000 asm 109-111 `mad_pp r0.xyw, c8.y, r0, r6.xyzz`:
+    //   refl = lerp(ReflectionColor, ReflectionMap_RT, VarAmounts.y)
+    // with VarAmounts.y = DNAM@20 ReflectivityAmount as a BLEND WEIGHT toward the mirror. Retail at
+    // default settings samples the planar ReflectionMap here — the sole source of retail water's
+    // blue, since every NVCleanWater DNAM colour is green — so the sky gradient stands in for the
+    // RT. A record authoring ReflectivityAmount = 0 therefore keeps its authored ReflectionColor
+    // rather than reflecting black. Deliberate upgrade beyond the retail WATER001 program, which
+    // stays on the constant (see the water_fnv.frag.hlsl header for the asm evidence).
     float3 reflectedView = reflect(-V, N);
+    float3 reflTerm = uSkyTopSkyEnabled.w > 0.5
+        ? lerp(uReflection.rgb,
+               SampleSkyReflection(input.Position.xy, N, reflectedView),
+               saturate(uSurface0.z))
+        : uReflection.rgb;
+    float3 bodyReflection = lerp(litBody, reflTerm, correctedDepth.x * fresnel);
+    float3 color = lerp(transmitted, bodyReflection, correctedDepth.y);
     float sunSpec = pow(saturate(dot(reflectedView, sunDir)), max(uSurface0.w, 1.0));
     float skyGlint = pow(saturate(dot(float2(N.x, N.z), float2(-0.57, 0.82))), 100.0);
     color = saturate(color + (sunSpec + skyGlint) * sunCol * sunGate);

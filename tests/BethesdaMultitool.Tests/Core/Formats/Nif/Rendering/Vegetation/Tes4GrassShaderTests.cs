@@ -34,9 +34,10 @@ public sealed class Tes4GrassShaderTests
     // fallback that must keep working, not a theoretical case.
     [InlineData(BethesdaGame.Unknown)]
     [InlineData(BethesdaGame.Morrowind)]
+    // FO3/FNV have a recovered pair, but on the INSTANCED axis (GrassShaderProfile.InstancedForGame
+    // — see FnvGrassShaderTests): their grass draws through the opaque cutout route, so the blended
+    // per-draw route this method covers still falls back for them.
     [InlineData(BethesdaGame.Fallout3)]
-    // FNV deliberately stays on the shared shaders: its grass rides the recovered GRASS2000
-    // TallGrass wind route, and nothing has shown it needs a separate pair.
     [InlineData(BethesdaGame.FalloutNewVegas)]
     [InlineData(BethesdaGame.Skyrim)]
     [InlineData(BethesdaGame.Fallout4)]
@@ -122,9 +123,11 @@ public sealed class Tes4GrassShaderTests
         // Oblivion grass authors 0x12ED (blend AND test) and BuildAlphaState keeps the test live for
         // a depth-writing blend, so grass reaches BOTH lists. Routing only one would light half the
         // carpet with the shared shader — the same both-sites lesson the A2C work already learned.
+        // Three sites since the unified transparency stream: the legacy hoisted depth-writing loop,
+        // and BOTH arms of the stream's per-draw PSO choice inside DrawBlended.
         Assert.Contains("_pipelines.GetBlendPipeline(", compact, StringComparison.Ordinal);
         Assert.Contains("_pipelines.GetBlendDepthWritePipeline(", compact, StringComparison.Ordinal);
-        Assert.Equal(2, SourceContract.CountOccurrences(compact, "grassRoute:draw.IsGrass"));
+        Assert.Equal(3, SourceContract.CountOccurrences(compact, "grassRoute:draw.IsGrass"));
     }
 
     [Fact]

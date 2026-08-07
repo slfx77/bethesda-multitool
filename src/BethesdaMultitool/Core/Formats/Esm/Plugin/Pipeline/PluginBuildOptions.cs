@@ -89,6 +89,16 @@ public sealed record PluginBuildOptions
     public bool RecoverLeveledSpawnActors { get; init; } = true;
 
     /// <summary>
+    ///     Place refs stranded in <c>[Unresolved …]</c> buckets (parent CELL never captured) by
+    ///     their own coordinates: exact-grid match against a uniquely-identifying captured cell,
+    ///     else unique containment inside exactly one worldspace's captured grid bounds. Inferred
+    ///     placements are provenance-marked (<c>AssignmentSource = "WorldspaceBoundsInference"</c>).
+    ///     ON by default (USER RULING 2026-08-05, xex21 Utl* block — 463 captured placements were
+    ///     silently unrepresented); <c>--no-cell-inference</c> opts out.
+    /// </summary>
+    public bool InferUnresolvedCellPlacements { get; init; } = true;
+
+    /// <summary>
     ///     Diagnostic: suppress NAVM record emission inside cell bundles while keeping the
     ///     TES4 ESM flag and everything else unchanged (unlike turning off
     ///     <see cref="EmitMasterCellNavmAugmentation" />, which also clears the flag). Used

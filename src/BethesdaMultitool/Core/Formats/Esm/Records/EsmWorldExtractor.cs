@@ -20,6 +20,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.Records;
 /// </summary>
 internal static class EsmWorldExtractor
 {
+    /// <summary>RADIO_RANGE_COUNT from the engine's RADIO_RANGE_TYPE enum — first invalid value.</summary>
+    private const uint RadioRangeTypeCount = 5;
+
     private static readonly HashSet<string> StructuralReferenceSubrecords = new(StringComparer.Ordinal)
     {
         "XOCP",
@@ -94,6 +97,7 @@ internal static class EsmWorldExtractor
         PositionSubrecord? position = null;
         var scale = 1.0f;
         float? radius = null;
+        RadioData? radioData = null;
         short? count = null;
         uint? ownerFormId = null;
         uint? encounterZoneFormId = null;
@@ -157,6 +161,36 @@ internal static class EsmWorldExtractor
                     if (float.IsFinite(parsedRadius))
                     {
                         radius = parsedRadius;
+                    }
+
+                    break;
+                }
+
+                // XRDO — radio broadcast config: Range, Type, StaticPercentage, PositionRef.
+                // Parsed into the model rather than passed through structurally so the ESM and DMP
+                // paths converge on one representation and the FormID at +12 gets remapped.
+                case "XRDO" when sub.DataLength >= 16:
+                {
+                    var rangeType = header.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[4..])
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
+                    var range = header.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData)
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData);
+                    var staticPct = header.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData[8..])
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
+
+                    if (rangeType < RadioRangeTypeCount && float.IsFinite(range) && float.IsFinite(staticPct))
+                    {
+                        radioData = new RadioData
+                        {
+                            Radius = range,
+                            RangeType = rangeType,
+                            StaticPercentage = staticPct,
+                            PositionRefFormId = SubrecordSchemaReader.ReadNameFormId(
+                                subData[12..], header.IsBigEndian)
+                        };
                     }
 
                     break;
@@ -289,6 +323,7 @@ internal static class EsmWorldExtractor
             Position = position,
             Scale = scale,
             Radius = radius,
+            RadioData = radioData,
             Count = count,
             OwnerFormId = ownerFormId,
             EncounterZoneFormId = encounterZoneFormId,

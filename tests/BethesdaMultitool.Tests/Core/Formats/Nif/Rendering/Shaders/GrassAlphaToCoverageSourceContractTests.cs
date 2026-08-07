@@ -43,12 +43,23 @@ public sealed class GrassAlphaToCoverageSourceContractTests
 
         // Main pass gate (decals keep their depth-bias PSO) + shadow-only caster resolve mirror —
         // both must reroute so the shared grass submesh lands in ONE batch (PSO is in the key).
+        // Both sites now go through the factory seam, which returns the per-game instanced grass
+        // PSOs when the loaded game has a recovered pair and the shared A2C pipelines otherwise;
+        // the A2C-vs-plain aliasing moved inside it (see GetGrassCutoutPso).
         Assert.Contains("if(r.IsGrass&&sub.AlphaTest&&!sub.IsDecal)", compact, StringComparison.Ordinal);
         Assert.Equal(
             2,
             SourceContract.CountOccurrences(
                 compact,
-                "pso=sub.DoubleSided?_pipelines.OpaqueDoubleA2CPso:_pipelines.OpaqueBackA2CPso;"));
+                "pso=_pipelines.GetGrassCutoutPso(sub.DoubleSided);"));
+
+        var factory = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "ReferencePipelineFactory12.cs");
+        Assert.Contains(
+            "return doubleSided ? OpaqueDoubleA2CPso : OpaqueBackA2CPso;",
+            factory,
+            StringComparison.Ordinal);
     }
 
     [Fact]

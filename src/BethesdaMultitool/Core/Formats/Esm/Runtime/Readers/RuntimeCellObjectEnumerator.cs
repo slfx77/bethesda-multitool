@@ -272,7 +272,11 @@ internal sealed class RuntimeCellObjectEnumerator
                 case ExtraCellAcousticSpaceCode:
                 {
                     var acousticVa = BinaryUtils.ReadUInt32BE(nodeBuffer, CellExtraPayloadOffset);
-                    acousticSpaceFormId ??= _context.FollowPointerVaToFormId(acousticVa);
+                    // 0x0E (ASPC), matching the type constraint its three sibling cases already
+                    // apply. Without it any TESForm a stale extra-data pointer happens to land on
+                    // became the cell's XCAS, which the engine then reports as an acoustic space
+                    // it cannot find.
+                    acousticSpaceFormId ??= _context.FollowPointerVaToFormId(acousticVa, 0x0E);
                     break;
                 }
                 case ExtraCellImageSpaceCode:

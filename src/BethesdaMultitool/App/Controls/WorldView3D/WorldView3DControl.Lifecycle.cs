@@ -189,6 +189,13 @@ public sealed partial class WorldView3DControl
         }
 
         _depthSrv ??= _cbvSrvUavHeap12.AllocatePersistent();
+        // Reserve the CAPTURE depth slot alongside the live one, at surface-init time, from the
+        // early bump region — NOT lazily at first capture from the streaming-churned free-list.
+        // Empirically (RTX 4080, water MSAA scene-depth reads), descriptor rewrites into
+        // early-allocated low slots are reliably visible to subsequent capture submissions, while
+        // rewrites into late/recycled slots intermittently read the slot's stale prior content on
+        // the GPU — the live-window-sized depth "rectangle" / opaque-water capture corruption.
+        _captureDepthSrv ??= _cbvSrvUavHeap12.AllocatePersistent();
         var srvDesc = new Vortice.Direct3D12.ShaderResourceViewDescription
         {
             Format = Vortice.DXGI.Format.R32_Float,
@@ -269,6 +276,168 @@ public sealed partial class WorldView3DControl
         }
     }
 
+    /// <summary>
+    ///     Allocates once and rewrites the R32_FLOAT Texture2D SRV over the surface's 1-sample
+    ///     post-opaque depth snapshot (the unified transparency stream's depth source). Same
+    ///     allocate-once / rewrite-on-identity-change contract as
+    ///     <see cref="TryEnsureWaterOpaqueSnapshotSrv" />.
+    /// </summary>
+    private bool TryEnsureOpaqueDepthSnapshotSrv()
+    {
+        if (_gpu12 is null || _cbvSrvUavHeap12 is null || _surface12 is null ||
+            _surface12.OpaqueDepthSnapshotResource is not { } snapshot)
+        {
+            return false;
+        }
+
+        if (_opaqueDepthSnapshotSrv is not null &&
+            ReferenceEquals(_opaqueDepthSnapshotSrvResource, snapshot))
+        {
+            return true;
+        }
+
+        var allocatedDescriptorThisAttempt = false;
+        try
+        {
+            if (_opaqueDepthSnapshotSrv is null)
+            {
+                _opaqueDepthSnapshotSrv = _cbvSrvUavHeap12.AllocatePersistent();
+                allocatedDescriptorThisAttempt = true;
+            }
+
+            var srvDesc = new Vortice.Direct3D12.ShaderResourceViewDescription
+            {
+                Format = Vortice.DXGI.Format.R32_Float,
+                ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
+                Shader4ComponentMapping = Vortice.Direct3D12.ShaderComponentMapping.Default,
+                Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView
+                {
+                    MipLevels = 1,
+                    MostDetailedMip = 0,
+                },
+            };
+            _gpu12.Device.CreateShaderResourceView(snapshot, srvDesc, _opaqueDepthSnapshotSrv.Value.Cpu);
+            _opaqueDepthSnapshotSrvResource = snapshot;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (allocatedDescriptorThisAttempt && _opaqueDepthSnapshotSrv is { } allocation)
+            {
+                // No command list has observed this slot yet, so immediate reuse is safe.
+                _cbvSrvUavHeap12.FreePersistent(allocation.BindlessIndex);
+                _opaqueDepthSnapshotSrv = null;
+            }
+
+            _opaqueDepthSnapshotSrvResource = null;
+            _surface12.ReleaseOpaqueDepthSnapshotResource();
+            Log.Warn("WorldView3DControl: opaque depth snapshot SRV creation failed; " +
+                     "the transparency stream keeps the read-only-DSV depth path: {0}", ex.Message);
+            return false;
+        }
+    }
+
+    /// <summary>
+    ///     Ensures the planar sky-reflection target exists at the scene's ASPECT and that one
+    ///     persistent bindless SRV points at its resolved single-sample colour. Same allocate-once /
+    ///     rewrite-on-identity-change contract as <see cref="TryEnsureWaterOpaqueSnapshotSrv" />.
+    ///     <para>
+    ///         Only the aspect must track the viewport: the water samples this by normalized screen
+    ///         UV, so the target is deliberately kept small.
+    ///     </para>
+    /// </summary>
+    private bool TryEnsureWaterReflectionTarget(int sceneWidth, int sceneHeight)
+    {
+        if (_gpu12 is null || _cbvSrvUavHeap12 is null || sceneWidth <= 0 || sceneHeight <= 0)
+        {
+            return false;
+        }
+
+        const int reflectionWidth = 512;
+        var reflectionHeight = Math.Clamp(
+            (int)MathF.Round(reflectionWidth * (float)sceneHeight / sceneWidth), 64, 512);
+
+        if (_waterReflectionTarget is null ||
+            _waterReflectionTargetW != reflectionWidth ||
+            _waterReflectionTargetH != reflectionHeight)
+        {
+            // A resize means new resources; the old ones may still be referenced by in-flight
+            // frames, so route them through the deletion queue rather than disposing inline.
+            if (_waterReflectionTarget is { } previous)
+            {
+                _deletionQueue12?.EnqueueDispose(previous);
+                _waterReflectionTarget = null;
+                _waterReflectionSrvResource = null;
+            }
+
+            try
+            {
+                _waterReflectionTarget =
+                    new Core.Formats.Nif.Rendering.Gpu.D3D12.GpuOffscreenSceneTarget12(
+                        _gpu12, reflectionWidth, reflectionHeight);
+                _waterReflectionTargetW = reflectionWidth;
+                _waterReflectionTargetH = reflectionHeight;
+            }
+            catch (Exception ex)
+            {
+                _waterReflectionTarget = null;
+                Log.Warn("WorldView3DControl: water reflection target creation failed; " +
+                         "using the sky-gradient stand-in: {0}", ex.Message);
+                return false;
+            }
+        }
+
+        if (!_waterReflectionTarget.TryEnsureWaterOpaqueSnapshotResource() ||
+            _waterReflectionTarget.WaterOpaqueSnapshotResource is not { } resolved)
+        {
+            return false;
+        }
+
+        if (_waterReflectionSrv is not null && ReferenceEquals(_waterReflectionSrvResource, resolved))
+        {
+            return true;
+        }
+
+        var allocatedDescriptorThisAttempt = false;
+        try
+        {
+            if (_waterReflectionSrv is null)
+            {
+                _waterReflectionSrv = _cbvSrvUavHeap12.AllocatePersistent();
+                allocatedDescriptorThisAttempt = true;
+            }
+
+            var srvDesc = new Vortice.Direct3D12.ShaderResourceViewDescription
+            {
+                Format = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuSceneFormats.SceneColor,
+                ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
+                Shader4ComponentMapping = Vortice.Direct3D12.ShaderComponentMapping.Default,
+                Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView
+                {
+                    MipLevels = 1,
+                    MostDetailedMip = 0,
+                },
+            };
+            _gpu12.Device.CreateShaderResourceView(resolved, srvDesc, _waterReflectionSrv.Value.Cpu);
+            _waterReflectionSrvResource = resolved;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (allocatedDescriptorThisAttempt && _waterReflectionSrv is { } allocation)
+            {
+                // No command list has observed this slot yet, so immediate reuse is safe.
+                _cbvSrvUavHeap12.FreePersistent(allocation.BindlessIndex);
+                _waterReflectionSrv = null;
+            }
+
+            _waterReflectionSrvResource = null;
+            Log.Warn("WorldView3DControl: water reflection SRV creation failed; " +
+                     "using the sky-gradient stand-in: {0}", ex.Message);
+            return false;
+        }
+    }
+
     private void DisposeRenderResources()
     {
         // Drain any in-flight top-down readback first — its Task.Run body waits on the frame
@@ -291,6 +460,19 @@ public sealed partial class WorldView3DControl
         _topDownTarget?.Dispose();
         _topDownTarget = null;
         _topDownTargetW = _topDownTargetH = 0;
+
+        // Planar sky-reflection target + its persistent bindless slot. Without this a device
+        // reload leaked the 512-wide colour/depth/resolve set AND one persistent descriptor
+        // every time (the persistent region never shrinks, so the leak is permanent).
+        _waterReflectionTarget?.Dispose();
+        _waterReflectionTarget = null;
+        _waterReflectionTargetW = _waterReflectionTargetH = 0;
+        if (_waterReflectionSrv is { } reflectionSrv)
+        {
+            _cbvSrvUavHeap12?.FreePersistent(reflectionSrv.BindlessIndex);
+            _waterReflectionSrv = null;
+        }
+        _waterReflectionSrvResource = null;
 
         // Reused 3D-export offscreen target (synchronous per tile, never in flight at teardown).
         DisposeExport3DTarget();

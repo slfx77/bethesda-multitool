@@ -71,6 +71,8 @@ public sealed record WaterSurfaceParams(
     float DepthAmount = 0f,
     // ---- Oblivion WATR DATA fields. These are preserved separately from the FO3/FNV noise-layer
     // contract because TES4's WATER000 takes a direct XY Scroll constant and WATR fog distances.
+    // FogNear/FogFar double as FO3/FNV DNAM@32/@36 "Above Water" fog planes — the constants the
+    // engine feeds WATER003's alpha law whenever the camera is above the surface.
     float WaveAmplitude = 0f,
     float WaveFrequency = 1f,
     float ScrollXSpeed = 0f,
@@ -136,6 +138,8 @@ public sealed record WaterSurfaceParams(
         SunPower: 826f,          // DNAM fSunPower @16
         DepthFalloffStart: 0f,
         DepthFalloffEnd: 0.01f,  // DNAM DepthFalloffEnd @128 (NVCleanWater)
+        FogNear: -80f,           // DNAM Above Water FogNear @32 — the WATER003 alpha fog ramp
+        FogFar: 850f,            // DNAM Above Water FogFar @36 (ramp completes ~12 m down)
         // WaterNoiseLayer = (fHeightUVScale -> prepass fTexScale=max(1,ceil(x*.01)),
         // WindDirDeg, WindSpeed, AmpScale=fAmplitude).
         Layer1: new WaterNoiseLayer(0f, 180f, 0.065f, 0.300f),

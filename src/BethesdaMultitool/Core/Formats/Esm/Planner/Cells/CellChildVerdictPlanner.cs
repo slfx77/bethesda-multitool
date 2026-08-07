@@ -439,12 +439,20 @@ public static class CellChildVerdictPlanner
             && !placed.IsMapMarker
             && !child.Reparented;
 
-        // A reparented actor or a cross-cell-moved ref applies the proto's authored
-        // enable-state: master's copy of a cut NPC is often disabled (EthelPhebus — retail
-        // parks her disabled in another worldspace) while the proto shipped her live.
-        // Without this the move emits a disabled record and changes nothing in-game.
+        // A cross-cell-MOVED ref applies the proto's authored enable-state (EthelPhebus: retail
+        // parks the cut NPC disabled in another worldspace, the proto shipped her live).
+        // Deliberately NOT extended to plain child.Reparented — PersistentCellReparenting is a
+        // file-format normalization, not evidence of authored enable-state, and a DMP is a
+        // mid-session snapshot in which quest-gated actors read back enabled. In-game proven
+        // (xex44.v140): 105 master-disabled refs re-enabled incl. GSJoeCobb 0x00104C68 and
+        // ChavezPowderGanger* 0x000F1971-73. USER POLICY 2026-08-04, matching NAM6/AIDT:
+        // runtime state never overwrites authored file state.
+        // ONE scoped exception (USER RULING 2026-08-05): ProtoWorldspaceRehome — re-homed
+        // into a PLUGIN-NEW worldspace's container, where master authored no cells at all, so
+        // no authored enable-state exists to preserve (Emily Ortal / Fretwell class).
+        // Master-container re-homes never set the flag; Powder-Ganger overlap measured 0.
         bool? overrideInitiallyDisabled = null;
-        if ((child.Reparented || isForeignParent)
+        if ((isForeignParent || child.ProtoWorldspaceRehome)
             && (masterRecord.Header.Flags & 0x00000800u) != 0 != placed.IsInitiallyDisabled)
         {
             overrideInitiallyDisabled = placed.IsInitiallyDisabled;

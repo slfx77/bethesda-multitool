@@ -113,6 +113,15 @@ public static class DmpToEsmCommand
                           "cells emit their proto NAVMs regardless. Enable only for NVCI-reconstruction work."
         };
 
+        var noCellInferenceOpt = new Option<bool>("--no-cell-inference")
+        {
+            Description = "Disable placement inference for refs whose parent CELL was never captured. " +
+                          "By default such refs are placed by their own coordinates (exact-grid match " +
+                          "against a uniquely-identifying captured cell, else unique containment in one " +
+                          "worldspace's captured grid bounds) and provenance-marked as inferred. Pass " +
+                          "this to keep the conservative skip instead."
+        };
+
         var noRecoverLeveledSpawnsOpt = new Option<bool>("--no-recover-leveled-spawns")
         {
             Description = "Disable leveled-spawn recovery. By default, placed actors (ACHR/ACRE) whose " +
@@ -145,6 +154,7 @@ public static class DmpToEsmCommand
         command.Options.Add(recoverGapsOpt);
         command.Options.Add(emitMasterCellNavmAugmentationOpt);
         command.Options.Add(noRecoverLeveledSpawnsOpt);
+        command.Options.Add(noCellInferenceOpt);
 
         var cellAuthorityOpt = new Option<string?>("--cell-authority")
         {
@@ -244,6 +254,7 @@ public static class DmpToEsmCommand
             var recoverGaps = parseResult.GetValue(recoverGapsOpt);
             var emitMasterCellNavmAugmentation = parseResult.GetValue(emitMasterCellNavmAugmentationOpt);
             var recoverLeveledSpawns = !parseResult.GetValue(noRecoverLeveledSpawnsOpt);
+            var inferUnresolvedCells = !parseResult.GetValue(noCellInferenceOpt);
             var diagSkipCellNavm = parseResult.GetValue(diagSkipCellNavmOpt);
             var diagSkipCellNewRefs = parseResult.GetValue(diagSkipCellNewRefsOpt);
             var cellAuthorityPath = parseResult.GetValue(cellAuthorityOpt);
@@ -263,7 +274,7 @@ public static class DmpToEsmCommand
             await RunAsync(dmp, pcEsm, output, author, description, compress, validate, verbose, eventLogJsonl,
                 secondaryData, secondaryData360, packAssets, writeMissingList, dialogueAudioCsv, overrideVanilla,
                 disableRefrEditorIdRemap, replaceCellTemporaries, recoverGaps, emitMasterCellNavmAugmentation,
-                recoverLeveledSpawns, diagSkipCellNavm, diagSkipCellNewRefs, cellAuthorityPath,
+                recoverLeveledSpawns, inferUnresolvedCells, diagSkipCellNavm, diagSkipCellNewRefs, cellAuthorityPath,
                 skipWorldspaceFormIds, skipRecordTypes, diagnosticKeepMasterFormIds,
                 diagnosticRetainMasterSubrecords, plannerTypes, ct);
         });
@@ -292,6 +303,7 @@ public static class DmpToEsmCommand
         bool recoverGaps,
         bool emitMasterCellNavmAugmentation,
         bool recoverLeveledSpawns,
+        bool inferUnresolvedCells,
         bool diagnosticSkipCellNavm,
         bool diagnosticSkipCellNewRefs,
         string? cellAuthorityPath,
@@ -364,6 +376,7 @@ public static class DmpToEsmCommand
             RecoverGaps = recoverGaps,
             EmitMasterCellNavmAugmentation = emitMasterCellNavmAugmentation,
             RecoverLeveledSpawnActors = recoverLeveledSpawns,
+            InferUnresolvedCellPlacements = inferUnresolvedCells,
             DiagnosticSkipCellNavm = diagnosticSkipCellNavm,
             DiagnosticSkipCellNewRefs = diagnosticSkipCellNewRefs,
             CellWorldspaceAuthority = authorityLoad.CellToWorldspace,
@@ -417,6 +430,11 @@ public static class DmpToEsmCommand
         if (recoverGaps)
         {
             AnsiConsole.MarkupLine("[yellow]Recover gaps:[/] enabled (experimental, opt-in)");
+        }
+
+        if (!inferUnresolvedCells)
+        {
+            AnsiConsole.MarkupLine("[yellow]Unresolved-cell placement inference disabled (--no-cell-inference).[/]");
         }
 
         if (!recoverLeveledSpawns)

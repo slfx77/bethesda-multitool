@@ -681,24 +681,110 @@ internal sealed class DataFolderResolver
     private sealed class SecondaryExactResolutionStrategy(IReadOnlyList<DataFolderIndex> secondaries)
         : IAssetResolutionStrategy
     {
-        /// <summary>Resolves by exact-path match in the ordered secondary (fallback) folders.</summary>
+        /// <summary>
+        ///     Resolves by exact-path match in the ordered secondary (fallback) folders.
+        ///     Folder order wins, EXCEPT that a mesh carrying Havok collision beats one that
+        ///     does not — see <see cref="TryPreferCollisionBearing" />.
+        /// </summary>
         public DataFolderResolution? Resolve(string normalizedPath)
         {
+            var firstIndex = -1;
+            AssetSource? firstSource = null;
+            List<(int Index, AssetSource Source)>? contested = null;
+
             for (var i = 0; i < secondaries.Count; i++)
             {
-                if (secondaries[i].TryResolveExact(normalizedPath, out var source))
+                if (!secondaries[i].TryResolveExact(normalizedPath, out var source))
                 {
-                    return new DataFolderResolution
-                    {
-                        Kind = AssetResolutionKind.ResolvedExact,
-                        Source = source,
-                        ResolvedPath = normalizedPath,
-                        SourceFolderIndex = i
-                    };
+                    continue;
+                }
+
+                if (firstSource is null)
+                {
+                    firstIndex = i;
+                    firstSource = source;
+                    continue;
+                }
+
+                // Only start materializing the candidate list once a path is actually
+                // contested — the overwhelming majority resolve from a single folder.
+                contested ??= [(firstIndex, firstSource)];
+                contested.Add((i, source));
+            }
+
+            if (firstSource is null)
+            {
+                return null;
+            }
+
+            var (winnerIndex, winnerSource) = contested is null
+                ? (firstIndex, firstSource)
+                : TryPreferCollisionBearing(normalizedPath, contested);
+
+            return new DataFolderResolution
+            {
+                Kind = AssetResolutionKind.ResolvedExact,
+                Source = winnerSource,
+                ResolvedPath = normalizedPath,
+                SourceFolderIndex = winnerIndex
+            };
+        }
+
+        /// <summary>
+        ///     Tie-break rule for a path several donor folders all provide: prefer a mesh that
+        ///     has collision over one that does not, otherwise keep folder order.
+        ///     <para>
+        ///     Folder order alone is the wrong tool here. It encodes nothing about the asset,
+        ///     so a cross-game PC donor listed first silently outranks the Xbox 360 build the
+        ///     DMP came from — which is how the Ultra Luxe fountain basin
+        ///     (<c>architecture\urban\civicspace\dupontcirclefountain01.nif</c>) shipped as
+        ///     Fallout 3's collision-free original instead of the July-2010 360 re-export that
+        ///     carries a 658-triangle <c>bhkRigidBodyT</c>. Flipping the ORDER instead would
+        ///     have been just as arbitrary and would have lost collision on ten Anchorage mill
+        ///     meshes where the FO3 copy is the one with Havok. Comparing the actual asset
+        ///     gets both directions right without any era heuristic.
+        ///     </para>
+        ///     <para>
+        ///     Narrow by design: it fires only when candidates DISAGREE about collision. On
+        ///     this corpus that is 11 of ~5,000 contested meshes — the rest have collision in
+        ///     both copies or neither, and keep folder order untouched. Note "has collision"
+        ///     is not universally "more correct": collision can legitimately move to a
+        ///     companion mesh between builds, which is exactly what the paired
+        ///     <c>effects\NV\NV_ULfountain.NIF</c> (FX, no physics) and this basin do. The rule
+        ///     is a tie-break among copies of the SAME path, so that case does not arise here.
+        ///     </para>
+        /// </summary>
+        private static (int Index, AssetSource Source) TryPreferCollisionBearing(
+            string normalizedPath,
+            List<(int Index, AssetSource Source)> candidates)
+        {
+            if (!NifCollisionMarkerProbe.AppliesTo(normalizedPath))
+            {
+                return candidates[0];
+            }
+
+            foreach (var candidate in candidates)
+            {
+                bool hasCollision;
+                try
+                {
+                    hasCollision = NifCollisionMarkerProbe.HasCollision(candidate.Source.Read());
+                }
+                catch (Exception ex) when (ex is IOException or InvalidDataException
+                                               or NotSupportedException)
+                {
+                    // An unreadable candidate must not sink the whole resolution — fall
+                    // through and let folder order decide, exactly as before this rule.
+                    continue;
+                }
+
+                if (hasCollision)
+                {
+                    return candidate;
                 }
             }
 
-            return null;
+            return candidates[0];
         }
     }
 

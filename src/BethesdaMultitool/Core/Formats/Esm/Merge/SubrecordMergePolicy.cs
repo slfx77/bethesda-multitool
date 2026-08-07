@@ -36,6 +36,24 @@ public sealed record SubrecordMergePolicy
     public required IReadOnlySet<string> DoNotAppendFromDmp { get; init; }
 
     /// <summary>
+    ///     Per-signature byte reconcilers applied when BOTH the ESM and the DMP carry the
+    ///     signature: <c>(esmBytes, dmpBytes) → emittedBytes</c>. For fields where the runtime
+    ///     write-back is only PARTIALLY trustworthy — e.g. NPC_ AIDT, where the engine discards
+    ///     the aggro radius at load and the capture writes back 0 — a reconciler can splice the
+    ///     authoritative master lanes into the captured payload instead of choosing a whole side.
+    /// </summary>
+    public IReadOnlyDictionary<string, Func<byte[], byte[], byte[]>>? FieldReconcilers { get; init; }
+
+    /// <summary>
+    ///     Value-aware append gates for DMP-only subrecords (pass 2). Unlike
+    ///     <see cref="DoNotAppendFromDmp" /> — a blanket ban — a filter sees the encoded bytes
+    ///     and returns false to skip the append. Used to keep runtime-materialized defaults
+    ///     (NPC_ NAM6 Height=1.0 where the master deliberately omits the subrecord) from being
+    ///     grafted onto records whose master never carried them.
+    /// </summary>
+    public IReadOnlyDictionary<string, Func<byte[], bool>>? AppendFilters { get; init; }
+
+    /// <summary>
     ///     Return an immutable-by-construction extension for an exact-record diagnostic.
     ///     Every retained signature is also blocked from the DMP append pass; retaining it
     ///     in only the positional pass would create a duplicate subrecord at record end.
@@ -167,7 +185,74 @@ public sealed record SubrecordMergePolicy
         {
             RetainFromEsm = identityFields,
             AlwaysFromDmp = new HashSet<string>(StringComparer.Ordinal),
-            DoNotAppendFromDmp = doNotAppend
+            DoNotAppendFromDmp = doNotAppend,
+            FieldReconcilers = new Dictionary<string, Func<byte[], byte[], byte[]>>(StringComparer.Ordinal)
+            {
+                ["AIDT"] = ReconcileActorAiData,
+                ["NAM6"] = ReconcileActorHeight
+            },
+            AppendFilters = new Dictionary<string, Func<byte[], bool>>(StringComparer.Ordinal)
+            {
+                // Master deliberately omits NAM6 on these NPCs; grafting the runtime-
+                // materialized default onto them fabricates a subrecord retail never shipped
+                // (xex44: baseline AND proto-360 carry no NAM6 while our override appended 1.0).
+                ["NAM6"] = bytes => bytes.Length == 4 && !IsMaterializedHeight(BitConverter.ToSingle(bytes, 0))
+            }
         };
+    }
+
+    /// <summary>
+    ///     USER POLICY 2026-08-03: AIDT should match what's in the proto FILE, not the runtime
+    ///     write-back. Two lanes of the captured 20-byte AIDT are load-time artifacts:
+    ///     the 3 unused pad bytes @5-7 (runtime zero-fills; the file carries uninitialized GECK
+    ///     noise — PROTO-360 agrees with the master, our zeros are capture-side), and
+    ///     AggroRadius @16-19 when AggroRadiusBehavior @15 is 0 (the engine discards the radius
+    ///     at load and the capture writes back 0; master AND proto both store 500). Splice the
+    ///     master's bytes back into those lanes; every other captured lane wins as usual.
+    /// </summary>
+    private static byte[] ReconcileActorAiData(byte[] esmBytes, byte[] dmpBytes)
+    {
+        if (esmBytes.Length != 20 || dmpBytes.Length != 20)
+        {
+            return dmpBytes;
+        }
+
+        var merged = (byte[])dmpBytes.Clone();
+        merged[5] = esmBytes[5];
+        merged[6] = esmBytes[6];
+        merged[7] = esmBytes[7];
+
+        var capturedBehavior = dmpBytes[15];
+        var capturedRadius = BitConverter.ToUInt32(dmpBytes, 16);
+        if (capturedBehavior == 0 && capturedRadius == 0)
+        {
+            merged[15] = esmBytes[15];
+            Array.Copy(esmBytes, 16, merged, 16, 4);
+        }
+
+        return merged;
+    }
+
+    /// <summary>
+    ///     USER POLICY 2026-08-03: NPC_ NAM6 Height 1.0 (and the child-race 0.8) is the engine's
+    ///     runtime-materialized value, not authored data — masters store 0.0 or omit the
+    ///     subrecord entirely, and the capture bakes the materialized default back in (1,698×
+    ///     1.0-vs-0 and 29× 0.8-vs-0 on xex21 overrides, against 4 genuine nonzero diffs).
+    ///     Keep the master's bytes when the capture holds a materialized default.
+    /// </summary>
+    private static byte[] ReconcileActorHeight(byte[] esmBytes, byte[] dmpBytes)
+    {
+        if (dmpBytes.Length != 4)
+        {
+            return dmpBytes;
+        }
+
+        return IsMaterializedHeight(BitConverter.ToSingle(dmpBytes, 0)) ? esmBytes : dmpBytes;
+    }
+
+    /// <summary>The two runtime-materialized NPC height defaults: adult 1.0, child-race 0.8.</summary>
+    private static bool IsMaterializedHeight(float height)
+    {
+        return MathF.Abs(height - 1.0f) < 1e-5f || MathF.Abs(height - 0.8f) < 1e-5f;
     }
 }

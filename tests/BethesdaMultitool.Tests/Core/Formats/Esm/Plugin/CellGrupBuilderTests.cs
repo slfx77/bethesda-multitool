@@ -375,12 +375,15 @@ public class CellGrupBuilderTests
     }
 
     [Fact]
-    public void BuildCellSection_WrldAnchor_StripsOfstOffsetTable()
+    public void BuildCellSection_WrldAnchorWithoutBounds_DropsMasterOfstPayload()
     {
         // The master WRLD carries OFST: per-file byte offsets into the MASTER. The FNV
         // runtime consults each ESM-flagged file's own OFST as the exterior-cell fast
         // path, so a master OFST cloned into this plugin makes the engine seek THIS file
         // at master offsets and every loaded exterior cell fails temporary-data load.
+        // The master's bytes must never survive. This anchor has no NAM0/NAM9, so no
+        // replacement table can be sized either and the record ends up with no OFST —
+        // see BuildCellSection_WrldWithBounds_EmitsRebuiltOfstTable for the normal case.
         const uint wrldFormId = 0x60;
         var ofstData = new byte[70_000]; // >64KB so the XXXX-extended path is exercised too
         ofstData.AsSpan().Fill(0xAB);
@@ -440,6 +443,157 @@ public class CellGrupBuilderTests
             Subrecords = [new ParsedSubrecord { Signature = "EDID", Data = "MyCell\0"u8.ToArray() }]
         };
         return CellGrupBuilder.ReconstructRecordBytes(cell);
+    }
+
+    private static byte[] MakeCellBytesAt(uint cellFormId, int gridX, int gridY, uint headerFlags = 0)
+    {
+        var xclc = new byte[12];
+        BinaryPrimitives.WriteInt32LittleEndian(xclc.AsSpan(0, 4), gridX);
+        BinaryPrimitives.WriteInt32LittleEndian(xclc.AsSpan(4, 4), gridY);
+        var cell = new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
+            {
+                Signature = "CELL", FormId = cellFormId, Version = 0x000F, Flags = headerFlags
+            },
+            Subrecords =
+            [
+                new ParsedSubrecord { Signature = "DATA", Data = [0x02] },
+                new ParsedSubrecord { Signature = "XCLC", Data = xclc }
+            ]
+        };
+        return CellGrupBuilder.ReconstructRecordBytes(cell);
+    }
+
+    /// <summary>
+    ///     A WRLD anchor whose NAM0/NAM9 object bounds describe a grid spanning
+    ///     [minX..maxX] x [minY..maxY] cells, matching how the GECK writes them.
+    /// </summary>
+    private static ParsedMainRecord MakeWrldWithBounds(
+        uint wrldFormId, int minX, int minY, int maxX, int maxY)
+    {
+        static byte[] Corner(int cellX, int cellY)
+        {
+            var buffer = new byte[8];
+            BinaryPrimitives.WriteSingleLittleEndian(buffer.AsSpan(0, 4), cellX * 4096f);
+            BinaryPrimitives.WriteSingleLittleEndian(buffer.AsSpan(4, 4), cellY * 4096f);
+            return buffer;
+        }
+
+        return new ParsedMainRecord
+        {
+            Header = new MainRecordHeader { Signature = "WRLD", FormId = wrldFormId, Version = 0x000F },
+            Subrecords =
+            [
+                new ParsedSubrecord { Signature = "EDID", Data = "BoundedWrld\0"u8.ToArray() },
+                new ParsedSubrecord { Signature = "NAM0", Data = Corner(minX, minY) },
+                new ParsedSubrecord { Signature = "NAM9", Data = Corner(maxX, maxY) }
+            ]
+        };
+    }
+
+    /// <summary>
+    ///     Reads the OFST table out of the single WRLD record in a built cell section, along
+    ///     with the record's own offset (OFST entries are WRLD-relative).
+    /// </summary>
+    private static (int WrldOffset, uint[] Table) ReadOfstTable(byte[] bytes)
+    {
+        var wrldOffset = IndexOfSignature(bytes, "WRLD", 24);
+        Assert.True(wrldOffset >= 0);
+
+        var payloadOffset = IndexOfSignature(bytes, "OFST", wrldOffset) + 6;
+        var declaredSize = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(wrldOffset + 4, 4));
+        var recordEnd = wrldOffset + 24 + (int)declaredSize;
+        var table = new uint[(recordEnd - payloadOffset) / 4];
+        for (var i = 0; i < table.Length; i++)
+        {
+            table[i] = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(payloadOffset + (i * 4), 4));
+        }
+
+        return (wrldOffset, table);
+    }
+
+    [Fact]
+    public void BuildCellSection_WrldWithBounds_EmitsRebuiltOfstTable()
+    {
+        // Every WRLD record in every shipped FNV/FO3 DLC plugin carries an OFST — 63 of 63,
+        // covering both master-worldspace overrides and the plugins' own new worldspaces.
+        // The table is sized from the worldspace grid and holds the offset of each CELL this
+        // file contributes, relative to the start of the WRLD record.
+        const uint wrldFormId = 0x60;
+        const uint cellFormId = 0xC0;
+        var pcRecords = new Dictionary<uint, ParsedMainRecord>
+        {
+            [wrldFormId] = MakeWrldWithBounds(wrldFormId, -2, -3, 1, 2)
+        };
+
+        var bundle = new CellOverrideBundle
+        {
+            CellFormId = cellFormId,
+            Context = MakeExteriorContext(cellFormId, wrldFormId, 0x1234, 0x5678),
+            CellRecordBytes = MakeCellBytesAt(cellFormId, gridX: 1, gridY: -1),
+            PersistentChildRecords = [],
+            TemporaryChildRecords = [MakeMinimalRefrRecord(0xC1)]
+        };
+
+        var bytes = CellGrupBuilder.BuildCellSection([bundle], pcRecords)!;
+        var (wrldOffset, table) = ReadOfstTable(bytes);
+
+        // Grid is 4 columns (-2..1) x 6 rows (-3..2) = 24 entries.
+        Assert.Equal(24, table.Length);
+
+        // The cell at (1, -1) lands at row (-1 - -3) = 2, column (1 - -2) = 3 → index 11.
+        const int expectedIndex = (2 * 4) + 3;
+        Assert.All(
+            Enumerable.Range(0, table.Length).Where(i => i != expectedIndex),
+            i => Assert.Equal(0u, table[i]));
+
+        // ...and its value must be the CELL record's offset relative to the WRLD record.
+        var cellOffset = IndexOfSignature(bytes, "CELL", wrldOffset);
+        Assert.True(cellOffset > wrldOffset);
+        Assert.Equal((uint)(cellOffset - wrldOffset), table[expectedIndex]);
+    }
+
+    [Fact]
+    public void BuildCellSection_PersistentContainer_IsNotIndexedIntoOfst()
+    {
+        // Regression: the Freeside "Wilderness cell Attaching" access violation. A worldspace's
+        // persistent ref container carries XCLC (0,0) — colliding with a real master grid cell —
+        // but it is not an exterior grid cell. Indexing it into OFST lets the engine serve it
+        // into a grid slot, where TESObjectCELL::GetLandRecord returns NULL for persistent cells
+        // and GridCellArray::LoadCell dereferences it unchecked.
+        const uint wrldFormId = 0x60;
+        const uint containerFormId = 0xC0;
+        var pcRecords = new Dictionary<uint, ParsedMainRecord>
+        {
+            [wrldFormId] = MakeWrldWithBounds(wrldFormId, -2, -2, 2, 2)
+        };
+
+        var bundle = new CellOverrideBundle
+        {
+            CellFormId = containerFormId,
+            Context = new PcEsmCellContext
+            {
+                CellFormId = containerFormId,
+                IsInterior = false,
+                WorldspaceFormId = wrldFormId,
+                BlockLabel = null,
+                SubblockLabel = null,
+                BlockGroupType = 0,
+                SubblockGroupType = 0
+            },
+            CellRecordBytes = MakeCellBytesAt(containerFormId, 0, 0, headerFlags: 0x400),
+            PersistentChildRecords = [MakeMinimalRefrRecord(0xC1)],
+            TemporaryChildRecords = []
+        };
+
+        var bytes = CellGrupBuilder.BuildCellSection([bundle], pcRecords)!;
+        var (_, table) = ReadOfstTable(bytes);
+
+        // The table is present and correctly sized, but entirely zero — exactly the shape
+        // DeadMoney.esm ships for WastelandNV, whose emission this mirrors.
+        Assert.Equal(25, table.Length);
+        Assert.All(table, entry => Assert.Equal(0u, entry));
     }
 
     private static PcEsmCellContext MakeExteriorContext(uint cellFormId, uint wrldFormId, uint blockKey, uint subKey)

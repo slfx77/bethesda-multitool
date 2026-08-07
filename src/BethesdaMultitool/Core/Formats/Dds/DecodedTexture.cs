@@ -40,6 +40,46 @@ internal sealed class DecodedTexture
         return sampled > 0 && transparentCount > sampled / 10;
     }
 
+    /// <summary>
+    ///     True when the alpha channel is a CUTOUT (binary silhouette) rather than a continuous
+    ///     translucency wash: almost every texel is hard-transparent or hard-opaque, and a real
+    ///     share of them is hard-transparent.
+    ///     <para>
+    ///         This separates the two shapes that both author "alpha blend + alpha test at a
+    ///         trivial threshold": a foliage card (leaf/flower silhouette — kept texels are opaque,
+    ///         cut texels are exactly 0) and a translucency sheet (mist/fog — a continuous low-alpha
+    ///         wash whose texels all survive a >0 test). Only the former may write depth in the
+    ///         alpha pass; see <c>NifAlphaClassifier</c>.
+    ///     </para>
+    /// </summary>
+    public bool HasCutoutAlpha()
+    {
+        var pixels = Pixels;
+        if (pixels.Length < 4) return false;
+
+        const int hardTransparent = 8;
+        const int hardOpaque = 248;
+
+        var totalPixels = pixels.Length / 4;
+        var step = Math.Max(1, totalPixels / 4096);
+        var sampled = 0;
+        var cut = 0;
+        var solid = 0;
+        for (var i = 3; i < pixels.Length; i += 4 * step)
+        {
+            sampled++;
+            var alpha = pixels[i];
+            if (alpha <= hardTransparent) cut++;
+            else if (alpha >= hardOpaque) solid++;
+        }
+
+        if (sampled == 0) return false;
+
+        // >=90% of texels sit at one of the two extremes (binary alpha) and >=5% are actually cut
+        // away — a wash fails the first test, a fully opaque texture fails the second.
+        return cut + solid >= sampled * 9 / 10 && cut >= sampled / 20;
+    }
+
     public DecodedTextureMipLevel GetMipLevel(int level)
     {
         var clamped = Math.Clamp(level, 0, MipLevels.Count - 1);

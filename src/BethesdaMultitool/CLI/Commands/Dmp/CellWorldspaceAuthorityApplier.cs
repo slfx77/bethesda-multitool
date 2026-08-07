@@ -31,6 +31,10 @@ internal static class CellWorldspaceAuthorityApplier
     private const string SourceOffsetCluster = "OffsetCluster";
     private const string SourceVirtual = "Virtual";
     private const string SourceInteriorOffsetCluster = "InteriorOffsetCluster";
+    private const string SourceBoundsInference = "WorldspaceBoundsInference";
+
+    /// <summary>Exact-grid reassignment requires this many placements in the target cell.</summary>
+    private const int ExactGridReassignmentMinPlacements = 10;
 
     private readonly record struct ResolvedReferenceWindow(
         uint CellFormId,
@@ -50,7 +54,8 @@ internal static class CellWorldspaceAuthorityApplier
         EsmRecordScanResult? scanResult = null,
         IReadOnlyDictionary<uint, CellAuthorityMetadata>? cellMetadata = null,
         IReadOnlyDictionary<uint, uint>? refToCell = null,
-        IReadOnlyList<CellReferenceParentWindow>? refWindows = null)
+        IReadOnlyList<CellReferenceParentWindow>? refWindows = null,
+        bool inferUnresolvedPlacements = true)
     {
         cellMetadata ??= authority?.ToDictionary(
             kv => kv.Key,
@@ -138,10 +143,13 @@ internal static class CellWorldspaceAuthorityApplier
             scanResult);
         var offsetMove = ReattachOffsetClusteredUnresolvedReferences(records, scanResult);
         var interiorMove = ReattachOffsetClusteredInteriorUnresolvedReferences(records, scanResult);
+        var boundsMove = inferUnresolvedPlacements
+            ? ReattachUnresolvedByBoundsInference(records, scanResult)
+            : (Moved: 0, CreatedCells: 0);
 
         if (scanResult is not null &&
             (matched > 0 || referenceMove.Moved > 0 || windowMove.Moved > 0 || offsetMove.Moved > 0 ||
-             interiorMove.Moved > 0))
+             interiorMove.Moved > 0 || boundsMove.Moved > 0))
         {
             EsmLandEnricher.EnrichLandRecordsWithCellWorldspaces(scanResult, records.Cells);
             CellRecordHandler.AttachTerrainDataFromLandRecords(records.Cells, scanResult);
@@ -155,10 +163,208 @@ internal static class CellWorldspaceAuthorityApplier
             overrode,
             synthesized,
             terrainAttached,
-            referenceMove.Moved + windowMove.Moved + offsetMove.Moved + interiorMove.Moved,
-            referenceMove.CreatedCells + windowMove.CreatedCells + offsetMove.CreatedCells + interiorMove.CreatedCells,
+            referenceMove.Moved + windowMove.Moved + offsetMove.Moved + interiorMove.Moved + boundsMove.Moved,
+            referenceMove.CreatedCells + windowMove.CreatedCells + offsetMove.CreatedCells
+                + interiorMove.CreatedCells + boundsMove.CreatedCells,
             windowMove.AppliedWindows,
             windowMove.AmbiguousMatches);
+    }
+
+    /// <summary>
+    ///     Final rescue pass for refs still stranded in <c>[Unresolved …]</c> buckets after the
+    ///     authority / window / offset-cluster passes: place each ref by its own coordinates,
+    ///     using (1) an exact-grid match against a captured real exterior cell whose grid coord
+    ///     is unique across all captured cells and that holds at least
+    ///     <see cref="ExactGridReassignmentMinPlacements" /> placements, then (2) unique
+    ///     containment of the ref's grid inside exactly ONE worldspace's captured grid bounds.
+    ///     Ambiguous containment (grids inside two worldspaces' spans) leaves the ref where it
+    ///     is — this pass never guesses between candidates.
+    ///     <para>
+    ///     USER RULING 2026-08-05 (playtest finding 3, Utl* block): position inference is ON by
+    ///     default and opt-out via <c>--no-cell-inference</c>. Worldspace membership derived
+    ///     this way is an inference, not a capture — every moved ref carries
+    ///     <c>AssignmentSource = "WorldspaceBoundsInference"</c> and every synthesized cell
+    ///     carries the same <c>WorldspaceAssignmentSource</c>, so reports can always separate
+    ///     inferred placements from captured ones. Cells synthesized here are REAL exterior
+    ///     cells (grid + worldspace, no EditorId — CK convention), NOT <c>IsVirtual</c>: the
+    ///     planner removes virtual cells as parse-time buckets, which would silently kill the
+    ///     temporary refs this pass exists to save.
+    ///     </para>
+    /// </summary>
+    private static (int Moved, int CreatedCells) ReattachUnresolvedByBoundsInference(
+        RecordCollection records,
+        EsmRecordScanResult? scanResult)
+    {
+        var realExteriorCells = records.Cells
+            .Where(cell => !cell.IsInterior &&
+                           !cell.IsVirtual &&
+                           !cell.IsUnresolvedBucket &&
+                           cell.WorldspaceFormId is > 0 &&
+                           cell.GridX.HasValue &&
+                           cell.GridY.HasValue)
+            .ToList();
+
+        if (realExteriorCells.Count == 0)
+        {
+            return (0, 0);
+        }
+
+        // Exact-grid targets: captured cells whose (gx,gy) is globally unique and that carry
+        // enough placements to prove the grid really was loaded there.
+        var exactGrid = new Dictionary<(int Gx, int Gy), CellRecord?>();
+        foreach (var cell in realExteriorCells)
+        {
+            var key = (cell.GridX!.Value, cell.GridY!.Value);
+            exactGrid[key] = exactGrid.ContainsKey(key) ? null : cell; // null = ambiguous
+        }
+
+        var worldspaceBounds = realExteriorCells
+            .GroupBy(cell => cell.WorldspaceFormId!.Value)
+            .Select(g => (Ws: g.Key,
+                MinX: g.Min(c => c.GridX!.Value), MinY: g.Min(c => c.GridY!.Value),
+                MaxX: g.Max(c => c.GridX!.Value), MaxY: g.Max(c => c.GridY!.Value)))
+            .ToList();
+
+        var cellIndexByFormId = BuildCellIndex(records.Cells);
+        var moved = 0;
+        var createdCells = 0;
+        var nextSyntheticFormId = NextAvailableSyntheticCellFormId(records, 0xFE900001u);
+
+        for (var i = 0; i < records.Cells.Count; i++)
+        {
+            var source = records.Cells[i];
+            if (!source.IsUnresolvedBucket || source.PlacedObjects.Count == 0)
+            {
+                continue;
+            }
+
+            var movedFormIds = new HashSet<uint>();
+            foreach (var placed in source.PlacedObjects)
+            {
+                var (gx, gy) = CellUtils.WorldToCellCoordinates(placed.X, placed.Y);
+
+                uint worldspaceFormId;
+                if (exactGrid.TryGetValue((gx, gy), out var uniqueCell)
+                    && uniqueCell is not null
+                    && uniqueCell.PlacedObjects.Count >= ExactGridReassignmentMinPlacements)
+                {
+                    worldspaceFormId = uniqueCell.WorldspaceFormId!.Value;
+                }
+                else
+                {
+                    var matches = 0;
+                    worldspaceFormId = 0;
+                    foreach (var bounds in worldspaceBounds)
+                    {
+                        if (gx >= bounds.MinX && gx <= bounds.MaxX && gy >= bounds.MinY && gy <= bounds.MaxY)
+                        {
+                            worldspaceFormId = bounds.Ws;
+                            if (++matches > 1)
+                            {
+                                break;
+                            }
+                        }
+                    }
+
+                    if (matches != 1)
+                    {
+                        continue; // Ambiguous or uncontained — never guess.
+                    }
+                }
+
+                var targetIndex = GetOrCreateBoundsInferenceCell(
+                    records, cellIndexByFormId, worldspaceFormId, gx, gy, placed.IsBigEndian,
+                    ref nextSyntheticFormId, out var created);
+                if (created)
+                {
+                    createdCells++;
+                }
+
+                var target = records.Cells[targetIndex];
+                if (!target.PlacedObjects.Any(p => p.FormId == placed.FormId))
+                {
+                    target.PlacedObjects.Add(placed with { AssignmentSource = SourceBoundsInference });
+                }
+
+                MoveScanResultRefLink(scanResult, source.FormId, target.FormId, placed.FormId);
+                movedFormIds.Add(placed.FormId);
+                moved++;
+            }
+
+            if (movedFormIds.Count > 0)
+            {
+                records.Cells[i] = source with
+                {
+                    PlacedObjects = source.PlacedObjects
+                        .Where(placed => !movedFormIds.Contains(placed.FormId))
+                        .ToList()
+                };
+            }
+        }
+
+        if (moved == 0)
+        {
+            return (0, 0);
+        }
+
+        records.Cells.RemoveAll(c => c.IsUnresolvedBucket && c.PlacedObjects.Count == 0);
+        CellRecordHandler.ResolveDoorLinks(records.Cells);
+        return (moved, createdCells);
+    }
+
+    /// <summary>
+    ///     Reuse-or-create for <see cref="ReattachUnresolvedByBoundsInference" />: prefers any
+    ///     existing real cell at (worldspace, gx, gy); otherwise synthesizes a REAL exterior
+    ///     cell (not <c>IsVirtual</c> — see the pass doc for why).
+    /// </summary>
+    private static int GetOrCreateBoundsInferenceCell(
+        RecordCollection records,
+        Dictionary<uint, int> cellIndexByFormId,
+        uint worldspaceFormId,
+        int gridX,
+        int gridY,
+        bool isBigEndian,
+        ref uint nextSyntheticFormId,
+        out bool created)
+    {
+        for (var i = 0; i < records.Cells.Count; i++)
+        {
+            var existingCell = records.Cells[i];
+            if (!existingCell.IsUnresolvedBucket &&
+                existingCell.WorldspaceFormId == worldspaceFormId &&
+                existingCell.GridX == gridX &&
+                existingCell.GridY == gridY &&
+                !existingCell.IsPersistentCell)
+            {
+                created = false;
+                return i;
+            }
+        }
+
+        while (cellIndexByFormId.ContainsKey(nextSyntheticFormId))
+        {
+            nextSyntheticFormId++;
+        }
+
+        var cellFormId = nextSyntheticFormId++;
+        var newCell = new CellRecord
+        {
+            FormId = cellFormId,
+            GridX = gridX,
+            GridY = gridY,
+            WorldspaceFormId = worldspaceFormId,
+            WorldspaceAssignmentSource = SourceBoundsInference,
+            EditorId = null,
+            PlacedObjects = [],
+            IsVirtual = false,
+            IsBigEndian = isBigEndian
+        };
+
+        records.Cells.Add(newCell);
+        var index = records.Cells.Count - 1;
+        cellIndexByFormId[cellFormId] = index;
+        created = true;
+        return index;
     }
 
     private static (int Moved, int CreatedCells) ReattachUnresolvedReferences(

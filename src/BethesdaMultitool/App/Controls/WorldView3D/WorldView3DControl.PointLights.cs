@@ -13,22 +13,35 @@ public sealed partial class WorldView3DControl
 {
     private const int MaxPlacedLightsPerCell = 16;
 
+    /// <summary>
+    ///     Whole-frame ceiling on uploaded emitters. The per-cell cap alone bounds nothing outdoors:
+    ///     the gather runs per visible cell, so a dense exterior would upload 16 × visibleCells into
+    ///     an unbounded shader <c>[loop]</c> that every terrain and reference pixel walks. Selection
+    ///     is nearest-to-camera, which is the only ordering that degrades gracefully.
+    /// </summary>
+    private const int MaxPlacedLightsPerFrame = 64;
+
     private static readonly bool PlacedLightsEnvEnabled =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.PlacedLights) != "0";
-    private static readonly bool ExteriorPlacedLightsEnabled =
-        EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ExteriorPlacedLights);
 
     private readonly List<PlacedLight> _framePlacedLights = new(MaxPlacedLightsPerCell);
     private readonly List<PlacedLight> _cellPlacedLightScratch = new(MaxPlacedLightsPerCell * 2);
     private readonly List<WorldSpatialCell> _placedLightCellScratch = [];
     private readonly HashSet<uint> _placedLightClipLoggedCells = [];
+    private bool _framePlacedLightCapLogged;
 
     /// <summary>
     ///     Selects visible-cell emitters, uploads one global structured buffer, and binds root SRV
-    ///     t9 before terrain/references draw. Interior cells are enabled by default; exterior cells
-    ///     require <c>FALLOUT_VIEWER_EXTERIOR_LIGHTS=1</c> until the global forward loop's cost is
-    ///     proven in dense worldspaces. A 64-byte dummy is always bound for the zero-light case so
-    ///     every PSO sees an initialized root descriptor.
+    ///     t9 before terrain/references draw. A 64-byte dummy is always bound for the zero-light case
+    ///     so every PSO sees an initialized root descriptor.
+    ///     <para>
+    ///         Exteriors used to additionally require <c>FALLOUT_VIEWER_EXTERIOR_LIGHTS=1</c>, which
+    ///         nothing sets — so every exterior uploaded zero lights no matter what the UI toggle said,
+    ///         in every game (the gate was game-agnostic, so it silently suppressed Oblivion, FO3,
+    ///         Skyrim and FO4 exteriors too). The toggle now governs both cell kinds; what the env gate
+    ///         was really protecting against — an unbounded upload in dense worldspaces — is handled
+    ///         properly by <see cref="MaxPlacedLightsPerFrame" />.
+    ///     </para>
     /// </summary>
     private unsafe int BindPlacedLights(
         ID3D12GraphicsCommandList cmd,
@@ -45,7 +58,7 @@ public sealed partial class WorldView3DControl
             {
                 AppendCellLights(interior, _camera.Position);
             }
-            else if (ExteriorPlacedLightsEnabled && visibility is { } cylinder && _spatialIndex is not null)
+            else if (visibility is { } cylinder && _spatialIndex is not null)
             {
                 _spatialIndex.QueryCellsInRadius(
                     cylinder.Position.X,
@@ -56,6 +69,8 @@ public sealed partial class WorldView3DControl
                 {
                     AppendCellLights(visibleCell.Cell, cylinder.Position);
                 }
+
+                ApplyFramePlacedLightCap(cylinder.Position);
             }
         }
 
@@ -81,6 +96,44 @@ public sealed partial class WorldView3DControl
             (uint)GpuRootSignature12.Slots.PointLightsSrv,
             alloc.GpuAddress);
         return _framePlacedLights.Count;
+    }
+
+    /// <summary>
+    ///     Trims the accumulated exterior list to <see cref="MaxPlacedLightsPerFrame" />, keeping the
+    ///     lights nearest the camera.
+    ///     <para>
+    ///         Deliberately NOT a "camera is outside the light's radius" reject, which was the obvious
+    ///         candidate: a light illuminates the GEOMETRY around it, not the camera, so discarding
+    ///         lights further away than their own radius would extinguish every lit pool the moment you
+    ///         stepped back from it — indistinguishable from the "placed lights do nothing" bug being
+    ///         fixed. The shader already skips pixels outside a light's radius
+    ///         (<c>scene_lighting.hlsli</c>: <c>distanceSquared >= radiusSquared</c>), so the only
+    ///         thing left to bound on the CPU is how long that loop runs.
+    ///     </para>
+    /// </summary>
+    private void ApplyFramePlacedLightCap(Vector3 cameraPosition)
+    {
+        if (_framePlacedLights.Count <= MaxPlacedLightsPerFrame) return;
+
+        var clipped = _framePlacedLights.Count - MaxPlacedLightsPerFrame;
+        _framePlacedLights.Sort((left, right) =>
+        {
+            var distanceOrder = Vector3.DistanceSquared(left.Position, cameraPosition)
+                .CompareTo(Vector3.DistanceSquared(right.Position, cameraPosition));
+            // FormId breaks ties so the survivors do not shuffle between frames at equal distance.
+            return distanceOrder != 0 ? distanceOrder : left.FormId.CompareTo(right.FormId);
+        });
+        _framePlacedLights.RemoveRange(
+            MaxPlacedLightsPerFrame, _framePlacedLights.Count - MaxPlacedLightsPerFrame);
+
+        if (_framePlacedLightCapLogged) return;
+        _framePlacedLightCapLogged = true;
+        Log.Warn(
+            "WorldView3DControl: {0} visible placed lights exceed the {1}-light frame budget; " +
+            "keeping the nearest ({2} clipped). Logged once per session.",
+            MaxPlacedLightsPerFrame + clipped,
+            MaxPlacedLightsPerFrame,
+            clipped);
     }
 
     private void AppendCellLights(CellRecord cell, Vector3 cameraPosition)

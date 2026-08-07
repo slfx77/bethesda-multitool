@@ -38,6 +38,7 @@ public static class DmpCommand
         command.Subcommands.Add(RttiCommand.Create());
         command.Subcommands.Add(AnimationsCommand.Create());
         command.Subcommands.Add(WeaponSoundLayoutCommand.Create());
+        command.Subcommands.Add(StructLayoutCommand.Create());
         command.Subcommands.Add(DmpToEsmCommand.Create());
         command.Subcommands.Add(DmpCandidateOverlayCommand.Create());
 

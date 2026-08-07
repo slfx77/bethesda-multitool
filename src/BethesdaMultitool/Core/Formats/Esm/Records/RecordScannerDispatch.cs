@@ -113,6 +113,10 @@ internal static class RecordScannerDispatch
         "REGN", // Region
         "IMAD", // Image Space Adapter
         "IMGS", // Image Space
+        // GRAS completes the LTEX -> GNAM -> GRAS chain. GrassRecord, its parse handler and
+        // GrasEncoder all existed, but without this signature RecordCollection.Grasses was empty
+        // for every dump input, so the encoder was unreachable on the DMP path.
+        "GRAS", // Grass
 
         // FNV-specific gameplay records
         "IMOD", // Weapon Mod

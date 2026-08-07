@@ -76,7 +76,8 @@ public sealed class EsmPlanner
         CellVerdictInputs? cellVerdictInputs = null,
         ImmutableHashSet<uint>? diagnosticKeepMasterFormIds = null,
         ImmutableDictionary<uint, ImmutableHashSet<string>>? diagnosticRetainMasterSubrecords = null,
-        IReadOnlyDictionary<uint, uint>? masterFormIdAliases = null)
+        IReadOnlyDictionary<uint, uint>? masterFormIdAliases = null,
+        IReadOnlyDictionary<uint, uint>? legacyPipelineAllocations = null)
     {
         var coverage = enabledTypes.ToImmutableHashSet(StringComparer.Ordinal);
         var keepMasterFormIds = diagnosticKeepMasterFormIds ?? ImmutableHashSet<uint>.Empty;
@@ -174,8 +175,29 @@ public sealed class EsmPlanner
                 .AddRange(cs.NavmSourceToEmitted)
                 .AddRange(cs.WorldspaceSourceToEmitted);
         }
-        var containedAllocations = cellSection?.LandByCellSourceToEmitted.Values
-            .Concat(cellSection.AdditionalEmittedFormIds);
+
+        // Legacy-pipeline bridge (2026-08-05, NVULfountain class): base types with no planner
+        // extractor row (MSTT / TACT / PWAT / ...) emit through the legacy top-level loop, and
+        // their source->allocated FormIDs never reached this map — so every placed ref naming
+        // one dropped as refr.dangling-base under --planner-types (6 refs in xex21, including
+        // the RadioNVNewVegasRadio station ref and the NVULfountain). Merge them so the verdict
+        // pass resolves the base like any planner-allocated one. Planner allocations win ties
+        // (merged AFTER the cell-section AddRanges: a source FormID can be dual-booked by the
+        // legacy loop and a planner cell allocator, and AddRange throws on conflicting keys).
+        if (legacyPipelineAllocations is not null)
+        {
+            foreach (var (sourceFormId, allocatedFormId) in legacyPipelineAllocations)
+            {
+                if (!sourceToEmitted.ContainsKey(sourceFormId))
+                {
+                    sourceToEmitted = sourceToEmitted.Add(sourceFormId, allocatedFormId);
+                }
+            }
+        }
+
+        var containedAllocations = (cellSection?.LandByCellSourceToEmitted.Values
+                .Concat(cellSection.AdditionalEmittedFormIds) ?? [])
+            .Concat(legacyPipelineAllocations?.Values ?? []);
         var emittedFormIds = BuildEmittedFormIds(
             decisions, sourceToEmitted, masterFormIds, containedAllocations)
             .Union(RuntimeStateRecordPolicy.EngineFormIds);

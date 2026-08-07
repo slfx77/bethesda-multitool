@@ -58,6 +58,13 @@ public record PlacedReference
     /// <summary>Item stack count from XCNT subrecord / ExtraCount.</summary>
     public short? Count { get; init; }
 
+    /// <summary>
+    ///     Radio broadcast configuration from the XRDO subrecord / ExtraRadioData. Present only on
+    ///     references whose base form is a Radio-Station-flagged TACT; every such reference in
+    ///     retail FalloutNV.esm carries one.
+    /// </summary>
+    public RadioData? RadioData { get; init; }
+
     /// <summary>Owner FormID (XOWN subrecord).</summary>
     public uint? OwnerFormId { get; init; }
 

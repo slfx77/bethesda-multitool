@@ -40,6 +40,10 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     private readonly AutoResetEvent _fenceEvent = new(false);
     private ulong _nextFenceValue = 1;
     private int _frameIndex;
+
+    // True once this frame slot's wait counters have been reset, so a wait split across
+    // WaitForFrameSlot + BeginFrame reports one total rather than only the second half.
+    private bool _fenceWaitAccumulating;
     private bool _frameOpen;
     private bool _disposed;
 
@@ -103,6 +107,27 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     }
 
     /// <summary>
+    ///     Blocks until the GPU has finished with this frame slot, WITHOUT touching any D3D12 state.
+    ///     <para>
+    ///         Exists so the host can pay the wait BEFORE it samples input and integrates the camera.
+    ///         The wait is the dominant term in a GPU-bound frame (measured at 46 ms of a 70 ms frame),
+    ///         and anything sampled ahead of it is already that stale by the time recording starts —
+    ///         which reads as the camera lagging the mouse. Waiting first makes the pose as fresh as
+    ///         the frame can possibly deliver. Idempotent: <see cref="BeginFrame" /> re-checks the
+    ///         fence and finds it already satisfied.
+    ///     </para>
+    /// </summary>
+    public void WaitForFrameSlot()
+    {
+        if (_frameOpen)
+        {
+            return;
+        }
+
+        WaitForFrameSlotFence();
+    }
+
+    /// <summary>
     ///     Blocks until the GPU is done with this frame slot's resources, then resets the
     ///     allocator and command list ready for fresh recording. Call once at the top of
     ///     every frame before any other D3D12 work.
@@ -111,21 +136,36 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     {
         if (_frameOpen) throw new InvalidOperationException("BeginFrame called twice without EndFrame.");
 
+        WaitForFrameSlotFence();
+        RetireCompletedFenceResources();
+        _allocators[_frameIndex].Reset();
+        _commandList.Reset(_allocators[_frameIndex], initialState: null);
+        _frameOpen = true;
+    }
+
+    /// <summary>
+    ///     The fence wait itself. Accumulates into <see cref="LastFrameFenceWaitMilliseconds" /> so the
+    ///     reported figure stays whole no matter how the wait is split between
+    ///     <see cref="WaitForFrameSlot" /> and <see cref="BeginFrame" />; the pair is reset by whichever
+    ///     runs first for this frame slot.
+    /// </summary>
+    private void WaitForFrameSlotFence()
+    {
+        if (!_fenceWaitAccumulating)
+        {
+            LastFrameWaitedOnFence = false;
+            LastFrameFenceWaitMilliseconds = 0;
+            _fenceWaitAccumulating = true;
+        }
+
         var waitFor = _frameFenceValues[_frameIndex];
-        LastFrameWaitedOnFence = false;
-        LastFrameFenceWaitMilliseconds = 0;
         if (waitFor > 0 && _gpu.FrameFence.CompletedValue < waitFor)
         {
             var waitStarted = Stopwatch.GetTimestamp();
             D3D12FenceWaiter.WaitForFence(_gpu.FrameFence, waitFor, _fenceEvent);
             LastFrameWaitedOnFence = true;
-            LastFrameFenceWaitMilliseconds = Stopwatch.GetElapsedTime(waitStarted).TotalMilliseconds;
+            LastFrameFenceWaitMilliseconds += Stopwatch.GetElapsedTime(waitStarted).TotalMilliseconds;
         }
-
-        RetireCompletedFenceResources();
-        _allocators[_frameIndex].Reset();
-        _commandList.Reset(_allocators[_frameIndex], initialState: null);
-        _frameOpen = true;
     }
 
     /// <summary>
@@ -163,6 +203,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
                 _currentFrameRetirements.Clear();
                 _frameIndex = (_frameIndex + 1) % FramesInFlight;
                 _frameOpen = false;
+                _fenceWaitAccumulating = false;
             }
         }
 
@@ -193,6 +234,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
 
         _frameIndex = (_frameIndex + 1) % FramesInFlight;
         _frameOpen = false;
+        _fenceWaitAccumulating = false;
     }
 
     /// <summary>

@@ -49,7 +49,13 @@ internal sealed class ShadowMapRenderer12 : IDisposable
     private readonly bool[] _inSrvState = new bool[CascadeCount];
     private readonly Matrix4x4[] _renderedViewProj = new Matrix4x4[CascadeCount];
     private readonly Vector4[] _renderedParams = new Vector4[CascadeCount];
-    private Vector3 _renderedOrigin;
+
+    // Render origin PER CASCADE. Cascades re-render on independent schedules (each has its own
+    // drift quantum, scaled to what its texels can resolve), so at any moment they can have been
+    // rendered against different camera-relative origins. A single shared origin would fold the
+    // wrong translation into the older cascades' sampling matrices and slide their shadows.
+    private readonly Vector3[] _renderedOrigins = new Vector3[CascadeCount];
+    private readonly bool[] _cascadePublished = new bool[CascadeCount];
     private bool _disposed;
 
     /// <summary>Per-cascade map dimension in texels (square). Defaults are VRAM-SCALED from the
@@ -118,10 +124,10 @@ internal sealed class ShadowMapRenderer12 : IDisposable
 
         return new ShadowSampleConstants
         {
-            Matrix0 = SunShadowMath.FoldSampleMatrix(_renderedViewProj[0], _renderedOrigin, currentOrigin),
-            Matrix1 = SunShadowMath.FoldSampleMatrix(_renderedViewProj[1], _renderedOrigin, currentOrigin),
-            Matrix2 = SunShadowMath.FoldSampleMatrix(_renderedViewProj[2], _renderedOrigin, currentOrigin),
-            Matrix3 = SunShadowMath.FoldSampleMatrix(_renderedViewProj[3], _renderedOrigin, currentOrigin),
+            Matrix0 = SunShadowMath.FoldSampleMatrix(_renderedViewProj[0], _renderedOrigins[0], currentOrigin),
+            Matrix1 = SunShadowMath.FoldSampleMatrix(_renderedViewProj[1], _renderedOrigins[1], currentOrigin),
+            Matrix2 = SunShadowMath.FoldSampleMatrix(_renderedViewProj[2], _renderedOrigins[2], currentOrigin),
+            Matrix3 = SunShadowMath.FoldSampleMatrix(_renderedViewProj[3], _renderedOrigins[3], currentOrigin),
             Params0 = _renderedParams[0],
             Params1 = _renderedParams[1],
             Params2 = _renderedParams[2],
@@ -197,11 +203,45 @@ internal sealed class ShadowMapRenderer12 : IDisposable
                 1f / Resolution,
                 frustums[i].NormalizedDepthBias,
                 _srvs[i].BindlessIndex);
+            _renderedOrigins[i] = renderOrigin;
+            _cascadePublished[i] = true;
         }
 
-        _renderedOrigin = renderOrigin;
         HasContent = true;
     }
+
+    /// <summary>
+    ///     Commits a render of ONE cascade. The per-cascade twin of <see cref="Publish" />, used by the
+    ///     staggered re-render cadence: each cascade has its own drift quantum (scaled to the world
+    ///     size of its texels) so they come due independently, and rendering them together purely to
+    ///     publish them together is exactly the cost that cadence exists to avoid.
+    ///     <para>
+    ///         A cascade that has never published keeps <c>Params.x = 0</c> and the scene shaders fall
+    ///         through to the next containing cascade, so a partially-published ladder is always safe
+    ///         to sample.
+    ///     </para>
+    /// </summary>
+    public void PublishCascade(
+        int index, in SunShadowMath.LightFrustum frustum, Vector3 renderOrigin, bool hasDraws)
+    {
+        if ((uint)index >= CascadeCount)
+            throw new ArgumentOutOfRangeException(nameof(index));
+
+        _renderedViewProj[index] = frustum.ViewProj;
+        _renderedParams[index] = new Vector4(
+            hasDraws ? 1f : 0f,
+            1f / Resolution,
+            frustum.NormalizedDepthBias,
+            _srvs[index].BindlessIndex);
+        _renderedOrigins[index] = renderOrigin;
+        _cascadePublished[index] = true;
+        HasContent = true;
+    }
+
+    /// <summary>True once cascade <paramref name="index" /> has been rendered and published at least
+    /// once. Before that its sampling constants are disabled and must not be replayed.</summary>
+    public bool IsCascadePublished(int index) =>
+        (uint)index < CascadeCount && _cascadePublished[index];
 
     /// <summary>
     ///     Updates the availability bit after an in-place animated refresh of one published

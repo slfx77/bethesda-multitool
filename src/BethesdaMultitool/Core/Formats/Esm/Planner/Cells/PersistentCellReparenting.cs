@@ -57,8 +57,22 @@ public static class PersistentCellReparenting
         ImmutableDictionary<uint, CellPlan> cells,
         IReadOnlyDictionary<uint, PcEsmCellContext> masterContexts,
         IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
-        FormIdAllocator? allocator = null)
+        FormIdAllocator? allocator = null,
+        IReadOnlyDictionary<uint, uint>? masterRefToCell = null)
     {
+        return Apply(cells, masterContexts, masterRecordsByFormId, out _, allocator, masterRefToCell);
+    }
+
+    public static ImmutableDictionary<uint, CellPlan> Apply(
+        ImmutableDictionary<uint, CellPlan> cells,
+        IReadOnlyDictionary<uint, PcEsmCellContext> masterContexts,
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
+        out ImmutableArray<PlanDiagnostic> diagnostics,
+        FormIdAllocator? allocator = null,
+        IReadOnlyDictionary<uint, uint>? masterRefToCell = null)
+    {
+        var diagnosticsBuilder = ImmutableArray.CreateBuilder<PlanDiagnostic>();
+        diagnostics = ImmutableArray<PlanDiagnostic>.Empty;
         if (cells.IsEmpty)
         {
             return cells;
@@ -143,6 +157,50 @@ public static class PersistentCellReparenting
                 && masterRecordsByFormId.TryGetValue(child.FormId, out var masterChild)
                 && (masterChild.Header.Flags & PersistentHeaderFlag) != 0;
 
+            // Master-home gate, USER RULING 2026-08-05 (playtest finding 2, option D). The
+            // v141 gate required master to file the ref in a non-interior cell OF THE TARGET
+            // WORLDSPACE — but the proto predates retail's worldspace re-partition
+            // (TheStripWorldNew→TheStripWorld, WastelandNVmini→WastelandNV, …), so that test
+            // NEVER held for a proto capture: it blocked all 163 candidates, not the 3 the
+            // v141 note counted. Current rules:
+            //   1. NEW refs are unconstrained (no master home).
+            //   2. Plugin-NEW worldspace containers (master authored no cells for the target
+            //      worldspace): allowed unconditionally — no authored placement conflicts.
+            //   3. MASTER containers: allowed when master homes the ref in any NON-interior
+            //      cell, regardless of worldspace. Interior-homed refs stay blocked — that is
+            //      the cow-crash class (xex44.v140, cow TheStripWorldNew → ACCESS_VIOLATION:
+            //      ACHR 0x00116834 + ACRE 0x0013BB19/0x0013BB1A, master interiors, pulled
+            //      into master container 0x0013B310 while the engine still held the interior
+            //      copies).
+            var targetIsProtoContainer = !masterContainers.ContainsKey(cellWs);
+
+            bool MasterHomeAllowsMove(RecordPlan child)
+            {
+                if (child.Disposition != RecordDisposition.Override)
+                {
+                    return true;
+                }
+
+                if (masterRefToCell is null
+                    || !masterRefToCell.TryGetValue(child.FormId, out var masterCellFormId))
+                {
+                    return true; // No master parentage known — leave prior behavior intact.
+                }
+
+                if (masterCellFormId == cellFormId || masterCellFormId == ContainerFor(cellWs))
+                {
+                    return true; // Already at home, or already the container we're moving into.
+                }
+
+                if (targetIsProtoContainer)
+                {
+                    return true;
+                }
+
+                return masterContexts.TryGetValue(masterCellFormId, out var masterCellContext)
+                       && !masterCellContext.IsInterior;
+            }
+
             // Enable parents rescue as NEW refs from any bucket, or as Overrides only when
             // MASTER files them persistent (a master-temporary REFR override routed into the
             // container would violate the GRUP/flag agreement).
@@ -151,14 +209,48 @@ public static class PersistentCellReparenting
                 && enableParentTargets.Contains(child.SourceFormId ?? child.FormId)
                 && (child.Disposition == RecordDisposition.New || MasterFilesPersistent(child));
 
-            bool ShouldMove(RecordPlan child, bool fromPersistentBucket) =>
-                child.Disposition != RecordDisposition.Skip
-                && (child.Model is PlacedReference { IsMapMarker: true }
-                    || (fromPersistentBucket
-                        && (child.Type is "ACHR" or "ACRE"
-                            || (child.Disposition == RecordDisposition.New && child.Type == "REFR")))
-                    || (child.Type is "ACHR" or "ACRE" && MasterFilesPersistent(child))
-                    || IsRescuableEnableParent(child));
+            bool ShouldMove(RecordPlan child, bool fromPersistentBucket)
+            {
+                var qualifies = child.Disposition != RecordDisposition.Skip
+                    && (child.Model is PlacedReference { IsMapMarker: true }
+                        || (fromPersistentBucket
+                            && (child.Type is "ACHR" or "ACRE"
+                                || (child.Disposition == RecordDisposition.New && child.Type == "REFR")))
+                        || (child.Type is "ACHR" or "ACRE" && MasterFilesPersistent(child))
+                        || IsRescuableEnableParent(child));
+                if (!qualifies)
+                {
+                    return false;
+                }
+
+                if (MasterHomeAllowsMove(child))
+                {
+                    return true;
+                }
+
+                // A gate refusal is never silent: the 163 refs v141 dropped surfaced only via
+                // an in-game playtest ("where did Emily Ortal go?"). Every refusal now names
+                // the ref, its master home, and why.
+                masterRefToCell!.TryGetValue(child.FormId, out var masterHome);
+                diagnosticsBuilder.Add(new PlanDiagnostic
+                {
+                    Kind = PlanDiagnosticKind.Warning,
+                    Phase = "Cells",
+                    Code = "refr.rehome-blocked",
+                    RecordType = child.Type,
+                    FormId = child.FormId,
+                    Message = $"{child.Type} 0x{child.FormId:X8} qualifies for container re-homing in " +
+                        $"worldspace 0x{cellWs:X8} but master homes it in interior cell 0x{masterHome:X8} " +
+                        "— blocked (interior-homed master override; the cow-crash class).",
+                    Metadata = new Dictionary<string, string?>
+                    {
+                        ["worldspace"] = $"0x{cellWs:X8}",
+                        ["masterHomeCell"] = $"0x{masterHome:X8}",
+                        ["capturedCell"] = $"0x{cellFormId:X8}",
+                    },
+                });
+                return false;
+            }
 
             var movable = new List<RecordPlan>();
             var persistent = SplitBucket(cellPlan.PersistentChildren, true, ShouldMove, movable);
@@ -185,11 +277,15 @@ public static class PersistentCellReparenting
             // Non-marker moves are deliberate reparents — flagged so the verdict pass
             // applies the captured override. Markers keep their dedicated verdict rules
             // (differs-from-master gate + mismatch bypass, v113 behavior).
+            // ProtoWorldspaceRehome additionally marks moves into a plugin-new worldspace's
+            // container, where the verdict pass applies the CAPTURED enable-state (USER
+            // RULING 2026-08-05 — master authored no cells there, so there is no authored
+            // enable-state to preserve).
             foreach (var child in movable)
             {
                 list.Add(child.Model is PlacedReference { IsMapMarker: true }
                     ? child
-                    : child with { Reparented = true });
+                    : child with { Reparented = true, ProtoWorldspaceRehome = targetIsProtoContainer });
             }
         }
 
@@ -241,106 +337,53 @@ public static class PersistentCellReparenting
             result[containerFormId.Value] =
                 masterRecordsByFormId.TryGetValue(containerFormId.Value, out var masterCell)
                 && masterContexts.TryGetValue(containerFormId.Value, out var containerContext)
-                    ? BuildMasterContainerOverridePlan(containerFormId.Value, masterCell, containerContext, unique)
-                    : BuildNewContainerPlan(containerFormId.Value, ws, unique);
+                    ? PersistentContainerPlans.BuildMasterContainerOverridePlan(
+                        containerFormId.Value, masterCell, containerContext, unique)
+                    : PersistentContainerPlans.BuildNewContainerPlan(containerFormId.Value, ws, unique);
         }
 
         // Orphan buckets never emit: any child worth keeping moved above; the bucket cell is
         // a parse-time synthesis whose invented EditorId ("[Virtual x,y]" / "[Unresolved …]")
-        // must never reach the output ESM.
+        // must never reach the output ESM. Children that did NOT move die with the bucket —
+        // each death is named (these removals were fully silent until 2026-08-05).
         foreach (var formId in orphanBuckets)
         {
+            if (result.TryGetValue(formId, out var bucket))
+            {
+                foreach (var child in bucket.PersistentChildren
+                             .Concat(bucket.TemporaryChildren)
+                             .Concat(bucket.VwdChildren))
+                {
+                    if (child.Disposition == RecordDisposition.Skip)
+                    {
+                        continue;
+                    }
+
+                    diagnosticsBuilder.Add(new PlanDiagnostic
+                    {
+                        Kind = PlanDiagnosticKind.Warning,
+                        Phase = "Cells",
+                        Code = "refr.orphan-bucket-dropped",
+                        RecordType = child.Type,
+                        FormId = child.FormId,
+                        Message = $"{child.Type} 0x{child.FormId:X8} was captured in unresolved-parent " +
+                            $"bucket 0x{formId:X8} and did not qualify for container rescue — dropped " +
+                            "with the bucket.",
+                        Metadata = new Dictionary<string, string?>
+                        {
+                            ["bucket"] = $"0x{formId:X8}",
+                            ["disposition"] = child.Disposition.ToString(),
+                        },
+                    });
+                }
+            }
+
             result.Remove(formId);
         }
 
+        diagnostics = diagnosticsBuilder.ToImmutable();
         return result.ToImmutable();
     }
-
-    /// <summary>
-    ///     Override plan for a master worldspace's persistent-container cell that had no
-    ///     captured plan of its own — hosts only the moved children (v113 shape).
-    /// </summary>
-    private static CellPlan BuildMasterContainerOverridePlan(
-        uint containerFormId,
-        ParsedMainRecord masterCell,
-        PcEsmCellContext containerContext,
-        List<RecordPlan> children) => new()
-    {
-        CellFormId = containerFormId,
-        CellRecordPlan = new RecordPlan
-        {
-            Type = "CELL",
-            Disposition = RecordDisposition.Override,
-            FormId = containerFormId,
-            Model = null,
-            Master = masterCell,
-            References = ImmutableArray<ResolvedRef>.Empty,
-            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance
-            {
-                PolicyId = "PersistentCellReparenting",
-                Reason = "Container override created to host re-parented exterior persistent refs + map markers.",
-            },
-        },
-        Context = containerContext,
-        PersistentChildren = [.. children],
-        VwdChildren = ImmutableArray<RecordPlan>.Empty,
-        TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
-        ParentWorldspaceFormId = containerContext.WorldspaceFormId,
-        // Persistent-only content by construction; carry-forward skips master's own
-        // GroupType-8 children, so this override never bloats with master persistents.
-        Mode = CellMergeMode.PersistentOnly,
-        DropRenderCullingMarkers = false,
-    };
-
-    /// <summary>
-    ///     Minimal NEW persistent-container cell for a worldspace with neither a master nor
-    ///     a captured proto container (matches the CK's behavior when a worldspace gains its
-    ///     first persistent ref): no EditorId, exterior, no water claim.
-    /// </summary>
-    private static CellPlan BuildNewContainerPlan(
-        uint containerFormId,
-        uint worldspaceFormId,
-        List<RecordPlan> children) => new()
-    {
-        CellFormId = containerFormId,
-        CellRecordPlan = new RecordPlan
-        {
-            Type = "CELL",
-            Disposition = RecordDisposition.New,
-            FormId = containerFormId,
-            Model = new CellRecord
-            {
-                FormId = containerFormId,
-                WorldspaceFormId = worldspaceFormId,
-                IsPersistentCell = true,
-            },
-            Master = null,
-            References = ImmutableArray<ResolvedRef>.Empty,
-            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance
-            {
-                PolicyId = "PersistentCellReparenting",
-                Reason = "New persistent-container cell synthesized for a worldspace without one.",
-            },
-        },
-        Context = new PcEsmCellContext
-        {
-            CellFormId = containerFormId,
-            IsInterior = false,
-            WorldspaceFormId = worldspaceFormId,
-            BlockGroupType = 0,
-            SubblockGroupType = 0,
-            BlockLabel = null,
-            SubblockLabel = null,
-        },
-        PersistentChildren = [.. children],
-        VwdChildren = ImmutableArray<RecordPlan>.Empty,
-        TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
-        ParentWorldspaceFormId = worldspaceFormId,
-        Mode = CellMergeMode.LoadedReplacement,
-        DropRenderCullingMarkers = false,
-    };
 
     private static void CollectEnableParents(
         ImmutableArray<RecordPlan> bucket, HashSet<uint> targets)

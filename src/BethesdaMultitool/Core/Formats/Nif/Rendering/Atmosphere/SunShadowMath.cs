@@ -104,16 +104,72 @@ internal static class SunShadowMath
     /// between key re-snaps.</summary>
     public const float CenterSnap = 512f;
 
-    public static ShadowKey BuildKey(Vector3 sunDirection, Vector3 sceneCenter, float radius, int contentVersion)
+    /// <summary>
+    ///     Half-extent along the light direction, as a multiple of the cascade radius. Mirrors the
+    ///     +/-1.25*radius depth range <see cref="BuildLightFrustum" /> gives its ortho box.
+    /// </summary>
+    public const float CascadeDepthExtentFactor = 1.25f;
+
+    /// <summary>
+    ///     Lateral reach of a cascade as a multiple of its radius. The ortho box is a SQUARE of
+    ///     half-width <c>radius</c> whose lateral axes come from <see cref="Matrix4x4.CreateLookAt" />'s
+    ///     internal basis, so a test built on any other perpendicular basis would disagree with it near
+    ///     the corners. Using the CIRCUMSCRIBED circle (radius*sqrt(2)) sidesteps that entirely: it is
+    ///     rotation-invariant about the light axis and strictly contains the square, so classification
+    ///     can never exclude something the box would have covered. It over-includes by ~57% of area,
+    ///     which is a trivial price for not depending on a basis convention.
+    /// </summary>
+    public const float CascadeLateralReachFactor = 1.41422f;
+
+    /// <summary>
+    ///     Whether a world-space sphere can intersect the cascade of the given radius centred on the
+    ///     shadow anchor. Conservative: a true answer may include spheres the ortho box would clip, but
+    ///     a false answer guarantees the sphere cannot cast into that cascade.
+    ///     <para>
+    ///         Because every cascade shares an anchor and a light direction and differs only in radius,
+    ///         the volumes are strictly NESTED — which is what lets a caster be classified once into
+    ///         its smallest containing cascade and the replay then draw a contiguous PREFIX per cascade.
+    ///     </para>
+    /// </summary>
+    /// <param name="delta">World-space offset from the shadow anchor to the sphere centre.</param>
+    /// <param name="sunDirection">Unit light direction (the same one the cascades were fitted to).</param>
+    /// <param name="radius">Cascade radius.</param>
+    /// <param name="sphereRadius">Radius of the caster's bounding sphere.</param>
+    /// <param name="slack">Extra reach for camera/anchor drift between rebuild and use.</param>
+    public static bool CascadeContains(
+        Vector3 delta, Vector3 sunDirection, float radius, float sphereRadius, float slack)
+    {
+        var reach = sphereRadius + slack;
+        var axial = Vector3.Dot(delta, sunDirection);
+        if (MathF.Abs(axial) > (radius * CascadeDepthExtentFactor) + reach)
+        {
+            return false;
+        }
+
+        // Perpendicular distance from the light axis, via Pythagoras on the projection.
+        var lateralSquared = MathF.Max(delta.LengthSquared() - (axial * axial), 0f);
+        var lateralLimit = (radius * CascadeLateralReachFactor) + reach;
+        return lateralSquared <= lateralLimit * lateralLimit;
+    }
+
+    /// <param name="snap">
+    ///     Coverage-center quantum. Defaults to <see cref="CenterSnap" />; callers building a
+    ///     PER-CASCADE key pass a step proportional to that cascade's radius, so a far cascade whose
+    ///     texels span 64 world units does not re-render for a 512-unit camera move it cannot resolve.
+    /// </param>
+    public static ShadowKey BuildKey(
+        Vector3 sunDirection, Vector3 sceneCenter, float radius, int contentVersion,
+        float snap = CenterSnap)
     {
         var dir = Vector3.Normalize(sunDirection);
+        var step = snap > 0f ? snap : CenterSnap;
         return new ShadowKey(
             (int)MathF.Round(dir.X * 1000f),
             (int)MathF.Round(dir.Y * 1000f),
             (int)MathF.Round(dir.Z * 1000f),
-            (int)MathF.Round(sceneCenter.X / CenterSnap),
-            (int)MathF.Round(sceneCenter.Y / CenterSnap),
-            (int)MathF.Round(sceneCenter.Z / CenterSnap),
+            (int)MathF.Round(sceneCenter.X / step),
+            (int)MathF.Round(sceneCenter.Y / step),
+            (int)MathF.Round(sceneCenter.Z / step),
             (int)MathF.Round(radius),
             contentVersion);
     }

@@ -446,11 +446,16 @@ public sealed class CellChildVerdictPlannerTests
     }
 
     [Fact]
-    public void Reparented_Actor_Override_Applies_Proto_Enable_State()
+    public void Reparented_Actor_Override_Preserves_Master_Enable_State()
     {
-        // Master parks the cut NPC disabled (header 0x800); the proto capture has her live.
-        // The reparented override must force the Initially-Disabled bit off or the move
-        // places a disabled actor (EthelPhebus).
+        // USER POLICY 2026-08-04: a DMP is a mid-session snapshot, so a quest-gated actor the
+        // player already unlocked reads back enabled. PersistentCellReparenting is only a
+        // file-format normalization (exterior persistents must live in the worldspace
+        // container), so it is NOT evidence the proto authored a different enable-state —
+        // master's Initially-Disabled bit must survive. Regression guard for Powder Gangers
+        // active in Goodsprings from game start (GSJoeCobb 0x00104C68 et al).
+        // Genuine relocation (isForeignParent — master files the ref in a DIFFERENT cell) still
+        // applies the proto's enable-state; that is the EthelPhebus path and is unchanged.
         var actor = Ref(MasterRefId, MasterNpcBaseId) with { RecordType = "ACHR", IsPersistent = true };
         var cells = Apply(
             MakeCell(mode: CellMergeMode.PersistentOnly, temporary:
@@ -464,7 +469,7 @@ public sealed class CellChildVerdictPlannerTests
 
         var verdict = cells[CellId].RefDecisions[MasterRefId];
         Assert.Equal(PlacedRefEmitVerdict.Emit, verdict.Verdict);
-        Assert.False(verdict.OverrideInitiallyDisabled);
+        Assert.Null(verdict.OverrideInitiallyDisabled);
     }
 
     [Fact]

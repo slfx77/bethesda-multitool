@@ -34,7 +34,12 @@ internal readonly record struct FrameProfileSample(
     int GcGen1Collections,
     int GcGen2Collections,
     long ManagedMemoryBytes,
-    long AllocatedBytes);
+    long AllocatedBytes,
+    // The camera's integration timestep for this frame, BEFORE the pathological-delta clamp.
+    // Apparent movement speed is MoveSpeed x DeltaSeconds, so a periodic pulse in this series IS the
+    // reported motion "heartbeat" — it is not derivable from TotalMilliseconds, because the callback
+    // interval and the frame's own cost are different quantities.
+    double DeltaSeconds = 0);
 
 /// <summary>
 ///     Aggregates <see cref="FrameProfileSample" /> rows (plus per-renderer

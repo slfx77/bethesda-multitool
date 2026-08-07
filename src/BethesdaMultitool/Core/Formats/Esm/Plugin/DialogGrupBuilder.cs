@@ -201,15 +201,49 @@ internal static class DialogGrupBuilder
         var infosByMasterDial = new Dictionary<uint, List<DialogueRecord>>();
         var droppedUnavailableMasterDialInfos = 0;
         var droppedOrphanInfos = 0;
+        var recoveredRawParentInfos = 0;
+
+        bool ResolvesToEmittedDial(uint id) => dialFormIdMap.ContainsKey(id);
+        bool ResolvesToMasterDial(uint id) =>
+            masterFormIdSet.Contains(id)
+            && masterRecordsByFormId.TryGetValue(id, out var record)
+            && record.Header.Signature == "DIAL";
+
         foreach (var info in newInfos)
         {
-            if (!info.TopicFormId.HasValue || info.TopicFormId.Value == 0)
+            var routed = info;
+            var topicId = info.TopicFormId ?? 0u;
+
+            // Raw type-7 ancestry recovery (USER POLICY 2026-08-03: recover, don't orphan).
+            // The runtime TESTopic attribution and the raw file ancestry are retained as
+            // separate evidence on DialogueRecord; until now only the runtime attribution was
+            // consulted here, so an INFO whose runtime link was missing or dangling dropped
+            // even when its raw Topic-Children GRUP parent was sitting right there (xex44:
+            // orphans grew 334→878 on this exact lane). The model forbids guessing between
+            // ambiguous raw parents — but a candidate list where exactly ONE entry resolves
+            // to an emittable DIAL is not a guess.
+            if (topicId == 0 || !(ResolvesToEmittedDial(topicId) || ResolvesToMasterDial(topicId)))
+            {
+                var resolvable = routed.RawParentTopicFormIds
+                    .Where(raw => raw != 0 && raw != topicId
+                                  && (ResolvesToEmittedDial(raw) || ResolvesToMasterDial(raw)))
+                    .Distinct()
+                    .ToList();
+
+                if (resolvable.Count == 1)
+                {
+                    routed = routed with { TopicFormId = resolvable[0] };
+                    topicId = resolvable[0];
+                    recoveredRawParentInfos++;
+                }
+            }
+
+            if (topicId == 0)
             {
                 droppedOrphanInfos++;
                 continue;
             }
 
-            var topicId = info.TopicFormId.Value;
             if (dialFormIdMap.TryGetValue(topicId, out var newDialId))
             {
                 if (!infosByEmittedDial.TryGetValue(newDialId, out var list))
@@ -218,25 +252,21 @@ internal static class DialogGrupBuilder
                     infosByEmittedDial[newDialId] = list;
                 }
 
-                list.Add(info);
+                list.Add(routed);
+            }
+            else if (ResolvesToMasterDial(topicId))
+            {
+                if (!infosByMasterDial.TryGetValue(topicId, out var list))
+                {
+                    list = [];
+                    infosByMasterDial[topicId] = list;
+                }
+
+                list.Add(routed);
             }
             else if (masterFormIdSet.Contains(topicId))
             {
-                if (masterRecordsByFormId.TryGetValue(topicId, out var masterTopicRecord)
-                    && masterTopicRecord.Header.Signature == "DIAL")
-                {
-                    if (!infosByMasterDial.TryGetValue(topicId, out var list))
-                    {
-                        list = [];
-                        infosByMasterDial[topicId] = list;
-                    }
-
-                    list.Add(info);
-                }
-                else
-                {
-                    droppedUnavailableMasterDialInfos++;
-                }
+                droppedUnavailableMasterDialInfos++;
             }
             else
             {
@@ -820,6 +850,8 @@ internal static class DialogGrupBuilder
             $"{combinePlan.SystemInfosSuppressed:N0} unsafe/colliding system INFO(s). " +
             $"Extended {extendedAnchorQstiCount:N0} master-DIAL QSTI binding(s) so the engine knows " +
             "new quests speak master topics. " +
+            $"Recovered {recoveredRawParentInfos:N0} INFO(s) via raw Topic-Children ancestry whose " +
+            "runtime topic attribution was missing or dangling. " +
             $"Dropped {droppedUnavailableMasterDialInfos:N0} INFO(s) with unavailable master-DIAL TPIC, " +
             $"{droppedOrphanInfos:N0} orphan INFO(s), {droppedNoQstiInfos:N0} INFO(s) with no QSTI " +
             "(engine refuses topic-info inserts when QSTI is missing), and " +

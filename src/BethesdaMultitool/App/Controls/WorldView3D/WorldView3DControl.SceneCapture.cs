@@ -35,9 +35,24 @@ public sealed partial class WorldView3DControl
     /// </summary>
     internal RendererProfilerScenarioSnapshot? Profiler_LastCaptureScenarioSnapshot { get; private set; }
 
-    /// <summary>Allocates (once) and rewrites the R32_Float Texture2D/Texture2DMS SRV over the
-    /// capture target's typeless depth (mirrors EnsureDepthSrv).</summary>
-    private bool TryEnsureCaptureDepthSrv(GpuOffscreenSceneTarget12 target)
+    /// <summary>
+    ///     Sample count the capture's depth SRV reports to the water/reference shaders. 1 whenever
+    ///     the SRV views the target's single-sample MAX-resolved depth copy (the preferred MSAA
+    ///     path); the raw target sample count only on the legacy multisampled-binding fallback.
+    /// </summary>
+    private int _captureDepthSampleCount = 1;
+
+    /// <summary>
+    ///     Allocates (once) and rewrites the R32_Float depth SRV for the capture. MSAA targets
+    ///     bind the single-sample MAX-resolved depth copy as a plain Texture2D (sampleCount 1):
+    ///     shader reads through the bindless Texture2DMS space-3 alias proved unreliable for
+    ///     late-written descriptor slots on shipped drivers (they intermittently returned the
+    ///     slot's stale prior content — the live-window-sized depth "rectangle" / opaque-water
+    ///     capture corruption), while the space-1 Texture2D path never misresolved. The read-only
+    ///     DSV hardware GreaterEqual occlusion still uses the true multisampled depth.
+    /// </summary>
+    private bool TryEnsureCaptureDepthSrv(
+        GpuOffscreenSceneTarget12 target, bool requireSnapshotCopy = false)
     {
         if (_gpu12 is null || _cbvSrvUavHeap12 is null)
         {
@@ -45,15 +60,30 @@ public sealed partial class WorldView3DControl
         }
 
         _captureDepthSrv ??= _cbvSrvUavHeap12.AllocatePersistent();
+        // The unified transparency stream keeps the live DSV WRITABLE for the whole blended+water
+        // pass, so its depth SRV must view the post-opaque COPY on 1x targets too (the raw-depth
+        // binding is only legal under the legacy read-only-DSV dance). When the copy cannot be
+        // allocated, report no depth at all — the stream then degrades exactly like the live path
+        // (NoDepthSrv) instead of sampling a bound depth buffer.
+        var useResolved = (target.IsMsaa || requireSnapshotCopy) &&
+                          target.TryEnsureResolvedDepthResource() &&
+                          target.ResolvedDepthResource is not null;
+        if (requireSnapshotCopy && !useResolved)
+        {
+            return false;
+        }
+
+        var depthResource = useResolved ? target.ResolvedDepthResource! : target.DepthResource;
+        var msaaView = target.IsMsaa && !useResolved;
         var srvDesc = new Vortice.Direct3D12.ShaderResourceViewDescription
         {
             Format = Vortice.DXGI.Format.R32_Float,
-            ViewDimension = target.IsMsaa
+            ViewDimension = msaaView
                 ? Vortice.Direct3D12.ShaderResourceViewDimension.Texture2DMultisampled
                 : Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
             Shader4ComponentMapping = Vortice.Direct3D12.ShaderComponentMapping.Default,
         };
-        if (!target.IsMsaa)
+        if (!msaaView)
         {
             srvDesc.Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView
             {
@@ -61,8 +91,80 @@ public sealed partial class WorldView3DControl
                 MostDetailedMip = 0,
             };
         }
-        _gpu12.Device.CreateShaderResourceView(target.DepthResource, srvDesc, _captureDepthSrv.Value.Cpu);
+        _gpu12.Device.CreateShaderResourceView(depthResource, srvDesc, _captureDepthSrv.Value.Cpu);
+        _captureDepthSampleCount = msaaView ? target.SampleCount : 1;
         return true;
+    }
+
+    /// <summary>True when THIS capture rendered and bound its own planar sky-reflection target
+    /// (rather than falling back to the shader's 2-row gradient stand-in). Surfaced in the parity
+    /// line so a capture can never silently be a different renderer from the live view.</summary>
+    private bool _captureWaterReflectionBound;
+
+    /// <summary>
+    ///     Renders the capture's own planar sky reflection — the same pass, in the same place in the
+    ///     frame, as the live route in <c>WorldView3DControl.Frame.cs</c>.
+    ///     <para>
+    ///         A capture MUST NOT be a different renderer from the live view: coordinates are handed
+    ///         over precisely so a reported artefact can be reproduced headlessly, and a capture that
+    ///         quietly substituted the 2-row gradient stand-in made every reflection report
+    ///         unreproducible from the pose that reported it.
+    ///     </para>
+    ///     <para>
+    ///         The one thing that cannot be shared is the target: the water shader looks the
+    ///         reflection up by normalized SCREEN UV, so it must be rasterized at the capture's own
+    ///         aspect and reported with the capture's own extent. <see cref="TryEnsureWaterReflectionTarget" />
+    ///         re-creates on an aspect change, so alternating live frames and captures is safe.
+    ///     </para>
+    /// </summary>
+    private bool TryRenderCaptureWaterReflection(
+        Vortice.Direct3D12.ID3D12GraphicsCommandList cmd,
+        Matrix4x4 viewProjSky,
+        float sceneSkyScale,
+        GpuOffscreenSceneTarget12 target)
+    {
+        if (!WaterReflectionEnabled || _water is null ||
+            !TryEnsureWaterReflectionTarget(target.Width, target.Height) ||
+            _waterReflectionTarget is not { } reflectionTarget)
+        {
+            return false;
+        }
+
+        try
+        {
+            reflectionTarget.RestoreWaterOpaqueSnapshot(cmd);
+            var reflectionClear =
+                ResolveSceneAtmosphere(_gameHour, _showLighting).SkyHorizonColor * sceneSkyScale;
+            reflectionTarget.Bind(cmd, new Vortice.Mathematics.Color4(
+                reflectionClear.X, reflectionClear.Y, reflectionClear.Z, 1f));
+            // Mirror about the camera's horizontal plane. The sky viewProj is translation-free with
+            // the dome at the origin, so a plain Z flip IS the reflection — identical to the live
+            // route, no plane height enters, and the dome's CullMode.None makes the reversed winding
+            // a non-issue.
+            //
+            // advanceCloudScroll stays false: this is the frame's SECOND sky draw and the scroll
+            // integrates once per Render, so advancing here would drift the reflected clouds off
+            // the sky's own.
+            RenderSky(Matrix4x4.CreateScale(1f, 1f, -1f) * viewProjSky, Vector3.Zero,
+                skyColorScale: sceneSkyScale, advanceCloudScroll: false);
+            // Bind only when THIS capture's copy actually recorded — a failed prepare would hand
+            // water a never-written image.
+            return reflectionTarget.TryPrepareWaterOpaqueSnapshot(cmd);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("WorldView3DControl: capture water reflection pass failed; " +
+                     "falling back to the sky gradient: {0}", ex.Message);
+            return false;
+        }
+        finally
+        {
+            // Restore the capture's own targets + viewport/scissor that the reflection target
+            // overwrote. Rebind (not Bind) — clearing here would erase the sky just drawn.
+            target.Rebind(cmd);
+            cmd.RSSetViewport(new Vortice.Mathematics.Viewport(0, 0, target.Width, target.Height, 0f, 1f));
+            cmd.RSSetScissorRect(target.Width, target.Height);
+        }
     }
 
     /// <summary>Allocates once and rewrites the capture target's single-sample HDR opaque snapshot
@@ -201,16 +303,57 @@ public sealed partial class WorldView3DControl
     ///     fence wait + readback run on a worker. Pause the live render loop (collapse the control) first so
     ///     the two don't share the command recorder, and let streaming settle so meshes/textures are resident.
     /// </summary>
+    /// <param name="animationTimeSeconds">
+    ///     Pinned renderer animation clock, or NULL (the default) to use the LIVE clock — the same
+    ///     stopwatch every live frame reads. Pinning it froze every time-varying path in the scene
+    ///     (water noise scroll above all) at a single phase, so a capture could not show anything
+    ///     that ANIMATES, which is most of what "flickers" means. Determinism is opt-in now, not the
+    ///     default: the capture has to be the live renderer first.
+    /// </param>
     internal async Task<byte[]?> Profiler_CaptureSceneAsync(
         int pixelWidth,
         int pixelHeight,
-        float animationTimeSeconds = 0f)
+        float? animationTimeSeconds = null)
+    {
+        // Mutual exclusion with the live loop for the WHOLE capture (the Export3D pattern —
+        // see ExportPanel.RunProjectionExport): the capture shares the command recorder, upload
+        // ring, and descriptor-heap frame regions with the per-frame loop. The profiler collapses
+        // the view first, but visibility gating alone still left live-frame GPU work overlapping
+        // capture recording/submission, and captures intermittently consumed STALE live-frame
+        // water constants (the live scene-depth SRV index instead of the capture's → the
+        // live-window-sized depth 'rectangle' / opaque-water capture artifacts, varying run to
+        // run). Detach + drain the GPU before touching shared state; reattach only after the
+        // readback fence wait completes on the worker.
+        var renderLoopWasAttached = _renderLoopAttached;
+        DetachRenderLoop();
+        try
+        {
+            _commandRecorder12?.WaitForGpuIdle();
+            return await CaptureSceneCoreAsync(pixelWidth, pixelHeight, animationTimeSeconds);
+        }
+        finally
+        {
+            if (renderLoopWasAttached)
+            {
+                AttachRenderLoop();
+            }
+        }
+    }
+
+    private async Task<byte[]?> CaptureSceneCoreAsync(
+        int pixelWidth,
+        int pixelHeight,
+        float? animationTimeSeconds)
     {
         Profiler_LastCaptureScenarioSnapshot = null;
         if (!CanRenderProjectionExport) return null; // D3D12 + scene renderers ready
         if (pixelWidth <= 0 || pixelHeight <= 0) return null;
-        ArgumentOutOfRangeException.ThrowIfNegative(animationTimeSeconds);
-        if (!float.IsFinite(animationTimeSeconds))
+        if (animationTimeSeconds is { } requestedClock)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(requestedClock);
+        }
+
+        if (animationTimeSeconds is { } finiteClock && !float.IsFinite(finiteClock))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(animationTimeSeconds), animationTimeSeconds, "Animation time must be finite.");
@@ -252,11 +395,11 @@ public sealed partial class WorldView3DControl
         // Select the camera CELL's WATR before drawing and before capture telemetry snapshots it.
         RefreshWaterAppearanceForCurrentCell();
 
-        // Same tonemap operator/parameters as the live frame (engine imagespace for FO3/FNV, etc.).
-        // A deterministic offscreen capture is an independent exposure sample, not another live
-        // temporal frame. The settings contract reserves AdaptFactor=1 for this path; leaving the
-        // record-struct default zero froze reused capture targets at their first adapted average.
-        var tonemap = ResolveTonemapSettings() with { AdaptFactor = 1f };
+        // EXACTLY the live frame's tonemap, adaptation included. This used to force AdaptFactor=1
+        // so repeated captures were byte-comparable, but that is a different exposure operator from
+        // the one on screen: the engine tonemap divides by a running adapted average, so pinning it
+        // changes every pixel and makes capture-vs-live brightness incomparable.
+        var tonemap = ResolveTonemapSettings();
         var weatherImageSpaceEvaluation = _weatherImageSpaceEvaluation;
         target.TonemapSettings = tonemap;
         var sceneSunlightScale = GpuTonemapSettings.ResolveSceneSunlightScale(
@@ -270,11 +413,29 @@ public sealed partial class WorldView3DControl
             _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
             isInterior: _selectedInterior is not null);
 
-        // Perspective view-projection from the current camera pose (matches the live frame's absolute path).
+        // Perspective view-projection from the current camera pose. CAMERA-RELATIVE, exactly as the
+        // live frame builds it (WorldView3DControl.Frame.cs): scene geometry projects through a view
+        // matrix relative to a snapped render origin that the vertex shaders subtract, the cull
+        // frustum stays absolute (its geometry is absolute world space), and the sky dome uses the
+        // translation-free view because it is camera-centred.
+        //
+        // The capture used to render ABSOLUTE while the live view rendered camera-relative. That is
+        // not a harmless difference: the absolute path is the one whose float32 precision collapses
+        // far from the origin — it is the reason camera-relative exists — so a capture taken at
+        // 50-80k world units was exercising a different, worse renderer than the view it was meant
+        // to reproduce. Coordinates handed over for headless debugging have to drive the same code.
         var aspect = w / (float)h;
         _camera.FarPlane = _renderDistance * 2f + MathF.Abs(_camera.Position.Z) + 2f * _cellSize;
         var proj = _camera.GetProjectionMatrix(aspect);
-        var viewProj = _camera.GetViewMatrix() * proj;
+        var viewProjAbsolute = _camera.GetViewMatrix() * proj;
+        var captureCameraRelative = CameraRelativeSceneRendering;
+        var captureRenderOrigin = captureCameraRelative
+            ? SnapToRenderOriginGrid(_camera.Position)
+            : Vector3.Zero;
+        var viewProj = captureCameraRelative
+            ? _camera.GetViewMatrixRelativeTo(captureRenderOrigin) * proj
+            : viewProjAbsolute;
+        var viewProjSky = _camera.GetViewMatrixCameraRelative() * proj;
         var cylinder = new VisibilityCylinder(_camera.Position, _renderDistance);
 
         // One capture clock owns every time-varying reference path. The live settle loop intentionally
@@ -299,7 +460,15 @@ public sealed partial class WorldView3DControl
         var effectiveWind = _windStrength ?? weatherWind;
         _references?.SetWindProfile(Core.Formats.SpeedTree.SpeedTreeWindProfile.For(
             _data?.Game ?? Core.Games.BethesdaGame.Unknown));
-        _references?.SetWindForCapture(WindDirection, effectiveWind, animationTimeSeconds);
+        // Live wind clock unless the caller pinned the animation clock (see the parameter docs).
+        if (animationTimeSeconds is { } pinnedWind)
+        {
+            _references?.SetWindForCapture(WindDirection, effectiveWind, pinnedWind);
+        }
+        else
+        {
+            _references?.SetWind(WindDirection, effectiveWind, _windClockSeconds);
+        }
 
         // Diagnostic: log the resolved atmosphere so a wrong sky COLOR can be told apart from a wrong
         // time-band (climate timing). A noon Mojave sky should be blue-ish (skyTop ≈ low-R/high-B) with the
@@ -355,16 +524,32 @@ public sealed partial class WorldView3DControl
             $"moonFrac={(_data?.MoonPrimaryHalfSizeFraction?.ToString("0.000") ?? "null")}/{(_data?.MoonSecondaryHalfSizeFraction?.ToString("0.000") ?? "null")} " +
             $"profileFrac={MoonProfile.PrimaryHalfSizeFraction:0.000}/{MoonProfile.SecondaryHalfSizeFraction:0.000} game={_data?.Game} " +
             $"tonemap={tonemap.Mode}/bloom:{tonemap.BloomEnabled}/target:{tonemap.TargetLum:0.000}/contrast:{tonemap.Contrast:0.000}/brightness:{tonemap.Brightness:0.000}/sunScale:{sceneSunlightScale:0.000}/skyScale:{sceneSkyScale:0.000} " +
-            $"weatherIMAD={_weatherImageSpaceTelemetry}"));
+            $"weatherIMAD={_weatherImageSpaceTelemetry} " +
+            // Placed lights had no user-visible surface at all (HUD or capture line) — a zero here
+            // was indistinguishable from "the feature works but is subtle", which is what made an
+            // interior-lighting report take a full investigation to localize.
+            $"placedLights={_framePlacedLights.Count}" +
+            $"{(_references?.LastStats.ReferenceFnvActiveAdtBaseFallbackReason is { } adtReason ? $"/adt:{adtReason}" : string.Empty)}"));
 
+        _captureWaterReflectionBound = false;
         ulong fenceValue;
         var recorder = _commandRecorder12!;
+        // Same per-frame routing decision as the live loop (Frame.cs), made from the CAPTURE's own
+        // state — never inherited from whatever the last live frame set. Without this, a capture
+        // after a live FNV water frame rebuilt its batches under a stale-true flag and rendered a
+        // hybrid that was neither the stream nor the legacy order (depth-writing blends demoted to
+        // no-z-write, after water) — in the very instrument used to verify those orderings.
+        var captureStreamTransparency =
+            Core.Formats.Nif.Rendering.D3D12.ReferenceRenderer12.UnifiedTransparencyEnabled &&
+            _showWater && _showReferences && _water is not null && _references is not null &&
+            _water.CanStreamTransparency(cylinder);
+        _references?.SetTransparencyStreamActive(captureStreamTransparency);
         // Persistent descriptors are allocated/repointed once before the optional PRIME/real pair.
         // The prime command list can still be in flight while the real list is recorded, so rewriting
         // either shader-visible slot inside the loop would race the first submission.
         var captureDepthAvailable =
             (_references is not null || (_showWater && _water is not null)) &&
-            TryEnsureCaptureDepthSrv(target);
+            TryEnsureCaptureDepthSrv(target, requireSnapshotCopy: captureStreamTransparency);
         var captureDepthIndex = captureDepthAvailable
             ? _captureDepthSrv!.Value.BindlessIndex
             : NoDepthSrv;
@@ -374,12 +559,12 @@ public sealed partial class WorldView3DControl
             captureReferencesUseDepth ? captureDepthIndex : NoDepthSrv,
             _camera.NearPlane,
             _camera.FarPlane,
-            target.SampleCount);
+            _captureDepthSampleCount);
         _water?.SetSceneDepth(
             captureWaterUsesDepth ? captureDepthIndex : NoDepthSrv,
             _camera.NearPlane,
             _camera.FarPlane,
-            target.SampleCount);
+            _captureDepthSampleCount);
         var captureWaterOpaqueSnapshotSrvReady = false;
         if (_showWater && _water is not null)
         {
@@ -389,6 +574,13 @@ public sealed partial class WorldView3DControl
             captureWaterOpaqueSnapshotSrvReady = initialFnvWater001Preflight.Candidate &&
                                                   TryEnsureCaptureWaterOpaqueSnapshotSrv(target);
             _water.SetFnvWater001Snapshot(null, 0, 0);
+            // Clear the LIVE window's planar-reflection binding: its bindless index and the scene
+            // dimensions the shader divides by are set by the live frame path, so an in-app capture
+            // would otherwise sample the live window's mirrored sky at the live window's scale (and
+            // a dangling descriptor if that target was re-created since). The capture renders its
+            // OWN reflection below, at its own dimensions — a capture must not be a different
+            // renderer from the one it is used to debug.
+            _water.SetWaterReflection(null, 0, 0);
         }
         // Sun shadows in captures: the shadow map is rendered at the END of a frame and sampled by
         // the NEXT one (ShadowMapRenderer12's replay-this-frame/sample-next-frame contract), and the
@@ -406,8 +598,6 @@ public sealed partial class WorldView3DControl
             var captureShadowRingReserved = false;
             var captureFnvWater001SnapshotPrepared = false;
             var captureWaterTransparencyPartitioned = false;
-            var captureBelowWaterTransparencyDrawn = false;
-            var captureWaterPlaneHeight = 0f;
             var captureDepthSampled = false;
             var sampledDepthState = Vortice.Direct3D12.ResourceStates.DepthRead |
                                     Vortice.Direct3D12.ResourceStates.PixelShaderResource;
@@ -448,8 +638,8 @@ public sealed partial class WorldView3DControl
 
                 // Live-frame atmosphere (perspective defaults: fog + lighting on, no ortho overrides).
                 BindAtmosphereConstants(
-                    cmd, recorder.FrameIndex, cameraRelative: false, lightVisibility: cylinder,
-                    tonemapOverride: tonemap);
+                    cmd, recorder.FrameIndex, cameraRelative: captureCameraRelative,
+                    lightVisibility: cylinder, tonemapOverride: tonemap);
                 target.Bind(cmd);
 
                 // Sky FIRST (gradient + sun/moon billboards), then the scene over it — same order as the live
@@ -457,56 +647,148 @@ public sealed partial class WorldView3DControl
                 // this open command list.
                 if (_showSky)
                 {
-                    // Offscreen capture uses an absolute viewProj, so center the dome on the camera position
-                    // (the prior behavior). Jitter is a live-motion artifact and irrelevant to a static capture.
-                    RenderSky(viewProj, _camera.Position, animationTimeSeconds: animationTimeSeconds,
+                    // Sky ALWAYS uses the translation-free view (same rule as the live frame): the dome is
+                    // camera-centred, so its only correct frame is one with the camera at the origin.
+                    RenderSky(viewProjSky, Vector3.Zero, animationTimeSeconds: animationTimeSeconds,
                         skyColorScale: sceneSkyScale);
+                    // …then the water's planar sky reflection, exactly as the live frame does it
+                    // (WorldView3DControl.Frame.cs). This is a CAPTURE-owned pass at the capture's
+                    // own dimensions, so the water shader's screen-UV lookup divides by the same
+                    // extent it rasterized into. Without it a capture silently fell back to the
+                    // 2-row gradient stand-in, which made every reflection report unreproducible
+                    // from the coordinates that reported it.
+                    _captureWaterReflectionBound = TryRenderCaptureWaterReflection(
+                        cmd, viewProjSky, sceneSkyScale, target);
                 }
+
+                _water?.SetWaterReflection(
+                    _captureWaterReflectionBound ? _waterReflectionSrv!.Value.BindlessIndex : null,
+                    (uint)target.Width,
+                    (uint)target.Height);
 
                 _terrain?.Render(viewProj, cylinder);
                 // Defer blended reference submeshes until after water so water never paints over them
                 // (mirrors the live frame / 3D export). cullViewProj == viewProj (absolute coords).
                 _references?.Render(
-                    viewProj, cylinder, deferBlended: true, cullViewProj: viewProj,
+                    viewProj, cylinder, deferBlended: true, cullViewProj: viewProjAbsolute,
+                    renderOrigin: captureRenderOrigin,
                     cameraPosition: _camera.Position, cameraForward: _camera.Forward);
                 if (_showWater && _water is not null && _references is not null)
                 {
                     _water.SetNifWaterPlanes(_references.NifWaterPlanes);
                 }
 
+                // Opaque depth is complete: record the single-sample post-opaque depth copy the
+                // capture depth SRV points at (MAX resolve on MSAA targets, plain copy on 1x in
+                // stream mode; no-op on the legacy 1x/multisampled-fallback bindings).
+                // Must precede every depth consumer — WATER001's in-shader taps included.
+                if ((captureWaterUsesDepth || captureReferencesUseDepth) &&
+                    _captureDepthSampleCount == 1)
+                {
+                    target.TryRecordDepthMaxResolve(cmd);
+                }
+
+                if (captureStreamTransparency)
+                {
+                    // ── UNIFIED TRANSPARENCY STREAM (capture) ──────────────────────────────────
+                    // Mirrors the live branch in Frame.cs: blended references and FNV water merge
+                    // into one back-to-front pass; the live DSV stays WRITABLE throughout and
+                    // water/effects sample the post-opaque depth copy recorded above. Without this
+                    // branch a "stream on" capture rendered the legacy split — the A/B instrument
+                    // could never show the stream it claimed to verify.
+                    var fnvWater001Preflight = _water!.GetFnvWater001Preflight(
+                        cylinder,
+                        isPerspectiveProjection: true);
+                    if (fnvWater001Preflight.Candidate &&
+                        captureWaterOpaqueSnapshotSrvReady &&
+                        target.TryPrepareWaterOpaqueSnapshot(cmd))
+                    {
+                        captureFnvWater001SnapshotPrepared = true;
+                        _water.SetFnvWater001Snapshot(
+                            _captureWaterOpaqueSnapshotSrv!.Value.BindlessIndex,
+                            checked((uint)target.Width),
+                            checked((uint)target.Height));
+                    }
+                    else
+                    {
+                        _water.SetFnvWater001Snapshot(null, 0, 0);
+                    }
+
+                    // Reservation HANDOFF, not release: the blended capacity plan inside
+                    // RenderBlendedDeferredUnified must not see the water budget as free ring
+                    // space (the dense-capture analogue of the live ring-starvation flicker). The
+                    // water renderer opens the tail lazily before its first batch draws.
+                    if (captureWaterRingReserved)
+                    {
+                        _water.DeferStreamTailReservationRelease(WaterPassRingReservationBytes);
+                        captureWaterRingReserved = false;
+                    }
+
+                    // Same submerged-first partition as the live stream route (see
+                    // WorldView3DControl.Frame.cs): a capture that ordered translucent geometry
+                    // around water differently from the live frame would misreport the very bug it
+                    // is used to verify.
+                    var captureWaterProbe =
+                        _showWater && _references is not null &&
+                        _water.HasVisibleWaterToPartition(cylinder)
+                            ? _water
+                            : null;
+                    if (captureWaterProbe is not null)
+                    {
+                        _references!.RenderBlendedDeferredBelowWater(
+                            captureWaterProbe, _camera.Position.Z);
+                        captureWaterTransparencyPartitioned = true;
+                    }
+
+                    _water.PrepareTransparencyStream(
+                        viewProj, cylinder, captureRenderOrigin, isPerspectiveProjection: true,
+                        animationTimeSeconds);
+                    if (_waterStreamInterleave?.Water != _water)
+                    {
+                        _waterStreamInterleave = new WaterStreamInterleave(_water);
+                    }
+
+                    _references!.RenderBlendedDeferredUnified(
+                        _waterStreamInterleave, captureWaterProbe, _camera.Position.Z);
+                    _water.DrainAllTransparency();
+                    _water.FinishTransparencyStream();
+
+                    _water.SetFnvWater001Snapshot(null, 0, 0);
+                    if (captureFnvWater001SnapshotPrepared)
+                    {
+                        target.RestoreWaterOpaqueSnapshot(cmd);
+                        captureFnvWater001SnapshotPrepared = false;
+                    }
+                }
+                else
+                {
                 if (_showWater && _water is not null)
                 {
+                    // Mirrors the live route exactly (see WorldView3DControl.Frame.cs): the below-water
+                    // split is independent of the WATER001 snapshot decision, because water writes no
+                    // depth and ordering is the only thing keeping submerged decals under the surface.
+                    // A capture that partitioned differently from the live frame would misreport the
+                    // very bug it is used to verify.
+                    if (_references is not null && _water.HasVisibleWaterToPartition(cylinder))
+                    {
+                        _references.RenderBlendedDeferredBelowWater(_water, _camera.Position.Z);
+                        captureWaterTransparencyPartitioned = true;
+                    }
+
                     // Re-arm each pass: Render consumes the preflight and one-shot descriptor. NIF
                     // planes always remain on WATER003; the contract inspects generated CELL water.
                     var fnvWater001Preflight = _water.GetFnvWater001Preflight(
                         cylinder,
                         isPerspectiveProjection: true);
                     if (fnvWater001Preflight.Candidate &&
-                        captureWaterOpaqueSnapshotSrvReady)
+                        captureWaterOpaqueSnapshotSrvReady &&
+                        target.TryPrepareWaterOpaqueSnapshot(cmd))
                     {
-                        if (_references is not null)
-                        {
-                            captureWaterPlaneHeight = fnvWater001Preflight.PlaneHeight;
-                            _references.RenderBlendedDeferredBelowWater(captureWaterPlaneHeight);
-                            captureBelowWaterTransparencyDrawn = true;
-                        }
-
-                        if (target.TryPrepareWaterOpaqueSnapshot(cmd))
-                        {
-                            captureFnvWater001SnapshotPrepared = true;
-                            captureWaterTransparencyPartitioned =
-                                captureBelowWaterTransparencyDrawn;
-                            _water.SetFnvWater001Snapshot(
-                                _captureWaterOpaqueSnapshotSrv!.Value.BindlessIndex,
-                                checked((uint)target.Width),
-                                checked((uint)target.Height));
-                        }
-                        else
-                        {
-                            // A WATER003 fallback may occlude the early below-water draw. Keep the
-                            // split disabled so the post-water route composites the complete list.
-                            _water.SetFnvWater001Snapshot(null, 0, 0);
-                        }
+                        captureFnvWater001SnapshotPrepared = true;
+                        _water.SetFnvWater001Snapshot(
+                            _captureWaterOpaqueSnapshotSrv!.Value.BindlessIndex,
+                            checked((uint)target.Width),
+                            checked((uint)target.Height));
                     }
                     else
                     {
@@ -536,7 +818,17 @@ public sealed partial class WorldView3DControl
 
                 if (_showWater && _water is not null && _references is not null)
                 {
-                    _water.RenderAtTime(viewProj, cylinder, Vector3.Zero, animationTimeSeconds);
+                    if (animationTimeSeconds is { } pinnedWaterClock)
+                    {
+                        _water.RenderAtTime(
+                            viewProj, cylinder, captureRenderOrigin, pinnedWaterClock);
+                    }
+                    else
+                    {
+                        // Live clock: the SAME overload the live frame calls, so the water's
+                        // scroll/noise phase advances exactly as it does on screen.
+                        _water.Render(viewProj, cylinder, captureRenderOrigin);
+                    }
                 }
 
                 _water?.SetFnvWater001Snapshot(null, 0, 0);
@@ -560,7 +852,7 @@ public sealed partial class WorldView3DControl
                 }
                 if (captureWaterTransparencyPartitioned)
                 {
-                    _references?.RenderBlendedDeferredAtOrAboveWater(captureWaterPlaneHeight);
+                    _references?.RenderBlendedDeferredAtOrAboveWater(_water!, _camera.Position.Z);
                 }
                 else
                 {
@@ -576,6 +868,7 @@ public sealed partial class WorldView3DControl
                     captureDepthSampled = false;
                     target.Rebind(cmd); // restore depth for shadow replay / subsequent depth users
                 }
+                }
 
                 // Frame-end shadow pass, same as the live loop (render origin 0 — this capture path
                 // is absolute). On the real pass it usually no-ops (key unchanged since the prime).
@@ -587,7 +880,7 @@ public sealed partial class WorldView3DControl
                         isPrime ? "prime" : "real", _shadowMap!.HasContent, _references!.ShadowDrawCount,
                         _lastBoundShadowParams.X, _lastBoundShadowParams.Y,
                         _lastBoundShadowParams.Z, _lastBoundShadowParams.W);
-                    RecordSunShadowPass(cmd, Vector3.Zero, _camera.Position);
+                    RecordSunShadowPass(cmd, captureRenderOrigin, _camera.Position);
                 }
 
                 if (!isPrime)
@@ -606,6 +899,7 @@ public sealed partial class WorldView3DControl
                 {
                     target.RestoreWaterOpaqueSnapshot(cmd);
                 }
+                target.RestoreResolvedDepth(cmd);
                 if (captureDepthSampled)
                 {
                     target.BindColorOnly(cmd);
@@ -628,11 +922,15 @@ public sealed partial class WorldView3DControl
                     // Any exception after snapshot preparation or the depth transition still submits
                     // a self-consistent partial pass. The next PRIME/real pass can therefore begin
                     // from the target's documented ResolveDest/CopyDest + DepthWrite baseline.
+                    // Stream mode: forget queued batches + free the deferred tail reservation
+                    // (no-op when the legacy branch ran).
+                    _water?.AbandonTransparencyStream();
                     _water?.SetFnvWater001Snapshot(null, 0, 0);
                     if (captureFnvWater001SnapshotPrepared)
                     {
                         target.RestoreWaterOpaqueSnapshot(cmd);
                     }
+                    target.RestoreResolvedDepth(cmd);
                     if (captureDepthSampled)
                     {
                         target.BindColorOnly(cmd);
@@ -649,6 +947,7 @@ public sealed partial class WorldView3DControl
                     // Cleanup could not be recorded, so do not submit a list with uncertain state.
                     // Discarding the list means the GPU retains the previous pass's baseline states.
                     target.DiscardWaterOpaqueSnapshotPreparation();
+                    target.DiscardResolvedDepthPreparation();
                     try { recorder.AbortFrame(); }
                     catch { /* Preserve the original capture exception. */ }
                 }
@@ -664,7 +963,7 @@ public sealed partial class WorldView3DControl
             atmo,
             masserDirection,
             masserDrawAlpha,
-            animationTimeSeconds,
+            animationTimeSeconds ?? 0f,
             _showReferences ? _references?.LastStats : null,
             _showWater ? _water?.LastStats : null,
             tonemap,
@@ -679,7 +978,7 @@ public sealed partial class WorldView3DControl
             secundaDirection, secundaFade, secundaDrawAlpha,
             _showReferences ? _references?.LastStats : null,
             _showWater ? _water?.LastStats : null,
-            target, w, h, animationTimeSeconds);
+            target, w, h, animationTimeSeconds ?? 0f);
 
         fenceValue = recorder.LastSubmittedFenceValue;
         _gpu12!.PumpDebugMessages();
@@ -1605,7 +1904,15 @@ public sealed partial class WorldView3DControl
 
         fields["waterProfile"] = WaterProfile.ForGame(game).ShaderVariant.ToString();
         fields["waterPipeline"] = waterStats?.WaterPipeline ?? "not-rendered";
+        // Which reflection source the water actually sampled. This existed as a silent live-only
+        // divergence: captures cleared the binding and fell back to the gradient, so a reflection
+        // artefact reported with a pose could never be reproduced from that pose.
+        fields["waterReflection"] = _captureWaterReflectionBound ? "planar-rt" : "gradient-standin";
         fields["waterDraws"] = waterStats?.WaterDraws ?? 0;
+        // Placeable-water (PWAT) surfaces that streamed in as authored NIF geometry. Zero at a pose
+        // that should have a pond is the signature of the base record never resolving a MODL — the
+        // reference is dropped before it ever reaches the water renderer, so no other counter moves.
+        fields["nifWaterPlanes"] = _references?.NifWaterPlanes.Count ?? 0;
         fields["waterRecordFormId"] = waterSelection.WaterFormId;
         fields["waterRecordFormIdHex"] = waterSelection.WaterFormId is { } activeWaterFormId
             ? $"0x{activeWaterFormId:X8}"
@@ -1736,6 +2043,25 @@ public sealed partial class WorldView3DControl
                     : null,
             };
         }
+        // Below-water transparency split: how many blended submeshes were reordered ahead of the
+        // water surface, out of how many candidates, at what plane. A zero here with water on screen
+        // is the signature of the split being gated off — how it went unnoticed outdoors before.
+        if (_references is null)
+        {
+            fields["belowWaterBlendPartition"] = null;
+        }
+        else
+        {
+            // NaN is the "nothing was submerged / no split ran" sentinel and is not representable in
+            // JSON — emit null rather than throwing away the whole capture on a serializer error.
+            var partitionSurface = _references.LastBelowWaterPartitionPlane;
+            fields["belowWaterBlendPartition"] = new Dictionary<string, object?>
+            {
+                ["belowWaterDraws"] = _references.LastBelowWaterBlendedDraws,
+                ["candidates"] = _references.LastPartitionedBlendedCandidates,
+                ["meanSurfaceHeight"] = float.IsFinite(partitionSurface) ? partitionSurface : null,
+            };
+        }
         fields["speedTreeRuntimeLodEnabled"] =
             referenceStats?.ReferenceSpeedTreeRuntimeLodEnabled;
         if (referenceStats is null)
@@ -1774,13 +2100,66 @@ public sealed partial class WorldView3DControl
         }
         fields["speedTreeTelemetryUnavailableReason"] = speedTreeTelemetryUnavailableReason;
 
+        // Stream cost + loss, and the streaming-residency fields an A/B needs to REJECT a
+        // confounded pair. A capture is only comparable to another capture when the same geometry
+        // and textures were resident: at high render distances a fixed settle window can expire
+        // with near terrain still streaming, and that alone repaints most of the frame — which is
+        // indistinguishable from an ordering bug if you only look at a pixel count.
+        var terrainStats = _showTerrain ? _terrain?.LastStats : null;
+        fields["waterStream"] = waterStats is null
+            ? null
+            : new Dictionary<string, object?>
+            {
+                ["entries"] = waterStats.WaterStreamEntries,
+                ["runs"] = waterStats.WaterStreamRuns,
+                ["noisePrepasses"] = waterStats.WaterStreamNoisePrepasses,
+                ["droppedEntries"] = waterStats.WaterStreamDroppedEntries,
+                ["noiseSlotOverflows"] = waterStats.WaterNoiseSlotOverflows,
+            };
+        fields["residency"] = new Dictionary<string, object?>
+        {
+            ["terrainQuadrantDraws"] = terrainStats?.TerrainQuadrantDraws,
+            // Non-zero means a terrain cell was silently skipped on a ring failure, which leaves
+            // pixels with NO opaque depth writer — those linearize to the far plane and drive the
+            // water shader's corrected-depth lanes to "deep", i.e. fully opaque. Any A/B pair
+            // where this differs is measuring streaming luck, not rendering.
+            ["terrainDrawsTruncated"] = terrainStats?.TerrainDrawsTruncated,
+            ["texturePendingResolves"] = referenceStats?.TexturePendingResolves,
+            ["referenceMeshMissing"] = referenceStats?.ReferenceMeshMissing,
+        };
+
         RendererProfilerTrace.Event("capture-state", fields);
         Log.Info(
             "[Capture] parity particles={0}/{1} uvFrame={2}/{3} liveDraws={4} fallbacks={5} upload={6}B " +
-            "water={7}/{8} draws={9}",
+            // waterTechnique distinguishes the scene-depth branches from the no-depth fallback, which
+            // returns fully opaque and reads much darker — indistinguishable from a shading bug
+            // without it.
+            "water={7}/{8} draws={9} nifPlanes={24} technique={10} reflection={23} " +
+            "belowWaterBlends={11}/{12}@{13} " +
+            // stream: entries queued / runs drawn / noise prepasses, then DROPPED — dropped > 0 is
+            // always a defect (the drain died mid-frame and nearer water never rendered).
+            "stream={14}e/{15}r/{16}p dropped={17} noiseOverflow={22} " +
+            // residency: compare these across an A/B pair BEFORE comparing pixels. truncated > 0
+            // means terrain cells were skipped, which alone turns water opaque.
+            "residency=q{18}/truncated{19}/texPend{20}/meshMissing{21}",
             fields["particleCount"], fields["particleAuthoredCapacity"],
             fields["particleUvFrame"], fields["particleAtlasFrames"],
             fields["particleDraws"], fields["particleFallbacks"], fields["particleUploadBytes"],
-            fields["waterProfile"], fields["waterPipeline"], fields["waterDraws"]);
+            fields["waterProfile"], fields["waterPipeline"], fields["waterDraws"],
+            fields["waterTechnique"] ?? "n/a",
+            _references?.LastBelowWaterBlendedDraws,
+            _references?.LastPartitionedBlendedCandidates,
+            // NaN = nothing classified as submerged this frame; "none" reads better than "NaN" and
+            // keeps zero meaning "not splitting" rather than "split ran and found nothing".
+            _references is not null && float.IsFinite(_references.LastBelowWaterPartitionPlane)
+                ? _references.LastBelowWaterPartitionPlane.ToString("0.#", CultureInfo.InvariantCulture)
+                : "none",
+            waterStats?.WaterStreamEntries, waterStats?.WaterStreamRuns,
+            waterStats?.WaterStreamNoisePrepasses, waterStats?.WaterStreamDroppedEntries,
+            terrainStats?.TerrainQuadrantDraws, terrainStats?.TerrainDrawsTruncated,
+            referenceStats?.TexturePendingResolves, referenceStats?.ReferenceMeshMissing,
+            waterStats?.WaterNoiseSlotOverflows,
+            fields["waterReflection"],
+            fields["nifWaterPlanes"]);
     }
 }

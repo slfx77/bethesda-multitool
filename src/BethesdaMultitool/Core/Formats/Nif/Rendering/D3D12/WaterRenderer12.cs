@@ -30,7 +30,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 ///         <see cref="GpuRootSignature12" /> slot 3).
 ///     </para>
 /// </summary>
-internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
+internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
+    BethesdaMultitool.Core.Formats.Nif.Rendering.Water.IWaterHeightProbe
 {
     private static readonly Logger Log = Logger.Instance;
 
@@ -42,8 +43,27 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     // existing offset: 448 bytes / 28 registers.
     private const uint UniformsByteSize = ModernWaterPipeline.FrameUniformByteSize;
     private const uint FnvWater001UniformByteSize = 2 * 16;
-    private const uint WaterFrameUniformsByteSize = UniformsByteSize + FnvWater001UniformByteSize;
+    // Planar sky-reflection register (uWaterReflection), appended after the WATER001 tail.
+    private const uint WaterReflectionUniformByteSize = 1 * 16;
+    private const uint WaterFrameUniformsByteSize =
+        UniformsByteSize + FnvWater001UniformByteSize + WaterReflectionUniformByteSize;
     private const uint FnvNoiseDimension = 256;
+
+    // Full chain for the 256² noise-NORMAL tile (256..1 = 9 levels). The authored NNAM the retail
+    // shader samples ships with mips; a mipless regenerated tile aliases into per-frame glint
+    // shimmer at grazing views (the fixed-pose water flicker). The scroll+blend tile stays
+    // single-mip — only the matched-resolution Sobel pass ever reads it.
+    private const int FnvNoiseMipCount = 9;
+
+    /// <summary>Mip chain on the noise-normal prepass target. "0" restores the mipless tile —
+    /// the A/B lever for the fixed-pose water flicker.</summary>
+    private static readonly bool FnvNoiseMipsEnabled =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.WaterNoiseMips) != "0";
+
+    /// <summary>The engine's hardcoded terminal default water: TESDataHandler::GenerateDefaultObjects
+    /// resolves WATR FormID 0x18 ("DefaultWater") and every GetWaterType chain ends there when XCWT
+    /// and NAM2 both yield nothing.</summary>
+    private const uint EngineDefaultWaterFormId = 0x18;
 
     // Sentinel meaning "no resolved NNAM normal map" — the shader then uses a procedural ripple
     // normal so proto/test worldspaces with no water texture still animate.
@@ -95,10 +115,23 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     // ISNOISENORMALMAP over it and binds that finished normal tile to WATER000.
     private readonly ID3D12PipelineState _fnvNoiseScrollBlendPso;
     private readonly ID3D12PipelineState _fnvNoiseNormalPso;
-    private readonly ID3D12Resource _fnvNoiseBlendTexture;
-    private readonly ID3D12Resource _fnvNoiseNormalTexture;
-    private readonly uint _fnvNoiseBlendBindlessIndex;
-    private readonly uint _fnvNoiseNormalBindlessIndex;
+    // Box-average + renormalize downsampler that fills the normal tile's mip chain after the
+    // Sobel pass (see FnvNoiseMipCount). One single-mip SRV per SOURCE level feeds each step.
+    private readonly ID3D12PipelineState _fnvNoiseDownsamplePso;
+
+    /// <summary>
+    ///     One noise tile set PER VISIBLE WATR MATERIAL. A single shared tile forced the prepass to
+    ///     re-record before every run the depth sort produced — measured 349 prepasses (each 10
+    ///     dispatches + 9 constant buffers + 10 descriptors) for SIX materials at Lake Mead, because
+    ///     the materials interleave by depth and each run evicted the last one's normals. Worse, it
+    ///     made the tile's contents an ORDERING invariant: correctness depended on every draw being
+    ///     immediately preceded by its own prepass, so any run that failed to re-record silently
+    ///     sampled another material's normals. Per-material tiles make the binding a stable fact for
+    ///     the whole frame — one prepass each, recorded up front, and the uniforms CB can then cache
+    ///     the resolved index without that coupling.
+    /// </summary>
+    private const int FnvNoiseMaterialSlots = 8;
+    private readonly FnvNoiseTileSet[] _fnvNoiseTiles;
     private bool _useFnvNoisePrepass;
 
     // Legacy water animation: bindless indices of textures\water\water00-31.dds, resolved by the
@@ -108,15 +141,32 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
 
     private readonly List<global::BethesdaMultitool.WorldWaterCell> _waterCells = new();
     private readonly List<global::BethesdaMultitool.WorldWaterCell> _visibleWaterScratch = new();
+    // Point-query index over _waterCells; see RebuildWaterHeightLookup / TryGetWaterHeightAt.
+    private readonly Dictionary<(int gx, int gy), float> _waterHeightByGrid = new();
+    private readonly List<global::BethesdaMultitool.WorldWaterCell> _irregularWaterCells = new();
     // Placed-NIF water geometry (cave/pool/reflecting-pool water embedded in REFR meshes). Owned by
     // ReferenceRenderer12 (which accumulates them as those references' meshes stream in) and handed
     // here once per frame via SetNifWaterPlanes; culled into _visibleNifScratch each Render and drawn
     // with the same shader/appearance as cell water.
     private IReadOnlyList<NifWaterGeometry> _nifWaterPlanes = Array.Empty<NifWaterGeometry>();
     private readonly List<NifWaterGeometry> _visibleNifScratch = new();
+    private readonly List<FnvNifWaterDrawBatch> _fnvNifDrawBatches = new();
+    // Per-frame (cell, effective WATR, view depth) triples so the unstable cell sort compares
+    // precomputed fields instead of re-deriving identity/depth per comparison.
+    private readonly List<(global::BethesdaMultitool.WorldWaterCell Cell, uint FormId, float Depth)>
+        _fnvWaterSortScratch = new();
     private float? _worldspaceDefaultWaterHeight;
     private BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance? _appearance;
     private uint _noiseBindlessIndex = NoNormalMap;
+    // Planar sky-reflection target (see SetWaterReflection). Persists across frames; the host
+    // re-supplies it each frame and passes null when the feature is off or the pass failed.
+    private uint _reflectionBindlessIndex = NoNormalMap;
+    private uint _reflectionSceneWidth;
+    private uint _reflectionSceneHeight;
+
+    /// <summary>UV offset per unit of ripple-normal XY applied to the reflection lookup — what makes
+    /// waves visible in the reflection. Small: the reflection must stay recognisably the sky.</summary>
+    private const float ReflectionDistortionScale = 0.04f;
     private readonly uint[] _normalBindlessIndices = [NoNormalMap, NoNormalMap, NoNormalMap];
     // FNV can author a different XCWT on each generated CELL.  The old camera-cell-global
     // material binding made every visible tile change color and scroll direction when the camera
@@ -143,12 +193,15 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private readonly long _startTimestamp = Stopwatch.GetTimestamp();
     private global::BethesdaMultitool.WorldSpatialIndex? _spatialIndex;
 
-    // Persistent-mapped UPLOAD-heap structured buffer. Resized when the visible water cell
-    // count exceeds capacity. Stays mapped for its lifetime — UPLOAD-heap resources can.
+    // Persistent-mapped UPLOAD-heap structured buffer, FRAME-SLOTTED: FramesInFlight slots of
+    // _instanceCapacity packets each, written and SRV-windowed at the recorder's FrameIndex. A
+    // single-slot buffer violated the recorder contract (frame-keyed resources MUST index off
+    // FrameIndex): the CPU memcpy overwrote packets the previous frame's in-flight water draws
+    // could still be reading — invisible while the bytes were identical, torn quads for one frame
+    // whenever streaming shifted the packet array. Resized when the visible water cell count
+    // exceeds capacity; stays mapped for its lifetime — UPLOAD-heap resources can.
     private ID3D12Resource? _instanceBuffer;
     private IntPtr _instanceMapped;
-    private CpuDescriptorHandle _instanceSrvPersistent;
-    private bool _instanceSrvAllocated;
     private int _instanceCapacity;
     private WaterInstance[] _instanceScratch = [];
     private bool _disposed;
@@ -167,13 +220,26 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         uint NoiseIndex,
         uint NormalIndex1,
         uint NormalIndex2,
-        uint NormalIndex3);
+        uint NormalIndex3,
+        // The WATR this material resolved from. Carried so a draw can amortize per-MATERIAL work
+        // (the noise prepass and the frame uniforms CB) across the many runs the transparency
+        // stream splits one material into — see _frameNoiseSlots / _frameMaterialCb.
+        uint WaterFormId = 0u);
 
     private readonly record struct FnvWaterCellDrawBatch(
         uint WaterFormId,
         int StartInstance,
         int InstanceCount,
-        ResolvedFnvWaterMaterial Material);
+        ResolvedFnvWaterMaterial Material,
+        float FarthestDepth);
+
+    /// <summary>One contiguous per-WATR run of placed-NIF packets. Offsets are relative to the
+    /// first NIF packet (the draw site adds <c>cellVisible</c>).</summary>
+    private readonly record struct FnvNifWaterDrawBatch(
+        uint WaterFormId,
+        int StartPacket,
+        int PacketCount,
+        float FarthestDepth);
 
     public WaterRenderer12(
         GpuDevice12 gpu,
@@ -199,6 +265,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             "water_noise.comp.hlsl", "mainScrollBlend", "cs_5_1");
         var noiseNormalBytecode = CompileEmbeddedShader(
             "water_noise.comp.hlsl", "mainNormal", "cs_5_1");
+        var noiseDownsampleBytecode = CompileEmbeddedShader(
+            "water_noise.comp.hlsl", "mainDownsample", "cs_5_1");
         _fnvNoiseScrollBlendPso = gpu.Device.CreateComputePipelineState(
             new ComputePipelineStateDescription
             {
@@ -211,6 +279,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 RootSignature = rootSignature.RootSignature,
                 ComputeShader = noiseNormalBytecode,
             });
+        _fnvNoiseDownsamplePso = gpu.Device.CreateComputePipelineState(
+            new ComputePipelineStateDescription
+            {
+                RootSignature = rootSignature.RootSignature,
+                ComputeShader = noiseDownsampleBytecode,
+            });
 
         var noiseTextureDescription = ResourceDescription.Texture2D(
             Format.R8G8B8A8_UNorm,
@@ -221,19 +295,18 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             1,
             0,
             ResourceFlags.AllowUnorderedAccess);
-        _fnvNoiseBlendTexture = gpu.Device.CreateCommittedResource<ID3D12Resource>(
-            new HeapProperties(HeapType.Default),
-            HeapFlags.None,
-            noiseTextureDescription,
-            ResourceStates.NonPixelShaderResource);
-        _fnvNoiseBlendTexture.Name = "FNV Water Noise Scroll+Blend";
-        _fnvNoiseNormalTexture = gpu.Device.CreateCommittedResource<ID3D12Resource>(
-            new HeapProperties(HeapType.Default),
-            HeapFlags.None,
-            noiseTextureDescription,
-            ResourceStates.PixelShaderResource);
-        _fnvNoiseNormalTexture.Name = "FNV Water Noise Normal";
-
+        // The normal tile carries the full chain (see FnvNoiseMipCount); with the switch off it
+        // still allocates the chain but the SRVs below expose one level and the downsample never
+        // runs — byte-identical to the previous single-mip behaviour.
+        var noiseNormalTextureDescription = ResourceDescription.Texture2D(
+            Format.R8G8B8A8_UNorm,
+            FnvNoiseDimension,
+            FnvNoiseDimension,
+            1,
+            FnvNoiseMipCount,
+            1,
+            0,
+            ResourceFlags.AllowUnorderedAccess);
         var noiseSrvDescription = new ShaderResourceViewDescription
         {
             Format = Format.R8G8B8A8_UNorm,
@@ -245,12 +318,61 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 MipLevels = 1,
             },
         };
-        var blendSrv = cbvSrvUavHeap.AllocatePersistent();
-        _fnvNoiseBlendBindlessIndex = blendSrv.BindlessIndex;
-        gpu.Device.CreateShaderResourceView(_fnvNoiseBlendTexture, noiseSrvDescription, blendSrv.Cpu);
-        var normalSrv = cbvSrvUavHeap.AllocatePersistent();
-        _fnvNoiseNormalBindlessIndex = normalSrv.BindlessIndex;
-        gpu.Device.CreateShaderResourceView(_fnvNoiseNormalTexture, noiseSrvDescription, normalSrv.Cpu);
+        // The main normal-tile SRV exposes the whole chain so the anisotropic water sampler
+        // (s0, MaxLOD unbounded) starts mip-filtering the moment the levels hold data.
+        var normalSrvDescription = noiseSrvDescription with
+        {
+            Texture2D = new Texture2DShaderResourceView
+            {
+                MostDetailedMip = 0,
+                MipLevels = FnvNoiseMipsEnabled ? (uint)FnvNoiseMipCount : 1,
+            },
+        };
+
+        _fnvNoiseTiles = new FnvNoiseTileSet[FnvNoiseMaterialSlots];
+        for (var slot = 0; slot < FnvNoiseMaterialSlots; slot++)
+        {
+            var blendTexture = gpu.Device.CreateCommittedResource<ID3D12Resource>(
+                new HeapProperties(HeapType.Default),
+                HeapFlags.None,
+                noiseTextureDescription,
+                ResourceStates.NonPixelShaderResource);
+            blendTexture.Name = $"FNV Water Noise Scroll+Blend {slot}";
+            var normalTexture = gpu.Device.CreateCommittedResource<ID3D12Resource>(
+                new HeapProperties(HeapType.Default),
+                HeapFlags.None,
+                noiseNormalTextureDescription,
+                ResourceStates.PixelShaderResource);
+            normalTexture.Name = $"FNV Water Noise Normal {slot}";
+
+            var blendSrv = cbvSrvUavHeap.AllocatePersistent();
+            gpu.Device.CreateShaderResourceView(blendTexture, noiseSrvDescription, blendSrv.Cpu);
+            var normalSrv = cbvSrvUavHeap.AllocatePersistent();
+            gpu.Device.CreateShaderResourceView(normalTexture, normalSrvDescription, normalSrv.Cpu);
+            // One single-mip SRV per SOURCE level (0..N-2) feeds each downsample step; persistent
+            // because the texture is.
+            var mipSrvIndices = new uint[FnvNoiseMipCount - 1];
+            for (var mip = 0; mip < FnvNoiseMipCount - 1; mip++)
+            {
+                var mipSrv = cbvSrvUavHeap.AllocatePersistent();
+                mipSrvIndices[mip] = mipSrv.BindlessIndex;
+                gpu.Device.CreateShaderResourceView(
+                    normalTexture,
+                    noiseSrvDescription with
+                    {
+                        Texture2D = new Texture2DShaderResourceView
+                        {
+                            MostDetailedMip = (uint)mip,
+                            MipLevels = 1,
+                        },
+                    },
+                    mipSrv.Cpu);
+            }
+
+            _fnvNoiseTiles[slot] = new FnvNoiseTileSet(
+                blendTexture, normalTexture, blendSrv.BindlessIndex, normalSrv.BindlessIndex,
+                mipSrvIndices);
+        }
 
         var vsBytecode = CompileEmbeddedShader("water.vert.hlsl", "main", "vs_5_1");
         // Per-game water is a per-FILE axis (WaterProfile.PixelShaderFile); the only remaining
@@ -454,7 +576,79 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             }
         }
 
+        RebuildWaterHeightLookup();
         EnsureInstanceCapacity(_waterCells.Count);
+    }
+
+    /// <summary>
+    ///     Indexes the loaded water cells for O(1) point queries by world XY. Exterior water is one
+    ///     cell-sized quad at a grid origin, so it keys directly by grid coordinate; interiors
+    ///     (<c>WorldSpatialIndex.BuildInterior</c>) supply an arbitrary AABB-derived footprint and go
+    ///     into a short linear list instead. Where two surfaces cover the same point, the HIGHER wins:
+    ///     that is the one a camera above the water is looking through.
+    /// </summary>
+    private void RebuildWaterHeightLookup()
+    {
+        _waterHeightByGrid.Clear();
+        _irregularWaterCells.Clear();
+        foreach (var water in _waterCells)
+        {
+            if (!float.IsFinite(water.Height)) continue;
+
+            var gridAligned =
+                MathF.Abs(water.FootprintSize - WorldGridConstants.CellSize) < 0.5f &&
+                MathF.Abs(water.OriginXY.X - water.Key.gx * WorldGridConstants.CellSize) < 0.5f &&
+                MathF.Abs(water.OriginXY.Y - water.Key.gy * WorldGridConstants.CellSize) < 0.5f;
+            if (gridAligned)
+            {
+                if (!_waterHeightByGrid.TryGetValue(water.Key, out var existing) || water.Height > existing)
+                {
+                    _waterHeightByGrid[water.Key] = water.Height;
+                }
+            }
+            else
+            {
+                _irregularWaterCells.Add(water);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     The water surface height covering a world XY, or false where there is none.
+    ///     <para>
+    ///         This replaces an earlier single global plane taken as the MAXIMUM height over every
+    ///         gathered water cell. That was unusable: the gather spans <c>renderDistance + 1</c> cells
+    ///         with a Chebyshev test and no frustum or Z bound (~1225 cells at the default distance),
+    ///         so one distant elevated body set the plane for the whole frame. Paired with a
+    ///         camera-must-be-above-the-plane guard it disabled the below-water split entirely
+    ///         wherever any visible water sat higher than the camera — measured at Lake Mead, the
+    ///         local surface is 3000 while the global max was 5600, so a camera at Z≈3200 was treated
+    ///         as submerged and every underwater decal composited on top of the water.
+    ///     </para>
+    /// </summary>
+    public bool TryGetWaterHeightAt(float worldX, float worldY, out float height)
+    {
+        var key = (
+            gx: (int)MathF.Floor(worldX / WorldGridConstants.CellSize),
+            gy: (int)MathF.Floor(worldY / WorldGridConstants.CellSize));
+        if (_waterHeightByGrid.TryGetValue(key, out height)) return true;
+
+        height = float.NegativeInfinity;
+        var found = false;
+        foreach (var water in _irregularWaterCells)
+        {
+            if (worldX < water.OriginXY.X || worldX > water.OriginXY.X + water.FootprintSize ||
+                worldY < water.OriginXY.Y || worldY > water.OriginXY.Y + water.FootprintSize)
+            {
+                continue;
+            }
+
+            height = MathF.Max(height, water.Height);
+            found = true;
+        }
+
+        if (!found) height = 0f;
+        return found;
     }
 
     /// <summary>
@@ -588,6 +782,32 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     }
 
     /// <summary>
+    ///     Whether any water will draw this frame, i.e. whether the deferred translucent reference list
+    ///     is worth splitting around the surface at all. Water is drawn with <c>DepthWriteMask.Zero</c>,
+    ///     so anything issued after it can never be occluded by it — ordering is the only lever, and a
+    ///     submerged decal has to be issued before the surface to end up underneath it.
+    ///     <para>
+    ///         The split HEIGHT is no longer decided here. Each draw is now tested against the water
+    ///         surface local to its own XY via <see cref="TryGetWaterHeightAt" />, because no single
+    ///         global plane works: see that method for the measured failure of the previous
+    ///         maximum-height plane.
+    ///     </para>
+    ///     <para>
+    ///         Deliberately NOT derived from <see cref="FnvWater001Preflight" />. That contract decides
+    ///         whether ONE plane equation can drive the WATER001 snapshot, so it declines on
+    ///         <c>MixedVisiblePlaneHeights</c> — true in essentially every exterior view (measured: 1225
+    ///         visible water cells over 6 distinct WATRs at Lake Mead), which left the partition dead
+    ///         outdoors.
+    ///     </para>
+    /// </summary>
+    public bool HasVisibleWaterToPartition(VisibilityCylinder cylinder)
+    {
+        var cellVisible = GatherVisibleWater(cylinder);
+        var nifVisible = GatherVisibleNifPlanes(cylinder);
+        return cellVisible + nifVisible > 0;
+    }
+
+    /// <summary>
     ///     Supplies a one-shot bindless SRV for a separate, single-sample SceneColor-format snapshot
     ///     captured after opaque terrain/references. The host must never pass the active scene RTV:
     ///     prepare/copy/resolve and transition the snapshot to PixelShaderResource first, then restore
@@ -613,6 +833,26 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             throw new ArgumentOutOfRangeException(nameof(height), height, "Snapshot height must be positive.");
 
         _fnvWater001Snapshot = new FnvWater001SnapshotDescriptor(bindlessIndex.Value, width, height);
+    }
+
+    /// <summary>
+    ///     Supplies the planar sky-reflection target: the sky drawn with the view's Z axis mirrored,
+    ///     resolved to a single-sample SceneColor texture. Replaces the 2-row gradient stand-in that
+    ///     made water read flat (a gradient cannot carry cloud mottling, warm tint or sun glitter —
+    ///     retail WATER000 samples a planar ReflectionMap RT here).
+    ///     <para>
+    ///         <paramref name="sceneWidth" />/<paramref name="sceneHeight" /> are the SCENE viewport
+    ///         dimensions, not the target's: the lookup is a normalized screen-space UV, so the
+    ///         target may be rendered at any resolution. Pass <c>null</c> to fall back to the gradient.
+    ///     </para>
+    /// </summary>
+    public void SetWaterReflection(uint? bindlessIndex, uint sceneWidth, uint sceneHeight)
+    {
+        _reflectionBindlessIndex = bindlessIndex is { } index && sceneWidth > 0 && sceneHeight > 0
+            ? index
+            : NoNormalMap;
+        _reflectionSceneWidth = sceneWidth;
+        _reflectionSceneHeight = sceneHeight;
     }
 
     public void SetModernCubeMap(uint? cubeMapBindlessIndex) =>
@@ -844,7 +1084,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         int frameIndex,
         float elapsedSeconds,
         uint sourceIndex,
-        WaterSurfaceParams surface)
+        WaterSurfaceParams surface,
+        in FnvNoiseTileSet tiles)
     {
         if (!_ringBuffer.TryAllocate(
                 frameIndex,
@@ -858,7 +1099,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         *(FnvNoiseUniforms*)constants.CpuPtr = new FnvNoiseUniforms
         {
             SourceIndex = sourceIndex,
-            BlendIndex = _fnvNoiseBlendBindlessIndex,
+            BlendIndex = tiles.BlendBindlessIndex,
             NoiseScale = surface.NoiseScale,
             TexScaleAmplitude = new Vector4(
                 FnvWaterNoiseAnimation.TextureScale(surface.Layer1.UvScale),
@@ -875,12 +1116,25 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 0f),
         };
 
-        var uavs = _cbvSrvUavHeap.Allocate(2);
+        // The allocator THROWS when a frame slot's transient region is exhausted; a saturated frame
+        // must degrade to the authored normal map, not tear down the renderer.
+        GpuDescriptorHeapAllocator12.DescriptorAllocation uavs;
+        try
+        {
+            uavs = _cbvSrvUavHeap.Allocate(2);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Log.Warn("WaterRenderer12: FNV noise prepass skipped — descriptor heap exhausted: {0}",
+                ex.Message);
+            return false;
+        }
+
         var blendUavCpu = uavs.Cpu;
         var normalUavCpu = uavs.Cpu;
         normalUavCpu.Ptr += uavs.DescriptorSize;
-        _gpu.Device.CreateUnorderedAccessView(_fnvNoiseBlendTexture, null, null, blendUavCpu);
-        _gpu.Device.CreateUnorderedAccessView(_fnvNoiseNormalTexture, null, null, normalUavCpu);
+        _gpu.Device.CreateUnorderedAccessView(tiles.BlendTexture, null, null, blendUavCpu);
+        _gpu.Device.CreateUnorderedAccessView(tiles.NormalTexture, null, null, normalUavCpu);
 
         var blendUavGpu = uavs.Gpu;
         var normalUavGpu = uavs.Gpu;
@@ -893,28 +1147,122 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             _cbvSrvUavHeap.BindlessHeapStartGpu);
 
         cmd.ResourceBarrierTransition(
-            _fnvNoiseBlendTexture,
+            tiles.BlendTexture,
             ResourceStates.NonPixelShaderResource,
             ResourceStates.UnorderedAccess);
         cmd.SetPipelineState(_fnvNoiseScrollBlendPso);
         cmd.SetComputeRootDescriptorTable(GpuRootSignature12.Slots.WaterNoiseUavTable, blendUavGpu);
         cmd.Dispatch(FnvNoiseDimension / 8, FnvNoiseDimension / 8, 1);
         cmd.ResourceBarrierTransition(
-            _fnvNoiseBlendTexture,
+            tiles.BlendTexture,
             ResourceStates.UnorderedAccess,
             ResourceStates.NonPixelShaderResource);
 
         cmd.ResourceBarrierTransition(
-            _fnvNoiseNormalTexture,
+            tiles.NormalTexture,
             ResourceStates.PixelShaderResource,
             ResourceStates.UnorderedAccess);
         cmd.SetPipelineState(_fnvNoiseNormalPso);
         cmd.SetComputeRootDescriptorTable(GpuRootSignature12.Slots.WaterNoiseUavTable, normalUavGpu);
         cmd.Dispatch(FnvNoiseDimension / 8, FnvNoiseDimension / 8, 1);
-        cmd.ResourceBarrierTransition(
-            _fnvNoiseNormalTexture,
-            ResourceStates.UnorderedAccess,
-            ResourceStates.PixelShaderResource);
+
+        if (!FnvNoiseMipsEnabled)
+        {
+            cmd.ResourceBarrierTransition(
+                tiles.NormalTexture,
+                ResourceStates.UnorderedAccess,
+                ResourceStates.PixelShaderResource);
+            return true;
+        }
+
+        // Fill the mip chain: each step reads the just-written level (transitioned to
+        // NonPixelShaderResource per SUBRESOURCE — the rest of the texture stays a UAV) and
+        // writes the next level through its own mip UAV. A ring shortfall stops the chain early;
+        // the SRV still exposes the whole chain, so a stale upper level persists for that frame —
+        // acceptable next to dropping the pass.
+        cmd.SetPipelineState(_fnvNoiseDownsamplePso);
+        var builtLevels = 1;
+        for (var level = 1; level < FnvNoiseMipCount; level++)
+        {
+            if (!_ringBuffer.TryAllocate(
+                    frameIndex,
+                    (uint)Marshal.SizeOf<FnvNoiseUniforms>(),
+                    out var mipConstants,
+                    GpuRingBuffer12.CbAlignment))
+            {
+                break;
+            }
+
+            var destDimension = (int)FnvNoiseDimension >> level;
+            *(FnvNoiseUniforms*)mipConstants.CpuPtr = new FnvNoiseUniforms
+            {
+                SourceIndex = tiles.NormalMipSrvIndices[level - 1],
+                // Padding0 doubles as the destination dimension for mainDownsample.
+                Padding0 = destDimension,
+            };
+
+            // Acquire BEFORE the source level's barrier. Both early-outs in this loop must leave
+            // every subresource in the state the restore below assumes (levels < builtLevels-1 in
+            // NonPixelShaderResource, the rest in UnorderedAccess); breaking after the transition
+            // would strand level-1 in NonPixelShaderResource while the trailing restore declares it
+            // a UAV.
+            GpuDescriptorHeapAllocator12.DescriptorAllocation mipUav;
+            try
+            {
+                mipUav = _cbvSrvUavHeap.Allocate(1);
+            }
+            catch (InvalidOperationException)
+            {
+                // Same contract as the ring shortfall above: stop the chain, keep the levels built
+                // so far. A stale upper level persists for the frame — acceptable next to dropping
+                // the pass.
+                break;
+            }
+
+            cmd.ResourceBarrierTransition(
+                tiles.NormalTexture,
+                ResourceStates.UnorderedAccess,
+                ResourceStates.NonPixelShaderResource,
+                (uint)(level - 1));
+
+            _gpu.Device.CreateUnorderedAccessView(
+                tiles.NormalTexture,
+                null,
+                new UnorderedAccessViewDescription
+                {
+                    Format = Format.R8G8B8A8_UNorm,
+                    ViewDimension = Vortice.Direct3D12.UnorderedAccessViewDimension.Texture2D,
+                    Texture2D = new Texture2DUnorderedAccessView { MipSlice = (uint)level },
+                },
+                mipUav.Cpu);
+
+            cmd.SetComputeRootConstantBufferView(
+                GpuRootSignature12.Slots.PerFrameCbv, mipConstants.GpuAddress);
+            cmd.SetComputeRootDescriptorTable(GpuRootSignature12.Slots.WaterNoiseUavTable, mipUav.Gpu);
+            var groups = (uint)Math.Max(destDimension / 8, 1);
+            cmd.Dispatch(groups, groups, 1);
+            builtLevels = level + 1;
+        }
+
+        // Return every subresource to PixelShaderResource: levels 0..builtLevels-2 were left as
+        // read sources, builtLevels-1..N-1 as UAV targets (written or untouched).
+        for (var level = 0; level < builtLevels - 1; level++)
+        {
+            cmd.ResourceBarrierTransition(
+                tiles.NormalTexture,
+                ResourceStates.NonPixelShaderResource,
+                ResourceStates.PixelShaderResource,
+                (uint)level);
+        }
+        for (var level = builtLevels - 1; level < FnvNoiseMipCount; level++)
+        {
+            cmd.ResourceBarrierTransition(
+                tiles.NormalTexture,
+                ResourceStates.UnorderedAccess,
+                ResourceStates.PixelShaderResource,
+                (uint)level);
+        }
+
         return true;
     }
 
@@ -940,6 +1288,34 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         Vector3 renderOrigin,
         bool isPerspectiveProjection) =>
         RenderCore(viewProj, cylinder, renderOrigin, isPerspectiveProjection, animationTimeSeconds: null);
+
+    /// <summary>
+    ///     Unified-transparency entry: runs everything the live render does EXCEPT the FNV batch
+    ///     draws, which are queued farthest-first for interleaved draining
+    ///     (<see cref="DrainTransparencyDownTo" /> / <see cref="DrainAllTransparency" /> /
+    ///     <see cref="FinishTransparencyStream" />). Only call when
+    ///     <see cref="CanStreamTransparency" /> returned true this frame; any other water path
+    ///     draws inline here exactly as the live render would.
+    /// </summary>
+    internal int PrepareTransparencyStream(
+        Matrix4x4 viewProj,
+        VisibilityCylinder cylinder,
+        Vector3 renderOrigin,
+        bool isPerspectiveProjection,
+        float? animationTimeSeconds = null)
+    {
+        // The capture path pins one authored clock (see RenderAtTime); the live path passes null
+        // and keeps the renderer's own elapsed time.
+        if (animationTimeSeconds is { } pinned &&
+            (pinned < 0f || !float.IsFinite(pinned)))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(animationTimeSeconds), pinned, "Animation time must be finite and >= 0.");
+        }
+
+        return RenderCore(viewProj, cylinder, renderOrigin, isPerspectiveProjection,
+            animationTimeSeconds, deferFnvBatches: true);
+    }
 
     /// <summary>
     ///     Capture-only deterministic entry point. Uses one authored clock for legacy frame selection,
@@ -971,7 +1347,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         VisibilityCylinder cylinder,
         Vector3 renderOrigin,
         bool isPerspectiveProjection,
-        float? animationTimeSeconds)
+        float? animationTimeSeconds,
+        bool deferFnvBatches = false)
     {
         LastStats.Reset();
         // The opaque snapshot is valid as a shader resource only for this host-bracketed pass.
@@ -1010,6 +1387,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         var started = StartTiming();
         var cmd = _recorder.CommandList;
         var frameIndex = _recorder.FrameIndex;
+        // Per-material amortization is valid only within one frame's command list: ring
+        // allocations belong to this frame slot and each noise tile is re-recorded per frame.
+        // Reset here, which covers the stream and the legacy inline path alike.
+        _frameNoiseSlots.Clear();
+        Array.Clear(_frameNoiseSlotReady);
+        _frameNoiseSlotsUsed = 0;
+        _frameNoiseSlotOverflows = 0;
+        _frameMaterialCb.Clear();
 
         var segmentStarted = StartTiming();
         var cellVisible = GatherVisibleWater(cylinder);
@@ -1054,24 +1439,62 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         if (_game == BethesdaGame.FalloutNewVegas && cellVisible > 0)
         {
             // Keep each XCWT material contiguous so one CB/normal prepass can drive exactly the
-            // generated CELL packets that authored it.  Sorting by FormID is deterministic and,
-            // unlike the old camera-cell-global binding, cannot change every visible tile when the
-            // camera crosses a grid boundary.
-            _visibleWaterScratch.Sort((left, right) =>
-                EffectiveFnvWaterFormId(left).CompareTo(EffectiveFnvWaterFormId(right)));
-            var batchStart = 0;
-            var batchFormId = EffectiveFnvWaterFormId(_visibleWaterScratch[0]);
+            // generated CELL packets that authored it, ordered farthest-first WITHIN the material.
+            // The retail engine draws water as depth-sorted alpha passes — decompile-proven:
+            // BSBatchRenderer::SortAlphaPasses orders on dot(worldPos, viewDir) descending and
+            // RenderAlphaGeometry always takes the farther pass next — so wherever two planes
+            // overlap at different heights (the routine `mixed-visible-plane-heights` case) the
+            // correct composite is back-to-front from the CAMERA, not any fixed grid order. A
+            // perspective viewProj's clip-space w of the centroid IS that view-axis distance; on
+            // the ortho paths w is constant and the grid-key tiebreak (unique per cell ⇒ total
+            // order) carries the whole comparison, keeping those captures deterministic. Depth is
+            // PRECOMPUTED per cell so the unstable introsort compares plain fields.
+            var wColumn = new Vector4(viewProj.M14, viewProj.M24, viewProj.M34, viewProj.M44);
+            _fnvWaterSortScratch.Clear();
             for (var i = 0; i < cellVisible; i++)
             {
                 var water = _visibleWaterScratch[i];
-                var formId = EffectiveFnvWaterFormId(water);
+                var half = water.FootprintSize * 0.5f;
+                var depth = ((water.OriginXY.X + half) * wColumn.X)
+                            + ((water.OriginXY.Y + half) * wColumn.Y)
+                            + (water.Height * wColumn.Z)
+                            + wColumn.W;
+                // Non-finite → pin to the FAR end (drawn first), mirroring the reference
+                // renderer's blended-sort guard. A NaN here would otherwise fail every
+                // stream-drain comparison and silently push ALL queued water to post-blended
+                // order for the frame.
+                if (!float.IsFinite(depth))
+                {
+                    depth = float.PositiveInfinity;
+                }
+
+                _fnvWaterSortScratch.Add((water, EffectiveFnvWaterFormId(water), depth));
+            }
+
+            _fnvWaterSortScratch.Sort(static (left, right) =>
+            {
+                var byMaterial = left.FormId.CompareTo(right.FormId);
+                if (byMaterial != 0) return byMaterial;
+                var byDepth = right.Depth.CompareTo(left.Depth); // farther first
+                if (byDepth != 0) return byDepth;
+                var byX = left.Cell.Key.gx.CompareTo(right.Cell.Key.gx);
+                return byX != 0 ? byX : left.Cell.Key.gy.CompareTo(right.Cell.Key.gy);
+            });
+
+            var batchStart = 0;
+            var batchFormId = _fnvWaterSortScratch[0].FormId;
+            for (var i = 0; i < cellVisible; i++)
+            {
+                var (water, formId, _) = _fnvWaterSortScratch[i];
+                _visibleWaterScratch[i] = water;
                 if (formId != batchFormId)
                 {
                     _fnvWaterCellDrawBatches.Add(new FnvWaterCellDrawBatch(
                         batchFormId,
                         batchStart,
                         i - batchStart,
-                        ResolveFnvWaterMaterial(batchFormId)));
+                        ResolveFnvWaterMaterial(batchFormId),
+                        _fnvWaterSortScratch[batchStart].Depth));
                     batchStart = i;
                     batchFormId = formId;
                 }
@@ -1085,7 +1508,17 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 batchFormId,
                 batchStart,
                 cellVisible - batchStart,
-                ResolveFnvWaterMaterial(batchFormId)));
+                ResolveFnvWaterMaterial(batchFormId),
+                _fnvWaterSortScratch[batchStart].Depth));
+
+            // Engine parity at the BATCH level too: material batches DRAW farthest-first (each
+            // batch's leading instance is its farthest after the intra-material sort). Only the
+            // draw order moves — the buffer layout above is untouched.
+            _fnvWaterCellDrawBatches.Sort(static (left, right) =>
+            {
+                var byDepth = right.FarthestDepth.CompareTo(left.FarthestDepth);
+                return byDepth != 0 ? byDepth : left.WaterFormId.CompareTo(right.WaterFormId);
+            });
         }
         else
         {
@@ -1102,13 +1535,64 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             }
         }
 
-        // Placed NIF water follows the cell-water packets in the same buffer and uses the same DNAM
-        // appearance. Unlike the old AABB slab, every packet dereferences the authored indices and
-        // carries the exact transformed vertex positions (including distinct per-vertex heights).
+        // Placed NIF water follows the cell-water packets in the same buffer. Each surface renders
+        // with ITS OWN water identity (stamped at placement — see
+        // ReferenceRenderer12.AccumulateNifWaterPlanes), so for FNV the visible surfaces are sorted
+        // into contiguous per-WATR runs ordered farthest-first (the engine's proven alpha-pass
+        // order — see the cell sort above), then grouped like the cell batches. Surface counts are
+        // small, so the comparer derives depth inline; the bounds tiebreak keeps the order total.
+        var nifWColumn = new Vector4(viewProj.M14, viewProj.M24, viewProj.M34, viewProj.M44);
+        float NifViewDepth(NifWaterGeometry geometry)
+        {
+            var centroid = (geometry.BoundsMin + geometry.BoundsMax) * 0.5f;
+            var depth = (centroid.X * nifWColumn.X)
+                        + (centroid.Y * nifWColumn.Y)
+                        + (centroid.Z * nifWColumn.Z)
+                        + nifWColumn.W;
+            // Parsed-NIF bounds are untrusted input: pin non-finite to the FAR end (drawn first)
+            // so one bad plane cannot stall the stream drain (see the cell-depth guard above).
+            return float.IsFinite(depth) ? depth : float.PositiveInfinity;
+        }
+
+        if (_game == BethesdaGame.FalloutNewVegas && nifVisible > 1)
+        {
+            _visibleNifScratch.Sort((left, right) =>
+            {
+                var byMaterial = left.WaterFormId.CompareTo(right.WaterFormId);
+                if (byMaterial != 0) return byMaterial;
+                var byDepth = NifViewDepth(right).CompareTo(NifViewDepth(left)); // farther first
+                if (byDepth != 0) return byDepth;
+                var byX = left.BoundsMin.X.CompareTo(right.BoundsMin.X);
+                if (byX != 0) return byX;
+                var byY = left.BoundsMin.Y.CompareTo(right.BoundsMin.Y);
+                return byY != 0 ? byY : left.BoundsMin.Z.CompareTo(right.BoundsMin.Z);
+            });
+        }
+
+        _fnvNifDrawBatches.Clear();
         var packetCursor = cellVisible;
+        var nifBatchFormId = 0u;
+        var nifBatchStartPacket = 0;
+        var nifBatchDepth = 0f;
         for (var j = 0; j < nifVisible; j++)
         {
             var geometry = _visibleNifScratch[j];
+            var relativePacket = packetCursor - cellVisible;
+            if (j == 0)
+            {
+                nifBatchFormId = geometry.WaterFormId;
+                nifBatchDepth = NifViewDepth(geometry);
+            }
+            else if (geometry.WaterFormId != nifBatchFormId)
+            {
+                _fnvNifDrawBatches.Add(new FnvNifWaterDrawBatch(
+                    nifBatchFormId, nifBatchStartPacket, relativePacket - nifBatchStartPacket,
+                    nifBatchDepth));
+                nifBatchFormId = geometry.WaterFormId;
+                nifBatchStartPacket = relativePacket;
+                nifBatchDepth = NifViewDepth(geometry);
+            }
+
             for (var packetIndex = 0; packetIndex < geometry.TrianglePacketCount; packetIndex++)
             {
                 var packet = geometry.GetTrianglePacket(packetIndex);
@@ -1121,11 +1605,103 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                     packet.Vertex5);
             }
         }
+
+        if (nifVisible > 0)
+        {
+            _fnvNifDrawBatches.Add(new FnvNifWaterDrawBatch(
+                nifBatchFormId,
+                nifBatchStartPacket,
+                packetCursor - cellVisible - nifBatchStartPacket,
+                nifBatchDepth));
+            // Farthest group draws first, mirroring the cell-batch draw order above.
+            _fnvNifDrawBatches.Sort(static (left, right) =>
+            {
+                var byDepth = right.FarthestDepth.CompareTo(left.FarthestDepth);
+                return byDepth != 0 ? byDepth : left.WaterFormId.CompareTo(right.WaterFormId);
+            });
+        }
         LastStats.InstanceBuildMilliseconds = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartTiming();
         if (_game == BethesdaGame.FalloutNewVegas && _fnvWaterCellDrawBatches.Count > 0)
         {
+            if (deferFnvBatches)
+            {
+                // Unified transparency stream: queue ONE entry PER CELL (and per placed-NIF
+                // geometry), farthest-first. The engine sorts alpha passes per SHAPE
+                // (BSBatchRenderer::SortAlphaPasses) and each generated cell quad is its own
+                // pass in retail. The earlier per-material key (= the batch's FARTHEST cell)
+                // drained a whole lake-spanning surface before any blended draw nearer than its
+                // far shore — so wholly-submerged decals issued AFTER the surface above them and
+                // composited on top (water writes no depth; ordering is the only lever). With
+                // per-cell keys the cell above a submerged decal is NEARER than the decal and
+                // drains after it — the correct composite. The drain coalesces consecutive
+                // same-material contiguous entries back into one draw (DrawNextStreamRun), so
+                // draw/CB/prepass counts stay at batch scale in the common case.
+                UploadInstances(instanceCount);
+                LastStats.GpuUploadMilliseconds = ElapsedMilliseconds(segmentStarted);
+                _streamPending.Clear();
+                _streamNext = 0;
+                _streamFailed = false;
+                _streamUsedNoisePrepass = false;
+                _streamRuns = 0;
+                _streamNoisePrepasses = 0;
+                _streamDrawnCells = 0;
+                _streamDrewNifPackets = false;
+                _streamVisibleSurfaces = visibleSurfaces;
+                _streamNifVisible = nifVisible;
+                _streamArgs = new FnvBatchDrawArgs(
+                    cmd, frameIndex, viewProj, cylinder.Position, renderOrigin, elapsedSeconds,
+                    fnvWater001Snapshot.BindlessIndex, fnvWater001Snapshot.Width,
+                    fnvWater001Snapshot.Height, _depthBindlessIndex != NoNormalMap);
+
+                foreach (var batch in _fnvWaterCellDrawBatches)
+                {
+                    for (var offset = 0; offset < batch.InstanceCount; offset++)
+                    {
+                        var instance = batch.StartInstance + offset;
+                        _streamPending.Add(new PendingStreamBatch(
+                            _fnvWaterSortScratch[instance].Depth, batch.WaterFormId,
+                            batch.Material, instance, 1, useFnvWater001,
+                            IsNifPacketBatch: false));
+                    }
+                }
+
+                var streamPacketCursor = cellVisible;
+                for (var j = 0; j < nifVisible; j++)
+                {
+                    var geometry = _visibleNifScratch[j];
+                    _streamPending.Add(new PendingStreamBatch(
+                        NifViewDepth(geometry), geometry.WaterFormId,
+                        ResolveFnvWaterMaterial(geometry.WaterFormId),
+                        streamPacketCursor, geometry.TrianglePacketCount,
+                        Water001: false, IsNifPacketBatch: true));
+                    streamPacketCursor += geometry.TrianglePacketCount;
+                }
+
+                // One global farthest-first order across cells + NIF geometries. Kind/material/
+                // instance tiebreaks keep it TOTAL (stable across frames — the engine's stable
+                // merge-sort semantics); within one material, instance order is preserved, which
+                // is what lets DrawNextStreamRun re-form contiguous runs.
+                _streamPending.Sort(static (left, right) =>
+                {
+                    var byDepth = right.Depth.CompareTo(left.Depth);
+                    if (byDepth != 0) return byDepth;
+                    var byKind = left.IsNifPacketBatch.CompareTo(right.IsNifPacketBatch);
+                    if (byKind != 0) return byKind;
+                    var byMaterial = left.WaterFormId.CompareTo(right.WaterFormId);
+                    return byMaterial != 0
+                        ? byMaterial
+                        : left.StartInstance.CompareTo(right.StartInstance);
+                });
+
+                // Technique telemetry depends only on the decision + batch counts — write it now so
+                // HUD/trace consumers see it regardless of how far the drain gets.
+                WriteFnvBatchTechniqueTelemetry(useFnvWater001, nifPacketCount);
+                LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
+                return visibleSurfaces;
+            }
+
             return RenderFnvWaterMaterialBatches(
                 viewProj,
                 cylinder,
@@ -1171,14 +1747,15 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             noiseIndex = animatedFrames[animationFrame];
         }
         var usedFnvNoisePrepass = false;
-        if (_useFnvNoisePrepass && noiseIndex != NoNormalMap)
+        if (_useFnvNoisePrepass && noiseIndex != NoNormalMap &&
+            // The generic path draws every surface from ONE camera-level appearance, so it owns a
+            // single slot under a key no WATR FormID can take.
+            TryAcquireFnvNoiseSlot(
+                GenericWaterNoiseKey, cmd, frameIndex, elapsedSeconds, noiseIndex, surface,
+                out var genericSlot))
         {
-            usedFnvNoisePrepass = RecordFnvNoisePrepass(
-                cmd, frameIndex, elapsedSeconds, noiseIndex, surface);
-            if (usedFnvNoisePrepass)
-            {
-                noiseIndex = _fnvNoiseNormalBindlessIndex;
-            }
+            usedFnvNoisePrepass = true;
+            noiseIndex = _fnvNoiseTiles[genericSlot].NormalBindlessIndex;
         }
 
         var modernTechnique = ModernWaterPipeline.SelectTechnique(
@@ -1304,6 +1881,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                     surface.UnderwaterFogFar,
                     surface.AboveWaterFogAmount,
                     surface.RefractionDistortionAmount),
+                WaterReflectionIndex = _reflectionBindlessIndex,
+                WaterReflectionSceneWidth = _reflectionSceneWidth,
+                WaterReflectionSceneHeight = _reflectionSceneHeight,
+                WaterReflectionDistortion = ReflectionDistortionScale,
             };
         }
 
@@ -1312,13 +1893,23 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         LastStats.GpuUploadMilliseconds = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartTiming();
-        // Copy the persistent instance-buffer SRV into this frame's shader-visible heap slot.
+        // Build this frame's instance SRV directly in the frame's shader-visible heap slot,
+        // windowed onto the frame-slotted region of the instance buffer.
         var srvAlloc = _cbvSrvUavHeap.Allocate(1);
-        _gpu.Device.CopyDescriptorsSimple(
-            1,
-            srvAlloc.Cpu,
-            _instanceSrvPersistent,
-            DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView);
+        var instanceSrvDesc = new ShaderResourceViewDescription
+        {
+            Format = Format.Unknown,
+            ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Buffer,
+            Shader4ComponentMapping = ShaderComponentMapping.Default,
+            Buffer = new BufferShaderResourceView
+            {
+                FirstElement = (ulong)frameIndex * (ulong)_instanceCapacity,
+                NumElements = (uint)_instanceCapacity,
+                StructureByteStride = (uint)Marshal.SizeOf<WaterInstance>(),
+                Flags = BufferShaderResourceViewFlags.None,
+            },
+        };
+        _gpu.Device.CreateShaderResourceView(_instanceBuffer, instanceSrvDesc, srvAlloc.Cpu);
 
         // With a scene-depth SRV the host has bound its READ-ONLY DSV + transitioned depth to
         // DEPTH_READ | PIXEL_SHADER_RESOURCE, so use the depth-sample PSO (hardware GreaterEqual
@@ -1378,9 +1969,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
         cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.SrvTable, srvAlloc.Gpu);
-        // Bind the shared bindless texture table (space1, t0..) at the heap head so the PS can
-        // sample the resolved NNAM normal map via NonUniformResourceIndex(uNoiseParams.x).
-        cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.BindlessSrvTable, _cbvSrvUavHeap.BindlessHeapStartGpu);
+        // Bind the shared bindless alias tables (space1 t0.. + the space3 MSAA depth alias) at the
+        // heap head so the PS can sample the resolved NNAM normal map via
+        // NonUniformResourceIndex(uNoiseParams.x) and the multisampled scene depth.
+        GpuRootSignature12.SetGraphicsBindlessTables(cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
 
         // WATER001's reconstructed horizontal plane is valid only for generated cell quads. Draw
         // those packets first with the refraction permutation, then switch back to the established
@@ -1406,12 +1998,481 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         return visibleSurfaces;
     }
 
+    /// <summary>One FNV stream entry, farthest-first: a single generated cell quad or one placed-NIF
+    /// geometry's packet run (the engine's per-shape alpha-pass granularity).</summary>
+    private readonly record struct PendingStreamBatch(
+        float Depth,
+        uint WaterFormId,
+        ResolvedFnvWaterMaterial Material,
+        int StartInstance,
+        int InstanceCount,
+        bool Water001,
+        bool IsNifPacketBatch);
+
+    // Unified-transparency drain state (see PrepareTransparencyStream). Valid for one frame.
+    // Entries are PER CELL / per placed-NIF geometry (engine granularity: one alpha-pass key per
+    // shape); WaterFormId identifies the material for run coalescing and the total-order tiebreak.
+    private readonly List<PendingStreamBatch> _streamPending = new(16);
+    private int _streamNext;
+    private bool _streamFailed;
+    private bool _streamUsedNoisePrepass;
+    private int _streamDrawnCells;
+    private bool _streamDrewNifPackets;
+    private int _streamVisibleSurfaces;
+    private int _streamNifVisible;
+    private FnvBatchDrawArgs _streamArgs;
+    private uint _streamTailReservationBytes;
+    // Cost + loss counters for the frame's stream (published in FinishTransparencyStream). Runs
+    // are DRAWS, entries are queued shapes; a gap between them is the coalescing working, and a
+    // non-zero dropped count means the drain died mid-frame and nearer water never rendered.
+    private int _streamRuns;
+    private int _streamNoisePrepasses;
+
+    // ── Per-material amortization (per frame) ────────────────────────────────────────────────
+    // The transparency stream sorts water per SHAPE, so one lake gets sliced into as many runs as
+    // there are blended reference draws interleaved with it (~1,225 at the default distance, not
+    // the ~6 visible WATRs). Re-running the full per-material setup per run cost 2,816 ring bytes
+    // and 11 transient descriptors EACH — 3.3 MB/frame against a 64 KiB protected reservation, and
+    // on exhaustion the drain latched and dropped every remaining nearer pool ("some pools of
+    // water are entirely missing"). Both halves of that setup are pure functions of the material,
+    // so they are computed once per material per frame:
+    //   • the noise prepass — the shared 256² normal tile only needs re-recording when a DIFFERENT
+    //     material's normals must occupy it, so track which material is resident;
+    //   • the frame uniforms CB — every field is a function of (material, water001, frame); the
+    //     only per-run values are the instance-window SRV and the draw's instance count.
+    /// <summary>One material's noise tiles + their persistent bindless views (see
+    /// <see cref="FnvNoiseMaterialSlots" />).</summary>
+    private readonly record struct FnvNoiseTileSet(
+        ID3D12Resource BlendTexture,
+        ID3D12Resource NormalTexture,
+        uint BlendBindlessIndex,
+        uint NormalBindlessIndex,
+        uint[] NormalMipSrvIndices);
+
+    // Per-frame material→slot assignment and the prepass result for each. Both are valid only for
+    // the frame that filled them (the ring allocations behind a prepass belong to that frame slot),
+    // so RenderCore clears them; a material assigned a slot keeps it for the whole frame, which is
+    // what makes its resolved noise index a stable fact rather than an ordering invariant.
+    private readonly Dictionary<uint, int> _frameNoiseSlots = new(FnvNoiseMaterialSlots);
+    private readonly bool[] _frameNoiseSlotReady = new bool[FnvNoiseMaterialSlots];
+    private int _frameNoiseSlotsUsed;
+    private readonly Dictionary<(uint FormId, bool Water001), ulong> _frameMaterialCb = new();
+
+    /// <summary>
+    ///     Assigns this frame's noise tile slot for a WATR material and records its prepass, both
+    ///     exactly once. Returns false when the pool is exhausted OR the prepass could not be
+    ///     recorded; either way the caller falls back to the material's authored normal map for the
+    ///     whole frame.
+    ///     <para>
+    ///         The decision is taken ONCE and remembered — a retry on a later run of the same
+    ///         material would re-record into a tile no draw is going to read, because the run that
+    ///         first failed has already cached a uniforms CB pointing at the authored map. One
+    ///         attempt per material per frame keeps the CB cache and the tile state in agreement.
+    ///     </para>
+    ///     <para>
+    ///         Measured visible-material counts are 4-6 in FNV's densest water views, so the pool is
+    ///         sized well clear of the fallback — and <see cref="LastStats" /> reports the overflow
+    ///         so "more materials than slots" can never become a silent quality cliff.
+    ///     </para>
+    /// </summary>
+    private bool TryAcquireFnvNoiseSlot(
+        uint waterFormId,
+        ID3D12GraphicsCommandList cmd,
+        int frameIndex,
+        float elapsedSeconds,
+        uint sourceIndex,
+        WaterSurfaceParams surface,
+        out int slot)
+    {
+        if (_frameNoiseSlots.TryGetValue(waterFormId, out slot))
+        {
+            return slot >= 0 && _frameNoiseSlotReady[slot];
+        }
+
+        if (_frameNoiseSlotsUsed >= FnvNoiseMaterialSlots)
+        {
+            _frameNoiseSlotOverflows++;
+            _frameNoiseSlots[waterFormId] = -1;
+            slot = -1;
+            return false;
+        }
+
+        slot = _frameNoiseSlotsUsed++;
+        _frameNoiseSlots[waterFormId] = slot;
+        _frameNoiseSlotReady[slot] = RecordFnvNoisePrepass(
+            cmd, frameIndex, elapsedSeconds, sourceIndex, surface, _fnvNoiseTiles[slot]);
+        if (!_frameNoiseSlotReady[slot]) return false;
+
+        // Counts both paths; only the stream publishes it (reset at prepare, read at finish), so
+        // legacy increments are discarded harmlessly.
+        _streamNoisePrepasses++;
+        return true;
+    }
+
+    private int _frameNoiseSlotOverflows;
+
+    /// <summary>Slot key for the generic (non-per-WATR) path. 0 is a legitimate unresolved WATR
+    /// identity, so the sentinel has to sit outside the FormID space.</summary>
+    private const uint GenericWaterNoiseKey = uint.MaxValue;
+
+    /// <summary>
+    ///     Hands the host's protected water tail reservation to the stream so it is released at
+    ///     the LAST possible moment: after the reference renderer's blended capacity plan has
+    ///     allocated (the plan must NOT see the water budget as free ring space — spending it on
+    ///     far blended draws is the dense-frame ring-starvation water flicker fixed on 07-24) and
+    ///     immediately before the first water batch allocates. Released lazily by the first
+    ///     drained batch, and unconditionally by <see cref="FinishTransparencyStream" /> /
+    ///     <see cref="AbandonTransparencyStream" /> so a zero-drain or failed frame cannot hold it
+    ///     into the shadow pass (the ring also self-heals at ResetFrame).
+    /// </summary>
+    public void DeferStreamTailReservationRelease(uint reservedBytes) =>
+        _streamTailReservationBytes = reservedBytes;
+
+    private void ReleaseStreamTailReservation()
+    {
+        if (_streamTailReservationBytes == 0)
+        {
+            return;
+        }
+
+        _ringBuffer.ReleaseTailReservation(_streamTailReservationBytes);
+        _streamTailReservationBytes = 0;
+    }
+
+    /// <summary>
+    ///     Host failure path: forget this frame's queued batches (so a later frame cannot drain
+    ///     stale draws against a dead command list) and release the deferred tail reservation.
+    /// </summary>
+    public void AbandonTransparencyStream()
+    {
+        _streamPending.Clear();
+        _streamNext = 0;
+        _streamFailed = false;
+        ReleaseStreamTailReservation();
+    }
+
+    /// <summary>True when this frame's water can enter the unified transparency stream: the FNV
+    /// per-WATR batch path with at least one visible generated cell. Everything else (other games,
+    /// NIF-only scenes) keeps the legacy inline water pass.</summary>
+    public bool CanStreamTransparency(VisibilityCylinder cylinder) =>
+        _game == BethesdaGame.FalloutNewVegas && GatherVisibleWater(cylinder) > 0;
+
+    /// <summary>True while queued stream batches remain and the ring has not failed.</summary>
+    public bool HasPendingTransparency => !_streamFailed && _streamNext < _streamPending.Count;
+
+    /// <summary>The farthest undrained stream batch's view-axis depth (clip-space w — the SAME
+    /// metric the reference renderer's blended sort uses, from the SAME viewProj), or
+    /// NegativeInfinity when drained/failed.</summary>
+    public float PeekTransparencyDepth() =>
+        HasPendingTransparency ? _streamPending[_streamNext].Depth : float.NegativeInfinity;
+
+    /// <summary>Draws every queued batch at least as far as <paramref name="depth" /> — the merge
+    /// step the reference renderer's blended loop calls before each of its own draws. Returns true
+    /// when at least one batch drew (the caller must rebind its shared frame state).</summary>
+    public bool DrainTransparencyDownTo(float depth)
+    {
+        var drewAny = false;
+        while (HasPendingTransparency && _streamPending[_streamNext].Depth >= depth)
+        {
+            if (!DrawNextStreamRun(depth)) break;
+            drewAny = true;
+        }
+
+        return drewAny;
+    }
+
+    /// <summary>Drains every remaining queued batch (the nearer-than-everything tail).</summary>
+    public void DrainAllTransparency()
+    {
+        while (HasPendingTransparency)
+        {
+            if (!DrawNextStreamRun(float.NegativeInfinity)) break;
+        }
+    }
+
+    /// <summary>
+    ///     Draws the maximal RUN starting at the queue head: consecutive entries that still meet
+    ///     the drain threshold, share the material/kind (one CB + prepass + PSO serves them), and
+    ///     are contiguous in the instance buffer (one SRV window covers them). Entries are
+    ///     per-cell for engine-correct sort granularity, but within a material the queue keeps
+    ///     instance order, so whole batches re-form here whenever no other material or nearer
+    ///     blended draw interleaves — draw counts stay at batch scale in the common case.
+    /// </summary>
+    private bool DrawNextStreamRun(float depth)
+    {
+        // First allocation of the stream: the blended capacity plan has already run (it executes
+        // before any drain), so the protected water budget can open for this run's CBs now.
+        ReleaseStreamTailReservation();
+        var first = _streamPending[_streamNext];
+        var count = first.InstanceCount;
+        var end = _streamNext + 1;
+        while (end < _streamPending.Count)
+        {
+            var next = _streamPending[end];
+            if (next.Depth < depth ||
+                next.WaterFormId != first.WaterFormId ||
+                next.IsNifPacketBatch != first.IsNifPacketBatch ||
+                next.Water001 != first.Water001 ||
+                next.StartInstance != first.StartInstance + count)
+            {
+                break;
+            }
+
+            count += next.InstanceCount;
+            end++;
+        }
+
+        // Interleaved reference draws clobber topology and the bindless tables; each run's PSO,
+        // CB and SRV are self-bound in DrawFnvWaterBatch. Rebinding these two per run is cheap
+        // and simpler than owner tracking.
+        _streamArgs.Cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        GpuRootSignature12.SetGraphicsBindlessTables(
+            _streamArgs.Cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
+        if (!DrawFnvWaterBatch(
+                _streamArgs, first.Material, first.StartInstance, count,
+                first.Water001, ref _streamUsedNoisePrepass))
+        {
+            // Ring exhaustion: the remaining (nearer) entries drop for this frame, mirroring the
+            // legacy loop's break-on-failure.
+            _streamFailed = true;
+            return false;
+        }
+
+        if (first.IsNifPacketBatch) _streamDrewNifPackets = true;
+        else _streamDrawnCells += count;
+        _streamRuns++;
+        _streamNext = end;
+        return true;
+    }
+
+    /// <summary>Writes the frame's water stats after the stream is drained. Pair with
+    /// <see cref="PrepareTransparencyStream" />.</summary>
+    public int FinishTransparencyStream()
+    {
+        // A frame that never drained (or failed before its first batch) must not hold the
+        // deferred water reservation into the shadow pass.
+        ReleaseStreamTailReservation();
+        LastStats.WaterNoisePrepassUsed = _streamUsedNoisePrepass;
+        // Same accounting as the legacy loop: drawn generated cells, plus the visible NIF surface
+        // count once any placed-NIF batch drew.
+        var waterDraws = _streamDrawnCells + (_streamDrewNifPackets ? _streamNifVisible : 0);
+        LastStats.WaterDraws = waterDraws;
+        LastStats.WaterStreamEntries = _streamPending.Count;
+        LastStats.WaterStreamRuns = _streamRuns;
+        LastStats.WaterStreamNoisePrepasses = _streamNoisePrepasses;
+        LastStats.WaterNoiseSlotOverflows = _frameNoiseSlotOverflows;
+        // Anything still queued when the stream ends never drew. Only a mid-drain failure can
+        // leave a remainder (both drains run to exhaustion otherwise), so this is the direct
+        // measure of the "some pools are entirely missing" symptom.
+        LastStats.WaterStreamDroppedEntries = Math.Max(0, _streamPending.Count - _streamNext);
+        _streamPending.Clear();
+        _streamNext = 0;
+        return waterDraws;
+    }
+
+    /// <summary>Immutable per-frame context every FNV material-batch draw shares. One copy serves
+    /// both the legacy inline loop and the unified-transparency drain.</summary>
+    private readonly record struct FnvBatchDrawArgs(
+        ID3D12GraphicsCommandList Cmd,
+        int FrameIndex,
+        Matrix4x4 ViewProj,
+        Vector3 CylinderPosition,
+        Vector3 RenderOrigin,
+        float ElapsedSeconds,
+        uint SnapshotBindlessIndex,
+        uint SnapshotWidth,
+        uint SnapshotHeight,
+        bool DepthSample);
+
+    /// <summary>
+    ///     Draws one FNV per-WATR batch: optional noise prepass immediately before the draw (the
+    ///     shared 256² normal target relies on command-list order), a fresh per-frame CB, PSO by
+    ///     technique, and an SRV window into this frame's slot of the instance buffer. Fully
+    ///     self-binding, so batches can interleave with reference draws in the unified transparency
+    ///     stream. Returns false on ring exhaustion (the caller stops draining).
+    /// </summary>
+    private unsafe bool DrawFnvWaterBatch(
+        in FnvBatchDrawArgs args,
+        in ResolvedFnvWaterMaterial material,
+        int startInstance,
+        int drawInstanceCount,
+        bool water001,
+        ref bool usedAnyNoisePrepass)
+    {
+        if (drawInstanceCount <= 0) return true;
+        if (_instanceBuffer is null) return true;
+
+        var cmd = args.Cmd;
+        var appearance = material.Appearance;
+        var surface = appearance?.Surface ?? WaterSurfaceParams.Default;
+        var noiseIndex = material.NoiseIndex;
+        var usedNoisePrepass = false;
+        if (_useFnvNoisePrepass && noiseIndex != NoNormalMap &&
+            TryAcquireFnvNoiseSlot(
+                material.WaterFormId, cmd, args.FrameIndex, args.ElapsedSeconds, noiseIndex, surface,
+                out var slot))
+        {
+            // This material OWNS its tile for the frame: the prepass ran exactly once, at slot
+            // assignment, so the resolved index is a property of the material rather than of
+            // whatever happened to be recorded last. That is what lets the uniforms CB below be
+            // cached per material without the cached copy and a later run ever disagreeing.
+            usedNoisePrepass = true;
+            noiseIndex = _fnvNoiseTiles[slot].NormalBindlessIndex;
+            usedAnyNoisePrepass = true;
+        }
+
+        // The uniforms CB is a pure function of (material, water001, frame) — nothing in it
+        // derives from the instance window — so one allocation serves every run of that material.
+        if (_frameMaterialCb.TryGetValue((material.WaterFormId, water001), out var cachedCb))
+        {
+            return DrawFnvWaterInstances(cmd, cachedCb, water001, args, startInstance, drawInstanceCount);
+        }
+
+        if (!_ringBuffer.TryAllocate(
+                args.FrameIndex,
+                WaterFrameUniformsByteSize,
+                out var perFrame,
+                GpuRingBuffer12.CbAlignment))
+        {
+            return false;
+        }
+
+        *(WaterFrameUniforms*)perFrame.CpuPtr = new WaterFrameUniforms
+        {
+            ViewProj = args.ViewProj,
+            Shallow = ColorToVector4(appearance?.Shallow, _waterProfile.DefaultShallow),
+            Deep = ColorToVector4(appearance?.Deep, _waterProfile.DefaultDeep),
+            Reflection = ColorToVector4(appearance?.Reflection, _waterProfile.DefaultReflection),
+            CamPosTime = new Vector4(args.CylinderPosition, args.ElapsedSeconds),
+            NoiseIndex = noiseIndex,
+            NoiseTiling = _waterProfile.NoiseTilingWorldUnits,
+            NoiseScale = surface.NoiseScale,
+            WaterOpacity = surface.Opacity,
+            Surface0 = new Vector4(
+                ResolveSurfaceUvScale(surface),
+                surface.FresnelAmount,
+                surface.ReflectivityAmount,
+                surface.Shininess),
+            Surface1 = new Vector4(
+                surface.SunPower,
+                surface.DepthFalloffStart,
+                surface.DepthFalloffEnd,
+                appearance?.IsLava == true ? 1f : 0f),
+            Layer1 = LayerToVector4(surface.Layer1),
+            Layer2 = LayerToVector4(surface.Layer2),
+            Layer3 = LayerToVector4(surface.Layer3),
+            DepthIndex = _depthBindlessIndex,
+            DepthNear = _depthNear,
+            DepthFar = _depthFar,
+            DepthTieBias = _waterProfile.DepthTieBiasWorldUnits,
+            RenderOrigin = new Vector4(args.RenderOrigin, _depthSampleCount),
+            NormalIndex1 = material.NormalIndex1,
+            NormalIndex2 = material.NormalIndex2,
+            NormalIndex3 = material.NormalIndex3,
+            NormalIndex4 = usedNoisePrepass ? 1u : 0u,
+            // The FNV programs read the above-water fog planes (DNAM@32/@36) from
+            // LegacySurface1.xy for the WATER003 alpha law — same fill as the generic path;
+            // leaving this zeroed collapsed the fog ramp to the fogFar guard.
+            LegacySurface1 = new Vector4(
+                surface.FogNear, surface.FogFar, surface.TextureBlend, surface.WindVelocity),
+            FnvWater001SnapshotIndex = water001 ? args.SnapshotBindlessIndex : NoNormalMap,
+            FnvWater001SnapshotWidth = water001 ? args.SnapshotWidth : 0,
+            FnvWater001SnapshotHeight = water001 ? args.SnapshotHeight : 0,
+            FnvWater001PlaneHeight = water001 ? LastFnvWater001Decision.PlaneHeight : 0f,
+            FnvWater001Surface = new Vector4(
+                surface.UnderwaterFogNear,
+                surface.UnderwaterFogFar,
+                surface.AboveWaterFogAmount,
+                surface.RefractionDistortionAmount),
+            WaterReflectionIndex = _reflectionBindlessIndex,
+            WaterReflectionSceneWidth = _reflectionSceneWidth,
+            WaterReflectionSceneHeight = _reflectionSceneHeight,
+            WaterReflectionDistortion = ReflectionDistortionScale,
+        };
+
+        _frameMaterialCb[(material.WaterFormId, water001)] = perFrame.GpuAddress;
+        return DrawFnvWaterInstances(
+            cmd, perFrame.GpuAddress, water001, args, startInstance, drawInstanceCount);
+    }
+
+    /// <summary>
+    ///     Issues one run against an already-resolved per-material frame CB: PSO by technique, the
+    ///     shared CB, and a fresh SRV window over this run's slice of the instance buffer. Split out
+    ///     of <see cref="DrawFnvWaterBatch" /> so the many runs the transparency stream slices a
+    ///     single material into reuse that CB instead of re-allocating it (the ring spend that used
+    ///     to exhaust mid-frame and drop every remaining nearer pool).
+    /// </summary>
+    private bool DrawFnvWaterInstances(
+        ID3D12GraphicsCommandList cmd,
+        ulong perFrameCbAddress,
+        bool water001,
+        in FnvBatchDrawArgs args,
+        int startInstance,
+        int drawInstanceCount)
+    {
+        var pso = _pso;
+        if (water001)
+        {
+            pso = _psoFnvWater001DepthSample;
+        }
+        else if (args.DepthSample)
+        {
+            pso = _psoDepthSample;
+        }
+        cmd.SetPipelineState(pso);
+        cmd.SetGraphicsRootConstantBufferView(
+            GpuRootSignature12.Slots.PerFrameCbv,
+            perFrameCbAddress);
+        // D3D12's SV_InstanceID does NOT include StartInstanceLocation, so a non-zero start
+        // never reached the VS's uInstances[instanceId] fetch: every batch after the first
+        // re-drew batch 0's slice. Sorted by water FormID, the worldspace-default material
+        // (lowest FormID — the -2300 river/sea cells) always sorted first, so every per-XCWT
+        // batch — exactly the explicit-XCLW lakes (Lake Mead 2600, upstream basins) — silently
+        // vanished. Window the batch's slice through a per-draw SRV instead and always draw
+        // instances [0, count).
+        GpuDescriptorHeapAllocator12.DescriptorAllocation batchSrv;
+        try
+        {
+            batchSrv = _cbvSrvUavHeap.Allocate(1);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // The transient heap THROWS on frame-slot exhaustion. Degrade to dropping this run
+            // (the caller stops draining) instead of taking the whole frame down, matching the
+            // modern-water path's guard.
+            Log.Warn("WaterRenderer12: transient descriptor exhaustion during the water drain: {0}",
+                ex.Message);
+            return false;
+        }
+
+        var batchSrvDesc = new ShaderResourceViewDescription
+        {
+            Format = Format.Unknown,
+            ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Buffer,
+            Shader4ComponentMapping = ShaderComponentMapping.Default,
+            Buffer = new BufferShaderResourceView
+            {
+                // Window inside this frame's slot of the frame-slotted instance buffer.
+                FirstElement =
+                    ((ulong)_recorder.FrameIndex * (ulong)_instanceCapacity) + (ulong)startInstance,
+                NumElements = (uint)drawInstanceCount,
+                StructureByteStride = (uint)Marshal.SizeOf<WaterInstance>(),
+                Flags = BufferShaderResourceViewFlags.None,
+            },
+        };
+        _gpu.Device.CreateShaderResourceView(_instanceBuffer, batchSrvDesc, batchSrv.Cpu);
+        cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.SrvTable, batchSrv.Gpu);
+        cmd.DrawInstanced(6, (uint)drawInstanceCount, 0, 0);
+        return true;
+    }
+
     /// <summary>
     ///     FNV generated water is materialized in contiguous XCWT batches.  Each batch records its
     ///     own recovered noise prepass immediately before its draw because the 256x256 normal target
     ///     is intentionally shared; command-list ordering guarantees that a later WATR cannot
     ///     overwrite an earlier batch before that earlier draw consumes it.  Placed NIF water stays
-    ///     on the selected compatibility material and WATER003, exactly as before.
+    ///     on WATER003 but resolves each surface's OWN water identity (stamped at placement from
+    ///     its cell's XCWT) through the same catalog, in contiguous per-WATR runs.
     /// </summary>
     private unsafe int RenderFnvWaterMaterialBatches(
         Matrix4x4 viewProj,
@@ -1433,9 +2494,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         LastStats.GpuUploadMilliseconds = ElapsedMilliseconds(uploadStarted);
 
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
-        cmd.SetGraphicsRootDescriptorTable(
-            GpuRootSignature12.Slots.BindlessSrvTable,
-            _cbvSrvUavHeap.BindlessHeapStartGpu);
+        GpuRootSignature12.SetGraphicsBindlessTables(cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
 
         var drawStarted = StartTiming();
         var depthSample = _depthBindlessIndex != NoNormalMap;
@@ -1444,126 +2503,17 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         var drewNifPackets = false;
         // C# does not allow an `in` parameter to be captured by a local function. Copy the small
         // immutable descriptor once; every material batch consumes the same frame snapshot.
-        var snapshotBindlessIndex = snapshot.BindlessIndex;
-        var snapshotWidth = snapshot.Width;
-        var snapshotHeight = snapshot.Height;
+        var args = new FnvBatchDrawArgs(
+            cmd, frameIndex, viewProj, cylinder.Position, renderOrigin, elapsedSeconds,
+            snapshot.BindlessIndex, snapshot.Width, snapshot.Height, depthSample);
 
         bool DrawBatch(
             in ResolvedFnvWaterMaterial material,
             int startInstance,
             int drawInstanceCount,
-            bool water001)
-        {
-            if (drawInstanceCount <= 0) return true;
-            if (_instanceBuffer is null) return true;
-
-            var appearance = material.Appearance;
-            var surface = appearance?.Surface ?? WaterSurfaceParams.Default;
-            var noiseIndex = material.NoiseIndex;
-            var usedNoisePrepass = false;
-            if (_useFnvNoisePrepass && noiseIndex != NoNormalMap)
-            {
-                usedNoisePrepass = RecordFnvNoisePrepass(
-                    cmd, frameIndex, elapsedSeconds, noiseIndex, surface);
-                if (usedNoisePrepass)
-                {
-                    noiseIndex = _fnvNoiseNormalBindlessIndex;
-                    usedAnyNoisePrepass = true;
-                }
-            }
-
-            if (!_ringBuffer.TryAllocate(
-                    frameIndex,
-                    WaterFrameUniformsByteSize,
-                    out var perFrame,
-                    GpuRingBuffer12.CbAlignment))
-            {
-                return false;
-            }
-
-            *(WaterFrameUniforms*)perFrame.CpuPtr = new WaterFrameUniforms
-            {
-                ViewProj = viewProj,
-                Shallow = ColorToVector4(appearance?.Shallow, _waterProfile.DefaultShallow),
-                Deep = ColorToVector4(appearance?.Deep, _waterProfile.DefaultDeep),
-                Reflection = ColorToVector4(appearance?.Reflection, _waterProfile.DefaultReflection),
-                CamPosTime = new Vector4(cylinder.Position, elapsedSeconds),
-                NoiseIndex = noiseIndex,
-                NoiseTiling = _waterProfile.NoiseTilingWorldUnits,
-                NoiseScale = surface.NoiseScale,
-                WaterOpacity = surface.Opacity,
-                Surface0 = new Vector4(
-                    ResolveSurfaceUvScale(surface),
-                    surface.FresnelAmount,
-                    surface.ReflectivityAmount,
-                    surface.Shininess),
-                Surface1 = new Vector4(
-                    surface.SunPower,
-                    surface.DepthFalloffStart,
-                    surface.DepthFalloffEnd,
-                    appearance?.IsLava == true ? 1f : 0f),
-                Layer1 = LayerToVector4(surface.Layer1),
-                Layer2 = LayerToVector4(surface.Layer2),
-                Layer3 = LayerToVector4(surface.Layer3),
-                DepthIndex = _depthBindlessIndex,
-                DepthNear = _depthNear,
-                DepthFar = _depthFar,
-                DepthTieBias = _waterProfile.DepthTieBiasWorldUnits,
-                RenderOrigin = new Vector4(renderOrigin, _depthSampleCount),
-                NormalIndex1 = material.NormalIndex1,
-                NormalIndex2 = material.NormalIndex2,
-                NormalIndex3 = material.NormalIndex3,
-                NormalIndex4 = usedNoisePrepass ? 1u : 0u,
-                FnvWater001SnapshotIndex = water001 ? snapshotBindlessIndex : NoNormalMap,
-                FnvWater001SnapshotWidth = water001 ? snapshotWidth : 0,
-                FnvWater001SnapshotHeight = water001 ? snapshotHeight : 0,
-                FnvWater001PlaneHeight = water001 ? LastFnvWater001Decision.PlaneHeight : 0f,
-                FnvWater001Surface = new Vector4(
-                    surface.UnderwaterFogNear,
-                    surface.UnderwaterFogFar,
-                    surface.AboveWaterFogAmount,
-                    surface.RefractionDistortionAmount),
-            };
-
-            var pso = _pso;
-            if (water001)
-            {
-                pso = _psoFnvWater001DepthSample;
-            }
-            else if (depthSample)
-            {
-                pso = _psoDepthSample;
-            }
-            cmd.SetPipelineState(pso);
-            cmd.SetGraphicsRootConstantBufferView(
-                GpuRootSignature12.Slots.PerFrameCbv,
-                perFrame.GpuAddress);
-            // D3D12's SV_InstanceID does NOT include StartInstanceLocation, so a non-zero start
-            // never reached the VS's uInstances[instanceId] fetch: every batch after the first
-            // re-drew batch 0's slice. Sorted by water FormID, the worldspace-default material
-            // (lowest FormID — the -2300 river/sea cells) always sorted first, so every per-XCWT
-            // batch — exactly the explicit-XCLW lakes (Lake Mead 2600, upstream basins) — silently
-            // vanished. Window the batch's slice through a per-draw SRV instead and always draw
-            // instances [0, count).
-            var batchSrv = _cbvSrvUavHeap.Allocate(1);
-            var batchSrvDesc = new ShaderResourceViewDescription
-            {
-                Format = Format.Unknown,
-                ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Buffer,
-                Shader4ComponentMapping = ShaderComponentMapping.Default,
-                Buffer = new BufferShaderResourceView
-                {
-                    FirstElement = (ulong)startInstance,
-                    NumElements = (uint)drawInstanceCount,
-                    StructureByteStride = (uint)Marshal.SizeOf<WaterInstance>(),
-                    Flags = BufferShaderResourceViewFlags.None,
-                },
-            };
-            _gpu.Device.CreateShaderResourceView(_instanceBuffer, batchSrvDesc, batchSrv.Cpu);
-            cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.SrvTable, batchSrv.Gpu);
-            cmd.DrawInstanced(6, (uint)drawInstanceCount, 0, 0);
-            return true;
-        }
+            bool water001) =>
+            DrawFnvWaterBatch(args, material, startInstance, drawInstanceCount, water001,
+                ref usedAnyNoisePrepass);
 
         foreach (var batch in _fnvWaterCellDrawBatches)
         {
@@ -1580,20 +2530,40 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
 
         if (nifPacketCount > 0)
         {
-            var selected = new ResolvedFnvWaterMaterial(
-                _appearance,
-                _noiseBindlessIndex,
-                _normalBindlessIndices[0],
-                _normalBindlessIndices[1],
-                _normalBindlessIndices[2]);
-            drewNifPackets = DrawBatch(
-                selected,
-                cellVisible,
-                nifPacketCount,
-                water001: false);
+            // Placed water renders with the water type of where it IS — each per-WATR run resolves
+            // through the same catalog as cell water. The old single-batch draw used the CAMERA
+            // cell's compatibility appearance, whose selection is sticky flight history: crossing
+            // an XCWT boundary mid-flight repainted every placed surface wholesale.
+            foreach (var nifBatch in _fnvNifDrawBatches)
+            {
+                if (!DrawBatch(
+                        ResolveFnvWaterMaterial(nifBatch.WaterFormId),
+                        cellVisible + nifBatch.StartPacket,
+                        nifBatch.PacketCount,
+                        water001: false))
+                {
+                    break;
+                }
+                drewNifPackets = true;
+            }
         }
 
         LastStats.WaterNoisePrepassUsed = usedAnyNoisePrepass;
+        WriteFnvBatchTechniqueTelemetry(useFnvWater001, nifPacketCount);
+
+        LastStats.DrawCallMilliseconds = ElapsedMilliseconds(drawStarted);
+        var waterDraws = drawnCells + (drewNifPackets ? nifVisible : 0);
+        LastStats.WaterDraws = waterDraws;
+        LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(frameStarted);
+        return waterDraws;
+    }
+
+    /// <summary>Writes the FNV batch path's technique/reason telemetry. Depends only on the frame's
+    /// WATER001 decision and batch counts, so the unified-transparency defer path can emit it at
+    /// queue time and the legacy inline path after its draws — one source of truth for the strings
+    /// the HUD/trace consumers (and their pinned tests) read.</summary>
+    private void WriteFnvBatchTechniqueTelemetry(bool useFnvWater001, int nifPacketCount)
+    {
         var depthRoute = _depthSampleCount > 1
             ? $"msaa{_depthSampleCount}x"
             : "1x";
@@ -1620,7 +2590,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 _waterProfile.ShaderVariant,
                 false,
                 ModernWaterTechnique.Baseline,
-                depthSample,
+                _depthBindlessIndex != NoNormalMap,
                 _depthSampleCount);
             if (_fnvWaterCellDrawBatches.Count > 1)
             {
@@ -1628,12 +2598,6 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             }
             LastStats.WaterTelemetryUnavailableReason = LastFnvWater001Decision.ReasonCode;
         }
-
-        LastStats.DrawCallMilliseconds = ElapsedMilliseconds(drawStarted);
-        var waterDraws = drawnCells + (drewNifPackets ? nifVisible : 0);
-        LastStats.WaterDraws = waterDraws;
-        LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(frameStarted);
-        return waterDraws;
     }
 
     private static string DescribeTechnique(
@@ -1700,10 +2664,20 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _psoMorrowindDepthSample.Dispose();
         _fnvNoiseScrollBlendPso.Dispose();
         _fnvNoiseNormalPso.Dispose();
-        _deletionQueue.EnqueueDispose(_fnvNoiseBlendTexture);
-        _deletionQueue.EnqueueDispose(_fnvNoiseNormalTexture);
-        _deletionQueue.EnqueueDispose(new PersistentSlotReturn(_cbvSrvUavHeap, _fnvNoiseBlendBindlessIndex));
-        _deletionQueue.EnqueueDispose(new PersistentSlotReturn(_cbvSrvUavHeap, _fnvNoiseNormalBindlessIndex));
+        _fnvNoiseDownsamplePso.Dispose();
+        foreach (var tiles in _fnvNoiseTiles)
+        {
+            _deletionQueue.EnqueueDispose(tiles.BlendTexture);
+            _deletionQueue.EnqueueDispose(tiles.NormalTexture);
+            _deletionQueue.EnqueueDispose(
+                new PersistentSlotReturn(_cbvSrvUavHeap, tiles.BlendBindlessIndex));
+            _deletionQueue.EnqueueDispose(
+                new PersistentSlotReturn(_cbvSrvUavHeap, tiles.NormalBindlessIndex));
+            foreach (var mipSrvIndex in tiles.NormalMipSrvIndices)
+            {
+                _deletionQueue.EnqueueDispose(new PersistentSlotReturn(_cbvSrvUavHeap, mipSrvIndex));
+            }
+        }
         _modernWater?.DisposeInto(_deletionQueue, _cbvSrvUavHeap);
         _modernWater = null;
     }
@@ -1728,14 +2702,33 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             return material;
         }
 
-        // An unresolved/zero XCWT remains visible with the current compatibility material, but it
-        // cannot enter WATER001 (the aggregate preflight rejects the missing exact binding).
+        // Water renders with the type of where it IS: an unresolved/zero identity inherits the
+        // WORLDSPACE default (WRLD NAM2), never the camera's cell — that selection is sticky
+        // flight history. The camera-cell compatibility appearance survives only as the last
+        // resort (interiors — where the camera cell IS the water's cell — and worldspaces with no
+        // NAM2). Either fallback stays out of WATER001 (the aggregate preflight rejects the
+        // missing exact binding).
+        if (_fnvWater001WorldspaceDefaultWaterFormId is { } worldspaceDefault &&
+            TryResolveFnvWaterMaterial(worldspaceDefault, out material))
+        {
+            return material;
+        }
+
+        // Engine terminal default (decompile-PROVEN): TESDataHandler::GenerateDefaultObjects pins
+        // the global fallback water to WATR FormID 0x18 ("DefaultWater") — TESObjectCELL/
+        // TESWorldSpace::GetWaterType both end at that hardcoded global; no GMST/INI is involved.
+        if (TryResolveFnvWaterMaterial(EngineDefaultWaterFormId, out material))
+        {
+            return material;
+        }
+
         return new ResolvedFnvWaterMaterial(
             _appearance,
             _noiseBindlessIndex,
             _normalBindlessIndices[0],
             _normalBindlessIndices[1],
-            _normalBindlessIndices[2]);
+            _normalBindlessIndices[2],
+            formId);
     }
 
     private bool TryResolveFnvWaterMaterial(uint formId, out ResolvedFnvWaterMaterial material)
@@ -1766,7 +2759,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 first,
                 ResolveIndex(0),
                 ResolveIndex(1),
-                ResolveIndex(2));
+                ResolveIndex(2),
+                formId);
             return true;
         }
 
@@ -1780,7 +2774,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 _noiseBindlessIndex,
                 _normalBindlessIndices[0],
                 _normalBindlessIndices[1],
-                _normalBindlessIndices[2]);
+                _normalBindlessIndices[2],
+                formId);
             return true;
         }
 
@@ -1934,20 +2929,26 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private int GatherVisibleWater(VisibilityCylinder cylinder)
     {
         _visibleWaterScratch.Clear();
+        // One-cell exit margin matching the terrain gather's draw-only hysteresis so water and
+        // terrain leave the screen in lockstep at the pushed-out boundary (a strict same-radius
+        // test popped whole visible boundary cells off in one frame under camera motion). Water
+        // instances are fully resident, so the margin costs nothing to draw.
+        var gatherRadius = cylinder.Radius + WorldGridConstants.CellSize;
         if (_spatialIndex is not null)
         {
             _spatialIndex.QueryWaterCellsInRadius(
                 cylinder.Position.X,
                 -cylinder.Position.Y,
-                cylinder.Radius,
+                gatherRadius,
                 _visibleWaterScratch);
             return _visibleWaterScratch.Count;
         }
 
+        var marginCylinder = new VisibilityCylinder(cylinder.Position, gatherRadius);
         foreach (var water in _waterCells)
         {
             var key = water.Key;
-            if (cylinder.ContainsCell(key.gx, key.gy))
+            if (marginCylinder.ContainsCell(key.gx, key.gy))
             {
                 _visibleWaterScratch.Add(water);
             }
@@ -2016,11 +3017,15 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private unsafe void UploadInstances(int instanceCount)
     {
         if (_instanceBuffer is null || instanceCount == 0 || _instanceMapped == IntPtr.Zero) return;
-        var byteCount = (uint)(instanceCount * Marshal.SizeOf<WaterInstance>());
+        var stride = Marshal.SizeOf<WaterInstance>();
+        var byteCount = (uint)(instanceCount * stride);
+        // Write this frame's slot only — the previous frame's slot may still be feeding in-flight
+        // draws on the GPU.
+        var slotOffset = (nint)_recorder.FrameIndex * _instanceCapacity * stride;
         fixed (WaterInstance* src = _instanceScratch)
         {
             System.Runtime.CompilerServices.Unsafe.CopyBlockUnaligned(
-                destination: (void*)_instanceMapped,
+                destination: (void*)(_instanceMapped + slotOffset),
                 source: src,
                 byteCount: byteCount);
         }
@@ -2041,7 +3046,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         var capacity = Math.Max(1, requested);
         _instanceScratch = new WaterInstance[capacity];
         var stride = (uint)Marshal.SizeOf<WaterInstance>();
-        var byteWidth = (ulong)capacity * stride;
+        // One slot per frame in flight — see the _instanceBuffer field doc.
+        var byteWidth = (ulong)capacity * stride * GpuCommandRecorder12.FramesInFlight;
 
         _instanceBuffer = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.UploadHeapProperties,
@@ -2054,36 +3060,6 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _instanceBuffer.Map(0, &cpuPtr).CheckError();
         _instanceMapped = (IntPtr)cpuPtr;
         _instanceCapacity = capacity;
-        UpdateInstanceSrv();
-    }
-
-    private void UpdateInstanceSrv()
-    {
-        if (_instanceBuffer is null)
-        {
-            return;
-        }
-
-        if (!_instanceSrvAllocated)
-        {
-            _instanceSrvPersistent = _persistentSrvs.Allocate();
-            _instanceSrvAllocated = true;
-        }
-
-        var srvDesc = new ShaderResourceViewDescription
-        {
-            Format = Format.Unknown,
-            ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Buffer,
-            Shader4ComponentMapping = ShaderComponentMapping.Default,
-            Buffer = new BufferShaderResourceView
-            {
-                FirstElement = 0,
-                NumElements = (uint)_instanceCapacity,
-                StructureByteStride = (uint)Marshal.SizeOf<WaterInstance>(),
-                Flags = BufferShaderResourceViewFlags.None,
-            },
-        };
-        _gpu.Device.CreateShaderResourceView(_instanceBuffer, srvDesc, _instanceSrvPersistent);
     }
 
     private long StartTiming() => DetailedProfilingEnabled ? Stopwatch.GetTimestamp() : 0;
@@ -2434,6 +3410,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         public float FnvWater001PlaneHeight;
         // UnderwaterFogNear/Far, AboveWaterFogAmount, RefractionDistortionAmount.
         public Vector4 FnvWater001Surface;
+        // Planar sky-reflection target: (SRV index, scene viewport width, height,
+        // asuint(UV distortion scale)). See uWaterReflection / SampleSkyReflection.
+        public uint WaterReflectionIndex;
+        public uint WaterReflectionSceneWidth;
+        public uint WaterReflectionSceneHeight;
+        public float WaterReflectionDistortion;
     }
 }
 
