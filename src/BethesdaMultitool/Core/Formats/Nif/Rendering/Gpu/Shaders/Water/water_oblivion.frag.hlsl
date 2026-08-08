@@ -86,8 +86,9 @@ float4 main(PSInput input) : SV_Target
         return float4(ApplyFog(lava * pulse * 1.3, input.vWorldPos), 1.0);
     }
 
-    // FNV distance fade of ripples: full within 4096 world units, -> 0 at 8192.
-    float noiseFade = saturate((8192.0 - distXY) / 4096.0);
+    // (An FNV noiseFade ramp used to be declared here and never read. TES4 has no counterpart term:
+    //  its far-field flattening IS the squared 1 - distXY/8192 attenuation applied below, which
+    //  reaches zero at the same 8192-unit envelope by a different expression.)
 
     // FNV WATER000 surface normal — engine PS (WATER000.pso lines 90-96), reproduced exactly:
     //   r3 = noise.xyz*2-1 ; r3 = r3*depthT + (0,0,1) ; r3.xy *= distFade ; N = normalize(r3)
@@ -112,7 +113,25 @@ float4 main(PSInput input) : SV_Target
         float2 legacyUv = input.vWorldPos.xy * fMacro + uLegacySurface0.zw * t;
         pert = gWaterTextures[NonUniformResourceIndex(noiseIndex)].Sample(gWaterSampler, legacyUv).xyz * 2.0 - 1.0;
     }
-    float oblivionLinearDistanceAtten = 1.0 - distXY * 0.000122;
+    // Ripple distance attenuation, ported exactly from WATER000.pso (oblivion_water_pkg019.asm:
+    //   def c14, 2.0, -1.0, 0.0, -0.000122
+    //   mad r2.w, dist, c14.w, -c14.y   -> 1 - dist*0.000122
+    //   mul r3.w, r2.w, r2.w            -> squared
+    //   mul r0.xy, r3.w, r0             -> perturbation.xy *= atten
+    // 0.000122 is 1/8192 to the disassembler's 6 decimal places, so the linear term reaches ZERO at
+    // exactly 8192 world units — the same two-cell envelope FNV expresses as its noiseFade ramp.
+    //
+    // The asm carries no _sat on any of those three instructions, and retail never needs one: its
+    // water grid and fog far plane mean distXY cannot exceed the envelope. This viewer permits a
+    // 34,000-unit aerial camera, where the UNSATURATED term crosses zero and then grows without
+    // bound — at the frame edge of the reported top-down pose (distXY ~ 25,000) it reaches ~4.2, so
+    // an encoded +-0.42 perturbation became +-1.7 and normalize() tilted the surface normal up to
+    // ~72 degrees from vertical, lighting the pow(...,SunPower) lobe across the whole far field.
+    // saturate() is therefore an OUT-OF-ENVELOPE GUARD, not recovered engine math: inside retail's
+    // envelope it is bit-identical to the asm, and outside it clamps to the engine's own zero
+    // instead of extrapolating. It also fixes the detail-map blend below, whose weight uses the
+    // UNSQUARED term and so went NEGATIVE past 8192 (colour extrapolation).
+    float oblivionLinearDistanceAtten = saturate(1.0 - distXY * 0.000122);
     float oblivionDistanceAtten = oblivionLinearDistanceAtten * oblivionLinearDistanceAtten;
     pert.xy *= oblivionDistanceAtten;
     float3 N = normalize(pert);
@@ -164,9 +183,19 @@ float4 main(PSInput input) : SV_Target
     // detail substantially. A missing/empty TNAM skips this term, matching retail DefaultWater.
     if (uNormalIndices.y != 0xFFFFFFFFu && uLegacySurface1.z != 0.0)
     {
-        // TES4 detail tiles finer than the 2048-unit surface tile by ini [Water]
-        // fTileTextureDivisor = 4.75 (2048/4.75 ≈ 431 wu per repeat — ini-inferred).
-        float2 detailUv = input.vWorldPos.xy * (fMacro * 4.75) + uLegacySurface0.zw * t + N.xy * 0.1;
+        // SAME UV SCALE as the NormalMap — re-verified against the asm 2026-08-07:
+        //   asm 26: add   r2.xy, a6, c0/*Scroll*/          <- the NormalMap UV
+        //   asm 27: texld r0, r2, s1/*NormalMap*/
+        //   asm 40: mad   r1.xy, r3/*N*/, c4.xxxx, r2      <- DetailMap UV = N.xy*0.1 + THAT SAME r2
+        //   asm 45: texld r1, r1, s2/*DetailMap*/
+        // with def c4 = (0.1, 0.0002, 2496.0, 4.0), so the 0.1 normal offset is exact and there is
+        // no additional tiling divisor anywhere in the program.
+        // Previously this multiplied fMacro by 4.75, attributed to an ini [Water]
+        // fTileTextureDivisor — but that key is MORROWIND's (docs/research/
+        // morrowind_atmosphere_water_model.md lists TileTextureDivisor=4.75 under MORROWIND.ini),
+        // not Oblivion's. It made the detail map tile 4.75x finer than retail. Inactive for Tamriel,
+        // whose DefaultWater leaves TNAM empty, but wrong for every water that authors one.
+        float2 detailUv = input.vWorldPos.xy * fMacro + uLegacySurface0.zw * t + N.xy * 0.1;
         float3 detail = gWaterTextures[NonUniformResourceIndex(uNormalIndices.y)]
             .Sample(gWaterSampler, detailUv).rgb;
         color = lerp(color, detail, oblivionLinearDistanceAtten * uLegacySurface1.z);
