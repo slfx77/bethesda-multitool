@@ -238,7 +238,9 @@ bool PassAlphaTest(float alpha, float threshold, float functionId)
 // bit 9 = classic SLS2058/bit-21 window-reflection direction, bit 10 = FNV active
 // ID193/BSSM_ADT zero-local-light route, bit 11 = its Toggles.x vertex-RGB branch,
 // bit 12 = FNV runtime TallGrass no-sun-shadow (retail's GRASS pixel-shader family never
-// samples a sun/world shadow map; set only on the FNV branch of ResolveTextureState)
+// samples a sun/world shadow map; set only on the FNV branch of ResolveTextureState),
+// bit 13 = FO3/FNV runtime SpeedTree LEAF-CARD no-sun-shadow (retail STLEAF*.vso declare no
+// shadow input at all and STLEAF2000/2001.pso bind only DiffuseMap)
 // (bit 8 is classic parallax).
 uint MaterialTextureFlags(float packedState)
 {
@@ -293,6 +295,11 @@ bool UsesFnvActiveAdtBaseVertexColor(float packedState)
 bool HasFnvGrassNoSunShadow(float packedState)
 {
     return (MaterialTextureFlags(packedState) & 4096u) != 0u;
+}
+
+bool HasSpeedTreeLeafNoSunShadow(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 8192u) != 0u;
 }
 
 float4 SampleMaterialTexture(uint slot, float2 uv, float packedState)
@@ -597,8 +604,14 @@ float4 main(PSInput input) : SV_Target
     // (runtime bit 12) skip the sun-cascade lookup here: retail shadows only grass's SUN term
     // (GRASS2002.pso), which this shader's single shade term cannot express — the per-game grass
     // shader implements the real split, and this path is its fallback.
+    // FO3/FNV SpeedTree LEAF CARDS (runtime bit 13) skip it because retail leaf cards receive no
+    // shadow term at all (STLEAF*.vso declare no ShadowProj; STLEAF2000/2001.pso bind only
+    // DiffuseMap). They still CAST — this is the receive side only. Suppressing it also removes the
+    // per-card bisection caused by the shadow pass re-facing cards to a light-perpendicular basis
+    // while this pass faces them at the camera (see RuntimeSpeedTreeLeafNoSunShadowFlag).
     float sunShadow = !fullBright && !fnvActiveAdtBase
-            && !HasFnvGrassNoSunShadow(input.vTextureState.z) && uSunColorLighting.w >= 0.5
+            && !HasFnvGrassNoSunShadow(input.vTextureState.z)
+            && !HasSpeedTreeLeafNoSunShadow(input.vTextureState.z) && uSunColorLighting.w >= 0.5
         ? ShadowFactor(input.vWorldPos)
         : 1.0;
     // Tracks whether this (non-full-bright) shape carries authored Lighting30 emittance — those

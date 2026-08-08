@@ -32,6 +32,34 @@ internal static class FnvActiveAdtBasePolicy
     /// </summary>
     internal const uint RuntimeFnvGrassNoSunShadowFlag = 1u << 12;
 
+    /// <summary>
+    ///     Runtime-only: suppresses the sun-cascade lookup for FO3/FNV SpeedTree LEAF CARDS.
+    ///     <para>
+    ///         Retail leaf cards receive NO shadow term of any kind. Shipped-shader disassembly
+    ///         (<c>tools/GhidraProject/speedtree_shaders_pc_disasm.txt</c>): <c>STLEAF000-003.vso</c>
+    ///         declare no <c>ShadowProj</c>/<c>ShadowProjData</c>/<c>ShadowProjTransform</c> at all
+    ///         (:1925/2007/2103/2200), and <c>STLEAF2000/2000TMS/2001/2001TMS.pso</c> bind only
+    ///         <c>DiffuseMap</c> and compute <c>diffuse * interpolatedColor</c> (:2310-2370).
+    ///         <c>STFROND000-003.vso</c> likewise. Only some BARK variants take <c>ShadowProj</c>, and
+    ///         that is the single <c>ShadowSceneNode</c> projector (a drop shadow), not a world cascade.
+    ///     </para>
+    ///     <para>
+    ///         Beyond parity this removes a concrete artifact. The shadow pass re-faces leaf cards to a
+    ///         LIGHT-perpendicular basis while the main pass faces them at the CAMERA
+    ///         (<c>reference_instanced.vert.hlsl</c>, <c>SHADOW_CARD_LIGHT_FACING</c>), from the same
+    ///         card centre — and two planes through a common centre intersect in a LINE, so every card
+    ///         was bisected into a lit half and a shadowed half. User-confirmed 2026-08-07 with an
+    ///         annotated capture; measured canopy darkening at the reported pose was 0.717x.
+    ///         The light-facing caster also presents its MAXIMUM area to the sun where the real
+    ///         camera-facing card would be foreshortened, so the canopy over-occludes itself.
+    ///     </para>
+    ///     <para>
+    ///         Leaf cards keep CASTING — the canopy still shadows ground, bark and actors, which is
+    ///         both correct and visible in the user's capture. Only the RECEIVE side is suppressed.
+    ///     </para>
+    /// </summary>
+    internal const uint RuntimeSpeedTreeLeafNoSunShadowFlag = 1u << 13;
+
     internal static bool IsEligible(in FnvActiveAdtBaseEligibility eligibility) =>
         eligibility.Game == BethesdaGame.FalloutNewVegas &&
         eligibility.LightingEnabled &&

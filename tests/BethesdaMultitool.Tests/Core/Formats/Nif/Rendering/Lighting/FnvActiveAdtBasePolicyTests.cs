@@ -181,6 +181,59 @@ public sealed class FnvActiveAdtBasePolicyTests
                 Vector3.One));
     }
 
+    /// <summary>
+    ///     The runtime no-sun-shadow bits are a CPU↔GPU contract carried through a float: C# ORs the bit
+    ///     into <c>TextureState.z</c> and the pixel shader masks it back out. Nothing but agreement of
+    ///     two magic numbers holds them together, so pin both sides — a desync silently either restores
+    ///     the artifact or suppresses shadows on the wrong draws, with no build or test failure.
+    /// </summary>
+    [Fact]
+    public void RuntimeNoSunShadowFlags_MatchTheMasksTheReferenceShaderTests()
+    {
+        Assert.Equal(4096u, FnvActiveAdtBasePolicy.RuntimeFnvGrassNoSunShadowFlag);
+        Assert.Equal(8192u, FnvActiveAdtBasePolicy.RuntimeSpeedTreeLeafNoSunShadowFlag);
+
+        var shader = SourceContract.ReadShaderSource("reference.frag.hlsl");
+        Assert.Contains(
+            "bool HasFnvGrassNoSunShadow(float packedState)", shader, StringComparison.Ordinal);
+        Assert.Contains(
+            "MaterialTextureFlags(packedState) & 4096u", shader, StringComparison.Ordinal);
+        Assert.Contains(
+            "bool HasSpeedTreeLeafNoSunShadow(float packedState)", shader, StringComparison.Ordinal);
+        Assert.Contains(
+            "MaterialTextureFlags(packedState) & 8192u", shader, StringComparison.Ordinal);
+
+        // Both bits must gate the SAME sun-cascade lookup; a helper that is declared but never
+        // consulted is the failure mode this catches.
+        SourceContract.AssertOrder(
+            shader,
+            "float sunShadow = !fullBright && !fnvActiveAdtBase",
+            "!HasFnvGrassNoSunShadow(input.vTextureState.z)",
+            "!HasSpeedTreeLeafNoSunShadow(input.vTextureState.z)",
+            "? ShadowFactor(input.vWorldPos)");
+    }
+
+    /// <summary>
+    ///     Leaf cards are flagged for FO3 as well as FNV (shared STLEAF family), and the flag is applied
+    ///     OUTSIDE the FNV-only ADT-base block so FO3 is not dragged onto an unrecovered lighting route.
+    ///     Pinned at the source level because the call site needs a live renderer + GPU device.
+    /// </summary>
+    [Fact]
+    public void LeafCardNoSunShadowFlag_IsAppliedForFallout3AndNewVegasOutsideTheAdtBlock()
+    {
+        var renderer = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "ReferenceRenderer12.cs");
+
+        SourceContract.AssertOrder(
+            renderer,
+            "private Vector4 ResolveTextureState(CachedSubmesh12 submesh)",
+            "BethesdaGame.FalloutNewVegas",
+            "or Core.Games.BethesdaGame.Fallout3 && submesh.IsLeafBillboard",
+            "FnvActiveAdtBasePolicy.RuntimeSpeedTreeLeafNoSunShadowFlag",
+            "if (_renderCache?.Game == Core.Games.BethesdaGame.FalloutNewVegas)");
+    }
+
     private static FnvActiveAdtBaseEvaluation EvaluateAligned(FnvClassicBasicShaderMode mode)
     {
         return FnvActiveAdtBasePolicy.EvaluateSls2000(

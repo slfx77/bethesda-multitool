@@ -709,6 +709,18 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private Vector4 ResolveTextureState(CachedSubmesh12 submesh)
     {
         var state = submesh.TextureState;
+        // SpeedTree leaf cards never receive a sun shadow in retail (STLEAF*.vso declare no shadow
+        // input; STLEAF2000/2001.pso bind only DiffuseMap). Applied to FO3 as well as FNV because they
+        // share the STLEAF shader family and the same .spt pipeline. Kept OUTSIDE the FNV block below
+        // deliberately: that block also decides ADT-base eligibility, which is recovered for FNV only,
+        // and widening it would drag FO3 onto an unrecovered path for an unrelated reason.
+        if (_renderCache?.Game is Core.Games.BethesdaGame.FalloutNewVegas
+            or Core.Games.BethesdaGame.Fallout3 && submesh.IsLeafBillboard)
+        {
+            state.Z = (uint)MathF.Round(state.Z)
+                | FnvActiveAdtBasePolicy.RuntimeSpeedTreeLeafNoSunShadowFlag;
+        }
+
         if (_renderCache?.Game == Core.Games.BethesdaGame.FalloutNewVegas)
         {
             var eligibility = ResolveFnvActiveAdtBaseEligibility(submesh);
