@@ -95,6 +95,63 @@ internal static class ReferenceRendererConstants12
         Vector4 SpecularLodParams = default);
 
     /// <summary>
+    ///     CPU mirror of <c>reference_instanced.vert.hlsl</c>'s <c>PerFrame</c> cbuffer in its
+    ///     SHADOW variant (<c>SHADOW_CARD_LIGHT_FACING</c>): the light viewProj, the SpeedTree wind
+    ///     matrices, and the light-perpendicular leaf-card billboard basis.
+    ///     <para>
+    ///         <b>Field order is load-bearing.</b> The optional card basis comes LAST so
+    ///         <see cref="WindMatrices" /> sits at the same offset 64 in both shader variants — the
+    ///         main pass allocates <c>64 + 256 = 320</c> bytes and must stay byte-identical. The
+    ///         previous layout put the card basis at 64, which pushed <c>uWindMatrices</c> to 96 in
+    ///         the shadow variant against a 96-BYTE allocation: the wind matrices fell entirely
+    ///         outside the buffer. That is why every wind term used to be <c>#ifdef</c>'d out of the
+    ///         shadow pass, which left the shadow map holding a REST-POSE canopy while the visible
+    ///         one swayed — the cast shadow then crawled against the leaves casting it.
+    ///     </para>
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct InstancedShadowPerFrameConstants
+    {
+        public Matrix4x4 ViewProj;          // offset 0   — shared with the main variant
+        public WindMatrixQuad WindMatrices; // offset 64  — MUST match the main variant
+        public Vector4 CardRight;           // offset 320 — shadow-only tail
+        public Vector4 CardUp;              // offset 336
+
+        /// <summary>Total 352 bytes: 64 viewProj + 256 wind + 32 card basis.</summary>
+        public const uint ByteSize = 64 + 256 + 32;
+
+        /// <summary>Offset of <see cref="WindMatrices" />; must equal the main pass's, which is 64.</summary>
+        public const uint WindMatricesOffset = 64;
+    }
+
+    /// <summary>
+    ///     The four SpeedTree whole-canopy sway matrices as one blittable field, so the shadow
+    ///     PerFrame struct can be written with a single assignment instead of pointer arithmetic.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct WindMatrixQuad
+    {
+        public Matrix4x4 M0;
+        public Matrix4x4 M1;
+        public Matrix4x4 M2;
+        public Matrix4x4 M3;
+
+        public Matrix4x4 this[int index]
+        {
+            set
+            {
+                switch (index)
+                {
+                    case 0: M0 = value; break;
+                    case 1: M1 = value; break;
+                    case 2: M2 = value; break;
+                    default: M3 = value; break;
+                }
+            }
+        }
+    }
+
+    /// <summary>
     ///     Packed 4-uint TexIndices field. C# has no <c>uint4</c> primitive, so we lay out
     ///     four contiguous uints with explicit <see cref="LayoutKind.Sequential" /> so the
     ///     C# struct blits cleanly into the HLSL <c>uint4</c>. <see cref="X" /> = diffuse,

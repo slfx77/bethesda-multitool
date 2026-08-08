@@ -1273,7 +1273,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         {
             *(Matrix4x4*)perFrameAlloc.CpuPtr = viewProj;
             // Wind v2: the 4 slow sway matrices (identity at S = 0, so a calm frame is byte-static).
-            var windDst = (Matrix4x4*)((byte*)perFrameAlloc.CpuPtr + 64);
+            // The offset is shared with the SHADOW variant's cbuffer — see
+            // InstancedShadowPerFrameConstants.WindMatricesOffset, which pins these two together.
+            var windDst = (Matrix4x4*)((byte*)perFrameAlloc.CpuPtr
+                + InstancedShadowPerFrameConstants.WindMatricesOffset);
             for (var w = 0; w < 4; w++)
             {
                 windDst[w] = frameWindRig.WindMatrix(w);
@@ -2278,16 +2281,17 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         LastStats.ReferenceDrawCallMilliseconds += drawCallMs;
     }
 
-    // CPU mirror of the shadow VS variant's extended PerFrame cbuffer (SHADOW_CARD_LIGHT_FACING):
-    // the light viewProj plus the light-perpendicular leaf-card billboard basis.
-    [StructLayout(LayoutKind.Sequential)]
-    private struct ShadowPerFrameConstants
-    {
-        public Matrix4x4 ViewProj;
-        public Vector4 CardRight;
-        public Vector4 CardUp;
-        public const uint ByteSize = 64 + 32;
-    }
+    // The shadow VS's PerFrame ABI lives in ReferenceRendererConstants12 as
+    // InstancedShadowPerFrameConstants, so platform-neutral tests can reflect its exact layout —
+    // the field ORDER is what keeps uWindMatrices at the same offset in both shader variants.
+
+    /// <summary>
+    ///     The wind rig this frame's draws were built against. The shadow replay MUST use the same
+    ///     one as the main pass or the caster and the visible geometry sway out of step, which is the
+    ///     defect the shared cbuffer layout exists to prevent.
+    /// </summary>
+    private Core.Formats.SpeedTree.SpeedTreeWindRig FrameWindRig =>
+        _captureWindActive ? _captureWindRig : _windRig;
 
     /// <summary>
     ///     Replays this frame's captured opaque draws into the (already bound) shadow-map depth
@@ -2311,7 +2315,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         var cmd = _recorder.CommandList;
         if (!_ringBuffer.TryAllocate(
-                _recorder.FrameIndex, ShadowPerFrameConstants.ByteSize, out var perFrameAlloc,
+                _recorder.FrameIndex, InstancedShadowPerFrameConstants.ByteSize, out var perFrameAlloc,
                 GpuRingBuffer12.CbAlignment))
         {
             return false; // the host disables this cleared cascade and falls through to a farther map
@@ -2319,12 +2323,23 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         unsafe
         {
-            *(ShadowPerFrameConstants*)perFrameAlloc.CpuPtr = new ShadowPerFrameConstants
+            // Same wind rig the main pass used this frame (FrameWindRig), so the caster deforms
+            // exactly like the geometry it is casting for. Uploading these is what the corrected
+            // cbuffer layout unlocked — the wind terms were previously preprocessed out of the
+            // shadow VS because they fell outside a 96-byte allocation.
+            var windRig = FrameWindRig;
+            var constants = new InstancedShadowPerFrameConstants
             {
                 ViewProj = frustum.ViewProj,
                 CardRight = new Vector4(frustum.CardRight, 0f),
                 CardUp = new Vector4(frustum.CardUp, 0f),
             };
+            for (var w = 0; w < 4; w++)
+            {
+                constants.WindMatrices[w] = windRig.WindMatrix(w);
+            }
+
+            *(InstancedShadowPerFrameConstants*)perFrameAlloc.CpuPtr = constants;
         }
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);

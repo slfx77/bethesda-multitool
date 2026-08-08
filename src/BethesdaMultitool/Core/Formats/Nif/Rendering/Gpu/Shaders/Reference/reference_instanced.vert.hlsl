@@ -3,9 +3,27 @@
 // (identical across a batch — uploading it per instance was pure redundancy). Material
 // textures use the shared bindless pixel-shader table.
 
+// LAYOUT CONTRACT — both variants must agree on every offset up to the #ifdef, and the OPTIONAL
+// members must come LAST. uWindMatrices therefore sits at a fixed offset 64 in BOTH variants
+// (main-pass CB = 64 + 256 = 320 bytes, byte-identical to the pre-Fix-C layout), and the shadow
+// variant APPENDS its card basis at 320 for a 352-byte CB. Putting the #ifdef block first instead
+// would move uWindMatrices to 96 in the shadow variant only — which is exactly the collision that
+// forced the wind terms to be preprocessed out of the shadow pass, because the shadow CB allocated
+// just 96 bytes and uWindMatrices fell entirely outside the allocation.
+// ReferenceRendererConstants12.InstancedPerFrameLayout pins these offsets from the CPU side.
 cbuffer PerFrame : register(b0)
 {
     float4x4 uViewProj;
+    // SpeedTree wind v2 — the 4 slow whole-canopy sway matrices (BSTreeManager::UpdateWindMatrices →
+    // SpeedTreeShader::SetMatrixRotation: YawPitchRoll(0.61·S·sinOsc, 0.61·S·cosOsc, 0) — small tilts
+    // about the tree's model-space horizontal axes). Each leaf lerps its MODEL-space card center
+    // toward the tilted position by its per-vertex weight (design doc B.2: orig + (M·orig − orig)·w).
+    // Only read when uWindMatrixValid (InstanceDraw) is set, so a stale/short PerFrame CB from a
+    // caller that doesn't upload them can never deform geometry.
+    // The SHADOW pass uploads these too: a shadow map built from the REST pose while the visible
+    // canopy sways puts the stored occluder somewhere the geometry no longer is, so the shadow
+    // boundary crawls independently of the leaves casting it.
+    float4x4 uWindMatrices[4];
 #ifdef SHADOW_CARD_LIGHT_FACING
     // Sun-shadow pass only: the leaf-card billboard basis, PERPENDICULAR TO THE LIGHT. A card that
     // faces the camera can be edge-on to the sun and rasterize nothing into the shadow map — leaf
@@ -15,13 +33,6 @@ cbuffer PerFrame : register(b0)
     float4 uShadowCardRight;
     float4 uShadowCardUp;
 #endif
-    // SpeedTree wind v2 — the 4 slow whole-canopy sway matrices (BSTreeManager::UpdateWindMatrices →
-    // SpeedTreeShader::SetMatrixRotation: YawPitchRoll(0.61·S·sinOsc, 0.61·S·cosOsc, 0) — small tilts
-    // about the tree's model-space horizontal axes). Each leaf lerps its MODEL-space card center
-    // toward the tilted position by its per-vertex weight (design doc B.2: orig + (M·orig − orig)·w).
-    // Only read when uWindMatrixValid (InstanceDraw) is set, so a stale/short PerFrame CB from a
-    // caller that doesn't upload them can never deform geometry.
-    float4x4 uWindMatrices[4];
 };
 
 // Shared atmosphere CB (b3). Geometry stays camera-relative because the CPU folds the render origin into
@@ -223,7 +234,7 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
 
         modelTangent = tangentLength > 1e-8 ? modelTangent / tangentLength : float3(1.0, 0.0, 0.0);
         modelBitangent = bitangentLength > 1e-8 ? modelBitangent / bitangentLength : float3(0.0, 1.0, 0.0);
-#ifndef SHADOW_CARD_LIGHT_FACING
+        // Runs in the SHADOW pass too — the caster must deform exactly like the visible geometry.
         if (uWindMatrixValid != 0 && windWeight > 0.0)
         {
             float3x3 windRotation = (float3x3)uWindMatrices[windIdx];
@@ -233,7 +244,6 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
             modelTangent = normalize(lerp(modelTangent, mul(windRotation, modelTangent), windWeight));
             modelBitangent = normalize(lerp(modelBitangent, mul(windRotation, modelBitangent), windWeight));
         }
-#endif
     }
 
     VSOutput o;
@@ -297,13 +307,13 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
                            sR * cardUp.x + cR * cardUp.y, cardUp.z);
 
         float3 modelCorner = modelCenter + Rr * ck.x + Ur * ck.y;
-#ifndef SHADOW_CARD_LIGHT_FACING
+        // Shadow pass included: an unswayed caster stamps the rest-pose canopy while the visible
+        // cards sway, so the shadow slides against the leaves that are supposedly casting it.
         if (uWindMatrixValid != 0)
         {
             float3 swayedCorner = mul(uWindMatrices[windIdx], float4(modelCorner, 1.0)).xyz;
             modelCorner = lerp(modelCorner, swayedCorner, windWeight);
         }
-#endif
         worldPos = mul(world, float4(modelCorner, 1.0));
         // FO3/FNV grass instances carry their lighting payload in the matrix's w-lanes (HLSL
         // world[3]), so the transform's w must be restored. Every other instance is affine
@@ -323,13 +333,15 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
             float3 cornerDir = normalize(cardRight * cornerOff.x + cardUp * cornerOff.y);
             leafN = normalize(leafN + cornerDir * uCameraRight.w);
         }
-#ifndef SHADOW_CARD_LIGHT_FACING
+        // Unguarded like the other two wind terms. The depth-only shadow pass does not consume
+        // vWorldNormal (shadow.frag.hlsl declares it for signature linkage and alpha-tests the
+        // texture alone), so this is a few dead ALU ops there — worth it to leave exactly ONE
+        // documented difference between the two variants: the billboard basis.
         if (uWindMatrixValid != 0 && windWeight > 0.0)
         {
             float3 windLeafN = mul((float3x3)uWindMatrices[windIdx], leafN);
             leafN = normalize(lerp(leafN, windLeafN, windWeight));
         }
-#endif
         leafN = normalize(mul(worldLinear, leafN));
         o.vWorldNormal = leafN;
     }
