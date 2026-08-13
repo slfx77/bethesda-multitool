@@ -176,6 +176,22 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
     public int MaxUploadsPerFrame { get; init; } = DefaultMaxUploadsPerFrame;
 
+    /// <summary>
+    ///     Mirrors <c>ReferenceMeshCache12.StreamingThrottled</c> for the DISPATCH step. The live
+    ///     60fps loop keeps the default per-frame admission caps (they bound copy-queue/staging-VRAM
+    ///     pressure). On-demand overlay renders (2D map top-down, 3D export) set this false so a
+    ///     single pass hands the WHOLE resolved backlog to the uploader instead of 16×scale items:
+    ///     measured on the 2D map, the dispatch cap — not resolve or the async copy itself — was the
+    ///     convergence bottleneck (≤64 textures promoted per whole-worldspace re-render, so a
+    ///     cold-start needed dozens of full re-cull + re-render + readback passes). The burst stays
+    ///     BOUNDED (<see cref="UnthrottledMaxUploadsPerDispatch" />/<see cref="UnthrottledMaxUploadBytesPerDispatch" />)
+    ///     because every admitted item allocates fence-retired staging memory.
+    /// </summary>
+    public bool StreamingThrottled { get; set; } = true;
+
+    private const int UnthrottledMaxUploadsPerDispatch = 1024;
+    private const long UnthrottledMaxUploadBytesPerDispatch = 1024L * 1024L * 1024L;
+
     public long MaxUploadBytesPerFrame { get; init; } = DefaultMaxUploadBytesPerFrame;
 
     public int FrameCompressedUploads { get; private set; }
@@ -414,13 +430,17 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     /// </summary>
     private void DispatchQueuedUploads()
     {
-        var uploadLimit = Math.Max(1,
-            Core.Resources.StreamingFrameBudgetScaler.ScaleCount(MaxUploadsPerFrame, _frameBudgetScale));
+        var uploadLimit = StreamingThrottled
+            ? Math.Max(1,
+                Core.Resources.StreamingFrameBudgetScaler.ScaleCount(MaxUploadsPerFrame, _frameBudgetScale))
+            : UnthrottledMaxUploadsPerDispatch;
         // Count stays in the while condition (count exhaustion leaves the next node at the queue
         // FRONT, exactly as before); CanStart gates bytes with the first-item-always rule.
         var budget = new FrameBudget(
             uploadLimit,
-            Core.Resources.StreamingFrameBudgetScaler.ScaleBytes(MaxUploadBytesPerFrame, _frameBudgetScale));
+            StreamingThrottled
+                ? Core.Resources.StreamingFrameBudgetScaler.ScaleBytes(MaxUploadBytesPerFrame, _frameBudgetScale)
+                : UnthrottledMaxUploadBytesPerDispatch);
 
         while (_pendingDispatch.Count > 0 && budget.ItemsUsed < uploadLimit)
         {

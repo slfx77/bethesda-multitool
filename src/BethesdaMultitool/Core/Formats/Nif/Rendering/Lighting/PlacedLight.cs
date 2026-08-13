@@ -95,7 +95,9 @@ internal readonly record struct PlacedLight(
         LightRecord light,
         BethesdaGame game)
     {
-        if (game == BethesdaGame.FalloutNewVegas)
+        // FO3 parity 2026-08-10: FO3's TESObjectREFR::GetRadius (0x0075DB50) implements the same
+        // law — base LIGH radius + ExtraRadius, no scale multiply (fo3-decompile-spotchecks.md).
+        if (game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3)
         {
             var extraRadius = placement.Radius ?? 0f;
             return float.IsFinite(extraRadius)

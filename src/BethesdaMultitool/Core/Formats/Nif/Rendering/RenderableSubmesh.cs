@@ -220,6 +220,14 @@ internal sealed class RenderableSubmesh
     /// <summary>Material specular color from NiMaterialProperty (RGB, 0-1). Controls specular highlight tint and intensity.</summary>
     public (float R, float G, float B) SpecularColor { get; init; } = (0, 0, 0);
 
+    /// <summary>
+    ///     Legacy NiMaterialProperty diffuse color (BsVersion &lt; 26 — TES3/TES4-era streams only),
+    ///     carried so UNTEXTURED shapes can bind it as their base color instead of the opaque-white
+    ///     fallback (e.g. SewerExitGateExterior01's authored-black 'Plane02'). Null when the shape
+    ///     has no NiMaterialProperty or the stream is FO3+ (whose materials have no diffuse lane).
+    /// </summary>
+    public (float R, float G, float B)? MaterialDiffuse { get; set; }
+
     /// <summary>True if BSShaderFlags bit 17 (Eye_Environment_Mapping = 0x20000) is set.</summary>
     public bool IsEyeEnvmap { get; init; }
 

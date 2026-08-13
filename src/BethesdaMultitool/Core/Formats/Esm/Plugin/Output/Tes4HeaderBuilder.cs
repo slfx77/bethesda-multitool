@@ -22,7 +22,13 @@ public static class Tes4HeaderBuilder
     ///     Build the TES4 record bytes (24-byte header + subrecord stream).
     /// </summary>
     /// <param name="options">Plugin options (master file, metadata).</param>
-    /// <param name="numRecords">Total number of records the plugin will contain (excluding TES4).</param>
+    /// <param name="numRecords">
+    ///     HEDR record count: every main record AND GRUP header in the file, excluding TES4
+    ///     itself. Measured against shipped FalloutNV.esm — its HEDR reads 542,016, which is
+    ///     exactly 465,016 non-TES4 records + 77,000 GRUP headers. Callers should derive this
+    ///     from the assembled bytes (<see cref="PluginEmissionCensus" />), never from
+    ///     per-write-site counters.
+    /// </param>
     /// <param name="nextObjectId">
     ///     The next free local FormID. For plugins that only emit overrides, leave at a safe
     ///     stub value (e.g., 0x800) since GECK won't allocate from this until the user adds new records.

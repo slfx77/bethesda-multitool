@@ -22,30 +22,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
 /// </summary>
 public sealed class EsmAssemblerDispatchTests
 {
-    [Fact]
-    public void Legacy_Path_When_Cell_Not_In_PlannerEnabledRecordTypes()
-    {
-        // With no "CELL" opt-in, EsmAssembler should keep calling legacy.
-        // This test pins the dispatch logic: the condition is a contains-check.
-        var options = new PluginBuildOptions
-        {
-            PlannerEnabledRecordTypes = new HashSet<string> { "WEAP" }
-        };
 
-        Assert.DoesNotContain("CELL", options.PlannerEnabledRecordTypes);
-        // The assembler short-circuits to CellGrupBuilder when this is false.
-    }
-
-    [Fact]
-    public void Planner_Path_Active_When_Cell_In_PlannerEnabledRecordTypes()
-    {
-        var options = new PluginBuildOptions
-        {
-            PlannerEnabledRecordTypes = new HashSet<string> { "CELL" }
-        };
-
-        Assert.Contains("CELL", options.PlannerEnabledRecordTypes);
-    }
 
     [Fact]
     public void Planner_And_Legacy_Produce_Equal_Bytes_For_KeepMaster_Cell_With_Child()
@@ -117,7 +94,7 @@ public sealed class EsmAssemblerDispatchTests
         };
 
         var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
-            plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
+            CellPlanTestHarness.Settle(plan, new Dictionary<uint, ParsedMainRecord>()), new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
 
         Assert.Equal(legacyBytes, plannerBytes);
     }

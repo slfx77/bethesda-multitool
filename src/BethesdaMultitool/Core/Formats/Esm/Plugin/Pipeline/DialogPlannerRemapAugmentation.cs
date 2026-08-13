@@ -5,7 +5,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 ///     remap and emitted-record registries.
 /// </summary>
 /// <remarks>
-///     Under <c>--planner-types all</c> new proto records are emitted by <c>PlanWriter</c>, whose
+///     Under planner emission new proto records are emitted by <c>PlanWriter</c>, whose
 ///     dispatch returns before the legacy <c>TrackNewRecordSourceAlias</c> path. Their
 ///     <c>source → emitted</c> mappings therefore live only in <c>EmitPlan</c>. Every later
 ///     legacy-routed encoder still needs those mappings: dialogue needs QSTI/ANAM remaps, and

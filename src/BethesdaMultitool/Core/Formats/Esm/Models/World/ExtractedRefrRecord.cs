@@ -104,6 +104,9 @@ public record ExtractedRefrRecord
     /// <summary>XESP - Enable Parent Flags (bit 0 = "Set Enable State to Opposite of Parent").</summary>
     public byte? EnableParentFlags { get; init; }
 
+    /// <summary>XSRF - Special Rendering Flags (FO3/FNV; 0x2 = Imposter, 0x4 = Use Full Shader in LOD).</summary>
+    public uint? SpecialRenderingFlags { get; init; }
+
     /// <summary>Editor ID of base object (if resolved).</summary>
     public string? BaseEditorId { get; init; }
 

@@ -163,6 +163,20 @@ public record PlacedReference
     /// <summary>Whether this record has the Initially Disabled flag (0x0800) on its main record header.</summary>
     public bool IsInitiallyDisabled { get; init; }
 
+    /// <summary>
+    ///     XSRF Special Rendering Flags (FO3/FNV): bit 1 (0x2) = Imposter, bit 2 (0x4) = Use Full
+    ///     Shader in LOD. Imposter references are stand-ins the engine draws only for scripted
+    ///     vantage set-pieces (e.g. `vLegateCampFortFireFX`, the ending's burning Legate camp seen
+    ///     from Hoover Dam) — never during normal play, even though the REFR itself is enabled.
+    /// </summary>
+    public uint? SpecialRenderingFlags { get; init; }
+
+    /// <summary>True when <see cref="SpecialRenderingFlags" /> marks this reference an imposter —
+    /// authored invisible outside its scripted vantage, so viewers treat it like a disabled ref.
+    /// Null coalesces to 0 first: the lifted <c>null &amp; 0x2 != 0</c> comparison is TRUE in C#,
+    /// which would have flagged every ordinary ref.</summary>
+    public bool IsImposter => ((SpecialRenderingFlags ?? 0) & 0x2) != 0;
+
     /// <summary>Enable parent flags byte from XESP subrecord (bit 0 = opposite state).</summary>
     public byte? EnableParentFlags { get; init; }
 

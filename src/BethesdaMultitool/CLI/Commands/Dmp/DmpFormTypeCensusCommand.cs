@@ -126,7 +126,7 @@ internal static class DmpFormTypeCensusCommand
 
         if (!string.IsNullOrEmpty(csvDir))
         {
-            await WriteCsvAsync(csvDir, dirPath, entries, allFormTypes, cancellationToken);
+            await WriteCsvAsync(csvDir, dirPath, entries, cancellationToken);
         }
     }
 
@@ -140,7 +140,6 @@ internal static class DmpFormTypeCensusCommand
         string csvDir,
         string dumpsDir,
         List<CensusEntry> entries,
-        List<byte> allFormTypes,
         CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(csvDir);
@@ -280,6 +279,7 @@ internal static class DmpFormTypeCensusCommand
             ["REFR"] = "cell-children pipeline",
             ["ACHR"] = "cell-children pipeline",
             ["ACRE"] = "cell-children pipeline",
+            ["PGRE"] = "cell-children pipeline",
             ["CELL"] = "cell hierarchy",
             ["DIAL"] = "DialogGrupBuilder",
             ["INFO"] = "DialogGrupBuilder"

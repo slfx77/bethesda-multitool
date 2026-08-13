@@ -192,7 +192,10 @@ public sealed partial class WorldView3DControl
                         exportWaterPartitioned = true;
                     }
 
-                    _water.Render(viewProj, cylinder);
+                    // Pinned water clock, matching the SetWind(dir, 0, 0) pose pin this path already
+                    // does for references: exports are one-shot snapshots, so a live clock made the
+                    // water phase depend on wall-clock at export time (byte-unstable re-exports).
+                    _water.RenderAtTime(viewProj, cylinder, default, 0f, isPerspectiveProjection: false);
                 }
                 if (opts.ShowReferences)
                 {

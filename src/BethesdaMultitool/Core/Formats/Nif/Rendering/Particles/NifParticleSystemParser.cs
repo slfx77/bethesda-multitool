@@ -346,14 +346,15 @@ internal static class NifParticleSystemParser
                 if (sequenceBlock.TypeName != "NiControllerSequence" ||
                     !TryReadSequenceRateBinding(
                         data, nif, sequenceBlock, controllerIndex,
-                        out var interpolatorRef, out var sequenceTiming, out var isIdle))
+                        out var interpolatorRef, out var emitterActiveRef,
+                        out var sequenceTiming, out var isIdle))
                 {
                     continue;
                 }
 
                 var managed = ReadRateInterpolator(
                     data, nif, interpolatorRef, controllerHeader.IsActive,
-                    controllerTiming, sequenceTiming);
+                    controllerTiming, sequenceTiming, emitterActiveRef);
                 if (managed is null)
                 {
                     continue;
@@ -394,9 +395,21 @@ internal static class NifParticleSystemParser
             {
                 var directInterpolator = BinaryUtils.ReadInt32(
                     data, controllerBlock.DataOffset + NifTimeControllerHeader.HeaderSize, nif.IsBigEndian);
+                // NiPSysEmitterCtlr carries a SECOND slot after interpolator + modifier-name: the
+                // EmitterActive visibility interpolator (base 26 + 4 + 4 = offset 34, size 38).
+                // The multi-target variant lays extra fields there instead, so it keeps rate-only.
+                var directEmitterActive = -1;
+                if (controllerBlock.TypeName == "NiPSysEmitterCtlr" &&
+                    controllerBlock.Size >= NifTimeControllerHeader.HeaderSize + 12)
+                {
+                    directEmitterActive = BinaryUtils.ReadInt32(
+                        data, controllerBlock.DataOffset + NifTimeControllerHeader.HeaderSize + 8,
+                        nif.IsBigEndian);
+                }
+
                 if (ReadRateInterpolator(
                         data, nif, directInterpolator, controllerHeader.IsActive,
-                        controllerTiming, sequenceTiming: null) is { } direct)
+                        controllerTiming, sequenceTiming: null, directEmitterActive) is { } direct)
                 {
                     return direct;
                 }
@@ -412,10 +425,12 @@ internal static class NifParticleSystemParser
         BlockInfo sequence,
         int controllerIndex,
         out int interpolatorRef,
+        out int emitterActiveRef,
         out ParticleControllerTiming sequenceTiming,
         out bool isIdle)
     {
         interpolatorRef = -1;
+        emitterActiveRef = -1;
         sequenceTiming = ParticleControllerTiming.Identity;
         isIdle = false;
 
@@ -460,6 +475,10 @@ internal static class NifParticleSystemParser
             BinaryUtils.ReadFloat(data, tail + 20, be),
             cycle);
 
+        // One NiPSysEmitterCtlr owns TWO ControlledBlocks in a sequence: the float BirthRate
+        // binding and the bool EmitterActive binding. Sequences commonly author the rate as a
+        // constant pose and do all the gating through the bool (NVNellisArtillery Idle: rate 2250,
+        // EmitterActive false), so both must be captured together.
         for (var i = 0; i < controlledCount; i++)
         {
             var blockStart = controlledStart + i * ControlledBlockStride;
@@ -469,15 +488,30 @@ internal static class NifParticleSystemParser
             }
 
             var candidate = BinaryUtils.ReadInt32(data, blockStart, be);
-            if (candidate >= 0 && candidate < nif.Blocks.Count &&
-                nif.Blocks[candidate].TypeName == "NiFloatInterpolator")
+            if (candidate < 0 || candidate >= nif.Blocks.Count)
             {
-                interpolatorRef = candidate;
-                return true; // the controller's Bool/EmitterActive binding has a different interpolator type
+                continue;
+            }
+
+            switch (nif.Blocks[candidate].TypeName)
+            {
+                case "NiFloatInterpolator" when interpolatorRef < 0:
+                    interpolatorRef = candidate;
+                    break;
+                case "NiBoolInterpolator" or "NiBoolTimelineInterpolator" when emitterActiveRef < 0:
+                    emitterActiveRef = candidate;
+                    break;
+                default:
+                    break;
+            }
+
+            if (interpolatorRef >= 0 && emitterActiveRef >= 0)
+            {
+                break;
             }
         }
 
-        return false;
+        return interpolatorRef >= 0;
     }
 
     private static ParticleRateControllerDefinition? ReadRateInterpolator(
@@ -486,7 +520,8 @@ internal static class NifParticleSystemParser
         int interpolatorRef,
         bool isActive,
         ParticleControllerTiming controllerTiming,
-        ParticleControllerTiming? sequenceTiming)
+        ParticleControllerTiming? sequenceTiming,
+        int emitterActiveRef = -1)
     {
         if (interpolatorRef < 0 || interpolatorRef >= nif.Blocks.Count)
         {
@@ -500,6 +535,8 @@ internal static class NifParticleSystemParser
         }
 
         var be = nif.IsBigEndian;
+        ReadEmitterActiveInterpolator(
+            data, nif, emitterActiveRef, out var emitterActiveConstant, out var emitterActiveKeys);
         var dataRef = BinaryUtils.ReadInt32(data, interpolator.DataOffset + 4, be);
         if (TryReadRateKeysFromBlock(data, nif, dataRef, out var interpolation, out var keys))
         {
@@ -510,6 +547,8 @@ internal static class NifParticleSystemParser
                 ControllerTiming = controllerTiming,
                 Interpolation = interpolation,
                 Keys = keys,
+                EmitterActiveConstant = emitterActiveConstant,
+                EmitterActiveKeys = emitterActiveKeys,
             };
         }
 
@@ -527,7 +566,88 @@ internal static class NifParticleSystemParser
             SequenceTiming = sequenceTiming,
             ControllerTiming = controllerTiming,
             ConstantValue = poseValue,
+            EmitterActiveConstant = emitterActiveConstant,
+            EmitterActiveKeys = emitterActiveKeys,
         };
+    }
+
+    /// <summary>
+    ///     Decode the EmitterActive bool binding: NiBoolInterpolator / NiBoolTimelineInterpolator
+    ///     is a pose byte (0/1; 2 = the "no pose" sentinel, mirroring the float MIN sentinel)
+    ///     followed by an optional NiBoolData ref of stepwise {float time, byte value} keys. An
+    ///     absent, malformed, or exotic binding yields no gate (null/empty) — prior behavior.
+    /// </summary>
+    private static void ReadEmitterActiveInterpolator(
+        byte[] data,
+        NifInfo nif,
+        int emitterActiveRef,
+        out bool? constant,
+        out IReadOnlyList<ParticleBoolKey> keys)
+    {
+        constant = null;
+        keys = [];
+        if (emitterActiveRef < 0 || emitterActiveRef >= nif.Blocks.Count)
+        {
+            return;
+        }
+
+        var interpolator = nif.Blocks[emitterActiveRef];
+        if (interpolator.TypeName is not ("NiBoolInterpolator" or "NiBoolTimelineInterpolator") ||
+            interpolator.Size < 5)
+        {
+            return;
+        }
+
+        var be = nif.IsBigEndian;
+        var dataRef = BinaryUtils.ReadInt32(data, interpolator.DataOffset + 1, be);
+        if (dataRef >= 0 && dataRef < nif.Blocks.Count &&
+            nif.Blocks[dataRef].TypeName == "NiBoolData" &&
+            TryReadBoolKeys(data, nif.Blocks[dataRef], be, out var decoded))
+        {
+            keys = decoded;
+            return;
+        }
+
+        var pose = data[interpolator.DataOffset];
+        if (pose <= 1)
+        {
+            constant = pose != 0;
+        }
+    }
+
+    private static bool TryReadBoolKeys(
+        byte[] data,
+        BlockInfo block,
+        bool bigEndian,
+        out IReadOnlyList<ParticleBoolKey> keys)
+    {
+        keys = [];
+        if (block.Size < 8)
+        {
+            return false;
+        }
+
+        var count = BinaryUtils.ReadUInt32(data, block.DataOffset, bigEndian);
+        var interpolation = BinaryUtils.ReadUInt32(data, block.DataOffset + 4, bigEndian);
+        // Bool tracks step; LINEAR(1) and CONST(5) share the 5-byte {time,value} layout. Anything
+        // else would misalign the walk, so it fails to "no gate" rather than misread keys.
+        if (count == 0 || count > 4096 || interpolation is not (1 or 5) ||
+            block.DataOffset + 8 + (long)count * 5 > block.DataOffset + block.Size)
+        {
+            return false;
+        }
+
+        var decoded = new ParticleBoolKey[count];
+        var offset = block.DataOffset + 8;
+        for (var i = 0; i < count; i++)
+        {
+            decoded[i] = new ParticleBoolKey(
+                BinaryUtils.ReadFloat(data, offset, bigEndian), data[offset + 4] != 0);
+            offset += 5;
+        }
+
+        keys = decoded;
+        return true;
     }
 
     private static bool TryReadRateKeysFromBlock(

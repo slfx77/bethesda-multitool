@@ -138,17 +138,17 @@ internal static class PostVerdictScriptClosurePlanner
     {
         foreach (var child in children)
         {
-            // Match PlanCellSectionBuilder.EncodeBucketChildren exactly. Other catalogued
-            // child types (notably captured PGREs) are not yet serialized by that writer
-            // and therefore cannot make an SCRO target live merely by being allocated.
-            if (child.Type is not ("LAND" or "NAVM" or "REFR" or "ACHR" or "ACRE")
+            // Match PlanCellSectionBuilder.EncodeBucketChildren exactly — the placed-ref set
+            // there (REFR/ACHR/ACRE/PGRE) and here must stay in lockstep, or a serialized
+            // child's SCRO target is pruned from the closure (or a dropped child keeps one live).
+            if (child.Type is not ("LAND" or "NAVM" or "REFR" or "ACHR" or "ACRE" or "PGRE")
                 || child.Disposition == RecordDisposition.Skip
                 || child.Type == "NAVM" && cell.NavmOnlySuppressed)
             {
                 continue;
             }
 
-            if (child.Type is "REFR" or "ACHR" or "ACRE"
+            if (child.Type is "REFR" or "ACHR" or "ACRE" or "PGRE"
                 && (!cell.RefDecisions.TryGetValue(child.FormId, out var verdict)
                     || verdict.Verdict != PlacedRefEmitVerdict.Emit))
             {

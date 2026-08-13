@@ -11,7 +11,26 @@ namespace BethesdaMultitool;
 
 public sealed partial class WorldView3DControl
 {
-    private const int MaxPlacedLightsPerCell = 16;
+    /// <summary>
+    ///     Interiors are hard-limited by the per-cell cap alone (no frame-level accumulation runs on
+    ///     that branch), and 16 made dense interiors — the Strip casinos in particular — drop and pop
+    ///     lights as the camera moved. There is no hardware ceiling forcing 16: <c>uPointLights</c> is
+    ///     an unbounded StructuredBuffer at a root SRV and the shader loop bound is a runtime count
+    ///     (<c>scene_lighting.hlsli</c>). 64 is an interim ceiling until the engine-parity light-volume
+    ///     selection work lands (docs/backlog; successor: the decompiled retail light-association
+    ///     oracle under Rendering/Lighting, deliberately unreferenced here until promoted).
+    ///     Invariant: <see cref="MaxPlacedLightsPerFrame" /> &gt;= this, so an interior cell can never
+    ///     exceed the frame budget it bypasses.
+    /// </summary>
+    private const int MaxPlacedLightsPerInteriorCell = 64;
+
+    /// <summary>
+    ///     Exterior per-cell cap — deliberately unchanged at 16: exteriors accumulate across every
+    ///     visible cell before <see cref="ApplyFramePlacedLightCap" />, and
+    ///     <see cref="FnvActiveAdtBasePolicy.IsEligible" /> keys the active ADT base route on
+    ///     <c>PlacedLightCount == 0</c>, so the exterior population must not change here.
+    /// </summary>
+    private const int MaxPlacedLightsPerExteriorCell = 16;
 
     /// <summary>
     ///     Whole-frame ceiling on uploaded emitters. The per-cell cap alone bounds nothing outdoors:
@@ -24,8 +43,8 @@ public sealed partial class WorldView3DControl
     private static readonly bool PlacedLightsEnvEnabled =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.PlacedLights) != "0";
 
-    private readonly List<PlacedLight> _framePlacedLights = new(MaxPlacedLightsPerCell);
-    private readonly List<PlacedLight> _cellPlacedLightScratch = new(MaxPlacedLightsPerCell * 2);
+    private readonly List<PlacedLight> _framePlacedLights = new(MaxPlacedLightsPerFrame);
+    private readonly List<PlacedLight> _cellPlacedLightScratch = new(MaxPlacedLightsPerInteriorCell * 2);
     private readonly List<WorldSpatialCell> _placedLightCellScratch = [];
     private readonly HashSet<uint> _placedLightClipLoggedCells = [];
     private bool _framePlacedLightCapLogged;
@@ -56,7 +75,7 @@ public sealed partial class WorldView3DControl
         {
             if (_selectedInterior is { } interior)
             {
-                AppendCellLights(interior, _camera.Position);
+                AppendCellLights(interior, _camera.Position, MaxPlacedLightsPerInteriorCell);
             }
             else if (visibility is { } cylinder && _spatialIndex is not null)
             {
@@ -67,7 +86,7 @@ public sealed partial class WorldView3DControl
                     _placedLightCellScratch);
                 foreach (var visibleCell in _placedLightCellScratch)
                 {
-                    AppendCellLights(visibleCell.Cell, cylinder.Position);
+                    AppendCellLights(visibleCell.Cell, cylinder.Position, MaxPlacedLightsPerExteriorCell);
                 }
 
                 ApplyFramePlacedLightCap(cylinder.Position);
@@ -136,13 +155,13 @@ public sealed partial class WorldView3DControl
             clipped);
     }
 
-    private void AppendCellLights(CellRecord cell, Vector3 cameraPosition)
+    private void AppendCellLights(CellRecord cell, Vector3 cameraPosition, int maxPerCell)
     {
         var source = _data!.RenderCache.GetPlacedLights(cell);
         var clipped = PlacedLightSelector.AppendNearest(
             source,
             cameraPosition,
-            MaxPlacedLightsPerCell,
+            maxPerCell,
             includeInitiallyDisabled: _showDisabled,
             destination: _framePlacedLights,
             scratch: _cellPlacedLightScratch);
@@ -152,8 +171,8 @@ public sealed partial class WorldView3DControl
             "WorldView3DControl: cell 0x{0:X8} has {1} eligible placed lights; keeping nearest {2} " +
             "for the forward-light loop ({3} clipped).",
             cell.FormId,
-            MaxPlacedLightsPerCell + clipped,
-            MaxPlacedLightsPerCell,
+            maxPerCell + clipped,
+            maxPerCell,
             clipped);
     }
 }

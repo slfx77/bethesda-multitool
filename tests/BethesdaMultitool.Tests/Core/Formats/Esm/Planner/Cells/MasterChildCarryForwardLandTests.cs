@@ -96,7 +96,7 @@ public sealed class MasterChildCarryForwardLandTests
         return new CellChildEncodeContext(
             plan, masterByFormId, [], new PluginBuildOptions(), null, masterIndex,
             new HashSet<uint>(), null,
-            new Dictionary<uint, PlannerXespParentClassifier.Resolution>());
+            new PlannerXespParentClassifier(plan, masterByFormId, new HashSet<uint>()));
     }
 
     private static CellEncodeState MakeState()

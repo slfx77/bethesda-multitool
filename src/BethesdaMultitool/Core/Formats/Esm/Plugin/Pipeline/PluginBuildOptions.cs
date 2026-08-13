@@ -260,19 +260,6 @@ public sealed record PluginBuildOptions
     /// </summary>
     public IReadOnlyList<string> DialogueTextOverridesCsvPaths { get; init; } = [];
 
-    /// <summary>
-    ///     Record signatures the new two-pass <c>EsmPlanner</c> / <c>PlanWriter</c> pipeline
-    ///     owns on this run. When non-empty, the plugin builder routes those record types
-    ///     through the planner; everything else continues to use the legacy single-pass
-    ///     pipeline. Empty (default) keeps the entire build on the legacy path — Tier 0
-    ///     ships the plumbing without enabling any types; tiers 1–5 progressively add types
-    ///     here until the legacy pipeline is deleted.
-    /// </summary>
-    /// <remarks>
-    ///     Contract: if a type is listed here, the planner produces all bytes for that type's
-    ///     GRUP — legacy never emits even one record for it. This is the per-record-type
-    ///     migration switch described in the planner architecture plan.
-    /// </remarks>
-    public IReadOnlySet<string> PlannerEnabledRecordTypes { get; init; } =
-        new HashSet<string>(StringComparer.Ordinal);
+    // PlannerEnabledRecordTypes was removed 2026-08-11 with the legacy emission path: the
+    // planner owns every record type unconditionally, so there is nothing left to select.
 }

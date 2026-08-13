@@ -5,6 +5,23 @@ import struct
 import sys
 from pathlib import Path
 
+# D3D9 source-modifier field (bits 27:24 of a source parameter token).
+SRCMOD_FMT = {
+    0: "{0}", 1: "-{0}", 2: "{0}_bias", 3: "-{0}_bias", 4: "{0}_bx2", 5: "-{0}_bx2",
+    6: "1-{0}", 7: "{0}_x2", 8: "-{0}_x2", 9: "{0}_dz", 10: "{0}_dw", 11: "|{0}|",
+    12: "-|{0}|", 13: "!{0}",
+}
+
+
+def _dstmod_suffix(dst_tok):
+    """Destination-modifier field (bits 23:20): _sat / _pp / _centroid.
+
+    Dropping this field is what falsified the 2026-07-06 water dumps — 93 saturating
+    instructions across the WATER family printed as unsaturated. Never omit it.
+    """
+    mod = (dst_tok >> 20) & 0xF
+    return ("_sat" if mod & 1 else "") + ("_pp" if mod & 2 else "") + ("_centroid" if mod & 4 else "")
+
 DEFAULT_SDP = Path(
     "Sample/Full_Builds/Fallout New Vegas (PC Final)/Data/Shaders/shaderpackage003.sdp"
 )
@@ -136,7 +153,7 @@ def disasm_d3d9(bytecode, const_map):
             0: 'r',      # D3DSPR_TEMP
             1: 'v',      # D3DSPR_INPUT
             2: 'c',      # D3DSPR_CONST
-            3: 'a',      # D3DSPR_ADDR (VS) / D3DSPR_TEXTURE (PS 1.x)
+            3: 'a',      # D3DSPR_ADDR (vs) / D3DSPR_TEXTURE (ps) — 'ps' remapped to 't' below
             4: 'rast',   # D3DSPR_RASTOUT
             5: 'aout',   # D3DSPR_ATTROUT
             6: 'o',      # D3DSPR_OUTPUT / D3DSPR_TEXCRDOUT
@@ -154,7 +171,13 @@ def disasm_d3d9(bytecode, const_map):
             19: 'p',     # D3DSPR_PREDICATE
         }
         prefix = type_map.get(rtype, f'?{rtype}_')
+        if rtype == 3 and profile == 'ps':
+            prefix = 't'  # an interpolated texcoord, not the vs address register
         reg_str = f"{prefix}{num}"
+        if rtype == 4:
+            reg_str = {0: 'oPos', 1: 'oFog', 2: 'oPts'}.get(num, f'rast{num}')
+        elif rtype == 6 and sm_major < 3:
+            reg_str = f"oT{num}"  # D3DSPR_TEXCRDOUT before SM3 unified outputs
 
         # Annotate named constants
         if rtype == 2 and num in c_names:
@@ -176,15 +199,14 @@ def disasm_d3d9(bytecode, const_map):
             s = comp[swizzle & 3] + comp[(swizzle >> 2) & 3] + comp[(swizzle >> 4) & 3] + comp[(swizzle >> 6) & 3]
             if s != 'xyzw':
                 reg_str += '.' + s
-            negate = (token >> 24) & 0xF
-            if negate == 1:
-                reg_str = '-' + reg_str
+            reg_str = SRCMOD_FMT.get((token >> 24) & 0xF, "{0}").format(reg_str)
 
         return reg_str
 
     lines = []
     pos = 0
     sm_major = 0
+    profile = 'shader'
     n = len(bytecode)
     while pos + 4 <= n:
         token = struct.unpack_from("<I", bytecode, pos)[0]
@@ -242,19 +264,26 @@ def disasm_d3d9(bytecode, const_map):
             rtype = ((dst_tok >> 28) & 0x7) | (((dst_tok >> 11) & 0x3) << 3)
             if rtype == 10:  # D3DSPR_SAMPLER
                 stype = {2: '2d', 3: 'cube', 4: 'volume'}.get((dcl_tok >> 27) & 0xF, '?')
-                lines.append(f"dcl_{stype} {dst}")
+                lines.append(f"dcl_{stype}{_dstmod_suffix(dst_tok)} {dst}")
+            elif profile == 'ps' and sm_major < 3:
+                # ps_2_x input dcls carry NO usage semantic — the usage field decoded
+                # here before was garbage bits ("dcl_position0" on every texcoord).
+                lines.append(f"dcl{_dstmod_suffix(dst_tok)} {dst}")
             else:
                 usage = dcl_tok & 0x1F
                 uidx = (dcl_tok >> 16) & 0xF
                 unames = {0: 'position', 1: 'blendweight', 2: 'blendindices', 3: 'normal',
                           5: 'texcoord', 6: 'tangent', 7: 'binormal', 10: 'color'}
-                lines.append(f"dcl_{unames.get(usage, f'u{usage}')}{uidx} {dst}")
+                lines.append(f"dcl_{unames.get(usage, f'u{usage}')}{uidx}{_dstmod_suffix(dst_tok)} {dst}")
             continue
 
         # def (float) / defi (int): [dst][4 immediates]
         if opcode == OP_DEF and len(op_toks) >= 5:
             f = struct.unpack("<4f", struct.pack("<4I", *op_toks[1:5]))
-            lines.append(f"def {decode_reg(op_toks[0], True)}, {f[0]:.6f}, {f[1]:.6f}, {f[2]:.6f}, {f[3]:.6f}")
+            # %.9g round-trips float32 exactly; %.6f silently corrupted small constants
+            # (e.g. -1.5501e-06 printed as -0.000002, and -0.00012207 = -2^-13 as -0.000122).
+            vals = ", ".join(f"{v:.9g}" for v in f)
+            lines.append(f"def {decode_reg(op_toks[0], True)}, {vals}")
             continue
         if opcode == OP_DEFI and len(op_toks) >= 5:
             i = struct.unpack("<4i", struct.pack("<4I", *op_toks[1:5]))
@@ -268,6 +297,12 @@ def disasm_d3d9(bytecode, const_map):
         # Comparison selector for ifc / breakc / setp (bits [18:16] of the opcode token).
         if opcode in (0x29, 0x2D, 0x5E):
             mnemonic += "_" + CMP_SUFFIX.get((token >> 16) & 0x7, f"c{(token >> 16) & 0x7}")
+        # texld's opcode-specific control bits select the projected/biased forms. Dropping
+        # this hid that WATER000's ReflectionMap fetch is texldp (a projective RT lookup).
+        if opcode == 0x42:
+            mnemonic = {1: 'texldp', 2: 'texldb'}.get((token >> 16) & 0xF, mnemonic)
+        if has_dst and op_toks:
+            mnemonic += _dstmod_suffix(op_toks[0])
 
         # The predicate source register (when present) sits right after the destination.
         pred_prefix = ""
@@ -319,7 +354,8 @@ def main():
             if not prefixes or any(name.upper().startswith(p) for p in prefixes)
         ]
         lines = [
-            "=== SpeedTree PC shader disassembly ===",
+            "=== Bethesda SDP shader disassembly ===",
+            f"Tool: tools/disasm_shader.py (command: {' '.join(sys.argv)})",
             f"Date: {datetime.datetime.now().isoformat(timespec='seconds')}",
             f"Package: {sdp_path}",
             f"Shaders: {len(entries)}" + (f" (prefix filter: {','.join(prefixes)})" if prefixes else ""),

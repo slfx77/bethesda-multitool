@@ -57,4 +57,40 @@ internal static class WaterTransparencyPartition
 
         return worldMaxZ < surface && cameraZ > surface;
     }
+
+    /// <summary>
+    ///     True when no water surface drawn this frame can possibly occlude the submesh: both the
+    ///     camera and the submesh's bounds BOTTOM sit above the highest surface actually queued for
+    ///     draw. The sightline between two points above a plane never crosses it, so such a draw can
+    ///     only ever be IN FRONT of water — it must be issued after every water batch, or the
+    ///     (depth-write-free) surface composites over it. This is the complement of the submerged
+    ///     partition, and like it, it is a CLASSIFICATION — the shared clip-w merge cannot express
+    ///     it, because water sorts by a 4096-unit cell quad's centroid: the camera's own cell quad
+    ///     sorts nearer than almost everything and would stamp over smoke plumes standing well above
+    ///     the surface.
+    ///     <para>
+    ///         <paramref name="maxQueuedSurfaceZ" /> must be the maximum over the surfaces QUEUED
+    ///         for this frame's stream (visible cell water + placed-NIF planes), not an unbounded
+    ///         world gather — water that does not draw cannot occlude anything, and an unbounded
+    ///         gather is what disabled the original single-plane submerged split (see
+    ///         <see cref="IsWhollyBelow" />). A distant elevated body inside the view still only
+    ///         degrades this test toward the interleaved status quo, never past it.
+    ///     </para>
+    /// </summary>
+    /// <param name="worldMinZ">
+    ///     The world-space BOTTOM of the submesh's bounds — transformed local-AABB minimum where
+    ///     known, else the bounding sphere's lowest point. Same reasoning as
+    ///     <see cref="IsWhollyBelow" />'s top: sphere extents alone misclassify the flat cards and
+    ///     shallow plumes this exists to order.
+    /// </param>
+    internal static bool IsWhollyAboveAllWater(
+        float worldMinZ, float cameraZ, float maxQueuedSurfaceZ)
+    {
+        if (!float.IsFinite(worldMinZ) || !float.IsFinite(cameraZ) || !float.IsFinite(maxQueuedSurfaceZ))
+        {
+            return false;
+        }
+
+        return worldMinZ > maxQueuedSurfaceZ && cameraZ > maxQueuedSurfaceZ;
+    }
 }

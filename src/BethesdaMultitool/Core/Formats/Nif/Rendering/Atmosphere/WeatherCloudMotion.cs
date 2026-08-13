@@ -54,12 +54,16 @@ internal static class WeatherCloudMotion
         int sourceLayerIndex,
         BethesdaGame game)
     {
-        if (game == BethesdaGame.FalloutNewVegas && weather is not null && sourceLayerIndex >= 0)
+        if (game is (BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3) &&
+            weather is not null && sourceLayerIndex >= 0)
         {
             // Retail PC TESWeather::GetCloudSpeed starts with byte 0x33. A non-empty ONAM uses
             // the requested slot, or slot zero when the source index is outside the array. Parsed
             // records retain ONAM in CloudSpeedsX; the semantic non-zero branch only supports
             // hand-built callers that predate that lossless projection.
+            // FO3 parity 2026-08-10: FO3's Clouds::Update (0x006BD930) implements the identical
+            // contract (0x33 default, slot-0 clamp); all 27 FO3 WTHRs author 4-byte ONAM, so this
+            // branch is what makes their authored per-layer speeds apply at all.
             float speedU;
             if (weather.CloudSpeedsX.Count > 0)
             {

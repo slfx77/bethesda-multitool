@@ -63,6 +63,7 @@ public sealed class RuntimeStructReader
     private readonly RuntimeMusicTypeReader _musicTypes;
     private readonly RuntimeStaticCollectionReader _staticCollections;
     private readonly RuntimePlaceableWaterReader _placeableWaters;
+    private readonly RuntimeTreeReader _trees;
     private readonly RuntimeNavMeshReader _navMeshes;
     private readonly RuntimeNavMeshInfoMapReader _navMeshInfoMaps;
     private readonly RuntimeNavMeshDiscovery _navMeshDiscovery;
@@ -137,6 +138,7 @@ public sealed class RuntimeStructReader
         _musicTypes = new RuntimeMusicTypeReader(_context);
         _staticCollections = new RuntimeStaticCollectionReader(_context);
         _placeableWaters = new RuntimePlaceableWaterReader(_context);
+        _trees = new RuntimeTreeReader(_context);
         _sounds = new RuntimeSoundReader(_context);
         _books = new RuntimeBookReader(_context);
         _weaponMods = new RuntimeWeaponModReader(_context);
@@ -517,6 +519,16 @@ public sealed class RuntimeStructReader
     public PlaceableWaterRecord? ReadRuntimePlaceableWater(RuntimeEditorIdEntry entry)
     {
         return _placeableWaters.ReadRuntimePlaceableWater(entry);
+    }
+
+    /// <summary>
+    ///     Reads a runtime tree (TREE) — identity, model, leaf texture, plus the SpeedTree seed
+    ///     array, OBJ_TREE animation data and billboard size that the generic reader cannot
+    ///     decode.
+    /// </summary>
+    public TreeRecord? ReadRuntimeTree(RuntimeEditorIdEntry entry)
+    {
+        return _trees.ReadRuntimeTree(entry);
     }
 
     /// <summary>Reads the runtime sound record for the given DMP entry, or null if it can't be read.</summary>

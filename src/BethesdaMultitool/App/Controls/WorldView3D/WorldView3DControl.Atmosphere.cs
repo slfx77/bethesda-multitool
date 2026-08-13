@@ -132,9 +132,17 @@ public sealed partial class WorldView3DControl
     private ResolvedWeatherTransition ResolveSelectedWeatherTransition()
     {
         ResolvedRegionWeatherSelection? regionSelection = null;
+        // FO3 parity 2026-08-10: widened from FNV-only. Region weather is record semantics
+        // (REGN RPLI/RPLD containment + a deterministic single 100% ungated RDWT entry), the
+        // resolver is game-neutral and fails closed on every ambiguous case, and Fallout3.esm
+        // authors REGN weather data the same way.
         if (_weatherSelectionIsClimateDefault &&
             _selectedInterior is null &&
-            _data is { Game: BethesdaGame.FalloutNewVegas, RuntimeWeatherTransition: null } data)
+            _data is
+            {
+                Game: BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3,
+                RuntimeWeatherTransition: null,
+            } data)
         {
             // XCLR is a cell-level candidate list, not proof that the camera is inside a REGN.
             // Resolve at the same camera/projection-focus point used by CELL XCIM selection and

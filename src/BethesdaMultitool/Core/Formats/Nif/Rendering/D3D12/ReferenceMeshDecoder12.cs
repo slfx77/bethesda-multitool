@@ -486,7 +486,13 @@ internal sealed class ReferenceMeshDecoder12
                     SourceBlockIndex: sub.SourceBlockIndex,
                     BillboardMode: sub.BillboardMode,
                     EngineZWriteOff: alphaState.EngineZWriteOff,
-                    DepthTestOff: alphaState.DepthTestOff));
+                    DepthTestOff: alphaState.DepthTestOff,
+                    // Emissive shapes are excluded: their engine output is matEmissive-only and the
+                    // specularColor slot above already carries the glow tint, so a diffuse base
+                    // bind would wrongly modulate the glow.
+                    MaterialDiffuse: !sub.IsEmissive && sub.MaterialDiffuse is { } materialDiffuse
+                        ? new Vector3(materialDiffuse.R, materialDiffuse.G, materialDiffuse.B)
+                        : (Vector3?)null));
             }
 
             if (submeshes.Count == 0)
@@ -581,7 +587,8 @@ internal sealed class ReferenceMeshDecoder12
                 sub.SourceBlockIndex,
                 sub.BillboardMode,
                 sub.EngineZWriteOff,
-                sub.DepthTestOff));
+                sub.DepthTestOff,
+                sub.MaterialDiffuse));
         }
 
         return new ReferenceDecodedMeshPayload12(
@@ -657,7 +664,8 @@ internal sealed class ReferenceMeshDecoder12
                 BillboardMode:
                     sub.BillboardMode,
                 EngineZWriteOff: sub.EngineZWriteOff,
-                DepthTestOff: sub.DepthTestOff));
+                DepthTestOff: sub.DepthTestOff,
+                MaterialDiffuse: sub.MaterialDiffuse));
         }
 
         return new DecodedNifMesh12(

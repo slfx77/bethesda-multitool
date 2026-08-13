@@ -1,4 +1,5 @@
 using System.Text;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Records;
 
@@ -227,6 +228,102 @@ internal static class RecordValidator
         // XXXX carries the true 4-byte size of an oversized following subrecord and can legitimately
         // lead a record's data, so accept it alongside the registered signatures.
         return sig == "XXXX" || KnownSubrecordSignatures.Contains(sig);
+    }
+
+    /// <summary>
+    ///     DataSize above which a header must prove its extent before the scanner may trust it.
+    ///     Retail FNV's largest genuine records are NAVI (622 KB) and WRLD (177 KB, XXXX-escaped
+    ///     OFST); everything else is ≤ 41 KB. A torn header with a scribbled DataSize under the
+    ///     10 MB scalar cap otherwise blinds the skip-ahead scanner to megabytes of real records
+    ///     (xex44: a stale REFR at 0x5BD090F claiming 4.5 MB swallowed the 4.4 MB chunk tail —
+    ///     an entire cell-children GRUP, undetected, silently).
+    /// </summary>
+    private const int LargeRecordVerifyThreshold = 64 * 1024;
+
+    /// <summary>
+    ///     True when a candidate header's DataSize can be trusted for skip-ahead. Small records
+    ///     pass unchecked (a bogus small skip costs nothing). Large records must prove their
+    ///     extent: compressed via the zlib stream header, uncompressed via the subrecord chain
+    ///     tiling the payload exactly (XXXX extended-size escapes honored). Verification stops at
+    ///     the buffer end — a genuine large record straddling a chunk boundary validates on what
+    ///     is visible instead of being rejected for what is not.
+    /// </summary>
+    internal static bool HasTrustworthyExtent(
+        byte[] data, int i, int headerSize, int dataLength, bool isBigEndian, uint flags, uint dataSize)
+    {
+        if (dataSize <= LargeRecordVerifyThreshold)
+        {
+            return true;
+        }
+
+        const uint compressedFlag = 0x00040000;
+        var payloadStart = i + headerSize;
+        if ((flags & compressedFlag) != 0)
+        {
+            // Compressed payload = 4-byte decompressed size, then a zlib stream. RFC 1950:
+            // CMF low nibble 8 (deflate) and (CMF<<8 | FLG) divisible by 31. A large
+            // compressed claim whose payload lacks the stream header is a torn fragment.
+            if (payloadStart + 6 > dataLength)
+            {
+                return false;
+            }
+
+            var cmf = data[payloadStart + 4];
+            var flg = data[payloadStart + 5];
+            return (cmf & 0x0F) == 8 && ((cmf << 8) | flg) % 31 == 0;
+        }
+
+        // Uncompressed: the subrecord chain must tile the payload. Garbage after a torn
+        // header misaligns within a few steps; a genuine NAVI/WRLD walks clean.
+        var end = (long)payloadStart + dataSize;
+        var verifiableEnd = Math.Min(end, dataLength);
+        long pos = payloadStart;
+        var xxxxOverride = 0u;
+        while (pos < verifiableEnd)
+        {
+            if (pos + 6 > verifiableEnd)
+            {
+                // A header fragment at the buffer edge is unprovable either way; accept
+                // only when the record genuinely extends past the buffer.
+                return end > dataLength;
+            }
+
+            for (var b = 0; b < 4; b++)
+            {
+                var c = data[pos + b];
+                if (c is not ((>= (byte)'A' and <= (byte)'Z') or (>= (byte)'0' and <= (byte)'9') or (byte)'_'))
+                {
+                    return false;
+                }
+            }
+
+            // "XXXX" is a palindrome — no endian branch needed for the signature itself.
+            var isXxxx = data[pos] == 'X' && data[pos + 1] == 'X'
+                                          && data[pos + 2] == 'X' && data[pos + 3] == 'X';
+            var subLen = isBigEndian
+                ? (uint)((data[pos + 4] << 8) | data[pos + 5])
+                : (uint)(data[pos + 4] | (data[pos + 5] << 8));
+
+            if (xxxxOverride != 0)
+            {
+                // The subrecord after an XXXX escape declares length 0; its true size is
+                // the escape's payload.
+                subLen = xxxxOverride;
+                xxxxOverride = 0;
+            }
+            else if (isXxxx && subLen == 4 && pos + 10 <= verifiableEnd)
+            {
+                xxxxOverride = isBigEndian
+                    ? BinaryUtils.ReadUInt32BE(data, (int)(pos + 6))
+                    : BinaryUtils.ReadUInt32LE(data, (int)(pos + 6));
+            }
+
+            pos += 6 + subLen;
+        }
+
+        // In-buffer records must land exactly on the declared end; a straddling record is
+        // accepted once every visible subrecord tiled cleanly.
+        return end > dataLength || pos == end;
     }
 
     #endregion

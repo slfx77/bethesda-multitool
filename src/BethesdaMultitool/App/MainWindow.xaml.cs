@@ -21,20 +21,26 @@ public sealed partial class MainWindow : Window
         Instance = this;
         try
         {
-            // WinUI 3 apps have no attached console, so Spectre/Console output is invisible.
-            // Mirror the same log stream to a known file so diagnostic Log.Info/Log.Warn calls
-            // (e.g. BSA discovery, terrain palette resolution) are inspectable post-mortem.
-            // Honors FALLOUT_GUI_LOG so a debugging run can redirect to an explicit path — the same
-            // override GuiEntryPoint.ConfigureDiagnostics sets up earlier (re-setting the same path
-            // here is a harmless append-mode reopen), keeping one log file across both call sites.
+            // GuiEntryPoint.ConfigureDiagnostics opens the per-process GUI log BEFORE
+            // Application.Start, so by the time this constructor runs a file sink is normally
+            // already live (and crashes during app construction were captured). This is only a
+            // FALLBACK for a host that created the window without going through GuiEntryPoint.
+            // It must not reopen when a sink exists: SetLogFile disposes the active writer, and
+            // an unconditional reopen here would break the "open before Application.Start"
+            // crash-capture guarantee. Same per-process path + forced timestamps as the entry
+            // path — a shared, timestamp-less log cannot be matched to a WER fault time.
             try
             {
-                var logOverride = BethesdaMultitool.Core.EnvironmentVariables.Get(
-                    BethesdaMultitool.Core.EnvironmentVariables.Diagnostics.GuiLogFile);
-                var logPath = string.IsNullOrWhiteSpace(logOverride)
-                    ? Path.Combine(Path.GetTempPath(), "BethesdaMultitool-gui.log")
-                    : Path.GetFullPath(logOverride);
-                BethesdaMultitool.Core.Diagnostics.Logger.Instance.SetLogFile(logPath);
+                if (!BethesdaMultitool.Core.Diagnostics.Logger.Instance.HasLogFile)
+                {
+                    var logOverride = BethesdaMultitool.Core.EnvironmentVariables.Get(
+                        BethesdaMultitool.Core.EnvironmentVariables.Diagnostics.GuiLogFile);
+                    var logPath = string.IsNullOrWhiteSpace(logOverride)
+                        ? Path.Combine(Path.GetTempPath(), $"BethesdaMultitool-gui-{Environment.ProcessId}.log")
+                        : Path.GetFullPath(logOverride);
+                    BethesdaMultitool.Core.Diagnostics.Logger.Instance.IncludeTimestamp = true;
+                    BethesdaMultitool.Core.Diagnostics.Logger.Instance.SetLogFile(logPath);
+                }
             }
             catch
             {

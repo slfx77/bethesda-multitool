@@ -184,7 +184,7 @@ public static class CellChildVerdictPlanner
         {
             foreach (var child in bucket)
             {
-                if (child.Type is not ("REFR" or "ACHR" or "ACRE")
+                if (child.Type is not ("REFR" or "ACHR" or "ACRE" or "PGRE")
                     || !cellPlan.RefDecisions.TryGetValue(child.FormId, out var verdict)
                     || verdict.Verdict != PlacedRefEmitVerdict.Emit)
                 {
@@ -216,7 +216,7 @@ public static class CellChildVerdictPlanner
     {
         foreach (var child in children)
         {
-            if (child.Type is not ("REFR" or "ACHR" or "ACRE")
+            if (child.Type is not ("REFR" or "ACHR" or "ACRE" or "PGRE")
                 || child.Model is not PlacedReference placed)
             {
                 continue; // NAVM etc. are not placed refs; models other than PlacedReference

@@ -241,6 +241,9 @@ public record RecordCollection
     /// <summary>Parsed Placeable Water (PWAT) records.</summary>
     public List<PlaceableWaterRecord> PlaceableWaters { get; init; } = [];
 
+    /// <summary>Parsed Tree (TREE) records.</summary>
+    public List<TreeRecord> Trees { get; init; } = [];
+
     /// <summary>Parsed Furniture (FURN) records.</summary>
     public List<FurnitureRecord> Furniture { get; init; } = [];
 
@@ -410,6 +413,7 @@ public record RecordCollection
         RadiationStages.Count + DehydrationStages.Count + HungerStages.Count + SleepDeprivationStages.Count +
         FormLists.Count + Activators.Count +
         Lights.Count + Doors.Count + Statics.Count + StaticCollections.Count + PlaceableWaters.Count +
+        Trees.Count +
         Furniture.Count +
         Packages.Count +
         GenericRecords.Count +
@@ -513,6 +517,7 @@ public record RecordCollection
             Statics = MergeList(Statics, overlay.Statics, r => r.FormId),
             StaticCollections = MergeList(StaticCollections, overlay.StaticCollections, r => r.FormId),
             PlaceableWaters = MergeList(PlaceableWaters, overlay.PlaceableWaters, r => r.FormId),
+            Trees = MergeList(Trees, overlay.Trees, r => r.FormId),
             Furniture = MergeList(Furniture, overlay.Furniture, r => r.FormId),
 
             // AI

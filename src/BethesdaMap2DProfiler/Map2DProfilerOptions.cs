@@ -48,8 +48,8 @@ internal sealed record Map2DProfilerOptions
           --scenario <name>           Run a scripted scenario after worldspace selection.
                                       Names: zoom-pan-zigzag, terrain-aggregate, zoom-into-cells,
                                       zoom-into-cells-heightmap, zoom-in-out, pan-stress,
-                                      topdown-still, topdown-interior, topdown-lighting,
-                                      topdown-speedtree.
+                                      topdown-still, topdown-worldmap, topdown-interior,
+                                      topdown-lighting, topdown-speedtree.
                                       Every topdown-* scenario implies --rendered-models.
           --rendered-models           Bring up the 3D viewer + enable the "Rendered models" overlay
                                       so the run is a TRUE full-path perf test (terrain tiles + the

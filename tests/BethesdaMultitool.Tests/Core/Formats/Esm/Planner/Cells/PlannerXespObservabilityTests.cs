@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
+using BethesdaMultitool.Core.Formats.Esm.Planner.References;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
@@ -24,8 +25,9 @@ public sealed class PlannerXespObservabilityTests
         var stats = new ConversionPipelineStats();
         var context = MakeContext(MakeEmptyPlan(), stats);
 
-        var sanitized = PlannedPlacedRefEncoder.SanitizeOverrideSubrecords(
-            [new EncodedSubrecord("XESP", xesp)], context);
+        var sanitized = OverrideSubrecordSanitizer.Sanitize(
+            [new EncodedSubrecord("XESP", xesp)], context,
+            PlannedChild("REFR", Dangling("XESP", missingParent)));
 
         Assert.DoesNotContain(sanitized, subrecord => subrecord.Signature == "XESP");
         Assert.Equal(1, stats.PlannerXespObserved);
@@ -86,24 +88,65 @@ public sealed class PlannerXespObservabilityTests
         Assert.Equal([sourceParent], stats.PlannerXespMissingParentFormIds);
     }
 
+    [Theory]
+    [InlineData("ACHR", "CREA", false)] // xex44 0x000834C0: captured NPC placement re-based to a creature
+    [InlineData("ACHR", "NPC_", true)]
+    [InlineData("ACRE", "CREA", true)]
+    [InlineData("REFR", "NPC_", false)]
+    public void Override_Name_With_Incompatible_Master_Base_Type_Is_Dropped(
+        string placedType, string baseType, bool expectKept)
+    {
+        const uint baseFormId = 0x0008156E;
+        var name = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(name, baseFormId);
+        var context = MakeContext(MakeEmptyPlan(), new ConversionPipelineStats(),
+            new Dictionary<uint, ParsedMainRecord>
+            {
+                [baseFormId] = new()
+                {
+                    Header = new MainRecordHeader
+                    {
+                        Signature = baseType, DataSize = 0, Flags = 0, FormId = baseFormId,
+                        Timestamp = 0, VcsInfo = 0, Version = 15
+                    },
+                    Offset = 0
+                }
+            });
+
+        var planned = PlanNameAgainstMaster(placedType, baseFormId, context);
+        var sanitized = OverrideSubrecordSanitizer.Sanitize(
+            [new EncodedSubrecord("NAME", name)], context, planned);
+
+        if (expectKept)
+        {
+            Assert.Contains(sanitized, subrecord => subrecord.Signature == "NAME");
+        }
+        else
+        {
+            // Master's own NAME survives the merge instead.
+            Assert.DoesNotContain(sanitized, subrecord => subrecord.Signature == "NAME");
+        }
+    }
+
     private static CellChildEncodeContext MakeContext(
         EmitPlan plan,
-        ConversionPipelineStats stats)
+        ConversionPipelineStats stats,
+        Dictionary<uint, ParsedMainRecord>? masterByFormId = null)
     {
-        var masterByFormId = new Dictionary<uint, ParsedMainRecord>();
+        masterByFormId ??= [];
         var masterRefFormIds = new HashSet<uint>();
-        var index = PlannerXespParentClassifier.BuildIndex(
+        var classifier = new PlannerXespParentClassifier(
             plan, masterByFormId, masterRefFormIds);
         return new CellChildEncodeContext(
             plan,
             masterByFormId,
-            [.. plan.EmittedFormIds],
+            [.. plan.EmittedFormIds, .. masterByFormId.Keys],
             new PluginBuildOptions(),
             stats,
             null,
             masterRefFormIds,
             null,
-            index);
+            classifier);
     }
 
     private static EmitPlan MakePlanWithCapturedParent(
@@ -196,4 +239,75 @@ public sealed class PlannerXespObservabilityTests
             }
         };
     }
+
+    /// <summary>
+    ///     Runs the real link planner over a one-child cell whose captured base is
+    ///     <paramref name="baseFormId" />, so the NAME type rule under test is the production
+    ///     one rather than a fixture restatement of it.
+    /// </summary>
+    private static RecordPlan PlanNameAgainstMaster(
+        string placedType, uint baseFormId, CellChildEncodeContext context)
+    {
+        const uint cellFormId = 0x000DADAF;
+        const uint refFormId = 0x0010F076;
+        var child = PlannedChild(placedType) with
+        {
+            FormId = refFormId,
+            Disposition = RecordDisposition.Override,
+            Model = new PlacedReference
+            {
+                FormId = refFormId,
+                RecordType = placedType,
+                BaseFormId = baseFormId
+            }
+        };
+        var cell = new CellPlan
+        {
+            CellFormId = cellFormId,
+            CellRecordPlan = child with { Type = "CELL", FormId = cellFormId, Model = null },
+            Context = new PcEsmCellContext { CellFormId = cellFormId, IsInterior = true },
+            PersistentChildren = ImmutableArray<RecordPlan>.Empty,
+            VwdChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = [child],
+            Emits = true,
+            RefDecisions = ImmutableDictionary<uint, PlacedRefDecision>.Empty
+        };
+
+        // The placed record's own type drives the check, so master must carry it under that
+        // signature (production reads it from the record the merge emits under).
+        var master = context.MasterByFormId.ToDictionary(kv => kv.Key, kv => kv.Value);
+        master[refFormId] = new ParsedMainRecord
+        {
+            Header = new MainRecordHeader { Signature = placedType, FormId = refFormId },
+            Offset = 0
+        };
+
+        var cells = PlacedRefLinkPlanner.Apply(
+            ImmutableDictionary<uint, CellPlan>.Empty.Add(cellFormId, cell),
+            master,
+            ImmutableDictionary<uint, uint>.Empty,
+            ImmutableHashSet<uint>.Empty,
+            ImmutableHashSet<uint>.Empty);
+
+        return cells[cellFormId].TemporaryChildren.Single();
+    }
+
+    private static ResolvedRef Dangling(string signature, uint original) => new()
+    {
+        FieldPath = FieldPath.IndexedMember(signature, 0, "Slot0"),
+        OriginalFormId = original,
+        Action = ResolvedRefAction.DropSubrecord,
+        Reason = "refr.override-subrecord-dangling",
+    };
+
+    private static RecordPlan PlannedChild(string type, params ResolvedRef[] references) => new()
+    {
+        Type = type,
+        Disposition = RecordDisposition.Override,
+        FormId = 0x0010F076,
+        References = [.. references],
+        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+    };
+
 }

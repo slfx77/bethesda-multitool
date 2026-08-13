@@ -28,6 +28,13 @@ public class SampleFileFixture
     public string? Xbox360Aug2010Esm { get; } =
         FindSamplePath(@"Sample\Full_Builds\Fallout New Vegas (Aug 22, 2010)\Diskuild_1.0.0.252\Data\FalloutNV.esm");
 
+    /// <summary>Fallout 3 PC ESM (Sample/ESM tree).</summary>
+    public string? Fallout3Esm { get; } = FindSamplePath(@"Sample\ESM\fallout_3\Fallout3.esm");
+
+    /// <summary>Fallout 3 PC Final full-build ESM (with BSAs alongside).</summary>
+    public string? Fallout3PcFinalEsm { get; } =
+        FindSamplePath(@"Sample\Full_Builds\Fallout 3 (PC Final)\Data\Fallout3.esm");
+
     /// <summary>Debug build memory dump.</summary>
     public string? DebugDump { get; } = FindSamplePath(@"Sample\MemoryDump\Fallout_Debug.xex.dmp");
 

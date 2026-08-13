@@ -477,7 +477,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         /// <summary>
         ///     Selects this route's shader pair, compiling it on first use. A no-op when the profile
         ///     is unchanged; a change drops the bytecode and every cached PSO. FAIL-SOFT on a compile
-        ///     failure (<see cref="GameShaderPair.TryCompile" /> logs and returns null): the route
+        ///     failure (<see cref="GameShaderPair.TryCompile(string)" /> logs and returns null): the route
         ///     goes inactive so callers keep the shared shaders, and the stored profile resets so a
         ///     later Set of the same pair retries the compile instead of no-oping on the equality
         ///     check.

@@ -71,9 +71,11 @@ public sealed class DecodedTerrainCellWaterMaskTests
     {
         var heights = new float[33, 33];
         for (var y = 0; y < 33; y++)
-        for (var x = 0; x < 33; x++)
         {
-            heights[y, x] = y * 10f; // y=0 → 0 (deep), y=32 → 320 (high ground)
+            for (var x = 0; x < 33; x++)
+            {
+                heights[y, x] = y * 10f; // y=0 → 0 (deep), y=32 → 320 (high ground)
+            }
         }
 
         var mask = DecodedTerrainCell.Decode(RampCell(heights)).GetHiResWaterMask(160f, 33);
@@ -159,9 +161,11 @@ public sealed class DecodedTerrainCellWaterMaskTests
     {
         var heights = new float[33, 33];
         for (var y = 0; y < 33; y++)
-        for (var x = 0; x < 33; x++)
         {
-            heights[y, x] = 500f;
+            for (var x = 0; x < 33; x++)
+            {
+                heights[y, x] = 500f;
+            }
         }
         heights[7, 11] = -42f;
 
@@ -172,9 +176,11 @@ public sealed class DecodedTerrainCellWaterMaskTests
     {
         var heights = new float[33, 33];
         for (var y = 0; y < 33; y++)
-        for (var x = 0; x < 33; x++)
         {
-            heights[y, x] = height;
+            for (var x = 0; x < 33; x++)
+            {
+                heights[y, x] = height;
+            }
         }
 
         return RampCell(heights);

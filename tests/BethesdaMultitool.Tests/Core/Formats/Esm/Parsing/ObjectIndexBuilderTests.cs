@@ -76,12 +76,14 @@ public sealed class ObjectIndexBuilderTests
     private static void BuildAndEnrich(
         List<CellRecord> cells,
         List<StaticCollectionRecord>? staticCollections = null,
-        List<PlaceableWaterRecord>? placeableWaters = null)
+        List<PlaceableWaterRecord>? placeableWaters = null,
+        List<TreeRecord>? trees = null)
     {
         ObjectIndexBuilder.BuildAndEnrich(
             [], [], [], [], [],
             staticCollections ?? [],
             placeableWaters ?? [],
+            trees ?? [],
             [], [], [], [], [], [],
             [], [], [], [], [], [],
             cells, [], new Dictionary<uint, string>(),

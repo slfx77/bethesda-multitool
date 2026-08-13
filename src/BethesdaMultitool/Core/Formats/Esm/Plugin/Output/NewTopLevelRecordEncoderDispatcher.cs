@@ -131,6 +131,7 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["LGTM"] = (model, _) => LgtmEncoder.EncodeNew((LightingTemplateRecord)model),
             ["WATR"] = (model, _) => WatrEncoder.EncodeNew((WaterRecord)model),
             ["PWAT"] = (model, _) => PwatEncoder.EncodeNew((PlaceableWaterRecord)model),
+            ["TREE"] = (model, _) => TreeEncoder.EncodeNew((TreeRecord)model),
             ["WTHR"] = (model, _) => WthrEncoder.EncodeNew((WeatherRecord)model),
             ["CLMT"] = (model, _) => ClmtEncoder.EncodeNew((ClimateRecord)model),
             // IMGS had a registry entry but no dispatcher row, so every *new* proto imagespace

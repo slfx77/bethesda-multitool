@@ -73,6 +73,9 @@ internal readonly record struct ParticleControllerTiming(
     }
 }
 
+/// <summary>One authored NiBoolData key. Bool tracks are steps — the value holds until the next key.</summary>
+internal readonly record struct ParticleBoolKey(float Time, bool Value);
+
 /// <summary>
 ///     One lossless NiFloatData rate key. Quadratic forward/backward tangents and TBC coefficients are
 ///     retained even while those two uncommon bases use the explicitly-labelled linear fallback below.
@@ -109,6 +112,21 @@ internal sealed class ParticleRateControllerDefinition
     public float? ConstantValue { get; init; }
 
     /// <summary>
+    ///     NiPSysEmitterCtlr's SECOND interpolator slot — the EmitterActive bool the engine
+    ///     evaluates alongside BirthRate. Sequences author the rate as a constant pose and gate the
+    ///     smoke/flash with this bool instead: NVNellisArtillery's Idle keeps BirthRate 2250 with
+    ///     EmitterActive FALSE, and only the Forward (fire) sequence pulses it true for ~0.1s.
+    ///     Ignoring it baked permanent full-rate smoke. Null = the binding supplied no bool (no
+    ///     gate), preserving prior behavior.
+    /// </summary>
+    public bool? EmitterActiveConstant { get; init; }
+
+    /// <summary>Stepwise EmitterActive keys when the bool interpolator carries NiBoolData. Takes
+    /// precedence over <see cref="EmitterActiveConstant" />; evaluated on the SAME mapped clock as
+    /// the rate keys (one controller, one pair of clocks).</summary>
+    public IReadOnlyList<ParticleBoolKey> EmitterActiveKeys { get; init; } = [];
+
+    /// <summary>
     ///     True for the load-time rest-state resolve's dormant verdict: the emitter is bound only
     ///     by activation-triggered NiControllerSequences (no idle-named autoplay), so at game
     ///     start it emits nothing. Carried on the definition so a future per-instance
@@ -138,10 +156,38 @@ internal sealed class ParticleRateControllerDefinition
         }
 
         localTime = ControllerTiming.Map(localTime);
+        if (!EmitterActiveAt(localTime))
+        {
+            return 0f;
+        }
+
         var value = Keys.Count > 0
             ? SampleKeys(localTime)
             : ConstantValue.GetValueOrDefault();
         return float.IsFinite(value) ? MathF.Max(0f, value) : 0f;
+    }
+
+    /// <summary>Steps through the EmitterActive track at the already-mapped controller time. No
+    /// authored bool at all means no gate — the rate alone decides, as before.</summary>
+    private bool EmitterActiveAt(float mappedTime)
+    {
+        if (EmitterActiveKeys.Count > 0)
+        {
+            var value = EmitterActiveKeys[0].Value;
+            foreach (var key in EmitterActiveKeys)
+            {
+                if (key.Time > mappedTime)
+                {
+                    break;
+                }
+
+                value = key.Value;
+            }
+
+            return value;
+        }
+
+        return EmitterActiveConstant ?? true;
     }
 
     private float SampleKeys(float time)

@@ -26,7 +26,7 @@ public sealed class PlanCellSectionBuilderParityTests
     {
         var plan = MakeEmptyPlan();
         var bytes = PlanCellSectionBuilder.BuildCellSection(
-            plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
+            CellPlanTestHarness.Settle(plan, new Dictionary<uint, ParsedMainRecord>()), new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
 
         Assert.Null(bytes);
     }
@@ -64,8 +64,9 @@ public sealed class PlanCellSectionBuilderParityTests
         };
 
         var stats = new ConversionPipelineStats();
+        var masters = new Dictionary<uint, ParsedMainRecord>();
         var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
-            plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions(), stats);
+            CellPlanTestHarness.Settle(plan, masters), masters, new PluginBuildOptions(), stats);
 
         Assert.Null(plannerBytes);
         Assert.Equal(1, stats.DropReasonCounts["cell.itm-override-suppressed"]);
@@ -120,7 +121,8 @@ public sealed class PlanCellSectionBuilderParityTests
         };
 
         var plannerResult = PlanCellSectionBuilder.BuildCellSectionCore(
-            plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
+            CellPlanTestHarness.Settle(plan, new Dictionary<uint, ParsedMainRecord>()),
+            new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
         var plannerBytes = plannerResult.SectionBytes;
 
         // Build the equivalent legacy child bytes via the same primitive path the planner uses.
@@ -188,7 +190,7 @@ public sealed class PlanCellSectionBuilderParityTests
         };
 
         var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
-            plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions { CompressRecords = false });
+            CellPlanTestHarness.Settle(plan, new Dictionary<uint, ParsedMainRecord>()), new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions { CompressRecords = false });
 
         // Build the equivalent legacy bytes by encoding the CELL through the same primitives.
         var encoded = new CellEncoder().Encode(cellModel);
@@ -451,9 +453,13 @@ public sealed class PlanCellSectionBuilderParityTests
             EmittedFormIds = emittedFormIds ?? ImmutableHashSet.Create(placed.FormId)
         };
 
+        // Settle through the real planner passes — retirement Stage H1 removed the
+        // writer-side fallbacks, so a plan must arrive with modes and verdicts. Fixtures
+        // that hand-authored a verdict keep it (the harness preserves preset decisions).
+        var masters = new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = master };
         return PlanCellSectionBuilder.BuildCellSection(
-            plan,
-            new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = master },
+            CellPlanTestHarness.Settle(plan, masters),
+            masters,
             new PluginBuildOptions(),
             stats);
     }

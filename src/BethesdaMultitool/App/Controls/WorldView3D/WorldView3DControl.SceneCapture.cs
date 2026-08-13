@@ -290,7 +290,21 @@ public sealed partial class WorldView3DControl
     ///     leaf-atlas mip rebuilds) and bake placeholder-white leaf cards into the frame.
     /// </summary>
     internal bool Profiler_IsReferenceStreamingQuiesced =>
-        _references?.LastStats is { } s && StreamingQuiescence.IsQuiesced(s, terrain: null, strict: true);
+        // Terrain is INCLUDED (null only when the layer is off, per the predicate's contract).
+        // It was previously passed as null, so captures fired while terrain tiles were still
+        // streaming — user-reported 2026-08-10 as "not fully loaded" across wide gallery shots.
+        _references?.LastStats is { } s && StreamingQuiescence.IsQuiesced(
+            s, terrain: _showTerrain ? _terrain?.LastStats : null, strict: true);
+
+    /// <summary>
+    ///     This frame's demand-set census for the capture completion gate (see
+    ///     <see cref="CaptureSceneCensus" /> — completion is a FIXPOINT over consecutive censuses,
+    ///     not a single quiescence sample). Disabled layers contribute nothing.
+    /// </summary>
+    internal CaptureSceneCensus Profiler_CaptureSceneCensus =>
+        CaptureSceneCensus.From(
+            _references?.LastStats,
+            _showTerrain ? _terrain?.LastStats : null);
 
     /// <summary>Profiler hook: set the day of the lunar cycle that drives the moon phase + orbit position
     /// (for headless night-sky captures used to calibrate the two-moon model against OpenMW).</summary>
@@ -721,7 +735,9 @@ public sealed partial class WorldView3DControl
                     if (captureWaterRingReserved)
                     {
                         _water.DeferStreamTailReservationRelease(WaterPassRingReservationBytes);
+#pragma warning disable S1854 // release-once latch: kept accurate so a later-added consumer cannot double-release the ring reservation
                         captureWaterRingReserved = false;
+#pragma warning restore S1854
                     }
 
                     // Same submerged-first partition as the live stream route (see
@@ -737,7 +753,9 @@ public sealed partial class WorldView3DControl
                     {
                         _references!.RenderBlendedDeferredBelowWater(
                             captureWaterProbe, _camera.Position.Z);
+#pragma warning disable S1854 // partition latch: the stream branch completes the at-or-above half inside RenderBlendedDeferredUnified, but the flag stays accurate so a later-added post-branch consumer cannot double-blend the submerged partition
                         captureWaterTransparencyPartitioned = true;
+#pragma warning restore S1854
                     }
 
                     _water.PrepareTransparencyStream(
@@ -749,8 +767,19 @@ public sealed partial class WorldView3DControl
                     }
 
                     _references!.RenderBlendedDeferredUnified(
-                        _waterStreamInterleave, captureWaterProbe, _camera.Position.Z);
+                        _waterStreamInterleave, captureWaterProbe, _camera.Position.Z,
+                        _water.StreamMaxQueuedSurfaceHeight);
                     _water.DrainAllTransparency();
+                    // Mirrors the live host (see WorldView3DControl.Frame.cs): draws wholly above
+                    // every queued surface issue after the final water drain, or the camera-cell
+                    // quad composites over them. A capture that ordered this differently from the
+                    // live frame would misreport the very bug it verifies.
+                    if (captureWaterProbe is not null)
+                    {
+                        _references!.RenderBlendedDeferredAboveAllWater(
+                            captureWaterProbe, _camera.Position.Z, _water.StreamMaxQueuedSurfaceHeight);
+                    }
+
                     _water.FinishTransparencyStream();
 
                     _water.SetFnvWater001Snapshot(null, 0, 0);
@@ -813,7 +842,9 @@ public sealed partial class WorldView3DControl
                 if (captureWaterRingReserved)
                 {
                     _ringBuffer12!.ReleaseTailReservation(WaterPassRingReservationBytes);
+#pragma warning disable S1854 // release-once latch: kept accurate so a later-added consumer cannot double-release the ring reservation
                     captureWaterRingReserved = false;
+#pragma warning restore S1854
                 }
 
                 if (_showWater && _water is not null && _references is not null)
@@ -1428,7 +1459,15 @@ public sealed partial class WorldView3DControl
         }
         else
         {
-            colorBandSchedule = game == Core.Games.BethesdaGame.FalloutNewVegas
+            // Label by what the SCHEDULER actually keys on — the SkyUpper column's authored
+            // HighNoon band (see ResolveWeatherBandBlend above) — not by game. FO3 records
+            // carrying HighNoon were mislabeled "classic-four-band" while actually being
+            // scheduled on the high-noon identity.
+            var skyUpperIndex = (int)WeatherColorType.SkyUpper;
+            var schedulerColor = weather is not null && skyUpperIndex < weather.Colors.Count
+                ? weather.Colors[skyUpperIndex]
+                : null;
+            colorBandSchedule = schedulerColor?.Bands.HighNoon.HasValue == true
                 ? "fnv-high-noon"
                 : "classic-four-band";
         }
@@ -2060,6 +2099,10 @@ public sealed partial class WorldView3DControl
                 ["belowWaterDraws"] = _references.LastBelowWaterBlendedDraws,
                 ["candidates"] = _references.LastPartitionedBlendedCandidates,
                 ["meanSurfaceHeight"] = float.IsFinite(partitionSurface) ? partitionSurface : null,
+                // Complement partition: draws issued after the final water drain because no queued
+                // surface can occlude them. Zero with visible water and smoke on screen means the
+                // above-all-water split did not run — the same signature that hid the below split.
+                ["aboveAllWaterDraws"] = _references.LastAboveWaterBlendedDraws,
             };
         }
         fields["speedTreeRuntimeLodEnabled"] =
@@ -2128,6 +2171,25 @@ public sealed partial class WorldView3DControl
             ["referenceMeshMissing"] = referenceStats?.ReferenceMeshMissing,
         };
 
+        // Fog lane for the horizon-seam A/B: skyHorizon (the dome's row-0 color, logged by the
+        // "[Capture] atmo" line) versus fogColor at fogAtFar coverage is the seam magnitude as a
+        // number instead of a screenshot judgment. fogAtFar mirrors fog.hlsli FogAmountAtDistance
+        // at dist == fogFar: q saturates to 1 there, so only the FNAM max-opacity cap lowers it.
+        var fogRange = MathF.Max(atmo.FogFar - atmo.FogNear, 1f);
+        var fogQAtFar = Math.Clamp((atmo.FogFar - atmo.FogNear) / fogRange, 0f, 1f);
+        var fogAtFar = MathF.Min(
+            MathF.Pow(fogQAtFar, MathF.Max(atmo.FogPower, 0.01f)),
+            Math.Clamp(atmo.FogMaxOpacity, 0f, 1f));
+        fields["fog"] = new Dictionary<string, object?>
+        {
+            ["color"] = Vec3(atmo.FogColor),
+            ["farColor"] = Vec3(atmo.FogFarColor),
+            ["near"] = atmo.FogNear,
+            ["far"] = atmo.FogFar,
+            ["power"] = atmo.FogPower,
+            ["amountAtFar"] = fogAtFar,
+        };
+
         RendererProfilerTrace.Event("capture-state", fields);
         Log.Info(
             "[Capture] parity particles={0}/{1} uvFrame={2}/{3} liveDraws={4} fallbacks={5} upload={6}B " +
@@ -2135,13 +2197,16 @@ public sealed partial class WorldView3DControl
             // returns fully opaque and reads much darker — indistinguishable from a shading bug
             // without it.
             "water={7}/{8} draws={9} nifPlanes={24} technique={10} reflection={23} " +
-            "belowWaterBlends={11}/{12}@{13} " +
+            "belowWaterBlends={11}/{12}@{13} aboveWaterBlends={25} " +
             // stream: entries queued / runs drawn / noise prepasses, then DROPPED — dropped > 0 is
             // always a defect (the drain died mid-frame and nearer water never rendered).
             "stream={14}e/{15}r/{16}p dropped={17} noiseOverflow={22} " +
             // residency: compare these across an A/B pair BEFORE comparing pixels. truncated > 0
             // means terrain cells were skipped, which alone turns water opaque.
-            "residency=q{18}/truncated{19}/texPend{20}/meshMissing{21}",
+            "residency=q{18}/truncated{19}/texPend{20}/meshMissing{21} " +
+            // fog: the terrain converges to fogColor with fogAtFar coverage at the fog far plane,
+            // so |skyHorizon - fogColor| * fogAtFar is the horizon-seam magnitude in the log.
+            "fogColor={26} fogNear={27} fogFar={28} fogPower={29} fogAtFar={30}",
             fields["particleCount"], fields["particleAuthoredCapacity"],
             fields["particleUvFrame"], fields["particleAtlasFrames"],
             fields["particleDraws"], fields["particleFallbacks"], fields["particleUploadBytes"],
@@ -2160,6 +2225,13 @@ public sealed partial class WorldView3DControl
             referenceStats?.TexturePendingResolves, referenceStats?.ReferenceMeshMissing,
             waterStats?.WaterNoiseSlotOverflows,
             fields["waterReflection"],
-            fields["nifWaterPlanes"]);
+            fields["nifWaterPlanes"],
+            _references?.LastAboveWaterBlendedDraws,
+            string.Create(CultureInfo.InvariantCulture,
+                $"({atmo.FogColor.X:0.00},{atmo.FogColor.Y:0.00},{atmo.FogColor.Z:0.00})"),
+            atmo.FogNear.ToString("0.#", CultureInfo.InvariantCulture),
+            atmo.FogFar.ToString("0.#", CultureInfo.InvariantCulture),
+            atmo.FogPower.ToString("0.##", CultureInfo.InvariantCulture),
+            fogAtFar.ToString("0.###", CultureInfo.InvariantCulture));
     }
 }

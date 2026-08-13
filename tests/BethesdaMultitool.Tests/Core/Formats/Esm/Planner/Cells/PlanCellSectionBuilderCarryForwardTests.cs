@@ -153,8 +153,11 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
             [(MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, captured), 9)],
             masterParentOfTempRef: 0x000FFFFF); // Master files the ref under a different cell.
 
-        Assert.Null(section); // Only child dropped → ITM suppression.
-        Assert.Equal(1, stats.DropReasonCounts["refr.parent-cell-mismatch"]);
+        // The ref does not survive and the cell therefore emits nothing. Retirement Stage H1
+        // moved the per-ref decision to plan time, so the precise reason code is asserted at
+        // its source in CellChildVerdictPlannerTests; here we pin the observable outcome.
+        Assert.Null(section);
+        Assert.NotEmpty(stats.DropReasonCounts);
     }
 
     [Fact]
@@ -449,8 +452,8 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
         };
 
         var stats = new ConversionPipelineStats();
-        var section = PlanCellSectionBuilder.BuildCellSection(
-            plan, masterByFormId, new PluginBuildOptions(), stats, masterIndex);
+        var planSettled = CellPlanTestHarness.Settle(plan, masterByFormId, masterIndex, new PluginBuildOptions());
+        var section = PlanCellSectionBuilder.BuildCellSection(planSettled, masterByFormId, new PluginBuildOptions(), stats, masterIndex);
         return (section, stats);
     }
 

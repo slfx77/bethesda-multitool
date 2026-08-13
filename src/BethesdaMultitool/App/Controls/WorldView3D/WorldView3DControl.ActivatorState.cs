@@ -11,7 +11,9 @@ public sealed partial class WorldView3DControl
 
     /// <summary>
     ///     Returns the resolved authored initial state used by the renderer: the REFR's own flag OR
-    ///     the already-resolved XESP parent chain. This intentionally ignores UI preview overrides.
+    ///     the already-resolved XESP parent chain. XSRF Imposter refs are NOT authored-hidden — the
+    ///     2026-08-10 census showed FNV's imposter population is the retail-rendered Vegas skyline
+    ///     set, not vantage-only content. This intentionally ignores UI preview overrides.
     /// </summary>
     internal bool IsReferenceAuthoredEnabled(PlacedReference reference) =>
         !reference.IsInitiallyDisabled &&

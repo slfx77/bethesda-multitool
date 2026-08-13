@@ -275,6 +275,13 @@ internal static class DmpGapRecoveryScanner
             return null;
         }
 
+        // Same blind-skip hazard as the main scanner: this walk skips candidate.Length bytes, so a
+        // torn header with a scribbled multi-MB DataSize would swallow the rest of the gap.
+        if (!RecordValidator.HasTrustworthyExtent(buffer, offset, 24, buffer.Length, xboxEndian, flags, sizeField))
+        {
+            return null;
+        }
+
         return new DmpGapRecoveryCandidate
         {
             Kind = DmpGapRecoveryCandidateKind.RawEsmRecord,

@@ -365,6 +365,22 @@ public sealed class RecordParser
             }
         }
 
+        // PGRE telemetry: captured mines are rare and virtual/unresolved cells die in the
+        // planner, so record which cell each one parented to — a silent orphan here IS the loss.
+        foreach (var cell in cells)
+        {
+            foreach (var placed in cell.PlacedObjects)
+            {
+                if (placed.RecordType == "PGRE")
+                {
+                    Logger.Instance.Info(
+                        "[PGRE] 0x{0:X8} parented to cell 0x{1:X8} ({2}{3})",
+                        placed.FormId, cell.FormId, cell.EditorId ?? "no-edid",
+                        cell.IsVirtual ? ", VIRTUAL — dies in planner" : string.Empty);
+                }
+            }
+        }
+
         EsmLandEnricher.EnrichLandRecordsWithCellWorldspaces(_context.ScanResult, cells);
         CellRecordHandler.AttachTerrainDataFromLandRecords(cells, _context.ScanResult);
 
@@ -456,6 +472,7 @@ public sealed class RecordParser
         var statics = _miscStaticObjects.ParseStatics();
         var staticCollections = _miscStaticObjects.ParseStaticCollections();
         var placeableWaters = _miscStaticObjects.ParsePlaceableWaters();
+        var trees = _miscStaticObjects.ParseTrees();
         Logger.Instance.Debug($"  [Semantic] Game data: {phaseSw.Elapsed} (16 types)");
 
         progressReporter?.ReportPhase(85, "Parsing generic records...");
@@ -463,11 +480,14 @@ public sealed class RecordParser
         var genericTypes = new[]
         {
             "MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR",
-            "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE",
+            "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN",
             "IDLM",
             // SCOL is parsed via the typed _miscStaticObjects.ParseStaticCollections() path.
             // PWAT likewise via ParsePlaceableWaters() — the generic path cannot recover its
             // parent WATR, which sits behind a pointer inside an embedded 8-byte struct.
+            // TREE likewise via ParseTrees(): its required SNAM (NiTPrimitiveArray) and CNAM
+            // (OBJ_TREE) are embedded structs larger than 8 bytes, which the generic reader
+            // renders as a placeholder string rather than walking.
             // CLMT is parsed via the typed _miscEnvironment.ParseClimate() path (atmosphere data).
             // Small PDB-defined types with no parity-relevant fields beyond identity.
             "IMGS", "GRAS", "AMEF",
@@ -546,7 +566,7 @@ public sealed class RecordParser
         var modelIndex = new Dictionary<uint, string>();
         ObjectIndexBuilder.BuildAndEnrich(
             statics, activators, doors, lights, furniture,
-            staticCollections, placeableWaters,
+            staticCollections, placeableWaters, trees,
             weapons, armor, ammo, consumables, miscItems, books,
             containers, keys, notes, weaponMods, sounds, genericRecords,
             cells, worldspaces, modelIndex, phaseSw);
@@ -641,6 +661,7 @@ public sealed class RecordParser
             Statics = statics,
             StaticCollections = staticCollections,
             PlaceableWaters = placeableWaters,
+            Trees = trees,
             Furniture = furniture,
 
             // AI
@@ -742,10 +763,10 @@ public sealed class RecordParser
             && RecordModel.EsmSchemas.IndexForGame(_context.Game) is { } enrichSchema)
         {
             phaseSw.Restart();
-            var trees = SchemaTreeEnricher.Enrich(_context, enrichSchema, SchemaTreeEnricher.ProfiledTypes);
-            result = result with { DecodedTreesByFormId = trees };
+            var decodedTrees = SchemaTreeEnricher.Enrich(_context, enrichSchema, SchemaTreeEnricher.ProfiledTypes);
+            result = result with { DecodedTreesByFormId = decodedTrees };
             Logger.Instance.Debug(
-                $"  [Semantic] Schema-tree enrichment ({_context.Game}): {trees.Count} tree(s) for " +
+                $"  [Semantic] Schema-tree enrichment ({_context.Game}): {decodedTrees.Count} tree(s) for " +
                 $"{string.Join("/", SchemaTreeEnricher.ProfiledTypes)} in {phaseSw.Elapsed}");
         }
 
@@ -1128,6 +1149,12 @@ public sealed class RecordParser
     public List<StaticCollectionRecord> ParseStaticCollections()
     {
         return _miscStaticObjects.ParseStaticCollections();
+    }
+
+    /// <summary>Parses all tree (TREE) records.</summary>
+    public List<TreeRecord> ParseTrees()
+    {
+        return _miscStaticObjects.ParseTrees();
     }
 
     /// <summary>Parses all furniture records.</summary>

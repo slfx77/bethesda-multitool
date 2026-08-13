@@ -61,7 +61,7 @@ internal sealed class RuntimeGenericReader(
 
         // Apply per-type shift if probed, then try per-record correction via BSStringT validation
         var shift = _typeShifts.TryGetValue(formType, out var s) ? s : 0;
-        shift = TryCorrectShift(entry, layout, shift, objectBase);
+        shift = TryCorrectShift(layout, shift, objectBase);
 
         var effectiveSize = layout.StructSize + Math.Max(shift, 0) + 8; // +8 headroom for shift correction
         var structData = _context.ReadBytes(objectBase, effectiveSize);
@@ -165,7 +165,7 @@ internal sealed class RuntimeGenericReader(
     ///     and return the corrected shift. This fixes ~5% of records where the uniform
     ///     per-type shift is wrong for an individual record.
     /// </summary>
-    private int TryCorrectShift(RuntimeEditorIdEntry entry, PdbTypeLayout layout, int typeShift, long objectBase)
+    private int TryCorrectShift(PdbTypeLayout layout, int typeShift, long objectBase)
     {
         // Find a BSStringT field to use as a validator (prefer cModel — higher success rate)
         var probeField = layout.Fields.FirstOrDefault(f => f is { Name: "cModel", Owner: "TESModel" })

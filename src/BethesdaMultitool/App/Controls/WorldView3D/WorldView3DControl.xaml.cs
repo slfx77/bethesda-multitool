@@ -316,6 +316,16 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private const int MaxTopDownFinalDimension = 2048;
 
     /// <summary>
+    ///     Smallest projected cell size (screen px per world cell) at which the top-down overlay still
+    ///     runs its terrain DEPTH pre-pass. Below this the view is a whole-worldspace overview where a
+    ///     cell is a handful of pixels, the pre-pass would admit every cell of the worldspace for a
+    ///     full-detail build, and the overlay could never reach streaming quiescence — see the gate in
+    ///     <c>WorldView3DControl.TopDown.cs</c> for the measurement. Matches the 2D map's own
+    ///     <c>TerrainAggregateScreenPxThreshold</c> so both switch to overview behaviour together.
+    /// </summary>
+    private const float TopDownTerrainDepthMinPixelsPerCell = 24f;
+
+    /// <summary>
     ///     In-flight top-down readback Task.Run body. Tracked so DisposeRenderResources can drain
     ///     it before tearing down the D3D12 device — the body waits on the frame fence and maps a
     ///     readback buffer, both of which would race a concurrent device dispose.

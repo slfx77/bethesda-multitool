@@ -528,9 +528,39 @@ internal sealed partial class MainWindow : Window, IDisposable
             // advance when frames render). Time-boxed: a permanently-missing asset can pin the counter.
             var quiesceTimer = Stopwatch.StartNew();
             var settleTimeout = TimeSpan.FromSeconds(_options.CaptureSettleTimeoutSeconds);
-            var quiesced = await StreamingQuiescence.PollAsync(
-                () => _worldView.Profiler_IsReferenceStreamingQuiesced,
-                settleTimeout, TimeSpan.FromMilliseconds(250));
+            // COMPLETION, not quiescence: the scene is done when a CLEAN census (no pending decode/
+            // upload/texture work, no truncated terrain draw) repeats UNCHANGED for 4 consecutive
+            // samples (~1s). Stability is the half a zero-counter check cannot provide — streaming
+            // EXPANDS the demand set (decoded radii admit more refs; arriving textures un-withhold
+            // submeshes that then stream their own textures), and a single-poll zero on the gap
+            // between waves baked half-streamed terrain into gallery captures (user 2026-08-10).
+            // The timeout is only a backstop for wedged states; on firing, lastDirt names exactly
+            // which terms never settled.
+            var quiesceTimerInterval = TimeSpan.FromMilliseconds(250);
+            var census = _worldView.Profiler_CaptureSceneCensus;
+            var streak = 0;
+            var lastDirt = "";
+            var quiesced = false;
+            while (quiesceTimer.Elapsed < settleTimeout)
+            {
+                await Task.Delay(quiesceTimerInterval);
+                var next = _worldView.Profiler_CaptureSceneCensus;
+                if (next.IsClean && next == census)
+                {
+                    if (++streak >= 4) { quiesced = true; break; }
+                }
+                else
+                {
+                    lastDirt = next.DescribeDirt(census);
+                    streak = 0;
+                }
+                census = next;
+            }
+            if (!quiesced && lastDirt.Length > 0)
+            {
+                Log.Error($"[Capture] scene never completed; unsettled terms: {lastDirt}");
+                Console.Error.WriteLine($"[Capture] unsettled terms: {lastDirt}");
+            }
 
             _scenario.Dispose();
             _scenario = null;

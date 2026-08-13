@@ -20,6 +20,19 @@ internal static class SampleBsaLocator
             Path.Combine("Sample", "Full_Builds", "Fallout New Vegas (PC Final)", "Data", "Fallout - Meshes.bsa"));
     }
 
+    /// <summary>
+    ///     The FO3 PC Final meshes BSA
+    ///     (Sample/Full_Builds/Fallout 3 (PC Final)/Data/Fallout - Meshes.bsa).
+    ///     The env-root probe uses an <c>fo3\</c> subdirectory because FO3's BSA file name
+    ///     collides with FNV's ("Fallout - Meshes.bsa").
+    /// </summary>
+    public static string ResolveFo3MeshesBsa()
+    {
+        return Resolve(
+            Path.Combine("fo3", "Fallout - Meshes.bsa"),
+            Path.Combine("Sample", "Full_Builds", "Fallout 3 (PC Final)", "Data", "Fallout - Meshes.bsa"));
+    }
+
     private static string Resolve(string fileName, string repoRelativePath)
     {
         var root = Environment.GetEnvironmentVariable("BETHESDA_TEST_DATA_ROOT");

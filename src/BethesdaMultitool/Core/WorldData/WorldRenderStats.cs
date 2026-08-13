@@ -97,6 +97,11 @@ internal sealed class WorldRenderStats
     internal bool ReferenceCullCacheHit { get; set; }
     internal bool ReferenceBatchesReused { get; set; }
 
+    /// <summary>First cull-cache clause that failed this frame (ReferenceRenderer12.CullCacheVeto).
+    /// Reported because "the cull cache missed" alone does not say WHICH invariant moved, and two
+    /// plausible-sounding culprits have already cost an experiment cycle apiece.</summary>
+    internal int ReferenceCullCacheVeto { get; set; }
+
     /// <summary>First reuse-gate clause that failed this frame (ReferenceRenderer12.BatchReuseBlocker).
     /// 0 = reused. The resolve+batch pass is the largest CPU item in the frame, so knowing WHY it
     /// re-runs is the difference between fixing it and guessing at it.</summary>
@@ -259,6 +264,7 @@ internal sealed class WorldRenderStats
         ReferenceCandidates = 0;
         ReferenceCulled = 0;
         ReferenceCullCacheHit = false;
+        ReferenceCullCacheVeto = 0;
         ReferenceBatchesReused = false;
         ReferenceBatchReuseBlocker = 0;
         ReferenceMeshMissing = 0;

@@ -59,8 +59,7 @@ internal static class WorldMapDataBuilder
         return candidate.FormId < existing.FormId;
     }
 
-    private static bool HasTerrain(CellRecord cell) =>
-        cell.Heightmap is not null ||
-        cell.LandVisualData?.HasAny == true ||
-        cell.RuntimeTerrainMesh is not null;
+    // One structural terrain predicate for the map layer — the grid-lookup tiebreak and the
+    // occupied-cell framing must agree on what "this cell has data" means.
+    private static bool HasTerrain(CellRecord cell) => WorldMapViewportMath.HasTerrainData(cell);
 }

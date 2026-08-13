@@ -121,6 +121,7 @@ public sealed class DmpRecordSource
             ["CDCK"] = c => c.CaravanDecks.Select(r => (r.FormId, (object)r)),
             ["FLST"] = c => c.FormLists.Select(r => (r.FormId, (object)r)),
             ["PWAT"] = c => c.PlaceableWaters.Select(r => (r.FormId, (object)r)),
+            ["TREE"] = c => c.Trees.Select(r => (r.FormId, (object)r)),
             // Tier 5d — last ordinary top-level types off the legacy encode path.
             ["CLMT"] = c => c.Climate.Select(r => (r.FormId, (object)r)),
             ["GRAS"] = c => c.Grasses.Select(r => (r.FormId, (object)r)),

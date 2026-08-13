@@ -345,6 +345,13 @@ public sealed class FnvWater001SourceContractTests
             "_references?.RenderBlendedDeferredUnified(",
             "streamWaterProbe",
             "_water.DrainAllTransparency();",
+            // The above-all-water partition draws AFTER the final drain: no queued surface can
+            // occlude those draws, and water writes no depth, so a surface issued after them (the
+            // camera-cell quad's centroid sorts nearer than almost everything) would composite on
+            // top — the "cell water renders over smoke standing above it" defect. It must run
+            // before FinishTransparencyStream, which is allowed to reset the frame's queued-plane
+            // state.
+            "_references?.RenderBlendedDeferredAboveAllWater(",
             "_water.FinishTransparencyStream();",
             "surface.RestoreWaterOpaqueSnapshot(cmd);",
             "surface.RestoreOpaqueDepthSnapshot(cmd);");
@@ -369,6 +376,10 @@ public sealed class FnvWater001SourceContractTests
             "_references!.RenderBlendedDeferredUnified(",
             "captureWaterProbe",
             "_water.DrainAllTransparency();",
+            // Same above-all-water tail pass as the live host — a capture that let the camera-cell
+            // water quad composite over above-surface smoke would misreport the very bug it
+            // verifies.
+            "_references!.RenderBlendedDeferredAboveAllWater(",
             "_water.FinishTransparencyStream();",
             "target.RestoreWaterOpaqueSnapshot(cmd);");
 
@@ -377,6 +388,22 @@ public sealed class FnvWater001SourceContractTests
         var export = SourceContract.ReadAppSource("WorldView3DControl.Export3D.cs");
         Assert.Contains("_references.SetTransparencyStreamActive(false);", export,
             StringComparison.Ordinal);
+
+        // The legacy split entry points must pass the queued-water plane EXPLICITLY as NaN:
+        // IsWhollyAboveAllWater(NaN) is pinned false, so the above-all-water class stays EMPTY on
+        // the legacy path and NotWhollyBelow keeps its full legacy meaning. Before this pin the
+        // inertness depended on a silent parameter default propagating through two call layers —
+        // a finite plane added later would make the legacy path DROP its wholly-above draws
+        // (they are only issued by the stream hosts' post-drain pass).
+        var legacySplitSource = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "ReferenceRenderer12.cs");
+        SourceContract.AssertOrder(
+            legacySplitSource,
+            "public void RenderBlendedDeferredBelowWater(",
+            "maxQueuedWaterHeight: float.NaN);",
+            "public void RenderBlendedDeferredAtOrAboveWater(",
+            "maxQueuedWaterHeight: float.NaN);");
 
         // Water opens the handed-off reservation lazily: after the blended capacity plan (first
         // drained run) and unconditionally at finish/abandon.
@@ -414,10 +441,10 @@ public sealed class FnvWater001SourceContractTests
         var references = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
-        Assert.Contains(
-            "_lastBuildStreamActive != _transparencyStreamActive ? BatchReuseBlocker.StreamRouting",
+        SourceContract.AssertOrder(
             references,
-            StringComparison.Ordinal);
+            "if (_lastBuildStreamActive != _transparencyStreamActive)",
+            "return BatchReuseBlocker.StreamRouting;");
         Assert.Contains("_lastBuildStreamActive = _transparencyStreamActive;", references,
             StringComparison.Ordinal);
     }
@@ -486,7 +513,8 @@ public sealed class FnvWater001SourceContractTests
             export,
             "_water.HasVisibleWaterToPartition(cylinder)",
             "_references.RenderBlendedDeferredBelowWater(_water, _camera.Position.Z);",
-            "_water.Render(viewProj, cylinder);",
+            // Pinned clock (static-export ruling 2026-08-10); the ORDER around water is the contract.
+            "_water.RenderAtTime(viewProj, cylinder, default, 0f, isPerspectiveProjection: false);",
             "_references.RenderBlendedDeferredAtOrAboveWater(_water, _camera.Position.Z);");
 
         var headless = SourceContract.ReadSource(
@@ -601,7 +629,8 @@ public sealed class FnvWater001SourceContractTests
             topDown,
             "_water.SetNifWaterPlanes(",
             "_water.SetWaterReflection(null, 0, 0)",
-            "_water.Render(viewProj, cylinder)");
+            // Pinned clock (static-2D-map ruling 2026-08-10); the unbind-before-draw ORDER is the contract.
+            "_water.RenderAtTime(viewProj, cylinder, default, 0f");
 
         // Nobody may "fix" this later by binding the live SRV with corrected dimensions: the target
         // itself is the wrong image for a parallel projection, not merely the wrong scale.

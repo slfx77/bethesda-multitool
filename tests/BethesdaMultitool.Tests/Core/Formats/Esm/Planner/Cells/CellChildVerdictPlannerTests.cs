@@ -23,6 +23,7 @@ public sealed class CellChildVerdictPlannerTests
     private const uint MasterStatBaseId = 0x000A2001;
     private const uint MasterNpcBaseId = 0x000A3001;
     private const uint MasterCreatureBaseId = 0x000A4001;
+    private const uint MasterProjBaseId = 0x000A5001;
     private const uint NewRefId = 0x01000901;
     private const uint ActorRefId = 0x01000AAA;
     private const uint MasterRefId = 0x000B0001;
@@ -207,6 +208,32 @@ public sealed class CellChildVerdictPlannerTests
         var verdict = cells[CellId].RefDecisions[NewRefId];
         Assert.Equal(PlacedRefEmitVerdict.Drop, verdict.Verdict);
         Assert.Equal("refr.dangling-base", verdict.DropReason);
+    }
+
+    [Fact]
+    public void New_Pgre_With_Master_Proj_Base_Gets_Emit_Verdict()
+    {
+        // Captured placed grenades (mines) ride the placed-ref pipeline since 2026-08-10.
+        var placed = Ref(NewRefId, MasterProjBaseId) with { RecordType = "PGRE" };
+        var cells = Apply(MakeCell([NewChild("PGRE", NewRefId, placed)]));
+
+        var verdict = cells[CellId].RefDecisions[NewRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Emit, verdict.Verdict);
+        Assert.Equal(MasterProjBaseId, verdict.FinalBaseFormId);
+        Assert.Equal(9, verdict.TargetGroupType);
+    }
+
+    [Fact]
+    public void New_Pgre_With_NonProj_Base_Is_Type_Mismatch_Dropped()
+    {
+        // PGRE may only reference PROJ bases (all 174 retail PGREs do); a STAT base is a
+        // capture artifact and must not emit.
+        var placed = Ref(NewRefId, MasterStatBaseId) with { RecordType = "PGRE" };
+        var cells = Apply(MakeCell([NewChild("PGRE", NewRefId, placed)]));
+
+        var verdict = cells[CellId].RefDecisions[NewRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Drop, verdict.Verdict);
+        Assert.Equal("refr.base-type-mismatch", verdict.DropReason);
     }
 
     [Fact]
@@ -638,7 +665,8 @@ public sealed class CellChildVerdictPlannerTests
         {
             [MasterStatBaseId] = MakeMasterRecord("STAT", MasterStatBaseId),
             [MasterNpcBaseId] = MakeMasterRecord("NPC_", MasterNpcBaseId),
-            [MasterCreatureBaseId] = MakeMasterRecord("CREA", MasterCreatureBaseId)
+            [MasterCreatureBaseId] = MakeMasterRecord("CREA", MasterCreatureBaseId),
+            [MasterProjBaseId] = MakeMasterRecord("PROJ", MasterProjBaseId)
         };
         var cells = ImmutableDictionary.CreateBuilder<uint, CellPlan>();
         foreach (var cellPlan in cellPlans)

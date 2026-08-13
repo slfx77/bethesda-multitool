@@ -51,9 +51,8 @@ public sealed class WastelandNvExplicitWaterHeightTests(SampleFileFixture sample
         var index = WorldSpatialIndex.BuildFor3D(
             data, cells, worldspace.DefaultWaterHeight, worldspace.WaterFromParentWorldspace);
 
-        var water = index.WaterCells.SingleOrDefault(w => w.Key == (14, 7));
-        Assert.NotNull(water);
-        Assert.Equal(2600f, water!.Height, 1);
+        var water = Assert.Single(index.WaterCells, w => w.Key == (14, 7));
+        Assert.Equal(2600f, water.Height, 1);
     }
 
     private static WorldViewData EmptyWorldViewData()

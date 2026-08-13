@@ -607,10 +607,11 @@
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*" MinWidth="400" />
                   <ColumnDefinition Width="8" />
-                  <ColumnDefinition Width="520" MinWidth="380" />
+                  <ColumnDefinition x:Name="WorldRightPanelColumn" Width="520" MinWidth="380" />
                 </Grid.ColumnDefinitions>
 
-                <toolkit:GridSplitter Grid.Column="1" Style="{StaticResource ResizableSplitterStyle}" />
+                <toolkit:GridSplitter x:Name="WorldRightSplitter" Grid.Column="1"
+                                      Style="{StaticResource ResizableSplitterStyle}" />
 
                 <!--  Left column hosts BOTH views; visibility swapped by WorldViewMode_SelectionChanged  -->
                 <local:WorldMapControl x:Name="WorldMapControl" Grid.Column="0"
@@ -625,19 +626,34 @@
                       ACTIVE viewer's settings expanders (content swapped on the 2D/3D view-mode change);
                       Inspection holds the object/cell detail and is auto-selected on click/pick; Export
                       (3D only) hosts the 3D viewer's export options + Export button.  -->
-              <Grid Grid.Column="2" Padding="12,0,0,0">
+              <Grid x:Name="WorldRightPanelContent" Grid.Column="2" Padding="12,0,0,0">
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <SelectorBar x:Name="WorldPanelSelector" Grid.Row="0" Margin="0,0,0,8"
-                             AutomationProperties.Name="World panel sections"
-                             SelectionChanged="WorldPanelSelector_SelectionChanged">
-                  <SelectorBarItem x:Name="WorldPanelSettingsItem" Text="Settings" />
-                  <SelectorBarItem x:Name="WorldPanelInspectionItem" Text="Inspection" />
-                  <SelectorBarItem x:Name="WorldPanelExportItem" Text="Export" />
-                </SelectorBar>
+                <Grid Grid.Row="0" Margin="0,0,0,8">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+
+                  <SelectorBar x:Name="WorldPanelSelector" Grid.Column="0"
+                               AutomationProperties.Name="World panel sections"
+                               SelectionChanged="WorldPanelSelector_SelectionChanged">
+                    <SelectorBarItem x:Name="WorldPanelSettingsItem" Text="Settings" />
+                    <SelectorBarItem x:Name="WorldPanelInspectionItem" Text="Inspection" />
+                    <SelectorBarItem x:Name="WorldPanelExportItem" Text="Export" />
+                  </SelectorBar>
+
+                  <Button x:Name="CollapseWorldPanelButton" Grid.Column="1"
+                          Margin="4,2,0,0"
+                          Style="{StaticResource PanelCollapseButtonStyle}"
+                          ToolTipService.ToolTip="Collapse the world settings panel"
+                          AutomationProperties.Name="Collapse world settings panel">
+                    <FontIcon Glyph="&#xE76C;" FontSize="12" />
+                  </Button>
+                </Grid>
 
                 <ScrollViewer x:Name="WorldSettingsHost" Grid.Row="1"
                               VerticalScrollBarVisibility="Auto">
@@ -715,6 +731,19 @@
                   <ContentPresenter x:Name="WorldExportPresenter" />
                 </ScrollViewer>
               </Grid>
+
+              <!--  Collapsed strip: shares the column with the panel content, only one is visible.  -->
+              <Border x:Name="WorldRightCollapsedStrip" Grid.Column="2"
+                      Margin="12,0,0,0"
+                      Style="{StaticResource CollapsedPanelStripStyle}"
+                      Visibility="Collapsed">
+                <Button x:Name="ExpandWorldPanelButton"
+                        Style="{StaticResource PanelExpandButtonStyle}"
+                        ToolTipService.ToolTip="Expand the world settings panel"
+                        AutomationProperties.Name="Expand world settings panel">
+                  <FontIcon Glyph="&#xE76B;" FontSize="12" />
+                </Button>
+              </Border>
               </Grid>
             </Grid>
           </Grid>
@@ -759,18 +788,20 @@
             <!--  Main NPC browser content  -->
             <Grid x:Name="NpcBrowserContent" Visibility="Collapsed">
               <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="280" MinWidth="260" />
+                <ColumnDefinition x:Name="NpcListColumn" Width="280" MinWidth="260" />
                 <ColumnDefinition Width="8" />
                 <ColumnDefinition Width="*" MinWidth="320" />
                 <ColumnDefinition Width="8" />
-                <ColumnDefinition Width="300" MinWidth="280" />
+                <ColumnDefinition x:Name="NpcSidePanelColumn" Width="300" MinWidth="280" />
               </Grid.ColumnDefinitions>
 
-              <toolkit:GridSplitter Grid.Column="1" Style="{StaticResource ResizableSplitterStyle}" />
-              <toolkit:GridSplitter Grid.Column="3" Style="{StaticResource ResizableSplitterStyle}" />
+              <toolkit:GridSplitter x:Name="NpcLeftSplitter" Grid.Column="1"
+                                    Style="{StaticResource ResizableSplitterStyle}" />
+              <toolkit:GridSplitter x:Name="NpcRightSplitter" Grid.Column="3"
+                                    Style="{StaticResource ResizableSplitterStyle}" />
 
               <!--  Left: NPC list with search  -->
-              <Grid Grid.Column="0">
+              <Grid x:Name="NpcListPanelContent" Grid.Column="0">
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
@@ -778,11 +809,24 @@
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <TextBox x:Name="NpcSearchBox" Grid.Row="0"
-                         PlaceholderText="Search NPCs..."
-                         AutomationProperties.Name="Search NPCs"
-                         TextChanged="NpcSearchBox_TextChanged"
-                         Margin="0,0,0,4" />
+                <Grid Grid.Row="0" Margin="0,0,0,4">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+
+                  <TextBox x:Name="NpcSearchBox" Grid.Column="0"
+                           PlaceholderText="Search NPCs..."
+                           AutomationProperties.Name="Search NPCs"
+                           TextChanged="NpcSearchBox_TextChanged" />
+                  <Button x:Name="CollapseNpcListPanelButton" Grid.Column="1"
+                          Margin="4,0,0,0"
+                          Style="{StaticResource PanelCollapseButtonStyle}"
+                          ToolTipService.ToolTip="Collapse the actor list panel"
+                          AutomationProperties.Name="Collapse actor list panel">
+                    <FontIcon Glyph="&#xE76B;" FontSize="12" />
+                  </Button>
+                </Grid>
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
                   <CheckBox x:Name="NpcNamedOnlyCheckBox"
                             Content="Named only" IsChecked="True"
@@ -831,6 +875,18 @@
                 </StackPanel>
               </Grid>
 
+              <!--  Collapsed strip: shares the column with the actor list, only one is visible.  -->
+              <Border x:Name="NpcListCollapsedStrip" Grid.Column="0"
+                      Style="{StaticResource CollapsedPanelStripStyle}"
+                      Visibility="Collapsed">
+                <Button x:Name="ExpandNpcListPanelButton"
+                        Style="{StaticResource PanelExpandButtonStyle}"
+                        ToolTipService.ToolTip="Expand the actor list panel"
+                        AutomationProperties.Name="Expand actor list panel">
+                  <FontIcon Glyph="&#xE76C;" FontSize="12" />
+                </Button>
+              </Border>
+
               <!--  Center: 3D model viewer (WebView2)  -->
               <Grid Grid.Column="2"
                     Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
@@ -843,9 +899,22 @@
               </Grid>
 
               <!--  Right: Controls panel  -->
-              <ScrollViewer Grid.Column="4"
-                            VerticalScrollBarVisibility="Auto"
-                            Padding="8,0,0,0">
+              <Grid x:Name="NpcSidePanelContent" Grid.Column="4" Margin="8,0,0,0">
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Button x:Name="CollapseNpcSidePanelButton" Grid.Row="0"
+                        HorizontalAlignment="Right"
+                        Style="{StaticResource PanelCollapseButtonStyle}"
+                        ToolTipService.ToolTip="Collapse the actor controls panel"
+                        AutomationProperties.Name="Collapse actor controls panel">
+                  <FontIcon Glyph="&#xE76C;" FontSize="12" />
+                </Button>
+
+                <ScrollViewer Grid.Row="1"
+                              VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="12">
 
                   <!--  NPC info  -->
@@ -933,7 +1002,21 @@
                              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
 
                 </StackPanel>
-              </ScrollViewer>
+                </ScrollViewer>
+              </Grid>
+
+              <!--  Collapsed strip: shares the column with the controls panel, only one is visible.  -->
+              <Border x:Name="NpcSideCollapsedStrip" Grid.Column="4"
+                      Margin="8,0,0,0"
+                      Style="{StaticResource CollapsedPanelStripStyle}"
+                      Visibility="Collapsed">
+                <Button x:Name="ExpandNpcSidePanelButton"
+                        Style="{StaticResource PanelExpandButtonStyle}"
+                        ToolTipService.ToolTip="Expand the actor controls panel"
+                        AutomationProperties.Name="Expand actor controls panel">
+                  <FontIcon Glyph="&#xE76B;" FontSize="12" />
+                </Button>
+              </Border>
             </Grid>
           </Grid>
         </controls:TabViewItem>

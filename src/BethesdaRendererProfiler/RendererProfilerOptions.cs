@@ -186,9 +186,12 @@ internal sealed record RendererProfilerOptions
     internal int CaptureHeight { get; init; } = 480;
 
     /// <summary>
-    ///     Maximum seconds a one-shot perspective capture waits for reference streaming to quiesce.
+    ///     Maximum seconds a one-shot perspective capture waits for reference AND terrain streaming
+    ///     to quiesce (sustained for 4 consecutive polls). 120 because the gate now includes terrain
+    ///     and a decoded-mesh cache version bump makes the first capture after it a full cold decode;
+    ///     the timeout is FATAL (exit 1), so generosity costs wall-clock only on broken scenes.
     /// </summary>
-    internal int CaptureSettleTimeoutSeconds { get; init; } = 60;
+    internal int CaptureSettleTimeoutSeconds { get; init; } = 120;
 
     /// <summary>Canonical named same-process acceptance scenario, or null for the legacy modes.</summary>
     internal string? ScenarioName { get; init; }

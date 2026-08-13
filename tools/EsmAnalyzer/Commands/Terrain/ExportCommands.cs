@@ -14,7 +14,7 @@ public static class ExportCommands
 
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var worldspaceOption = new Option<string?>("-w", "--worldspace")
-        { Description = "Worldspace name or FormID (default: WastelandNV)" };
+        { Description = "Worldspace EditorID or FormID, matched against the file (default: WastelandNV, else Wasteland)" };
         var outputOption = new Option<string>("-o", "--output")
         { Description = "Output directory", DefaultValueFactory = _ => "worldmap_export" };
         var scaleOption = new Option<int>("-s", "--scale")

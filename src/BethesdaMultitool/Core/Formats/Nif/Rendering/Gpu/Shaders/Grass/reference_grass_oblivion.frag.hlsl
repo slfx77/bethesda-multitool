@@ -20,13 +20,13 @@
 // by (diffuse PLUS ambient). No uniform, constant or profile field can turn a multiply into an add,
 // which is precisely why grass needs its own shader rather than another parameter.
 //
-// ALPHA IS DELIBERATELY UNCHANGED FROM THE SHARED PATH. Retail binarizes the mask and multiplies a
-// smooth distance envelope; we keep the shared alpha test plus material alpha and leave the
-// envelope to the viewer's existing CPU hard end. That preserves the soft blade silhouettes the
-// user validated against the oracles on 2026-07-26 — this shader changes LIGHTING ONLY. (The
-// 2026-07-25 alpha-to-coverage reroute, which did change silhouettes, was reverted; the binary
-// cutout above is real but is not what made grass read as "a couple triangles with harsh cutoffs",
-// and re-litigating it belongs after the lighting is confirmed.)
+// ALPHA: the shared alpha test plus material alpha is kept (NOT retail's binary cutout — the
+// 2026-07-25 alpha-to-coverage reroute was reverted on 2026-07-26 after retail in-game oracles
+// showed soft blade silhouettes; do not re-introduce A2C). Retail's `mul r0.w, r0.w, a5.w`
+// (GRASS2002.pso line 2670 of the disassembly; GRASS2003-2008 carry the same closing multiply at
+// lines 2707/2742/2790/2918/3051/3184) IS now reproduced: the VS's two-sided distance envelope
+// (vGrassDistanceFade, retail oT5.w) multiplies the BLENDED output alpha below, hiding the hard-end
+// boundary that the CPU cull (kept, 3000 units) still enforces for the draw count.
 
 Texture2D    textures[]   : register(t0, space1);
 SamplerState sDiffuse     : register(s0);
@@ -47,6 +47,8 @@ struct PSInput
     nointerpolation float4 vTextureState : TEXCOORD4;
     nointerpolation uint4  vTexIndices   : TEXCOORD5;
     float3 vWorldPos : TEXCOORD6;
+    // Retail oT5.w — the VS two-sided distance envelope (reference_grass_oblivion.vert.hlsl).
+    float vGrassDistanceFade : TEXCOORD7;
 };
 
 bool PassAlphaTest(float alpha, float threshold, float functionId)
@@ -91,6 +93,7 @@ float4 main(PSInput input) : SV_Target
 
     // GRASS2002's `add r1.xyz, r1, a4` then `mad r0.xyz, r1, r0, ...`.
     float3 lit = sample.rgb * (input.vGrassDiffuse + input.vGrassAmbient);
-    float outAlpha = saturate(sample.a * input.vAlphaState.z);
+    // GRASS2002's `mul r0.w, r0.w, a5.w` — the distance envelope multiplies the blended alpha.
+    float outAlpha = saturate(sample.a * input.vAlphaState.z) * saturate(input.vGrassDistanceFade);
     return float4(ApplyFog(lit, input.vWorldPos), outAlpha);
 }

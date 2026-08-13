@@ -30,12 +30,6 @@ public record ImageSpaceRecord
     /// <summary>Tint color and amount (TNAM, 16 bytes / 4 floats). Optional.</summary>
     public ImageSpaceTint? Tint { get; init; }
 
-    /// <summary>
-    ///     Classic FO3/FNV fade color retained from DNAM. The 132-byte layout omits this block and
-    ///     is semantically normalized to the recovered manager default (1,1,1,0).
-    /// </summary>
-    public ImageSpaceFade? Fade { get; init; }
-
     /// <summary>Depth-of-field parameters (DNAM, variable). Optional.</summary>
     public IReadOnlyList<float>? DepthOfField { get; init; }
 
@@ -176,19 +170,16 @@ public record ImageSpaceTint
     public float Blue { get; init; }
 }
 
-/// <summary>Classic DNAM fade block; absent old layouts carry the recovered neutral default.</summary>
-public sealed record ImageSpaceFade
-{
-    public bool IsAuthored { get; init; }
-    public float Red { get; init; } = 1f;
-    public float Green { get; init; } = 1f;
-    public float Blue { get; init; } = 1f;
-    public float Amount { get; init; }
-}
-
-/// <summary>Semantic projection of one classic 132/148/152-byte IMGS DNAM payload.</summary>
+/// <summary>
+///     Semantic projection of one FO3/FNV 132/148/152-byte IMGS DNAM payload.
+///     <para>
+///         There is deliberately no fade block: the xEdit FO3/FNV IMGS definition has none, and the
+///         previous <c>ImageSpaceFade</c> was decoded from the four dwords past the cinematic tail —
+///         the mask plus the record's uninitialized engine stack. Removed 2026-08-11; it had no
+///         consumer outside the parser, model and its own test.
+///     </para>
+/// </summary>
 public sealed record ImageSpaceClassicData(
     ImageSpaceHdr Hdr,
     ImageSpaceCinematic Cinematic,
-    ImageSpaceTint Tint,
-    ImageSpaceFade Fade);
+    ImageSpaceTint Tint);

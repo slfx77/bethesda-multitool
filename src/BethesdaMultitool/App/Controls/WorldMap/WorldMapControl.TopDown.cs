@@ -314,6 +314,10 @@ public sealed partial class WorldMapControl
         {
             outcome = $"error:{ex.GetType().Name}";
             Map2DProfilerTrace.Event("topdown-error", ex.Message);
+            // The trace gate is often off in the real app; route through the persistent fault
+            // logger too so a Win2D device-lost in the overlay's CreateFromBytes apply (this
+            // continuation resumes on the UI thread) is diagnosable post-mortem.
+            LogUiThreadFault("TopDownOverlayApply", ex);
         }
         finally
         {

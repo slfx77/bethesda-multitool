@@ -315,13 +315,19 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
 
         GpuRootSignature12.SetGraphicsBindlessTables(cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
 
+        // FO3/FNV take sky_geo.frag.hlsl's 3-row Horizon->SkyLower->SkyUpper fallback ramp — the row
+        // mapping is grounded in FNV's Atmosphere::Update pBlendColor stores (atmosphere_decompiled.txt,
+        // asm 0x8246884C-0x82468924). Every other game keeps the 2-row fallback bit-identical, so the
+        // gate travels per draw in the CB's uTexIndex.y lane (same pattern as the uScrollMode.w branch).
+        var fnvFallbackHorizonRamp = game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas;
+
         // The procedural dome is strictly a missing-asset fallback. An authored Atmosphere.nif owns the
         // background whenever one was decoded, including its non-linear vertex blend bands.
         if (!_layers.Any(static layer => layer.Mode == 0))
         {
             DrawMesh(cmd, frameIndex, viewProj, camPos, _fallbackVerts, _fallbackIndices,
                 mode: 0, scale: TargetRadius, fallbackHorizon, 1f, Vector2.Zero, NoTexture,
-                skyUpper, skyLower, skyHorizon, authoredAtmosphere: false);
+                skyUpper, skyLower, skyHorizon, authoredAtmosphere: false, fnvFallbackHorizonRamp);
         }
 
         // Real atmosphere + stars + clouds geometry.
@@ -411,7 +417,7 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
             }
             DrawMesh(cmd, frameIndex, viewProj, camPos, layer.Vertices, layer.Indices,
                 layer.Mode, TargetRadius, tint, param, scroll, layer.TexIndex,
-                skyUpper, skyLower, skyHorizon, layer.HasAuthoredBlendWeights);
+                skyUpper, skyLower, skyHorizon, layer.HasAuthoredBlendWeights, fnvFallbackHorizonRamp);
         }
     }
 
@@ -421,7 +427,7 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         ID3D12GraphicsCommandList cmd, int frameIndex, Matrix4x4 viewProj, Vector3 camPos,
         SkyVertex[] verts, ushort[] indices, int mode, float scale, Vector3 tint, float param,
         Vector2 scroll, uint texIndex, Vector3 skyUpper, Vector3 skyLower, Vector3 skyHorizon,
-        bool authoredAtmosphere)
+        bool authoredAtmosphere, bool fnvFallbackHorizonRamp)
     {
         var vbByteCount = (uint)verts.Length * VertexStride;
         if (!_ringBuffer.TryAllocate(frameIndex, vbByteCount, out var vbAlloc, alignment: 4)) return;
@@ -447,6 +453,7 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
             TintParam = new Vector4(tint, param),
             ScrollMode = new Vector4(scroll, mode, authoredAtmosphere ? 1f : 0f),
             TexIndex = texIndex,
+            FallbackRampFlag = fnvFallbackHorizonRamp ? 1u : 0u,
             SkyUpper = new Vector4(skyUpper, 1f),
             SkyLower = new Vector4(skyLower, 1f),
             SkyHorizon = new Vector4(skyHorizon, 1f),
@@ -581,8 +588,8 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         public Vector4 CamPosScale;  // xyz cam, w scale
         public Vector4 TintParam;    // rgb tint, a fade/opacity
         public Vector4 ScrollMode;   // xy scroll, z mode, w unused
-        public uint TexIndex;        // uint4.x
-        public uint Pad0;
+        public uint TexIndex;         // uint4.x
+        public uint FallbackRampFlag; // uint4.y — 1 = FO3/FNV 3-row fallback horizon ramp
         public uint Pad1;
         public uint Pad2;
         public Vector4 SkyUpper;     // recovered SKY BlendColor[2]

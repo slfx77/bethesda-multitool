@@ -38,6 +38,10 @@ internal static class ObjectBoundsIndex
         AddModels(records.Keys, k => k.FormId, k => k.ModelPath, models);
         AddModels(records.Notes, n => n.FormId, n => n.ModelPath, models);
         AddModels(records.WeaponMods, w => w.FormId, w => w.ModelPath, models);
+        // PWAT and TREE left GenericRecords (2026-08-06 / 2026-08-07); without their own
+        // rows every placement of one loses its model path.
+        AddModels(records.PlaceableWaters, p => p.FormId, p => p.ModelPath, models);
+        AddModels(records.Trees, t => t.FormId, t => t.ModelPath, models);
         AddModels(records.GenericRecords, g => g.FormId, g => g.ModelPath, models);
         return models;
     }
@@ -79,6 +83,9 @@ internal static class ObjectBoundsIndex
         // ParsePlaceableWaters() path; the "PWAT" => Landscape arm below is now unreachable for TES4+.
         Process(records.PlaceableWaters, p => (p.FormId, p.Bounds), PlacedObjectCategory.Landscape, bounds,
             categories);
+        // Same story for TREE — the "TREE" => Tree arm below still serves schema-primary games
+        // (TES3/TES4/Skyrim/FO4), which continue to route trees through GenericRecords.
+        Process(records.Trees, t => (t.FormId, t.Bounds), PlacedObjectCategory.Tree, bounds, categories);
 
         // Items (have bounds, all categorized as Item)
         Process(records.Weapons, w => (w.FormId, w.Bounds), PlacedObjectCategory.Item, bounds, categories);

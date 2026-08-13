@@ -157,7 +157,7 @@ internal static class QuestVariableWriterDiagnostics
     private static string DescribeOwnerFate(
         QuestVariableProducerOwner owner,
         ILookup<(string RecordType, uint RecordFormId), QuestVariableProducerGateDiagnostic> suppressionsByRecord,
-        IReadOnlySet<uint> preGateFormIds)
+        HashSet<uint> preGateFormIds)
     {
         if (SuppressionSummary(suppressionsByRecord, owner.RecordType, owner.SourceFormId) is { } fate)
         {
@@ -189,7 +189,7 @@ internal static class QuestVariableWriterDiagnostics
 
     private static bool ReferencesUnsupportedQuest(
         DialogueRecord info,
-        IReadOnlySet<uint> unsupportedQuests,
+        HashSet<uint> unsupportedQuests,
         IReadOnlyDictionary<uint, uint>? formIdAliases)
     {
         foreach (var script in info.ResultScripts)
@@ -212,8 +212,8 @@ internal static class QuestVariableWriterDiagnostics
 
     private static string ClassifyRoute(
         uint formId,
-        IReadOnlySet<uint> newInfoFormIds,
-        IReadOnlySet<uint> overlayFormIds,
+        HashSet<uint> newInfoFormIds,
+        HashSet<uint> overlayFormIds,
         NewVsOverrideClassifier classifier,
         MasterDialogueIndex masterIndex)
     {

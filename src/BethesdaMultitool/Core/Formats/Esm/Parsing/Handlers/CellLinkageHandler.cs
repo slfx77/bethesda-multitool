@@ -917,6 +917,7 @@ internal static class CellLinkageHandler
             LockTimesUnlocked = r.LockTimesUnlocked,
             EnableParentFormId = r.EnableParentFormId,
             EnableParentFlags = r.EnableParentFlags,
+            SpecialRenderingFlags = r.SpecialRenderingFlags,
             PersistentCellFormId = r.PersistentCellFormId,
             StartingPosition = r.StartingPosition,
             StartingWorldOrCellFormId = r.StartingWorldOrCellFormId,

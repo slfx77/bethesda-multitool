@@ -5,7 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 
 /// <summary>
-///     Collects REFR/ACHR/ACRE identities from final bundle bytes. This is actual
+///     Collects REFR/ACHR/ACRE/PGRE identities from final bundle bytes. This is actual
 ///     emission evidence: planned children and children encoded before a parent-cell
 ///     suppression are deliberately absent.
 /// </summary>
@@ -34,7 +34,7 @@ internal static class EmittedPlacedReferenceCollector
             }
 
             var signature = Encoding.ASCII.GetString(record, 0, 4);
-            if (signature is not ("REFR" or "ACHR" or "ACRE"))
+            if (signature is not ("REFR" or "ACHR" or "ACRE" or "PGRE"))
             {
                 continue;
             }

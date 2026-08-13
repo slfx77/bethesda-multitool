@@ -93,6 +93,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         All,
         WhollyBelow,
         NotWhollyBelow,
+        // Draws no queued water surface can occlude (bounds bottom AND camera above the highest
+        // queued surface). Issued after the whole stream + water drain — the unified-stream
+        // complement of WhollyBelow. NotWhollyBelow excludes these when the unified path supplies
+        // a finite queued-surface plane.
+        WhollyAboveAllWater,
     }
     private readonly HashSet<LiveParticleOwner12> _liveParticleOwners = [];
     private readonly List<global::BethesdaMultitool.ParticleRenderTelemetry> _particleTelemetry = [];
@@ -183,7 +188,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// <paramref name="casterRingRadius" /> (world units) bounds the SHADOW-ONLY caster set: refs
     /// within it that fail the camera frustum still cast (their shadows can land on-screen), at the
     /// cost of streaming their meshes. 0 disables the augmentation.</summary>
-    /// <param name="cascadeAnchor">
+    /// <param name="cascadeFit">
     ///     World-space centre the cascades will be fitted around this frame, and the sun direction they
     ///     will be fitted to. Supplied at ARM time so the per-cascade instance classification below uses
     ///     bit-identical inputs to the frustums the pass later builds — classifying against a slightly
@@ -614,10 +619,26 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// </summary>
     public void SetHiddenCategories(IEnumerable<PlacedObjectCategory> hidden)
     {
+        // Change-DETECTING: the cull cache key does not carry the category set, so this setter is the
+        // only thing that invalidates for it — but invalidating on an IDENTICAL set is pure waste.
+        // The 2D map's top-down overlay calls this twice per render pass (apply the legend's set, then
+        // restore the 3D view's own set in its finally block), which pinned the cull cache invalid on
+        // every pass of a static whole-worldspace overlay: measured cullCacheHit=False on 583/583
+        // WastelandNV zoom-to-fit passes at 52-130 ms of cull each, re-testing 1.29 M candidates that
+        // could not have changed. With both sets equal — the common case, and always so when neither
+        // view hides anything — this is now a no-op and the cache survives.
+        _categoryScratch.Clear();
+        foreach (var category in hidden) _categoryScratch.Add(category);
+        if (_categoryScratch.SetEquals(_hiddenCategories)) return;
+
         _hiddenCategories.Clear();
-        foreach (var category in hidden) _hiddenCategories.Add(category);
+        foreach (var category in _categoryScratch) _hiddenCategories.Add(category);
         _cullCacheValid = false;
     }
+
+    /// <summary>Reusable buffer for <see cref="SetHiddenCategories" />'s change detection (render
+    /// thread only, like the rest of the cull scratch state).</summary>
+    private readonly HashSet<PlacedObjectCategory> _categoryScratch = [];
 
     /// <summary>
     ///     Number of per-draw allocations that didn't fit the shared ring buffer this frame and were
@@ -721,21 +742,28 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 | FnvActiveAdtBasePolicy.RuntimeSpeedTreeLeafNoSunShadowFlag;
         }
 
+        // Grass shadow fallback follows the STLEAF pattern above — hoisted OUT of the FNV-only ADT
+        // block (FO3 parity 2026-08-10): both games ship byte-identical GRASS2002 shaders, so the
+        // shared-shader fallback approximation applies to FO3 grass too now that FO3 plants grass.
+        // Shared-shader fallback only: retail shadows grass's SUN term but never its ambient
+        // (GRASS2002.pso), which the shared shader cannot express — exempting the draw entirely is
+        // the closer approximation there. The per-game grass shader implements the real split and
+        // ignores this bit.
+        if (_renderCache?.Game is Core.Games.BethesdaGame.FalloutNewVegas
+            or Core.Games.BethesdaGame.Fallout3 && submesh.IsTallGrass)
+        {
+            state.Z = (uint)MathF.Round(state.Z)
+                | FnvActiveAdtBasePolicy.RuntimeFnvGrassNoSunShadowFlag;
+        }
+
         if (_renderCache?.Game == Core.Games.BethesdaGame.FalloutNewVegas)
         {
+            // ADT-base eligibility stays FNV-only per the documented recovery scope; the grass
+            // bit above is already set, and ApplyRuntimeFlags preserves incoming flags.
             var eligibility = ResolveFnvActiveAdtBaseEligibility(submesh);
-            var flags = FnvActiveAdtBasePolicy.ApplyRuntimeFlags(
+            state.Z = FnvActiveAdtBasePolicy.ApplyRuntimeFlags(
                 eligibility,
                 (uint)MathF.Round(state.Z));
-            if (submesh.IsTallGrass)
-            {
-                // Shared-shader fallback only: retail shadows grass's SUN term but never its
-                // ambient (GRASS2002.pso), which the shared shader cannot express — exempting the
-                // draw entirely is the closer approximation there. The per-game grass shader
-                // implements the real split and ignores this bit.
-                flags |= FnvActiveAdtBasePolicy.RuntimeFnvGrassNoSunShadowFlag;
-            }
-            state.Z = flags;
         }
         return state;
     }
@@ -898,6 +926,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     TallGrass still applies its recovered minimum magnitude);
     ///     <paramref name="timeSeconds" /> the animation clock. Call each frame before
     ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?, Vector3?)" />.
+    ///     <para>
+    ///         LIVE-LOOP ONLY. Unlike the leaf billboard basis, this is not per-frame state a later frame
+    ///         re-supplies: the rig INTEGRATES its oscillator clocks from the (strength, time) history it
+    ///         is fed. A one-shot offscreen render that pins a pose through here (map overlay, export,
+    ///         thumbnail) therefore corrupts the live sway — passing time 0 leaves foldStrength 0, and the
+    ///         next live frame's phase-continuity rescale (<c>_matrixTimes *= foldStrength / S</c>) zeroes
+    ///         every oscillator, restarting all four canopy groups in unison at the cos extreme. Use
+    ///         <see cref="SetWindForCapture" /> for anything that is not the live per-frame loop.
+    ///     </para>
     /// </summary>
     public void SetWind(Vector2 direction, float strength, float timeSeconds)
     {
@@ -912,6 +949,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// <summary>
     ///     Selects a deterministic profiler-capture pose without mutating the live history-driven wind
     ///     rig. The capture rig replays constant current wind from rest at its canonical fixed cadence.
+    ///     <para>
+    ///         This is the seam EVERY non-live renderer must use — profiler captures, the 2D map's
+    ///         top-down overlay, one-shot exports. The selection is per-render host state that the live
+    ///         loop's <see cref="SetWind" /> clears on its next tick, so an offscreen pose pin can never
+    ///         perturb the live rig's integrated phase.
+    ///     </para>
     /// </summary>
     public void SetWindForCapture(Vector2 direction, float strength, float timeSeconds)
     {
@@ -1093,6 +1136,29 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private static readonly int BatchReuseStreamingMaxFrames = EnvironmentVariables.GetClampedInt(
         EnvironmentVariables.Viewer.BatchReuseStreamingFrames, 4, 1, 60);
 
+    /// <summary>Why a frame did not reuse its cached cull survivors. Ordered as the gate tests them,
+    /// so the reported value is the FIRST failing clause.</summary>
+    internal enum CullCacheVeto
+    {
+        None = 0,
+        /// <summary>Something explicitly invalidated the cache (LoadData / SetHiddenCategories).</summary>
+        Invalidated,
+        /// <summary>A mesh resolved since the snapshot and no debounce applied.</summary>
+        MeshBounds,
+        ShowMarkers,
+        ShowGrass,
+        ShowImposters,
+        ShowDisabled,
+        EnabledOverrides,
+        ShadowRing,
+        /// <summary>Tolerant mode: camera pose left the reuse tolerance.</summary>
+        Pose,
+        /// <summary>Exact mode: the view-projection differs from the snapshot.</summary>
+        ViewProj,
+        /// <summary>Exact mode: the visibility cylinder differs from the snapshot.</summary>
+        Cylinder,
+    }
+
     /// <summary>Why a frame did not reuse its frozen batches. Ordered as the gate tests them, so the
     /// reported value is the FIRST failing clause.</summary>
     internal enum BatchReuseBlocker
@@ -1106,7 +1172,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         RenderOrigin = 6,
         NotQuiesced = 7,
         Eviction = 8,
-        StreamRouting = 9
+        StreamRouting = 9,
+        /// <summary>The build being considered still had unresolved meshes; freezing it would stop
+        /// the resolve pass from ever requesting their decodes.</summary>
+        MeshesMissing = 10
     }
 
     private bool _lastBuildValid;
@@ -1365,9 +1434,22 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // absorbed the same way: the establishment frustum was opened by CullAngleSlackRadians, so any
         // orientation within that cone still describes a subset of the cached survivors.
         _framesSinceCull++;
+        // A STATIC exact-mode view (the 2D map's top-down overlay, one-shot exports) re-issues the
+        // SAME viewProj + cylinder pass after pass while the scene streams. Without the debounce
+        // below, every such pass resolved a few meshes, grew _meshLocalRadius, and therefore vetoed
+        // the cache — measured on WastelandNV zoom-to-fit: cullCacheHit=False on 150/150 passes at
+        // 57-130 ms of cull each, re-testing 1.29 M candidates to add ~25 meshes. Bounds tightening
+        // is the same visual nicety here as in tolerant mode (the cached survivor set was culled
+        // with the LARGER placeholder radii, so it is a superset of the exact set, and the draw pass
+        // re-tests every instance against the frame's exact bounds), so give the static exact view
+        // the identical CullStreamingRefreshFrames debounce the live tolerant path already gets.
+        var viewIsStatic = !tolerant
+                           && _cullCacheViewProj == cullFrustumSource
+                           && _cullCacheCylinder == cylinder;
         var meshBoundsCurrent = _cullCacheMeshRadiusCount == _meshLocalRadius.Count
-                                || (tolerant && _framesSinceCull < CullStreamingRefreshFrames);
+                                || ((tolerant || viewIsStatic) && _framesSinceCull < CullStreamingRefreshFrames);
 #pragma warning disable S1244 // cull-cache identity: exact compare of a cached snapshot detects change, not proximity
+#pragma warning disable S3358 // the veto chain below IS the gate order; flattening it loses the priority it encodes
         var cullCacheValid =
             _cullCacheValid
             && meshBoundsCurrent
@@ -1386,6 +1468,23 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                   && _cullCacheRadius == cylinder.Radius
                   && ChebyshevWithin(cylinder.Position, _cullCachePosition, CullPositionSlack)
                 : _cullCacheViewProj == cullFrustumSource && _cullCacheCylinder == cylinder);
+
+        // Which clause vetoed, in gate order. Reported (not inferred) for the same reason the batch
+        // reuse blocker is: a cull miss has eight possible causes and guessing has been expensive.
+        LastStats.ReferenceCullCacheVeto = (int)(
+            !_cullCacheValid ? CullCacheVeto.Invalidated
+            : !meshBoundsCurrent ? CullCacheVeto.MeshBounds
+            : _cullCacheShowMarkers != ShowMarkers ? CullCacheVeto.ShowMarkers
+            : _cullCacheShowGrass != ShowGrass ? CullCacheVeto.ShowGrass
+            : _cullCacheShowImposters != ShowImposters ? CullCacheVeto.ShowImposters
+            : _cullCacheShowDisabled != ShowInitiallyDisabled ? CullCacheVeto.ShowDisabled
+            : _cullCacheEnabledOverrideVersion != _enabledOverrides.Version ? CullCacheVeto.EnabledOverrides
+            : _cullCacheShadowRing != shadowRing ? CullCacheVeto.ShadowRing
+            : cullCacheValid ? CullCacheVeto.None
+            : tolerant ? CullCacheVeto.Pose
+            : _cullCacheViewProj != cullFrustumSource ? CullCacheVeto.ViewProj
+            : CullCacheVeto.Cylinder);
+#pragma warning restore S3358
 #pragma warning restore S1244
 
         // === Batch reuse decision ===
@@ -1402,18 +1501,68 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // Which clause vetoed reuse this frame. Reported so the blocker is identified from data
         // instead of inferred: two plausible-sounding candidates (quiescence, eviction churn) were
         // each tried and measured to be irrelevant, which cost a full experiment cycle apiece.
-        var reuseBlocker =
-            !BatchReuseEnabled ? BatchReuseBlocker.Disabled
-            : !cullCacheValid ? BatchReuseBlocker.CullCacheMiss
-            : !_lastBuildValid ? BatchReuseBlocker.NoBuild
-            : _framesSinceBuild >= (_lastBuildQuiesced
+        BatchReuseBlocker ResolveReuseBlocker()
+        {
+            if (!BatchReuseEnabled)
+            {
+                return BatchReuseBlocker.Disabled;
+            }
+
+            if (!cullCacheValid)
+            {
+                return BatchReuseBlocker.CullCacheMiss;
+            }
+
+            if (!_lastBuildValid)
+            {
+                return BatchReuseBlocker.NoBuild;
+            }
+
+            if (_framesSinceBuild >= (_lastBuildQuiesced
                 ? BatchReuseMaxFrames
-                : BatchReuseStreamingMaxFrames) ? BatchReuseBlocker.FrameCeiling
-            : _lastBuildCullEpoch != _cullEpoch ? BatchReuseBlocker.CullEpoch
-            : _lastBuildRenderOrigin != renderOrigin ? BatchReuseBlocker.RenderOrigin
-            : _lastBuildEvictionGen != _meshCache.EvictionGeneration ? BatchReuseBlocker.Eviction
-            : _lastBuildStreamActive != _transparencyStreamActive ? BatchReuseBlocker.StreamRouting
-            : BatchReuseBlocker.None;
+                : BatchReuseStreamingMaxFrames))
+            {
+                return BatchReuseBlocker.FrameCeiling;
+            }
+
+            if (_lastBuildCullEpoch != _cullEpoch)
+            {
+                return BatchReuseBlocker.CullEpoch;
+            }
+
+            // Never freeze a build that was still missing meshes. Reuse frames skip the resolve pass
+            // wholesale, and the resolve pass is the ONLY thing that calls GetOrUpload — i.e. the only
+            // thing that requests decodes. On the on-demand top-down path that is a hard deadlock, not
+            // just a delay: the very first (cold) pass builds with everything missing, the second pass
+            // reuses it, no decodes are ever requested, streaming therefore reports quiesced, the
+            // overlay declares itself complete and stops re-rendering — a permanently EMPTY overlay
+            // (reproduced the moment the cull cache started hitting: drawn=0 at pass 2, settled=True).
+            // The live 60fps path never showed it because its camera moves, which misses the cull
+            // cache and forces a rebuild anyway.
+            if (_lastBuildMissing > 0)
+            {
+                return BatchReuseBlocker.MeshesMissing;
+            }
+
+            if (_lastBuildRenderOrigin != renderOrigin)
+            {
+                return BatchReuseBlocker.RenderOrigin;
+            }
+
+            if (_lastBuildEvictionGen != _meshCache.EvictionGeneration)
+            {
+                return BatchReuseBlocker.Eviction;
+            }
+
+            if (_lastBuildStreamActive != _transparencyStreamActive)
+            {
+                return BatchReuseBlocker.StreamRouting;
+            }
+
+            return BatchReuseBlocker.None;
+        }
+
+        var reuseBlocker = ResolveReuseBlocker();
         var reuseBatches = reuseBlocker == BatchReuseBlocker.None;
         LastStats.ReferenceBatchReuseBlocker = (int)reuseBlocker;
         _frameReusedBatches = reuseBatches;
@@ -1876,6 +2025,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         worldRadius,
                         ResolveWorldBoundsMaxZ(
                             r.MeshId, sub, sampledSourceWorld, worldCenter.Z, worldRadius),
+                        ResolveWorldBoundsMinZ(
+                            r.MeshId, sub, sampledSourceWorld, worldCenter.Z, worldRadius),
                         r.MeshId,
                         new Vector2(worldCenter.X, worldCenter.Y));
                     // Depth-writing blend foliage (e.g. NVSeaPlant02) draws inline BEFORE the water pass so
@@ -2165,11 +2316,20 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// <inheritdoc cref="LastBelowWaterBlendedDraws" />
     public float LastBelowWaterPartitionPlane { get; private set; }
 
+    /// <summary>
+    ///     Blended draws classified as wholly above every queued water surface by the most recent
+    ///     above-all-water partition — the draws issued after the final water drain so no surface
+    ///     can composite over them. Zero always means "not splitting", same discipline as the
+    ///     below-water pair.
+    /// </summary>
+    public int LastAboveWaterBlendedDraws { get; private set; }
+
     private void ResetBelowWaterPartitionTelemetry()
     {
         LastBelowWaterBlendedDraws = 0;
         LastPartitionedBlendedCandidates = 0;
         LastBelowWaterPartitionPlane = float.NaN;
+        LastAboveWaterBlendedDraws = 0;
     }
 
     /// <summary>
@@ -2184,7 +2344,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             DeferredWaterPartition.WhollyBelow,
             probe,
             cameraZ,
-            allowSceneDepth: false);
+            allowSceneDepth: false,
+            // Explicit, not defaulted: NaN keeps the above-all-water class EMPTY on the legacy
+            // split path, so NotWhollyBelow retains its full legacy meaning (below vs the rest).
+            // A finite plane here would silently drop the wholly-above draws from the post-water
+            // pass that this path never issues. IsWhollyAboveAllWater pins NaN => false.
+            maxQueuedWaterHeight: float.NaN);
 
     /// <summary>Draws the complementary intersecting/above-water translucent partition.</summary>
     public void RenderBlendedDeferredAtOrAboveWater(IWaterHeightProbe probe, float cameraZ) =>
@@ -2192,7 +2357,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             DeferredWaterPartition.NotWhollyBelow,
             probe,
             cameraZ,
-            allowSceneDepth: true);
+            allowSceneDepth: true,
+            // Same invariant as the below-water leg: the legacy split has no post-water
+            // above-all-water pass, so the class must stay empty or these draws vanish.
+            maxQueuedWaterHeight: float.NaN);
 
     // Set per frame by the host BEFORE Render: this frame's blended routing target. Deliberately
     // per-frame rather than the static env switch — a non-streaming frame (other game, no visible
@@ -2221,7 +2389,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     </para>
     /// </summary>
     public void RenderBlendedDeferredUnified(
-        ITransparencyInterleave interleave, IWaterHeightProbe? probe = null, float cameraZ = 0f)
+        ITransparencyInterleave interleave, IWaterHeightProbe? probe = null, float cameraZ = 0f,
+        float maxQueuedWaterHeight = float.NaN)
     {
         // No probe = no split this frame. Clear the counters rather than leaving the previous
         // frame's standing, for the same reason RenderBlendedDeferred does: a stale non-zero is
@@ -2245,7 +2414,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             cmd, _deferredFrameIndex, sceneDepthSampled,
             ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws,
             probe is null ? DeferredWaterPartition.All : DeferredWaterPartition.NotWhollyBelow,
-            probe, cameraZ,
+            probe, cameraZ, maxQueuedWaterHeight,
             interleave);
 
         LastStats.ReferenceSubmeshDraws += submeshDraws;
@@ -2253,11 +2422,30 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         LastStats.ReferenceDrawCallMilliseconds += drawCallMs;
     }
 
+    /// <summary>
+    ///     Draws the blended partition no queued water surface can occlude (bounds bottom and
+    ///     camera both above this frame's highest queued surface). The host issues this AFTER the
+    ///     unified stream and the final water drain: those draws are always in front of every
+    ///     surface, and water writes no depth, so a surface issued after them composites on top —
+    ///     the exact "cell water renders over smoke standing above it" defect. Pass the SAME
+    ///     <paramref name="maxQueuedWaterHeight" /> the unified call used so the two partitions
+    ///     stay complementary within the frame.
+    /// </summary>
+    public void RenderBlendedDeferredAboveAllWater(
+        IWaterHeightProbe probe, float cameraZ, float maxQueuedWaterHeight) =>
+        RenderBlendedDeferredCore(
+            DeferredWaterPartition.WhollyAboveAllWater,
+            probe,
+            cameraZ,
+            allowSceneDepth: true,
+            maxQueuedWaterHeight);
+
     private void RenderBlendedDeferredCore(
         DeferredWaterPartition waterPartition,
         IWaterHeightProbe? probe,
         float cameraZ,
-        bool allowSceneDepth)
+        bool allowSceneDepth,
+        float maxQueuedWaterHeight = float.NaN)
     {
         // Address 0 = the opaque pass skipped this frame (ring exhaustion) — nothing valid to bind.
         if (_blendedDraws.Count == 0 || _deferredPerFrameCbvAddress == 0) return;
@@ -2274,7 +2462,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         DrawBlended(
             cmd, _deferredFrameIndex, sceneDepthSampled,
             ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws,
-            waterPartition, probe, cameraZ);
+            waterPartition, probe, cameraZ, maxQueuedWaterHeight);
 
         LastStats.ReferenceSubmeshDraws += submeshDraws;
         LastStats.ReferenceCbUpdateMilliseconds += cbUpdateMs;
@@ -3028,6 +3216,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         DeferredWaterPartition waterPartition = DeferredWaterPartition.All,
         IWaterHeightProbe? probe = null,
         float cameraZ = 0f,
+        float maxQueuedWaterHeight = float.NaN,
         ITransparencyInterleave? interleave = null)
     {
         if (_blendedDraws.Count == 0) return;
@@ -3037,6 +3226,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         {
             _waterPartitionedBlendedDraws.Clear();
             var belowCount = 0;
+            var aboveCount = 0;
             var surfaceSum = 0f;
             foreach (var draw in _blendedDraws)
             {
@@ -3049,6 +3239,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     draw.WorldBoundsCenterXY.Y,
                     draw.WorldBoundsMaxZ,
                     cameraZ);
+                // The complement classification is GLOBAL on purpose: "no drawn surface can occlude
+                // this" must hold against every queued water body, so it tests the frame's highest
+                // queued surface (NaN outside the unified stream = the class is empty and
+                // NotWhollyBelow keeps its legacy meaning). Disjoint from below by construction —
+                // a draw wholly under its local surface cannot have its bottom above the maximum.
+                var above = !below && WaterTransparencyPartition.IsWhollyAboveAllWater(
+                    draw.WorldBoundsMinZ, cameraZ, maxQueuedWaterHeight);
                 if (below)
                 {
                     belowCount++;
@@ -3058,9 +3255,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         surfaceSum += surface;
                     }
                 }
+                else if (above)
+                {
+                    aboveCount++;
+                }
 
                 if ((waterPartition == DeferredWaterPartition.WhollyBelow && below) ||
-                    (waterPartition == DeferredWaterPartition.NotWhollyBelow && !below))
+                    (waterPartition == DeferredWaterPartition.NotWhollyBelow && !below && !above) ||
+                    (waterPartition == DeferredWaterPartition.WhollyAboveAllWater && above))
                 {
                     _waterPartitionedBlendedDraws.Add(draw);
                 }
@@ -3076,6 +3278,17 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 LastBelowWaterBlendedDraws = belowCount;
                 LastPartitionedBlendedCandidates = _blendedDraws.Count;
                 LastBelowWaterPartitionPlane = belowCount > 0 ? surfaceSum / belowCount : float.NaN;
+                // The below pass opens every partitioned frame (legacy split included), so this is
+                // the one place that can guarantee a legacy frame never shows the previous
+                // streaming frame's above-water count.
+                LastAboveWaterBlendedDraws = 0;
+            }
+
+            // The above-water leg draws LAST, so recording here cannot be overwritten by a later
+            // partition call this frame — same stale-count discipline as the below-water pair.
+            if (waterPartition == DeferredWaterPartition.WhollyAboveAllWater)
+            {
+                LastAboveWaterBlendedDraws = aboveCount;
             }
 
             if (_waterPartitionedBlendedDraws.Count == 0) return;
@@ -3831,6 +4044,34 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     }
 
     /// <summary>
+    ///     World-space BOTTOM of the submesh's bounds — the exact mirror of
+    ///     <see cref="ResolveWorldBoundsMaxZ" />, with the same fallbacks and the same error
+    ///     direction: a sphere-only answer extends LOWER than the true box, which can only demote a
+    ///     draw from the above-all-water partition back to the interleaved status quo, never
+    ///     wrongly lift water-adjacent geometry above the surface.
+    /// </summary>
+    private float ResolveWorldBoundsMinZ(
+        uint meshId, CachedSubmesh12 submesh, Matrix4x4 world, float worldCenterZ, float worldRadius)
+    {
+        var sphereBottom = worldCenterZ - worldRadius;
+        if (submesh.IsBillboard || !_meshLocalBounds.TryGetValue(meshId, out var bounds))
+        {
+            return sphereBottom;
+        }
+
+        if (bounds.Min.X > bounds.Max.X || bounds.Min.Y > bounds.Max.Y || bounds.Min.Z > bounds.Max.Z)
+        {
+            return sphereBottom;
+        }
+
+        var minZ = world.M43
+                   + MathF.Min(bounds.Min.X * world.M13, bounds.Max.X * world.M13)
+                   + MathF.Min(bounds.Min.Y * world.M23, bounds.Max.Y * world.M23)
+                   + MathF.Min(bounds.Min.Z * world.M33, bounds.Max.Z * world.M33);
+        return float.IsFinite(minZ) ? MathF.Max(minZ, sphereBottom) : sphereBottom;
+    }
+
+    /// <summary>
     ///     Batch-reuse frames keep the frozen blended draw lists but must refresh what the camera
     ///     moves: every entry's sort distance (back-to-front order stays correct across in-cell
     ///     drift) and, for billboards, the camera-facing world matrix. Everything else on the entry
@@ -3873,6 +4114,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 // Recomputed rather than carried over: physics-lite sway rotates the placement, which
                 // moves the box top independently of its centre.
                 WorldBoundsMaxZ = ResolveWorldBoundsMaxZ(
+                    draw.MeshId, draw.Submesh, sampledSourceWorld, worldCenter.Z, worldRadius),
+                WorldBoundsMinZ = ResolveWorldBoundsMinZ(
                     draw.MeshId, draw.Submesh, sampledSourceWorld, worldCenter.Z, worldRadius),
                 WorldBoundsCenterXY = new Vector2(worldCenter.X, worldCenter.Y),
             };
@@ -4235,6 +4478,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         float WorldBoundsCenterZ,
         float WorldBoundsRadius,
         float WorldBoundsMaxZ,
+        float WorldBoundsMinZ,
         uint MeshId,
         Vector2 WorldBoundsCenterXY);
 }

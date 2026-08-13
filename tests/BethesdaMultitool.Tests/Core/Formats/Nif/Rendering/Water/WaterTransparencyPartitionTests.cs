@@ -117,4 +117,76 @@ public sealed class WaterTransparencyPartitionTests
         Assert.False(
             WaterTransparencyPartition.IsWhollyBelow(OneBody(1000f), 10f, 10f, 1010f, cameraZ: 2000f));
     }
+
+    // ── Wholly-above-all-water (the unified stream's post-drain partition) ────────────────────
+
+    /// <summary>
+    ///     The reported defect: smoke plumes standing well above Lake Mead had the camera-cell
+    ///     water quad composited over them, because the quad's CENTROID sort key is nearer than
+    ///     the plume while the surface itself can never occlude geometry that is above it. A draw
+    ///     whose bounds bottom and camera both clear the highest queued surface must classify into
+    ///     the after-water pass.
+    /// </summary>
+    [Theory]
+    [InlineData(8400f, true)] // bottom above the 8305 surface → drawn after all water
+    [InlineData(8305f, false)] // touching the plane is not "wholly above"
+    [InlineData(8200f, false)] // dips below the highest surface → stays interleaved
+    public void OnlyBoundsWhollyAboveTheHighestQueuedSurfaceDrawAfterWater(
+        float minZ, bool expected)
+    {
+        Assert.Equal(
+            expected,
+            WaterTransparencyPartition.IsWhollyAboveAllWater(
+                minZ, cameraZ: 9115f, maxQueuedSurfaceZ: 8305f));
+    }
+
+    /// <summary>
+    ///     A camera at or below the highest surface can see above-water geometry THROUGH a nearer
+    ///     surface (looking out from under a higher body), so the reorder must not fire — the
+    ///     mirror of the submerged partition's camera guard.
+    /// </summary>
+    [Theory]
+    [InlineData(8000f)] // camera below the plane
+    [InlineData(8305f)] // camera exactly at the plane
+    public void ACameraNotAboveTheHighestSurfaceKeepsTheInterleavedOrder(float cameraZ)
+    {
+        Assert.False(
+            WaterTransparencyPartition.IsWhollyAboveAllWater(
+                worldMinZ: 8400f, cameraZ, maxQueuedSurfaceZ: 8305f));
+    }
+
+    /// <summary>
+    ///     NaN is the "no water queued this frame" sentinel from the water renderer; the class must
+    ///     be empty then (nothing to reorder around), and bad draw bounds must fail closed to the
+    ///     interleaved status quo.
+    /// </summary>
+    [Theory]
+    [InlineData(float.NaN, 9115f, 8305f)]
+    [InlineData(8400f, float.NaN, 8305f)]
+    [InlineData(8400f, 9115f, float.NaN)]
+    public void NonFiniteInputsNeverClassifyAboveAllWater(
+        float minZ, float cameraZ, float maxSurfaceZ)
+    {
+        Assert.False(WaterTransparencyPartition.IsWhollyAboveAllWater(minZ, cameraZ, maxSurfaceZ));
+    }
+
+    /// <summary>
+    ///     Disjointness with the submerged partition, on the Hoover Dam shape that motivates the
+    ///     global test: the reservoir (8305) is QUEUED and high, the downstream river (7100) is the
+    ///     draw's LOCAL body. Geometry above the river but below the reservoir top can genuinely
+    ///     sit behind the reservoir's surface along a through-water sightline, so it must stay in
+    ///     the interleaved middle — neither wholly below its local surface nor above all water.
+    /// </summary>
+    [Fact]
+    public void GeometryBelowADistantHigherSurfaceStaysInTheInterleavedMiddle()
+    {
+        var probe = new GridProbe().Add(0, 0, 7100f).Add(2, 0, 8305f);
+
+        // Downstream mist at 7500: above its local river, below the reservoir surface.
+        Assert.False(
+            WaterTransparencyPartition.IsWhollyBelow(probe, 100f, 100f, 7800f, cameraZ: 9115f));
+        Assert.False(
+            WaterTransparencyPartition.IsWhollyAboveAllWater(
+                worldMinZ: 7500f, cameraZ: 9115f, maxQueuedSurfaceZ: 8305f));
+    }
 }

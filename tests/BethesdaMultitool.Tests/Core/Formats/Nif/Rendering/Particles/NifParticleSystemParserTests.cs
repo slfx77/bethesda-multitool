@@ -106,4 +106,46 @@ public sealed class NifParticleSystemParserTests
             Assert.Contains(meshIndex, suppressed);
         }
     }
+
+    private const string HowitzerPath = @"meshes\vehicles\nvnellisartillery\nvnellisartillery.nif";
+
+    /// <summary>
+    ///     User report 2026-08-10: FortHowitzer (ACTI 0x00125C2A, this NIF) showed firing smoke at
+    ///     rest. Its auto-playing Idle sequence binds each emitter's BirthRate as a NONZERO constant
+    ///     pose (PCloud01 2250 / PCloud02 300 / PCloud03 90) and gates the smoke solely through the
+    ///     NiPSysEmitterCtlr's second controlled block — EmitterActive, constant FALSE at idle. Only
+    ///     the activation-triggered Forward sequence pulses it true for ~0.1s. The rest-state resolve
+    ///     must therefore sample every system at rate 0.
+    /// </summary>
+    [Fact]
+    public void Parse_NellisArtillery_IdleEmitterActiveFalseZeroesAllRestRates()
+    {
+        var bsaPath = SampleFileFixture.FindSamplePath(MeshesBsaRelative);
+        Assert.SkipWhen(bsaPath is null, "FNV PC final meshes BSA not available");
+
+        using var archives = MeshArchiveSet.Open(bsaPath!, null, false, false);
+        Assert.True(
+            archives.TryExtractFile(HowitzerPath, out var data, out _),
+            "NVNellisArtillery NIF not found in BSA");
+
+        var nif = NifParser.Parse(data);
+        Assert.NotNull(nif);
+
+        var rates = nif!.Blocks.Select((block, index) => (block, index))
+            .Where(x => NifParticleSystemParser.IsParticleSystem(x.block.TypeName))
+            .Select(x => NifParticleSystemParser.Parse(data, nif, x.index))
+            .OfType<ParticleSystemDefinition>()
+            .Select(system => system.Emitter?.BirthRateController)
+            .OfType<ParticleRateControllerDefinition>()
+            .ToArray();
+        Assert.Equal(3, rates.Length); // PCloud01/02/03
+
+        foreach (var rate in rates)
+        {
+            // The Idle binding is present (not the dormant-triggered verdict) — the bool does the work.
+            Assert.False(rate.DormantTriggeredFx);
+            Assert.Equal(0f, rate.Sample(0f));
+            Assert.Equal(0f, rate.Sample(2.5f));
+        }
+    }
 }

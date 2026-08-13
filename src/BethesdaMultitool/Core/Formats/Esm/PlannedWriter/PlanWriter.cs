@@ -26,14 +26,17 @@ public sealed class PlanWriter
 
     private readonly PlannedEncoderRegistry _encoders;
     private readonly IConversionProgressSink _sink;
+    private readonly ConversionPipelineStats? _stats;
     private readonly HashSet<QuestVariableProducerOwner> _emittedProducerOwners = [];
 
     public PlanWriter(
         PlannedEncoderRegistry encoders,
-        IConversionProgressSink? sink = null)
+        IConversionProgressSink? sink = null,
+        ConversionPipelineStats? stats = null)
     {
         _encoders = encoders ?? throw new ArgumentNullException(nameof(encoders));
         _sink = sink ?? NullConversionProgressSink.Instance;
+        _stats = stats;
     }
 
     /// <summary>
@@ -89,7 +92,12 @@ public sealed class PlanWriter
 
             if (record.Disposition is RecordDisposition.KeepMaster or RecordDisposition.Skip)
             {
-                continue; // KeepMaster records live in the master ESM; Skip records are dropped.
+                // KeepMaster records live in the master ESM; Skip records are dropped.
+                _stats?.IncrementSkipped(recordType);
+                _stats?.IncrementDropReason(record.Disposition == RecordDisposition.KeepMaster
+                    ? "plan.keep-master"
+                    : "plan.skip");
+                continue;
             }
 
             // Append-only master SCPT locals are a settled planner directive, and may
@@ -134,6 +142,10 @@ public sealed class PlanWriter
                     recordType,
                     record.SourceFormId ?? record.FormId,
                     "planned-encoder.warning");
+                if (_stats is { } warnStats)
+                {
+                    warnStats.Warnings++;
+                }
             }
 
             encoded = encoded with
@@ -159,7 +171,12 @@ public sealed class PlanWriter
                         + "the planner/writer script-emission policies have diverged.");
                 }
 
-                continue; // Encoder declined — matches legacy "no changes → skip override" path.
+                // Encoder declined — matches legacy "no changes → skip override" path. This
+                // is the DelegatingPlannedEncoder empty-Override convention for ~49 Simple<T>
+                // types, so it is the single largest skip population under planner emission.
+                _stats?.IncrementSkipped(recordType);
+                _stats?.IncrementDropReason("planned-encoder.declined");
+                continue;
             }
 
             var recordBytes = record.Disposition switch
@@ -170,6 +187,10 @@ public sealed class PlanWriter
             };
 
             grupBodyStream.Write(recordBytes);
+            // NOTE: emitted-record accounting is NOT done here. Records written into a GRUP
+            // can still be discarded downstream (cell gates clear whole buckets after their
+            // children encode), so the only trustworthy census is over the assembled file —
+            // see PluginEmissionCensus, applied once in EsmAssembler.
             // Producer discovery deliberately excludes master-anchored records. For an
             // override, merge policy can retain the master's script bytes instead of the
             // encoded block, so encoder metadata alone cannot prove what survived. Fail

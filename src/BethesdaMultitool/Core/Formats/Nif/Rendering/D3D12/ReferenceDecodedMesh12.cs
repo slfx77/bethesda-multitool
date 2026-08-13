@@ -144,5 +144,10 @@ internal sealed record DecodedSubmesh12(
     bool EngineZWriteOff = false,
     // NoLighting Shader Flags bit 31 "zbuffer test": CLEAR ⇒ depth test OFF (v68+). Same
     // stream-only consumer; the authored default 0x82000000 has the bit SET, so this is rare.
-    bool DepthTestOff = false);
+    bool DepthTestOff = false,
+    // Legacy NiMaterialProperty diffuse for UNTEXTURED shapes (v72+): bound as a pinned 1×1 solid
+    // in place of the white fallback (see NifMaterialDiffusePolicy). Null when no material was
+    // authored, on FO3+ streams (no diffuse lane), and on emissive shapes (whose specular slot
+    // already carries the glow tint — a diffuse base bind would wrongly modulate the glow).
+    Vector3? MaterialDiffuse = null);
 #endif

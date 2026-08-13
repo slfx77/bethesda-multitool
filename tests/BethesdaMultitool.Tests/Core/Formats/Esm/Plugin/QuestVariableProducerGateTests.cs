@@ -600,28 +600,51 @@ public sealed class QuestVariableProducerGateTests
     }
 
     [Fact]
-    public void Producer_scan_excludes_structural_writer_not_owned_by_planner()
+    public void Producer_scan_excludes_writer_whose_type_is_skipped()
     {
+        // Was "not owned by the planner" until the 2026-08-11 legacy retirement made every
+        // type planner-owned. The surviving exclusion mechanism is --skip-record-type, and
+        // the invariant is unchanged: a suppressed type contributes no producer evidence.
         var mapping = Mapping(7, 70);
         var records = RecordsWithScptWriter(7, 70);
 
-        var evidence = FindEvidence(records, [mapping], "PACK");
+        var evidence = FindEvidenceSkipping(records, [mapping], "SCPT");
 
         Assert.Empty(evidence);
     }
 
+    /// <summary>
+    ///     Every record type is planner-owned since the 2026-08-11 legacy retirement, so the
+    ///     old planner-type allow-list argument is gone; eligibility is now just
+    ///     "not --skip-record-type". The per-call type names are retained as documentation
+    ///     of which producer each case is about.
+    /// </summary>
     private static IReadOnlyList<QuestVariableProducerEvidence> FindEvidence(
         RecordCollection records,
         IReadOnlyList<QuestVariableRecoveryMapping> mappings,
-        params string[] plannerTypes)
+        params string[] producerTypesUnderTest)
+    {
+        _ = producerTypesUnderTest;
+        return QuestVariableBytecodeRemapper.FindEmissionEligibleProducerWrites(
+            records,
+            mappings,
+            new Dictionary<uint, ParsedMainRecord>(),
+            null,
+            new HashSet<string>(StringComparer.Ordinal));
+    }
+
+    /// <summary>Same scan, with the given record types suppressed via --skip-record-type.</summary>
+    private static IReadOnlyList<QuestVariableProducerEvidence> FindEvidenceSkipping(
+        RecordCollection records,
+        IReadOnlyList<QuestVariableRecoveryMapping> mappings,
+        params string[] skippedTypes)
     {
         return QuestVariableBytecodeRemapper.FindEmissionEligibleProducerWrites(
             records,
             mappings,
             new Dictionary<uint, ParsedMainRecord>(),
             null,
-            new HashSet<string>(StringComparer.Ordinal),
-            new HashSet<string>(plannerTypes, StringComparer.Ordinal));
+            new HashSet<string>(skippedTypes, StringComparer.Ordinal));
     }
 
     private static DialogueCombinePlan CombinedOutput(IReadOnlyList<DialogueRecord> infos)

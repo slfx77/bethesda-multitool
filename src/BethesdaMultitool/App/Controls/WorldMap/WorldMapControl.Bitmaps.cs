@@ -91,7 +91,20 @@ public sealed partial class WorldMapControl
             var bmp = await Task.Run(() =>
                 WorldMapLayerRenderer.RenderWorldWaterAggregate(cells, defaultWaterHeight, cache, palette))
                 .ConfigureAwait(false);
-            _ = DispatcherQueue.TryEnqueue(() => ApplyWorldWaterResult(bmp, version, worldspaceFormId));
+            // The applier runs CanvasBitmap.CreateFromBytes on the UI thread; a Win2D device-lost
+            // throw inside a TryEnqueue callback is otherwise an unhandled UI-thread exception
+            // (process death). Same swallow-and-log semantics as LogUiThreadFault's other callers.
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                try
+                {
+                    ApplyWorldWaterResult(bmp, version, worldspaceFormId);
+                }
+                catch (Exception applyEx)
+                {
+                    LogUiThreadFault("ApplyWorldWaterResult", applyEx);
+                }
+            });
         }
         catch (Exception ex)
         {
@@ -128,7 +141,19 @@ public sealed partial class WorldMapControl
         try
         {
             var result = await WorldLayerBuildService.BuildAsync(request).ConfigureAwait(false);
-            _ = DispatcherQueue.TryEnqueue(() => ApplyWorldBitmapBuildResult(result));
+            // Win2D device-lost inside this TryEnqueue callback (CreateFromBytes per cell/tile)
+            // must not escape as an unhandled UI-thread exception — swallow and log.
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                try
+                {
+                    ApplyWorldBitmapBuildResult(result);
+                }
+                catch (Exception applyEx)
+                {
+                    LogUiThreadFault("ApplyWorldBitmapBuildResult", applyEx);
+                }
+            });
         }
         catch (Exception ex)
         {

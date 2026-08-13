@@ -118,6 +118,11 @@ internal static class EsmBrowserTreeBuilder
             ("Lights", Pick(result.Lights, "LIGH")),
             ("Doors", Pick(result.Doors, "DOOR")),
             ("Statics", Pick(result.Statics, "STAT")),
+            // Typed since the PWAT (2026-08-06) / TREE (2026-08-07) migrations out of
+            // GenericRecords. Pick() keeps schema-primary games working, where both still
+            // arrive as generic records.
+            ("Trees", Pick(result.Trees, "TREE")),
+            ("Placeable Water", Pick(result.PlaceableWaters, "PWAT")),
             ("Furniture", result.Furniture),
             ("Land Textures", Pick(result.LandTextures, "LTEX")),
             ("Regions", Pick(result.Regions, "REGN")),
@@ -164,7 +169,6 @@ internal static class EsmBrowserTreeBuilder
         AddCategory(root, "Misc Data", "\uE71D", BuildGenericSubcategories(byType,
             ("Movable Statics", "MSTT"),
             ("Talking Activators", "TACT"),
-            ("Trees", "TREE"),
             ("Addon Nodes", "ADDN"),
             ("Animated Objects", "ANIO"),
             ("Impact Data Sets", "IPDS"),

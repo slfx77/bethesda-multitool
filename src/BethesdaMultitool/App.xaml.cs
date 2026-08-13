@@ -68,7 +68,7 @@ public sealed partial class FalloutApp : Application
         // Console.WriteLine here lands nowhere the user can inspect — every UI-thread crash was
         // dying with the stack trace written only to a detached console. Route the full exception
         // (message + HRESULT + inner chain + stack) through the file logger so it survives in
-        // %TEMP%\BethesdaMultitool-gui.log. AutoFlush is on, so it persists even as the process
+        // %TEMP%\BethesdaMultitool-gui-<pid>.log. AutoFlush is on, so it persists even as the process
         // tears down. Console output is kept for the terminal-launched case.
         Console.WriteLine($"[CRASH] Unhandled exception: {e.Exception}");
         Console.WriteLine($"[CRASH] Message: {e.Message}");
@@ -100,6 +100,12 @@ public sealed partial class FalloutApp : Application
         {
             log.Error("[CRASH] [{0}] HRESULT=0x{1:X8} {2}: {3}",
                 depth, ex.HResult, ex.GetType().FullName ?? "(unknown)", ex.Message);
+            // WinRT failures often carry the real diagnostic ONLY in the restricted-error info
+            // (the Message is the useless "text could not be found" placeholder).
+            if (WinRtErrorInfo.RestrictedDescription(ex) is { } restricted)
+            {
+                log.Error("[CRASH] [{0}] RestrictedError: {1}", depth, restricted);
+            }
             if (ex.StackTrace != null)
             {
                 log.Error("[CRASH] [{0}] StackTrace:\n{1}", depth, ex.StackTrace);
@@ -144,6 +150,11 @@ public sealed partial class FalloutApp : Application
         while (ex != null)
         {
             Console.WriteLine($"[CRASH] [{depth}] HRESULT=0x{ex.HResult:X8} {ex.GetType().FullName}: {ex.Message}");
+            // Same restricted-error surfacing as LogInnerExceptions, for terminal launches.
+            if (WinRtErrorInfo.RestrictedDescription(ex) is { } restricted)
+            {
+                Console.WriteLine($"[CRASH] [{depth}] RestrictedError: {restricted}");
+            }
             if (ex.StackTrace != null && depth > 0)
             {
                 Console.WriteLine($"[CRASH] [{depth}] StackTrace: {ex.StackTrace}");

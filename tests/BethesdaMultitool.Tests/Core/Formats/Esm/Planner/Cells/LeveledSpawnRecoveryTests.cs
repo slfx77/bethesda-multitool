@@ -248,8 +248,10 @@ public sealed class LeveledSpawnRecoveryTests
 
         var options = new PluginBuildOptions { RecoverLeveledSpawnActors = recover };
         var stats = new ConversionPipelineStats();
+        var settled = CellPlanTestHarness.Settle(
+            plan, masterByFormId, masterIndex, options, recover, dmpBaseTypes);
         var section = PlanCellSectionBuilder
-            .BuildCellSectionCore(plan, masterByFormId, options, stats, masterIndex, dmpBaseTypes)
+            .BuildCellSectionCore(settled, masterByFormId, options, stats, masterIndex, dmpBaseTypes)
             .SectionBytes;
         return (section, stats);
     }

@@ -374,6 +374,7 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
             return null;
         }
 
+#pragma warning disable S1244 // exact bit-pattern zero is the accepted non-normal value when validating carved memory
         if (!RuntimeMemoryContext.IsNormalFloat(radius) && radius != 0f)
         {
             return null;
@@ -383,6 +384,7 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         {
             return null;
         }
+#pragma warning restore S1244
 
         return new RadioData
         {
@@ -470,8 +472,10 @@ internal sealed class RuntimeExtraDataParser(RuntimeMemoryContext context)
         {
             // An all-zero transform is a sentinel for "never authored", not a real arrival point
             // (retail has 0 of 1,108 XTELs zeroed) — treat it as absent.
+#pragma warning disable S1244 // all-zero transform is the authored-absent sentinel; exact comparison intended
             var allZero = x.Value == 0f && y.Value == 0f && z.Value == 0f &&
                           rotX.Value == 0f && rotY.Value == 0f && rotZ.Value == 0f;
+#pragma warning restore S1244
             if (!allZero)
             {
                 posRot = new PositionSubrecord(

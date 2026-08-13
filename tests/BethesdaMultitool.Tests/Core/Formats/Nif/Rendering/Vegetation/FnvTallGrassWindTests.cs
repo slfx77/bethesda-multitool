@@ -10,12 +10,15 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Vegetation;
 public sealed class FnvTallGrassWindTests
 {
     [Fact]
-    public void Capability_IsExplicitlyLimitedToFalloutNewVegas()
+    public void Capability_IsExplicitlyLimitedToTheClassicFalloutPair()
     {
+        // FO3 parity 2026-08-10: FO3 joined FNV — its GRASS shader entries are byte-identical
+        // and its TallGrassShader constant setup implements the same recovered wind contract
+        // (TestOutput/fo3-parity-2026-08/census/). Every other game stays unsupported.
         foreach (var game in Enum.GetValues<BethesdaGame>())
         {
             Assert.Equal(
-                game == BethesdaGame.FalloutNewVegas,
+                game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3,
                 FnvTallGrassWind.IsSupported(game));
         }
     }

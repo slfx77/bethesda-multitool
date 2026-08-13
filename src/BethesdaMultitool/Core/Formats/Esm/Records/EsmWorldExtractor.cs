@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using System.Text;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -52,9 +53,15 @@ internal static class EsmWorldExtractor
 
         try
         {
+            // PGRE (placed grenade — mines) rides the same funnel: its DATA/NAME/X-subrecord
+            // layout is REFR-shaped, and routing it here (rather than the display-only
+            // PlacedGrenadeRecord parse, which keeps only 3 of DATA's 6 floats) is what feeds
+            // captured mines into cell PlacedObjects for the planner cell pipeline.
             var refrRecords = scanResult.MainRecords
-                .Where(r => r.RecordType is "REFR" or "ACHR" or "ACRE")
+                .Where(r => r.RecordType is "REFR" or "ACHR" or "ACRE" or "PGRE")
                 .ToList();
+
+            var childGrups = BuildChildGrupIntervals(accessor, fileSize, scanResult);
 
             foreach (var header in refrRecords)
             {
@@ -77,8 +84,33 @@ internal static class EsmWorldExtractor
                 var refr = ExtractRefrFromBuffer(buffer, dataSize, header, editorIdMap);
                 if (refr != null)
                 {
+                    // Carved-GRUP parentage, PGRE-scoped: a mine inside a type-8/9/10 child
+                    // GRUP labeled 0x00069EC2 IS a child of cell 0x00069EC2 — that is the file
+                    // structure, not an inference. Without it every proto-only mine orphans
+                    // into the unresolved virtual bucket, which dies in the planner. Kept
+                    // PGRE-only deliberately: widening it to REFR/ACHR/ACRE would re-parent
+                    // hundreds of today-orphaned refs (a data-policy change, not a bug fix).
+                    if (header.RecordType == "PGRE"
+                        && refr.ParentCellFormId is null
+                        && TryFindEnclosingChildGrup(childGrups, header) is uint parentCellFormId)
+                    {
+                        refr = refr with { ParentCellFormId = parentCellFormId };
+                    }
+
                     scanResult.RefrRecords.Add(refr);
                 }
+            }
+
+            // PGRE telemetry (like PWAT's nifPlanes): captured mines are rare (13 across the
+            // 50-dump corpus) and every earlier loss in this class was silent — say what came in.
+            var pgreCount = scanResult.RefrRecords.Count(r => r.Header.RecordType == "PGRE");
+            if (pgreCount > 0)
+            {
+                Logger.Instance.Info("[PGRE] Extracted {0} captured placed grenade(s): {1}",
+                    pgreCount,
+                    string.Join(", ", scanResult.RefrRecords
+                        .Where(r => r.Header.RecordType == "PGRE")
+                        .Select(r => $"0x{r.Header.FormId:X8}")));
             }
         }
         finally
@@ -113,6 +145,7 @@ internal static class EsmWorldExtractor
         byte? teleportFlags = null;
         uint? enableParentFormId = null;
         byte? enableParentFlags = null;
+        uint? specialRenderingFlags = null;
         uint? linkedRefKeywordFormId = null;
         uint? linkedRefFormId = null;
         var isMapMarker = false;
@@ -262,6 +295,12 @@ internal static class EsmWorldExtractor
                     enableParentFlags = subData[4];
                     break;
 
+                case "XSRF" when sub.DataLength >= 4: // Special Rendering Flags (0x2 = Imposter)
+                    specialRenderingFlags = header.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    break;
+
                 case "XLKR" when sub.DataLength >= 8: // Linked Reference (keyword + reference)
                     linkedRefKeywordFormId = header.IsBigEndian
                         ? BinaryPrimitives.ReadUInt32BigEndian(subData)
@@ -339,6 +378,7 @@ internal static class EsmWorldExtractor
             TeleportFlags = teleportFlags,
             EnableParentFormId = enableParentFormId,
             EnableParentFlags = enableParentFlags,
+            SpecialRenderingFlags = specialRenderingFlags,
             BaseEditorId = editorIdMap?.GetValueOrDefault(baseFormId),
             IsMapMarker = isMapMarker,
             MarkerType = markerType,
@@ -357,6 +397,89 @@ internal static class EsmWorldExtractor
         return bigEndian
             ? BinaryPrimitives.ReadSingleBigEndian(subData.Slice(offset, 4))
             : BinaryPrimitives.ReadSingleLittleEndian(subData.Slice(offset, 4));
+    }
+
+    /// <summary>
+    ///     Carved cell-children GRUP intervals. The scanner stores a GRUP header as a
+    ///     <see cref="DetectedMainRecord" /> with groupType in <c>Flags</c> and the label
+    ///     (parent cell FormID for types 8/9/10) in <c>FormId</c>, but deliberately zeroes
+    ///     DataSize — so the true extent is re-read from the file here for containment checks.
+    /// </summary>
+    private static List<(long Start, long End, uint CellFormId)> BuildChildGrupIntervals(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        EsmRecordScanResult scanResult)
+    {
+        var intervals = new List<(long Start, long End, uint CellFormId)>();
+        var sizeBytes = new byte[4];
+
+        foreach (var record in scanResult.MainRecords)
+        {
+            if (record.RecordType != "GRUP"
+                || record.Flags is not (8 or 9 or 10)
+                || record.FormId == 0
+                || record.Offset + 24 > fileSize)
+            {
+                continue;
+            }
+
+            accessor.ReadArray(record.Offset + 4, sizeBytes, 0, 4);
+            var groupSize = record.IsBigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(sizeBytes)
+                : BinaryPrimitives.ReadUInt32LittleEndian(sizeBytes);
+
+            // A child GRUP the size of a whole master is a mis-scan, not a container.
+            if (groupSize is < 24 or > 64 * 1024 * 1024)
+            {
+                continue;
+            }
+
+            intervals.Add((record.Offset, record.Offset + groupSize, record.FormId));
+        }
+
+        intervals.Sort(static (a, b) => a.Start.CompareTo(b.Start));
+        return intervals;
+    }
+
+    /// <summary>
+    ///     Enclosing child-GRUP lookup for one record header. Child GRUPs (types 8/9/10)
+    ///     never nest inside each other, so the last interval starting before the record is
+    ///     the only containment candidate; a record past its end has no carved parent.
+    /// </summary>
+    private static uint? TryFindEnclosingChildGrup(
+        List<(long Start, long End, uint CellFormId)> intervals,
+        DetectedMainRecord header)
+    {
+        if (intervals.Count == 0)
+        {
+            return null;
+        }
+
+        var lo = 0;
+        var hi = intervals.Count - 1;
+        var candidate = -1;
+        while (lo <= hi)
+        {
+            var mid = (lo + hi) / 2;
+            if (intervals[mid].Start < header.Offset)
+            {
+                candidate = mid;
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid - 1;
+            }
+        }
+
+        if (candidate < 0)
+        {
+            return null;
+        }
+
+        var (start, end, cellFormId) = intervals[candidate];
+        var recordEnd = header.Offset + header.HeaderSize + header.DataSize;
+        return header.Offset >= start + 24 && recordEnd <= end ? cellFormId : null;
     }
 
     private static byte[] NormalizeStructuralSubrecord(

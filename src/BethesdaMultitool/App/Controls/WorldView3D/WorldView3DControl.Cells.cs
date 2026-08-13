@@ -217,7 +217,11 @@ public sealed partial class WorldView3DControl
     private Dictionary<uint, WaterRenderer12.FnvWaterMaterialBinding>?
         ResolveFnvWaterMaterialCatalog()
     {
-        if (_data?.Game != BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas)
+        // FO3 parity 2026-08-10: widened from FNV-only. The catalog is pure WATR record data;
+        // FO3 shares the record layout and the shader path (both use the classic Fnv profile),
+        // and retail Fallout3.esm authors 124 XCWT cell overrides that need per-FormID bindings.
+        if (_data?.Game is not (BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas
+            or BethesdaMultitool.Core.Games.BethesdaGame.Fallout3))
         {
             return null;
         }
@@ -242,8 +246,14 @@ public sealed partial class WorldView3DControl
     /// </summary>
     private void RefreshWaterAppearanceForCurrentCell(bool force = false)
     {
+        // FO3 parity 2026-08-10: widened from FNV-only. Before this, FO3 exteriors NEVER
+        // re-resolved the camera cell's XCWT while moving — whatever bound at worldspace load
+        // stayed bound. Record semantics only (XCWT → NAM2 → engine-default tier, and the
+        // resolver's engine-default tier is already FNV+FO3); the FNV-only WATER001 route is
+        // unaffected (its contract hard-fails non-FNV input).
         if (_data is null || _water is null ||
-            _data.Game != BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas)
+            _data.Game is not (BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas
+                or BethesdaMultitool.Core.Games.BethesdaGame.Fallout3))
         {
             return;
         }

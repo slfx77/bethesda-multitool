@@ -38,7 +38,7 @@ public sealed partial class WorldView3DControl
 
     private async Task RunProjectionExportAsync(
         Export3DPlan plan, Export3DOptions opts, string basePath, float zSpan, bool tiledOutput,
-        IReadOnlyList<(float X, float Y)> contentCellCenters,
+        List<(float X, float Y)> contentCellCenters,
         ExportProgressController progress, CancellationToken ct)
     {
         var (basisRight, basisUp) = OrthoViewProjBuilder.CameraBasis(plan.Azimuth, plan.Elevation);

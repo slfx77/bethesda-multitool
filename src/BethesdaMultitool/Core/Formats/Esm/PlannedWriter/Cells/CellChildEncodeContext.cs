@@ -24,7 +24,7 @@ internal sealed record CellChildEncodeContext(
     MasterRecordIndex? MasterIndex,
     IReadOnlySet<uint> MasterRefFormIds,
     IReadOnlyDictionary<uint, string>? DmpBaseTypes,
-    IReadOnlyDictionary<uint, PlannerXespParentClassifier.Resolution> XespParentIndex)
+    PlannerXespParentClassifier XespClassifier)
 {
     /// <summary>
     ///     Master ref FormIDs the plan emits as overrides ANYWHERE in the plugin (cross-cell
@@ -63,72 +63,16 @@ internal sealed record CellChildEncodeContext(
     ///     True only when <paramref name="refFormId" /> resolves to a live REFR whose NAME
     ///     base is a DOOR. FormID existence alone is insufficient for XTEL: prototype and
     ///     retail data can reuse the same REFR identity with different base types.
+    ///     <para>
+    ///     Pure plan lookup since 2026-08-12 (retirement Stage H3). <see cref="NavmDoorLinkPlanner" />
+    ///     already walks master door placements AND every planned door-based child to build
+    ///     <c>ValidDoorRefFormIds</c>; the writer used to re-derive the same answer with an
+    ///     O(cells × children) scan per XTEL, which was both the last cross-cell search in
+    ///     the writer and a second opinion on a settled decision.
+    ///     </para>
     /// </summary>
-    public bool IsLiveDoorReference(uint refFormId)
-    {
-        if (Plan.NavmDoorLinks.ValidDoorRefFormIds.Contains(refFormId))
-        {
-            return true;
-        }
-
-        if (MasterByFormId.TryGetValue(refFormId, out var masterRef))
-        {
-            if (masterRef.Header.Signature != "REFR")
-            {
-                return false;
-            }
-
-            foreach (var subrecord in masterRef.Subrecords)
-            {
-                if (subrecord.Signature != "NAME" || subrecord.Data.Length < 4)
-                {
-                    continue;
-                }
-
-                var baseFormId = BinaryPrimitives.ReadUInt32LittleEndian(subrecord.Data.AsSpan(0, 4));
-                return MasterByFormId.TryGetValue(baseFormId, out var baseRecord)
-                       && baseRecord.Header.Signature == "DOOR";
-            }
-
-            return false;
-        }
-
-        foreach (var cell in Plan.CellsByFormId.Values)
-        {
-            if (cell.Emits == false)
-            {
-                continue;
-            }
-
-            foreach (var child in cell.PersistentChildren
-                         .Concat(cell.VwdChildren)
-                         .Concat(cell.TemporaryChildren))
-            {
-                if (child.FormId != refFormId
-                    || child.Type != "REFR"
-                    || child.Model is not BethesdaMultitool.Core.Formats.Esm.Models.World.PlacedReference placed
-                    || cell.RefDecisions.TryGetValue(child.FormId, out var dropped)
-                       && dropped.Verdict == PlacedRefEmitVerdict.Drop)
-                {
-                    continue;
-                }
-
-                var remappedBaseFormId = Plan.SourceToEmittedFormId.TryGetValue(placed.BaseFormId, out var remapped)
-                    ? remapped
-                    : placed.BaseFormId;
-                var finalBaseFormId = cell.RefDecisions.TryGetValue(child.FormId, out var decision)
-                                      && decision.FinalBaseFormId != 0
-                    ? decision.FinalBaseFormId
-                    : remappedBaseFormId;
-                return string.Equals(
-                    ResolveBaseRecordType(placed.BaseFormId, finalBaseFormId),
-                    "DOOR",
-                    StringComparison.Ordinal);
-            }
-        }
-
-        return false;
-    }
+    public bool IsLiveDoorReference(uint refFormId) =>
+        Plan.NavmDoorLinks.ValidDoorRefFormIds.Contains(refFormId);
 }
 
 /// <summary>

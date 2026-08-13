@@ -142,7 +142,7 @@ public static class PluginSemanticValidator
                 }
             }
 
-            if (signature is "REFR" or "ACHR" or "ACRE")
+            if (signature is "REFR" or "ACHR" or "ACRE" or "PGRE")
             {
                 totalRefrs++;
                 if (grupStack.TryPeek(out var parentGrup))
@@ -213,6 +213,21 @@ public static class PluginSemanticValidator
         var report = new StringBuilder();
         var errors = 0;
         var warnings = 0;
+
+        // TES4 HEDR must declare every record AND GRUP header except TES4 itself — verified
+        // against shipped FalloutNV.esm (542,016 = 465,016 records + 77,000 groups). This
+        // shipped 35% low for years because the field was fed from a per-write-site counter;
+        // it is now derived from the assembled bytes, and this rule keeps it that way.
+        var declaredHedrCount = TryReadHedrRecordCount(espBytes);
+        var structuralRecordCount = records.Count(static r => r.Header.Signature != "TES4")
+                                    + grupHeaders.Count;
+        if (declaredHedrCount is { } declared && declared != structuralRecordCount)
+        {
+            warnings++;
+            report.AppendLine(
+                $"WARN: TES4 HEDR record count is {declared:N0} but the file structurally " +
+                $"contains {structuralRecordCount:N0} (records + GRUPs, excluding TES4).");
+        }
 
         if (duplicateFormIds.Count > 0)
         {
@@ -411,6 +426,37 @@ public static class PluginSemanticValidator
         }
 
         return new SemanticValidationResult(errors, warnings, report.ToString().TrimEnd());
+    }
+
+    /// <summary>
+    ///     Read TES4's HEDR <c>numRecords</c> (data offset +4) straight from the bytes.
+    ///     Returns null when the header is absent or malformed — a file that can't present a
+    ///     HEDR has bigger problems than a count mismatch, reported by the other rules.
+    /// </summary>
+    private static uint? TryReadHedrRecordCount(byte[] espBytes)
+    {
+        if (espBytes.Length < EsmParser.MainRecordHeaderSize
+            || Encoding.ASCII.GetString(espBytes, 0, 4) != "TES4")
+        {
+            return null;
+        }
+
+        var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(espBytes.AsSpan(4, 4));
+        var pos = EsmParser.MainRecordHeaderSize;
+        var end = Math.Min(espBytes.Length, pos + (int)dataSize);
+        while (pos + 6 <= end)
+        {
+            var signature = Encoding.ASCII.GetString(espBytes, pos, 4);
+            var length = BinaryPrimitives.ReadUInt16LittleEndian(espBytes.AsSpan(pos + 4, 2));
+            if (signature == "HEDR" && length >= 8 && pos + 6 + length <= end)
+            {
+                return BinaryPrimitives.ReadUInt32LittleEndian(espBytes.AsSpan(pos + 10, 4));
+            }
+
+            pos += 6 + length;
+        }
+
+        return null;
     }
 
     private static List<string> FindDuplicateEffectiveScriptEditorIds(

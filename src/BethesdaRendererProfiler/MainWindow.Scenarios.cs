@@ -247,7 +247,7 @@ internal sealed partial class MainWindow
                 () => _owner._worldView.Profiler_IsReferenceStreamingQuiesced,
                 settleTimeout,
                 TimeSpan.FromMilliseconds(250),
-                cancellationToken);
+                ct: cancellationToken);
             if (!CaptureReadinessGuard.TryValidateStreamingQuiesced(
                     quiesced, settleTimeout, out var streamingError))
             {

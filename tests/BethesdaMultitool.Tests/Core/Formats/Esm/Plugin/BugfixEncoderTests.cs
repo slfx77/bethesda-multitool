@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
@@ -310,7 +311,7 @@ public class BugfixEncoderTests
             new HashSet<uint> { 0x123456 },
             new Dictionary<uint, uint> { [0x33184] = 0x123456 });
 
-        Assert.True(PluginBuilder.NpcHasRenderableTemplate(encoded.Subrecords));
+        Assert.True(HasRenderableTemplate(encoded.Subrecords));
         var tplt = Assert.Single(encoded.Subrecords, s => s.Signature == "TPLT");
         Assert.Equal(0x123456u, BinaryPrimitives.ReadUInt32LittleEndian(tplt.Bytes));
         var acbs = Assert.Single(encoded.Subrecords, s => s.Signature == "ACBS");
@@ -335,7 +336,7 @@ public class BugfixEncoderTests
             new HashSet<uint> { 0x000A1234, 0x123456 },
             new Dictionary<uint, uint> { [0x33184] = 0x123456 });
 
-        Assert.True(PluginBuilder.NpcHasRenderableTemplate(encoded.Subrecords));
+        Assert.True(HasRenderableTemplate(encoded.Subrecords));
         var tplt = Assert.Single(encoded.Subrecords, s => s.Signature == "TPLT");
         Assert.Equal(0x000A1234u, BinaryPrimitives.ReadUInt32LittleEndian(tplt.Bytes));
     }
@@ -360,7 +361,7 @@ public class BugfixEncoderTests
             new HashSet<uint> { 0x000A1234 },
             new Dictionary<uint, uint> { [0x33184] = 0x123456 });
 
-        Assert.True(PluginBuilder.NpcHasRenderableTemplate(encoded.Subrecords));
+        Assert.True(HasRenderableTemplate(encoded.Subrecords));
         Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "TPLT");
         var acbs = Assert.Single(encoded.Subrecords, s => s.Signature == "ACBS");
         Assert.Equal(0x0000, BinaryPrimitives.ReadUInt16LittleEndian(acbs.Bytes.AsSpan(22, 2)));
@@ -382,10 +383,43 @@ public class BugfixEncoderTests
             new HashSet<uint>(),
             new Dictionary<uint, uint>());
 
-        Assert.False(PluginBuilder.NpcHasRenderableTemplate(encoded.Subrecords));
+        Assert.False(HasRenderableTemplate(encoded.Subrecords));
         Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "TPLT");
         var acbs = Assert.Single(encoded.Subrecords, s => s.Signature == "ACBS");
         Assert.Equal(0x0000, BinaryPrimitives.ReadUInt16LittleEndian(acbs.Bytes.AsSpan(22, 2)));
+    }
+
+    /// <summary>
+    ///     A new NPC_ is renderable when it either inherits traits from a resolvable
+    ///     template (TPLT present AND the ACBS Use-Traits template flag set) or carries a
+    ///     complete captured FaceGen set of its own. This mirrored a legacy render-safety
+    ///     gate in <c>PluginBuilder</c>, which was deleted with the legacy emission path
+    ///     (retirement Stage E) — the rule lives on here because it is what the four
+    ///     <c>NpcEncoder.EncodeNew</c> cases above are really asserting about the encoder.
+    /// </summary>
+    private static bool HasRenderableTemplate(IReadOnlyList<EncodedSubrecord> subrecords)
+    {
+        const ushort UseTraitsTemplateFlag = 0x0001;
+
+        var hasCompleteFaceGen =
+            subrecords.Any(s => s.Signature == "RNAM" && s.Bytes.Length >= 4)
+            && subrecords.Any(s => s.Signature == "FGGS" && s.Bytes.Length == 50 * sizeof(float))
+            && subrecords.Any(s => s.Signature == "FGGA" && s.Bytes.Length == 30 * sizeof(float))
+            && subrecords.Any(s => s.Signature == "FGTS" && s.Bytes.Length == 50 * sizeof(float));
+
+        if (!subrecords.Any(s => s.Signature == "TPLT" && s.Bytes.Length >= 4))
+        {
+            return hasCompleteFaceGen;
+        }
+
+        var acbs = subrecords.FirstOrDefault(s => s.Signature == "ACBS" && s.Bytes.Length >= 24);
+        if (acbs is null)
+        {
+            return hasCompleteFaceGen;
+        }
+
+        var templateFlags = BinaryPrimitives.ReadUInt16LittleEndian(acbs.Bytes.AsSpan(22, 2));
+        return (templateFlags & UseTraitsTemplateFlag) != 0 || hasCompleteFaceGen;
     }
 
     // ====================================================================================

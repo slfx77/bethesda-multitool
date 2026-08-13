@@ -96,9 +96,11 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.Equal(41, loaded.SourceBlockIndex);
         // v68: the ENGINE z-write rule bits (EngineZWriteOff + DepthTestOff) joined the payload.
         // v69: triggered-FX rest-state resolve changed particle bake output (dormant emitters).
+        // v71: EmitterActive bool bindings gate baked birth rates (NVNellisArtillery idle smoke).
+        // v72: NiMaterialProperty diffuse joined the payload (untextured legacy shapes, OB-1).
         Assert.True(loaded.EngineZWriteOff);
         Assert.True(loaded.DepthTestOff);
-        Assert.Equal(70, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+        Assert.Equal(72, ReferenceDecodedMeshDiskCache12.DecoderVersion);
     }
 
     [Fact]

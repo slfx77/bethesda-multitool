@@ -81,7 +81,10 @@ export npc <meshes-bsa> --esm <e> -o <dir>  # Export NPC with FaceGen morphs + e
                                             #   (--dmp / --dmp-equip work here too)
 
 # DMP commands
-dmp to-esm <file> -o <out>      # Rebuild a loadable ESM/ESP plugin from a dump (planner pipeline; to-esp is a back-compat alias)
+dmp to-esm <file> -o <out>      # Rebuild a loadable ESM/ESP plugin from a dump (to-esp is a back-compat alias)
+                                #   Planner-only since 2026-08-11: the legacy emission path and its
+                                #   --planner-types opt-in are gone. Every decision is settled by
+                                #   EsmPlanner before PlanWriter/PlanCellSectionBuilder emit a byte.
 dmp modules <file>              # List loaded modules
 dmp regions <file>              # List memory regions
 dmp va2offset <file> <address>  # Convert VA to file offset

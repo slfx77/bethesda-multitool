@@ -39,6 +39,41 @@ public sealed class RenderableReferenceTests
         Assert.Equal(0f, transformed.Z, 5);
     }
 
+    /// <summary>
+    ///     XSRF Special-Rendering flags must NOT bake refs as authored-disabled. The 2026-08-10
+    ///     census of all 301 FNV XSRF refs proved the imposter-flagged population is the
+    ///     retail-rendered Vegas-skyline set (Strip/McCarran wall imposters, casino window-glow
+    ///     lights) — an earlier blanket hide stripped the skyline (A/B evidence in
+    ///     TestOutput/fo3-parity-2026-08/xsrf-ab). The one ending-FX imposter
+    ///     (`vLegateCampFortFireFX`) is silenced by the dormant-triggered-FX particle resolve
+    ///     instead — its NIF's only sequence is 'Forward', so its emitters bake at rate 0.
+    ///     XSRF stays parsed and surfaced (property panel), never a visibility input.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0x0u)]
+    [InlineData(0x2u)] // Imposter — skyline stand-ins retail renders
+    [InlineData(0x4u)] // Use Full Shader in LOD
+    [InlineData(0x6u)]
+    public void TryBuild_XsrfFlagsNeverBakeAuthoredDisabled(uint? xsrf)
+    {
+        var placement = new PlacedReference
+        {
+            FormId = 0x0015F3FC,
+            BaseFormId = 0x0015F3FB,
+            ModelPath = @"effects\nv\fortfirefx.nif",
+            RecordType = "REFR",
+            Scale = 1f,
+            SpecialRenderingFlags = xsrf,
+        };
+
+        var built = RenderableReference.TryBuild(placement);
+        Assert.NotNull(built);
+        Assert.False(built!.Value.IsInitiallyDisabled);
+        // The flag itself still surfaces on the model for the property panel + censuses.
+        Assert.Equal(((xsrf ?? 0) & 0x2) != 0, placement.IsImposter);
+    }
+
     [Fact]
     public void TryBuild_RefrWithTranslation_OffsetsLocalOriginToWorldPosition()
     {

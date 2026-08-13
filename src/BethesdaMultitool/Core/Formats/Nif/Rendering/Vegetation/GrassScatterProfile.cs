@@ -44,7 +44,12 @@ internal readonly record struct GrassScatterProfile(
         // iMaxGrassTypesPerTexture=2 is an inclusive zero-based index: the engine loop uses <=,
         // so up to three GNAM entries are consumed. CreateGrass floors jittered XY, queries
         // TESObjectLAND's checkerboard triangle planes, then floors the returned Z.
-        BethesdaGame.FalloutNewVegas => new(
+        // FO3 parity 2026-08-10: FO3 ships a byte-identical [Grass] INI block and quality ladder
+        // (VeryHigh fade 7000+1000), and its retail x86 implements the same CreateGrass floor
+        // quantization + floored height (0x007B3420) and GetCoordData checkerboard (0x007220D0) —
+        // TestOutput/fo3-parity-2026-08/census/fo3-decompile-spotchecks.md. Retail Fallout3.esm
+        // authors 9 GRAS records (all flags 0x06); before this arm FO3 rendered ZERO grass.
+        BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 => new(
             true, 80f, 2, 3, 0f, GrassPositionQuantization.FloorWorldUnits,
             TerrainTriangleTopology.AlternatingCheckerboard, true,
             new GrassDistanceEnvelope(FadeStart: 7000f, FadeRange: 1000f)),
@@ -79,10 +84,12 @@ internal readonly record struct GrassScatterProfile(
 ///         computes a genuine LINEAR opacity ramp —
 ///         <c>oT5.w = saturate((d - AlphaParam.x) / AlphaParam.y) * (1 - saturate((d - AlphaParam.z) / AlphaParam.w))</c>
 ///         — which its pixel shader multiplies straight into a blended output with no binarization.
-///         The viewer applies its hard end (2000 → 3000) for TES4 instead. Reproducing the smooth
-///         TES4 ramp requires the grass draw to BLEND, which it now does again: the 2026-07-25
-///         cutout/A2C reroute was reverted 2026-07-26 after retail in-game oracles showed soft blade
-///         silhouettes, so the smooth ramp is implementable here whenever it is picked up.
+///         That ramp IS implemented for TES4 (2026-08-10) in
+///         <c>reference_grass_oblivion.{vert,frag}.hlsl</c>, driven by this profile's shipped
+///         envelope values; the CPU hard end (2000 → 3000) is KEPT underneath it — a fully faded
+///         blade must still be culled for draw count, the ramp only hides the boundary. The blend
+///         it relies on is the restored path: the 2026-07-25 cutout/A2C reroute was reverted
+///         2026-07-26 after retail in-game oracles showed soft blade silhouettes.
 ///     </para>
 /// </summary>
 internal readonly record struct GrassDistanceEnvelope(float FadeStart, float FadeRange)
@@ -123,12 +130,16 @@ internal static class FnvTallGrassWind
     internal const double TwoPi = Math.PI * 2.0;
 
     /// <summary>
-    ///     The recovered GRASS2000 wind contract is specific to Fallout: New Vegas. Keep this
-    ///     capability separate from the grass-distance envelope: another game may acquire a
-    ///     distance policy without thereby opting into FNV shader constants.
+    ///     The recovered GRASS2000 wind contract, shared by the classic Fallout pair. FO3 parity
+    ///     2026-08-10: every GRASS shader entry in every package is byte-identical between FO3 and
+    ///     FNV (76 entries, disassembly diff empty), FO3's TallGrassShader::SetupGeometryConstants
+    ///     (0x00BAE9C0) computes the identical timer/3600·2π phase and 5/125 magnitude lerp, and
+    ///     neither game ships a grass caster permutation. Keep this capability separate from the
+    ///     grass-distance envelope: another game may acquire a distance policy without thereby
+    ///     opting into these shader constants.
     /// </summary>
     internal static bool IsSupported(BethesdaGame game) =>
-        game == BethesdaGame.FalloutNewVegas;
+        game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3;
 
     internal static float SanitizeWaveMultiplier(float value) =>
         float.IsFinite(value) && value > 0f ? value : 0f;

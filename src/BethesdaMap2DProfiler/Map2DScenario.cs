@@ -18,6 +18,7 @@ internal abstract class Map2DScenario
             "zoom-in-out" => new ZoomInOutScenario(),
             "pan-stress" => new PanStressScenario(),
             "topdown-still" => new TopDownStillScenario(),
+            "topdown-worldmap" => new TopDownWorldMapScenario(),
             "topdown-interior" => new TopDownInteriorScenario(
                 artifactOutputPath ?? Path.Combine(
                     Path.GetTempPath(), "BethesdaMap2DProfiler", "topdown-interior-settled.png")),

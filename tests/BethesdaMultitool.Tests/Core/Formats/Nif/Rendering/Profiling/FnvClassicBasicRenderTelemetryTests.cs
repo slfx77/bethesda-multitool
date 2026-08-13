@@ -128,17 +128,19 @@ public sealed class FnvClassicBasicRenderTelemetryTests
             compact,
             StringComparison.Ordinal);
         Assert.Contains(
-            "varflags=FnvActiveAdtBasePolicy.ApplyRuntimeFlags(eligibility,",
+            "state.Z=FnvActiveAdtBasePolicy.ApplyRuntimeFlags(eligibility,",
             compact,
             StringComparison.Ordinal);
-        // FNV-scoped runtime bit 12: TallGrass draws skip the sun-cascade lookup (no retail GRASS
-        // permutation samples a sun/world shadow map).
+        // Runtime bit 12 (classic-Fallout pair since the 2026-08-10 FO3 parity pass): TallGrass
+        // draws skip the sun-cascade lookup (no retail GRASS permutation samples a sun/world
+        // shadow map in either game's shader packages). The bit is applied OUTSIDE the FNV-only
+        // ADT block, whose ApplyRuntimeFlags preserves incoming flags.
         Assert.Contains(
-            "flags|=FnvActiveAdtBasePolicy.RuntimeFnvGrassNoSunShadowFlag;",
+            "orCore.Games.BethesdaGame.Fallout3&&submesh.IsTallGrass",
             compact,
             StringComparison.Ordinal);
         Assert.Contains(
-            "state.Z=flags;",
+            "|FnvActiveAdtBasePolicy.RuntimeFnvGrassNoSunShadowFlag;",
             compact,
             StringComparison.Ordinal);
         Assert.Contains(

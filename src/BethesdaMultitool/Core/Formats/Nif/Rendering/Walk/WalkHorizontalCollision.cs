@@ -40,7 +40,7 @@ internal readonly record struct WalkCollisionInstance(
     ///     eight transformed corners (correct Z range under tilt), and the wall sweep tests the
     ///     ROTATED footprint quad instead of the axis-aligned bounds.
     /// </summary>
-    public static WalkCollisionInstance FromPlacedBounds(Vector3 localMin, Vector3 localMax, in Matrix4x4 world)
+    public static WalkCollisionInstance FromPlacedBounds(Vector3 localMin, Vector3 localMax, Matrix4x4 world)
     {
         var orderedMin = Vector3.Min(localMin, localMax);
         var orderedMax = Vector3.Max(localMin, localMax);
@@ -60,14 +60,14 @@ internal readonly record struct WalkCollisionInstance(
         return new WalkCollisionInstance(null, world, min, max) { FootprintCorners = corners };
     }
 
-    private static Vector2 ProjectXY(Vector3 local, in Matrix4x4 world)
+    private static Vector2 ProjectXY(Vector3 local, Matrix4x4 world)
     {
         var placed = Vector3.Transform(local, world);
         return new Vector2(placed.X, placed.Y);
     }
 
     private static (Vector3 Min, Vector3 Max) TransformedCornerBounds(
-        Vector3 localMin, Vector3 localMax, in Matrix4x4 world)
+        Vector3 localMin, Vector3 localMax, Matrix4x4 world)
     {
         var min = new Vector3(float.MaxValue);
         var max = new Vector3(float.MinValue);
@@ -103,9 +103,11 @@ internal static class WalkHorizontalCollision
 {
     /// <summary>
     ///     Surfaces at or below 45 degrees are walkable and remain the ground sampler's responsibility;
-    ///     steeper faces participate in the horizontal wall sweep.
+    ///     steeper faces participate in the horizontal wall sweep. Shared with the ground probe through
+    ///     <see cref="WalkSurfaceSlopePolicy" /> so the two halves cannot drift into a slope band that
+    ///     is neither wall nor floor.
     /// </summary>
-    private const float WalkableNormalZ = 0.70710677f;
+    private const float WalkableNormalZ = WalkSurfaceSlopePolicy.MaxWallNormalZ;
 
     // A tiny separation prevents the next slide iteration from rediscovering the same wall at t=0.
     private const float ContactSkin = 0.05f;

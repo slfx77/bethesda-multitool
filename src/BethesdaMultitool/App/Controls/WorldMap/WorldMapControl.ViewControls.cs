@@ -525,6 +525,19 @@ public sealed partial class WorldMapControl
     ///     unpopulated notch, leaving a profiler zoom-in streaming a near-empty viewport. The capture
     ///     harness uses this so the aggregate→per-cell transition actually streams a dense viewport.
     /// </summary>
+    /// <summary>
+    ///     Applies the toolbar's real Zoom-to-Fit action (whole-worldspace view) and returns the
+    ///     resulting zoom. This is the profiler's fidelity hook for the "fully render the map"
+    ///     user scenario — unlike <see cref="Profiler_CenterOnActiveCells" />, which frames a
+    ///     close-up window at a caller-chosen zoom.
+    /// </summary>
+    internal float Profiler_ZoomToFitWorldspace()
+    {
+        ApplyZoomToFitWorldspace();
+        MapCanvas.Invalidate();
+        return _zoom;
+    }
+
     internal void Profiler_CenterOnActiveCells(float zoom)
     {
         double sx = 0, sy = 0;

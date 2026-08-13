@@ -60,8 +60,14 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // v70: EngineZWriteOff now also covers pure blends (no alpha test) — they cannot discard
     // their transparent texels, so letting them write depth wrecked dense frames. Warm v69
     // entries carry the unrestricted bit.
+    // v71: NiPSysEmitterCtlr's EmitterActive bool binding now gates the baked birth rate —
+    // sequences author rate as a constant pose and switch smoke with the bool (NVNellisArtillery
+    // Idle: rate 2250, EmitterActive false). Warm v70 entries carry full-rate rest-state smoke.
+    // v72: untextured legacy (BsVersion < 26) shapes carry MaterialDiffuse for a solid-color base
+    // bind. Warm v71 entries lack the field, so authored-black planes (SewerExitGateExterior01's
+    // 'black' Plane02) would keep rendering lit near-white.
     // (Full bump history for this constant lives in git blame.)
-    internal const int DecoderVersion = 70;
+    internal const int DecoderVersion = 72;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -476,6 +482,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write((ushort)submesh.BillboardMode);
         writer.Write(submesh.EngineZWriteOff);
         writer.Write(submesh.DepthTestOff);
+        writer.Write(submesh.MaterialDiffuse.HasValue);
+        if (submesh.MaterialDiffuse is { } materialDiffuse)
+        {
+            WriteVector3(writer, materialDiffuse);
+        }
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -566,7 +577,8 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             reader.ReadInt32(),
             (NifBillboardMode)reader.ReadUInt16(),
             reader.ReadBoolean(),
-            reader.ReadBoolean());
+            reader.ReadBoolean(),
+            reader.ReadBoolean() ? (Vector3?)ReadVector3(reader) : null);
         if (!Enum.IsDefined(payload.ClassicBasicShaderMode))
         {
             throw new InvalidDataException("Invalid FNV classic basic shader mode in decoded mesh cache.");
@@ -907,4 +919,7 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     NifBillboardMode BillboardMode = NifBillboardMode.RotateAboutUp,
     // ENGINE z-write rule bits (v68+; see NifAlphaClassifier). Stream-only consumers.
     bool EngineZWriteOff = false,
-    bool DepthTestOff = false);
+    bool DepthTestOff = false,
+    // Legacy NiMaterialProperty diffuse for untextured shapes (v72+); null when no material,
+    // FO3+ stream, or emissive route. See NifMaterialDiffusePolicy.
+    Vector3? MaterialDiffuse = null);

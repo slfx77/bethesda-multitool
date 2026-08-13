@@ -68,7 +68,10 @@ internal static class WeatherCloudTransitionResolver
             ? 1f
             : Math.Clamp(currentWeatherWeight, 0f, 1f);
         Vector2 velocity;
-        if (game == BethesdaGame.FalloutNewVegas && outgoingWeather is not null)
+        // FO3 parity 2026-08-10: FO3's Clouds::Update (0x006BD930) uses the identical
+        // blend-ONAM-first-then-multiply-blended-wind order (fo3-decompile-spotchecks.md).
+        if (game is (BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3) &&
+            outgoingWeather is not null)
         {
             // FNV Clouds::Update blends the current/outgoing ONAM scalar first. Sky::UpdateWind
             // independently blends the two DATA wind bytes, and Clouds multiplies those two blended

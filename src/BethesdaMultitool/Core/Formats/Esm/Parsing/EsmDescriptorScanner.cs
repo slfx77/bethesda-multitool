@@ -516,7 +516,7 @@ internal static class EsmDescriptorScanner
         DetectedMainRecord record,
         Dictionary<long, RefrState> refrStates)
     {
-        if (record.RecordType is not ("REFR" or "ACHR" or "ACRE"))
+        if (record.RecordType is not ("REFR" or "ACHR" or "ACRE" or "PGRE"))
         {
             return;
         }
@@ -595,6 +595,9 @@ internal static class EsmDescriptorScanner
                 state.EnableParentFormId = ReadUInt32(subData, 0, record.IsBigEndian);
                 state.EnableParentFlags = subData[4];
                 break;
+            case "XSRF" when subData.Length >= 4: // Special Rendering Flags (0x2 = Imposter)
+                state.SpecialRenderingFlags = ReadUInt32(subData, 0, record.IsBigEndian);
+                break;
             case "XLKR" when subData.Length >= 8:
                 state.LinkedRefKeywordFormId = ReadUInt32(subData, 0, record.IsBigEndian);
                 state.LinkedRefFormId = ReadUInt32(subData, 4, record.IsBigEndian);
@@ -657,6 +660,7 @@ internal static class EsmDescriptorScanner
                 TeleportFlags = state.TeleportFlags,
                 EnableParentFormId = state.EnableParentFormId,
                 EnableParentFlags = state.EnableParentFlags,
+                SpecialRenderingFlags = state.SpecialRenderingFlags,
                 IsMapMarker = state.IsMapMarker,
                 MarkerType = state.MarkerType,
                 MarkerName = state.MarkerName,
@@ -704,6 +708,7 @@ internal static class EsmDescriptorScanner
         public byte? TeleportFlags { get; set; }
         public uint? EnableParentFormId { get; set; }
         public byte? EnableParentFlags { get; set; }
+        public uint? SpecialRenderingFlags { get; set; }
         public uint? LinkedRefKeywordFormId { get; set; }
         public uint? LinkedRefFormId { get; set; }
         public bool IsMapMarker { get; set; }

@@ -21,23 +21,11 @@ public class QuestVariableConditionSanitizerTests
     private const uint QuestFormId = 0x00001000;
     private const uint ScriptFormId = 0x00002000;
 
-    [Fact]
-    public void Legacy_scpt_model_is_deferred_when_augmentation_owns_exact_or_aliased_master_target()
-    {
-        const uint sourceScript = 0x00102000;
-        const uint masterScript = 0x00002000;
-        var aliases = new Dictionary<uint, uint> { [sourceScript] = masterScript };
-        var augmentedTargets = new HashSet<uint> { masterScript };
-
-        Assert.True(PluginBuilder.ShouldDeferLegacyScriptModelToAugmentation(
-            "SCPT", masterScript, aliases, augmentedTargets));
-        Assert.True(PluginBuilder.ShouldDeferLegacyScriptModelToAugmentation(
-            "SCPT", sourceScript, aliases, augmentedTargets));
-        Assert.False(PluginBuilder.ShouldDeferLegacyScriptModelToAugmentation(
-            "SCPT", 0x00103000, aliases, augmentedTargets));
-        Assert.False(PluginBuilder.ShouldDeferLegacyScriptModelToAugmentation(
-            "NPC_", sourceScript, aliases, augmentedTargets));
-    }
+    // Removed with retirement Stage E: the legacy Phase-3 loop's
+    // ShouldDeferLegacyScriptModelToAugmentation gate deferred a legacy-encoded SCPT model
+    // when an augmentation already owned its master target. The planner's PlanWriter owns
+    // SCPT augmentation end to end (PlanWriter.BuildGrupForType emits the augmented master
+    // before the generic model path), so there is no second encoder to defer to.
 
     [Fact]
     public void Apply_keeps_new_info_when_variable_name_and_id_match_retained_master_script()

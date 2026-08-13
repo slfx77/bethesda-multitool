@@ -35,16 +35,17 @@ public sealed class OblivionWaterFogSourceContractTests
     }
 
     /// <summary>
-    ///     The ripple distance attenuation must be CLAMPED, and the clamp must be labelled as a guard
-    ///     rather than recovered math.
+    ///     The ripple distance attenuation must be CLAMPED — and the clamp IS recovered engine math.
     ///     <para>
-    ///         <c>WATER000.pso</c> computes it with no <c>_sat</c> (asm: <c>def c14, 2, -1, 0, -0.000122</c>;
-    ///         <c>mad r2.w, dist, c14.w, -c14.y</c>; <c>mul r3.w, r2.w, r2.w</c>). Retail never needs one
-    ///         because 0.000122 is 1/8192 and its water grid + fog far keep <c>distXY</c> inside that
-    ///         envelope. This viewer allows a 34,000-unit aerial camera, where the unsaturated term
-    ///         crosses zero at 8192 and then GROWS — reaching ~4.2 at the reported top-down pose, which
-    ///         amplified the encoded perturbation instead of flattening it and lit the sun lobe across
-    ///         the far field. It also drove the detail blend weight NEGATIVE past 8192.
+    ///         <c>WATER000.pso</c> computes <c>mad_sat r2.w, r1.w, c14.w, -c14.y</c> with
+    ///         <c>c14.w = -0.000122070312 = -2^-13</c>, i.e. <c>saturate(1 - dist/8192)</c>, then squares
+    ///         it. An earlier docstring here asserted the asm carried "no _sat"; that was FALSE — the
+    ///         2026-07-06 dump came from a decoder that dropped every destination modifier (93 saturating
+    ///         instructions across the WATER family). Verified 2026-08-08 by raw-token decode and by two
+    ///         independent disassemblers agreeing on the regenerated
+    ///         <c>tools/GhidraProject/oblivion_water_shaders/oblivion_water_pkg019.asm</c>. Without the
+    ///         clamp the term crossed zero at 8192 units and grew, amplifying the perturbation and
+    ///         driving the detail blend weight negative — the pre-fix far-field defect.
     ///     </para>
     /// </summary>
     [Fact]
@@ -66,14 +67,17 @@ public sealed class OblivionWaterFogSourceContractTests
     }
 
     /// <summary>
-    ///     The TNAM DetailMap samples at the SAME UV scale as the NormalMap.
+    ///     The TNAM DetailMap samples at the SAME UV base as the NormalMap.
     ///     <para>
-    ///         Re-verified against <c>oblivion_water_pkg019.asm</c>: asm 26 builds the NormalMap UV as
-    ///         <c>add r2.xy, a6, c0/*Scroll*/</c>, and asm 40 builds the DetailMap UV as
-    ///         <c>mad r1.xy, r3/*N*/, c4.xxxx, r2</c> — the same <c>r2</c>, offset by <c>N.xy * c4.x</c>
-    ///         with <c>def c4 = (0.1, …)</c>. There is no tiling divisor anywhere in the program.
-    ///         The shader previously multiplied by 4.75, attributed to an ini <c>fTileTextureDivisor</c>
-    ///         — but that key is MORROWIND's, so the detail map tiled 4.75x finer than retail.
+    ///         <c>WATER000.pso</c> builds the NormalMap UV as <c>add r2.xy, t6, c0/*Scroll*/</c>
+    ///         (t6 = mesh texcoord0) and the DetailMap UV as <c>mad r1.xy, r3/*N*/, c4.xxxx, r2</c> —
+    ///         the same <c>r2</c>, offset by <c>N.xy * 0.1</c>. WATER000 applies no divisor between the
+    ///         two samplers, so the removal of the 4.75 multiply stands ON THE ASM. But note the
+    ///         CORRECTED provenance: the first removal rationale called <c>fTileTextureDivisor</c>
+    ///         "MORROWIND's" — false; <c>Oblivion_default.ini:209</c> ships
+    ///         <c>fTileTextureDivisor=4.7500</c> in its own [Water] section. The key is real and, if
+    ///         live anywhere, acts in the engine's water-grid MESH UV generation (still unrecovered),
+    ///         not between these two fetches.
     ///     </para>
     /// </summary>
     [Fact]

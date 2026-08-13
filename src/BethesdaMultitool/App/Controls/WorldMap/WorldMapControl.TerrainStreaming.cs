@@ -791,7 +791,19 @@ public sealed partial class WorldMapControl
         try
         {
             var result = await WorldLayerBuildService.BuildAsync(request).ConfigureAwait(false);
-            _ = DispatcherQueue.TryEnqueue(() => ApplyTerrainAggregateResult(result, worldspaceFormId));
+            // Win2D device-lost inside this TryEnqueue callback (aggregate CreateFromBytes) must
+            // not escape as an unhandled UI-thread exception — swallow and log.
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                try
+                {
+                    ApplyTerrainAggregateResult(result, worldspaceFormId);
+                }
+                catch (Exception applyEx)
+                {
+                    LogUiThreadFault("ApplyTerrainAggregateResult", applyEx);
+                }
+            });
         }
         catch (Exception ex)
         {

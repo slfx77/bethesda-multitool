@@ -21,8 +21,8 @@ internal static class WalkColdBoundsProbe
     public static bool TryRaycastDownToTop(
         Vector3 localMin,
         Vector3 localMax,
-        in Matrix4x4 world,
-        in Matrix4x4 inverseWorld,
+        Matrix4x4 world,
+        Matrix4x4 inverseWorld,
         float worldX,
         float worldY,
         float rayOriginZ,

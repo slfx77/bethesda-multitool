@@ -215,6 +215,12 @@ internal readonly record struct RenderableReference(
             MeshId: meshId,
             // XESP enable-parent chains slave a ref's enable state to its parent; the resolved
             // initial-world state rides the same flag the cull's ShowInitiallyDisabled toggle reads.
+            // XSRF Imposter refs are deliberately NOT folded in: the 2026-08-10 census of all 301
+            // FNV XSRF refs showed 300 are the Vegas-skyline cross-worldspace imposter set (Strip/
+            // McCarran walls, freeway, casino window-glow lights) that RETAIL RENDERS — hiding them
+            // stripped the skyline (A/B: TestOutput/fo3-parity-2026-08/xsrf-ab). The one ending-FX
+            // ref (vLegateCampFortFireFX) is already silenced by the dormant-triggered-FX particle
+            // resolve (its NIF's only sequence is 'Forward'), verified at the reported pose.
             IsInitiallyDisabled: placement.IsInitiallyDisabled || xespDisabled,
             IsMarker: IsMarkerModelPath(placement.ModelPath),
             IsImposter: IsImposterModelPath(placement.ModelPath, game) ||

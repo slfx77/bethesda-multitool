@@ -1,5 +1,8 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Planner;
+using BethesdaMultitool.Core.Formats.Esm.Planner.References;
+using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 
@@ -127,8 +130,7 @@ public sealed class RefrEncoder : IRecordEncoder
     /// </remarks>
     internal static EncodedRecord EncodeNewPlacedReference(
         PlacedReference placed,
-        IReadOnlySet<uint>? validFormIds = null,
-        IReadOnlyDictionary<uint, uint>? remapTable = null,
+        PlanReferenceLookup? links = null,
         string? baseRecordType = null)
     {
         var subs = new List<EncodedSubrecord>();
@@ -141,13 +143,12 @@ public sealed class RefrEncoder : IRecordEncoder
         // FalloutNV.esm carry it (13 as EDID NAME XRDO DATA, 6 as NAME XRDO DATA).
         if (placed.RadioData is not null)
         {
-            subs.Add(BuildXrdoSubrecord(placed, validFormIds, remapTable, warnings));
+            subs.Add(BuildXrdoSubrecord(placed, links, warnings));
         }
 
         if (placed.EncounterZoneFormId.HasValue)
         {
-            var resolved = ResolveOptionalFormId(placed.EncounterZoneFormId.Value,
-                validFormIds, remapTable);
+            var resolved = Resolve(links, "XEZN", placed.EncounterZoneFormId.Value);
             if (resolved.HasValue)
             {
                 subs.Add(EncodeFormIdSubrecord("XEZN", resolved.Value));
@@ -161,7 +162,7 @@ public sealed class RefrEncoder : IRecordEncoder
 
         if (placed.LinkedRefFormId.HasValue)
         {
-            var xlkrSubrec = TryBuildXlkrSubrecord(placed, validFormIds, remapTable, warnings);
+            var xlkrSubrec = TryBuildXlkrSubrecord(placed, links, warnings);
             if (xlkrSubrec is not null)
             {
                 subs.Add(xlkrSubrec);
@@ -175,8 +176,7 @@ public sealed class RefrEncoder : IRecordEncoder
 
         if (placed.OwnerFormId.HasValue)
         {
-            var resolved = ResolveOptionalFormId(placed.OwnerFormId.Value,
-                validFormIds, remapTable);
+            var resolved = Resolve(links, "XOWN", placed.OwnerFormId.Value);
             if (resolved.HasValue)
             {
                 subs.Add(EncodeFormIdSubrecord("XOWN", resolved.Value));
@@ -190,8 +190,7 @@ public sealed class RefrEncoder : IRecordEncoder
 
         if (placed.EnableParentFormId.HasValue)
         {
-            var resolved = ResolveOptionalFormId(placed.EnableParentFormId.Value,
-                validFormIds, remapTable);
+            var resolved = Resolve(links, "XESP", placed.EnableParentFormId.Value);
             if (resolved.HasValue)
             {
                 subs.Add(BuildXespSubrecord(placed, resolved.Value));
@@ -205,8 +204,9 @@ public sealed class RefrEncoder : IRecordEncoder
 
         if (placed.DestinationDoorFormId.HasValue)
         {
-            var resolved = ResolveOptionalFormId(placed.DestinationDoorFormId.Value,
-                validFormIds, remapTable);
+            // The plan's XTEL decision already carries the door-type gate, so a resolved
+            // value here is a proven-live door and needs no second opinion post-encode.
+            var resolved = Resolve(links, "XTEL", placed.DestinationDoorFormId.Value);
             if (resolved.HasValue)
             {
                 subs.Add(BuildXtelSubrecord(placed, resolved.Value));
@@ -219,7 +219,7 @@ public sealed class RefrEncoder : IRecordEncoder
             else
             {
                 warnings.Add($"REFR 0x{placed.FormId:X8} XTEL destination door " +
-                    $"0x{placed.DestinationDoorFormId.Value:X8} dangles — subrecord skipped.");
+                    $"0x{placed.DestinationDoorFormId.Value:X8} is not a live door — subrecord skipped.");
             }
         }
 
@@ -306,13 +306,12 @@ public sealed class RefrEncoder : IRecordEncoder
     /// </summary>
     private static EncodedSubrecord BuildXrdoSubrecord(
         PlacedReference placed,
-        IReadOnlySet<uint>? validFormIds,
-        IReadOnlyDictionary<uint, uint>? remapTable,
+        PlanReferenceLookup? links,
         List<string> warnings)
     {
         var radio = placed.RadioData!;
         var positionRef = radio.PositionRefFormId is { } captured && captured != 0
-            ? ResolveOptionalFormId(captured, validFormIds, remapTable)
+            ? Resolve(links, FieldPath.Member("XRDO", "PositionRef"), captured)
             : null;
 
         if (radio.PositionRefFormId is { } original && original != 0 && positionRef is null)
@@ -354,12 +353,10 @@ public sealed class RefrEncoder : IRecordEncoder
     /// </summary>
     private static EncodedSubrecord? TryBuildXlkrSubrecord(
         PlacedReference placed,
-        IReadOnlySet<uint>? validFormIds,
-        IReadOnlyDictionary<uint, uint>? remapTable,
+        PlanReferenceLookup? links,
         List<string> warnings)
     {
-        var resolvedRef = ResolveOptionalFormId(placed.LinkedRefFormId!.Value,
-            validFormIds, remapTable);
+        var resolvedRef = Resolve(links, "XLKR", placed.LinkedRefFormId!.Value);
         if (!resolvedRef.HasValue)
         {
             warnings.Add($"REFR 0x{placed.FormId:X8} XLKR linked ref " +
@@ -369,8 +366,8 @@ public sealed class RefrEncoder : IRecordEncoder
 
         if (placed.LinkedRefKeywordFormId.HasValue)
         {
-            var resolvedKeyword = ResolveOptionalFormId(placed.LinkedRefKeywordFormId.Value,
-                validFormIds, remapTable);
+            var resolvedKeyword = Resolve(
+                links, FieldPath.Member("XLKR", "Keyword"), placed.LinkedRefKeywordFormId.Value);
             if (resolvedKeyword.HasValue)
             {
                 var xlkr8 = new byte[8];
@@ -390,35 +387,34 @@ public sealed class RefrEncoder : IRecordEncoder
     }
 
     /// <summary>
-    ///     Try remap-first-then-validity for an optional placed-ref FormID. Returns null when
-    ///     the FormID is dangling with no remap; otherwise returns the resolved (possibly
-    ///     remapped) FormID. Mirrors the same policy used by IDLE ANAM, IDLE CTDA params,
-    ///     QUST/PERK CTDA params, and PACK PLDT/PTDT.
+    ///     Reads the plan's decision for one optional placed-ref link. Returns the FormID to
+    ///     emit, or null when the plan condemned the subrecord.
+    ///     <para>
+    ///     A null <paramref name="links" /> means no plan was supplied — the captured value is
+    ///     emitted verbatim. Only shape-level callers (encoder unit tests) do that; every
+    ///     production path routes through <c>PlacedRefLinkPlanner</c>, which owns the
+    ///     remap-then-validate policy this method used to implement inline.
+    ///     </para>
     /// </summary>
-    private static uint? ResolveOptionalFormId(
-        uint formId,
-        IReadOnlySet<uint>? validFormIds,
-        IReadOnlyDictionary<uint, uint>? remapTable)
+    private static uint? Resolve(PlanReferenceLookup? links, string fieldPath, uint captured)
     {
-        if (formId == 0 || validFormIds is null)
+        if (links is null || captured == 0)
         {
-            return formId;
+            return captured;
         }
 
-        if (remapTable is not null
-            && remapTable.TryGetValue(formId, out var remapped)
-            && remapped != formId
-            && validFormIds.Contains(remapped))
+        if (!links.TryGet(fieldPath, out var resolved))
         {
-            return remapped;
+            throw new KeyNotFoundException(
+                $"No planned link decision for {fieldPath} on a new placed reference. " +
+                "PlacedRefLinkPlanner and RefrEncoder disagree on the subrecord stream.");
         }
 
-        if (validFormIds.Contains(formId))
-        {
-            return formId;
-        }
-
-        return null;
+        // Null covers both "drop the subrecord" and "keep it but null the field": XRDO is the
+        // only site that keeps its subrecord, and it already coalesces null to 0 (and warns).
+        return resolved.Action == ResolvedRefAction.Resolved
+            ? resolved.FinalFormId ?? captured
+            : null;
     }
 
     /// <summary>

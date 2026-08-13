@@ -48,7 +48,15 @@ public sealed partial class KeyboardShortcutsDialog : ContentDialog
         new("World Viewer — 3D", "Q (walk mode)", "Reselect previous pick"),
         new("World Viewer — 3D", "Enter", "Warp through the selected door"),
         new("World Viewer — 3D", "P", "Copy camera pose as headless-capture arguments"),
+        new("World Viewer — 3D", "R", "Reset view (re-frame the worldspace or interior)"),
         new("World Viewer — 3D", "Esc", "Clear selection"),
+
+        // The 2D map's shortcuts also use direct KeyDown handling (WorldMapControl.Input) —
+        // keep this group in sync with MapCanvas_KeyDown.
+        new("World Viewer — 2D Map", "W / A / S / D", "Pan the map"),
+        new("World Viewer — 2D Map", "Mouse drag", "Pan the map"),
+        new("World Viewer — 2D Map", "Mouse wheel", "Zoom in / out"),
+        new("World Viewer — 2D Map", "R", "Reset view (re-frame the worldspace or interior)"),
 
         new("Help", "F1", "Show this keyboard shortcuts dialog")
     ];

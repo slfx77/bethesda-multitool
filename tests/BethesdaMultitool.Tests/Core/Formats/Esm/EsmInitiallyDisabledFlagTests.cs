@@ -123,4 +123,63 @@ public class EsmInitiallyDisabledFlagTests(ITestOutputHelper output)
         Assert.NotNull(wasteland);
         _output.WriteLine($"WastelandNV cells: {wasteland.Cells.Count}");
     }
+
+    /// <summary>
+    ///     XSRF Special Rendering Flags must survive the full pipeline: bit 0x2 (Imposter) marks
+    ///     vantage-only stand-ins like FNV `vLegateCampFortFireFX` (the ending's burning Legate
+    ///     camp), which viewers hide by default even though the REFR itself is enabled.
+    /// </summary>
+    [Fact]
+    public void WorldspaceParsing_XsrfImposterFlag_ShouldFlowToPlacedReference()
+    {
+        var imposterRef = new EsmTestFileBuilder.PlacedRefData
+        {
+            RecordType = "REFR", FormId = 0x0015F3FC, BaseFormId = 0x0015F3FB,
+            SpecialRenderingFlags = 0x2, // Imposter
+            X = 112362, Y = 42153, Z = 988
+        };
+
+        var lodHintRef = new EsmTestFileBuilder.PlacedRefData
+        {
+            RecordType = "REFR", FormId = 0x00100010, BaseFormId = 0x00050004,
+            SpecialRenderingFlags = 0x4, // Use Full Shader in LOD — must NOT read as imposter
+            X = 100, Y = 200, Z = 0
+        };
+
+        var plainRef = new EsmTestFileBuilder.PlacedRefData
+        {
+            RecordType = "REFR", FormId = 0x00100011, BaseFormId = 0x00050005,
+            X = 140, Y = 240, Z = 0
+        };
+
+        var builder = new EsmTestFileBuilder();
+        builder.AddWorldspace(new EsmTestFileBuilder.WorldspaceData
+        {
+            FormId = 0x000DA726,
+            EditorId = "WastelandNV",
+            FullName = "Mojave Wasteland",
+            PersistentCell = new EsmTestFileBuilder.CellData
+            {
+                FormId = 0x000846EA,
+                EditorId = "WastelandNVPersistent",
+                PersistentRefs = [imposterRef, lodHintRef, plainRef]
+            }
+        });
+
+        var collection = builder.BuildAndAnalyze().Collection;
+        var placed = collection.Worldspaces
+            .SelectMany(w => w.Cells)
+            .SelectMany(c => c.PlacedObjects)
+            .ToDictionary(p => p.FormId);
+
+        Assert.Equal(0x2u, placed[0x0015F3FC].SpecialRenderingFlags);
+        Assert.True(placed[0x0015F3FC].IsImposter);
+        Assert.False(placed[0x0015F3FC].IsInitiallyDisabled);
+
+        Assert.Equal(0x4u, placed[0x00100010].SpecialRenderingFlags);
+        Assert.False(placed[0x00100010].IsImposter);
+
+        Assert.Null(placed[0x00100011].SpecialRenderingFlags);
+        Assert.False(placed[0x00100011].IsImposter);
+    }
 }

@@ -54,6 +54,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                 LockTimesUnlocked = refr.LockTimesUnlocked,
                 EnableParentFormId = refr.EnableParentFormId,
                 EnableParentFlags = refr.EnableParentFlags,
+                SpecialRenderingFlags = refr.SpecialRenderingFlags,
                 PersistentCellFormId = refr.PersistentCellFormId,
                 StartingPosition = refr.StartingPosition,
                 StartingWorldOrCellFormId = refr.StartingWorldOrCellFormId,

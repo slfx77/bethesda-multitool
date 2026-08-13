@@ -97,6 +97,7 @@ public static class GameProfiles
                 HasOnamCloudSpeeds = true,
                 UsesEngineImagespaceDefaults = true,
                 UsesClassicHdrImagespace = true,
+                ImageSpaceSkinDimmerFormVersion = 14,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
             },
@@ -116,6 +117,7 @@ public static class GameProfiles
                 HasOnamCloudSpeeds = true,
                 UsesEngineImagespaceDefaults = true,
                 UsesClassicHdrImagespace = true,
+                ImageSpaceSkinDimmerFormVersion = 14,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
             },

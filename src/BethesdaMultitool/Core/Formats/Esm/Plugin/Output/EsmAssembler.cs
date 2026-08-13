@@ -12,20 +12,19 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 internal sealed class EsmAssembler(RecordEncoderRegistry encoderRegistry)
 {
     /// <summary>
-    ///     Concatenates TES4, emitted top-level GRUPs, and the cell hierarchy into final ESP bytes.
-    ///     The optional <paramref name="emitPlan" /> activates the planner-owned cell pipeline
-    ///     when <c>options.PlannerEnabledRecordTypes</c> contains <c>"CELL"</c>; otherwise the
-    ///     legacy <see cref="CellGrupBuilder" /> runs against <paramref name="bundles" />.
+    ///     Concatenates TES4, emitted top-level GRUPs, and the planner-built cell hierarchy
+    ///     into final ESP bytes. The legacy <see cref="CellGrupBuilder" />-over-bundles branch
+    ///     was removed in the 2026-08-11 retirement (Stage F); the cell tree is structurally
+    ///     atomic and the planner owns all of it (CELL / REFR / ACHR / ACRE / PGRE / LAND /
+    ///     NAVM / NAVI / WRLD-with-cells).
     /// </summary>
     public byte[] Assemble(
         PluginBuildOptions options,
         long masterFileSize,
         ConversionPipelineStats stats,
         IReadOnlyDictionary<string, byte[]> grupBytesByType,
-        IReadOnlyList<CellOverrideBundle> bundles,
         IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
         FormIdAllocator allocator,
-        IReadOnlyDictionary<uint, NewWorldspaceEntry>? newWorldspacesByDmpFormId,
         EmitPlan? emitPlan = null,
         MasterRecordIndex? masterRecordIndex = null,
         CellSectionBuildResult? prebuiltPlannerCellSection = null)
@@ -65,40 +64,44 @@ internal sealed class EsmAssembler(RecordEncoderRegistry encoderRegistry)
             emittedTypes.Add(kvp.Key);
         }
 
-        // Two-pass migration switch: when "CELL" is in PlannerEnabledRecordTypes the
-        // planner owns the entire cell hierarchy (CELL / REFR / ACHR / ACRE / LAND /
-        // NAVM / NAVI / WRLD-with-cells). Per-record opt-in is incoherent here — the
-        // cell tree is structurally atomic — so a single sentinel ("CELL") activates
-        // the whole pipeline.
         // The planner section is normally prebuilt by PluginBuilder (so NAVI rows can be
         // filtered to actually-written NAVMs before assembly); the fallback build here
-        // serves direct callers/tests only.
-        var plannerRouted = options.PlannerEnabledRecordTypes.Contains("CELL") && emitPlan is not null;
-        var plannerSection = plannerRouted
+        // serves direct callers/tests only. A plan-less call emits no cell hierarchy at
+        // all — legitimate for the header-only fixtures that exercise TES4 assembly.
+        var plannerSection = emitPlan is null
             ? prebuiltPlannerCellSection
-              ?? PlanCellSectionBuilder.BuildCellSectionCore(emitPlan!, pcRecordsByFormId, options, stats, masterRecordIndex)
-            : null;
-        var cellSectionBytes = plannerRouted
-            ? plannerSection!.SectionBytes
-            : CellGrupBuilder.BuildCellSection(bundles, pcRecordsByFormId, newWorldspacesByDmpFormId);
+            : prebuiltPlannerCellSection
+              ?? PlanCellSectionBuilder.BuildCellSectionCore(
+                  emitPlan, pcRecordsByFormId, options, stats, masterRecordIndex);
+        var cellSectionBytes = plannerSection?.SectionBytes;
 
-        var nextObjectId = allocator.HasAllocations ? allocator.NextObjectId : 0x800u;
-        var tes4 = Tes4HeaderBuilder.Build(
-            optionsForBuild, (uint)stats.RecordsEmitted, nextObjectId,
-            plannerSection?.OverriddenChildFormIds);
-
-        using var stream = new MemoryStream();
-        stream.Write(tes4);
+        // Body first, then census, then TES4. The HEDR record count and the run's emitted
+        // stats are both derived from the bytes we actually produced rather than from
+        // per-write-site counters, which drift whenever a later pass discards records
+        // (cell gates) or an encoder declines an override.
+        using var body = new MemoryStream();
         foreach (var grup in orderedGrups)
         {
-            stream.Write(grup);
+            body.Write(grup);
         }
 
         if (cellSectionBytes != null)
         {
-            stream.Write(cellSectionBytes);
+            body.Write(cellSectionBytes);
         }
 
+        var bodyBytes = body.ToArray();
+        var census = PluginEmissionCensus.Count(bodyBytes);
+        census.ApplyTo(stats);
+
+        var nextObjectId = allocator.HasAllocations ? allocator.NextObjectId : 0x800u;
+        var tes4 = Tes4HeaderBuilder.Build(
+            optionsForBuild, (uint)census.HedrRecordCount, nextObjectId,
+            plannerSection?.OverriddenChildFormIds);
+
+        using var stream = new MemoryStream(tes4.Length + bodyBytes.Length);
+        stream.Write(tes4);
+        stream.Write(bodyBytes);
         return stream.ToArray();
     }
 }

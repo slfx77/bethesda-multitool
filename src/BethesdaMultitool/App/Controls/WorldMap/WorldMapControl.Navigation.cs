@@ -67,21 +67,8 @@ public sealed partial class WorldMapControl
         if (!_suppressNavEvents) BeforeNavigate?.Invoke();
     }
 
-    private void ZoomFit_Click(object sender, RoutedEventArgs e)
-    {
-        if (_state.Mode == ViewMode.CellDetail && _state.SelectedCell != null)
-        {
-            WorldMapViewportHelper.ZoomToFitCell(_state.SelectedCell,
-                (float)MapCanvas.ActualWidth, (float)MapCanvas.ActualHeight,
-                out _zoom, out _panOffset);
-        }
-        else if (GetActiveCells().Count > 0)
-        {
-            ApplyZoomToFitWorldspace();
-        }
-
-        MapCanvas.Invalidate();
-    }
+    // Toolbar Zoom-to-Fit and the R keybind share one framing path (WorldMapControl.Input).
+    private void ZoomFit_Click(object sender, RoutedEventArgs e) => ResetViewToActiveExtent();
 
     /// <summary>Switches to cell-detail view for the given cell and zooms to fit it.</summary>
     public void NavigateToCell(CellRecord cell)
@@ -155,6 +142,15 @@ public sealed partial class WorldMapControl
         var canvasH = Math.Max((float)MapCanvas.ActualHeight, 600f);
         var center2D = WorldMapViewportHelper.ScreenToWorld(
             new Vector2(canvasW / 2f, canvasH / 2f), _zoom, _panOffset);
+        // The 3D viewer teleports its camera straight to this point, so it must land INSIDE the
+        // authored cells: a zoomed-out overview centre (or one panned past the data) would otherwise
+        // drop the camera outside the worldspace with nothing around it. Clamped to the same
+        // occupied-cell bounds ZoomToFitWorldspace frames on, so the two views agree.
+        if (WorldMapViewportMath.TryGetOccupiedCellBounds(GetActiveCells()) is { } dataBounds)
+        {
+            center2D = dataBounds.Clamp(center2D);
+        }
+
         // 2D-map Y is the negative of the shared (3D / PlacedReference) Y.
         return new WorldViewFocus(
             WorldspaceComboBox.SelectedIndex, false, null, center2D.X, -center2D.Y, selected, CellList.SortMode);

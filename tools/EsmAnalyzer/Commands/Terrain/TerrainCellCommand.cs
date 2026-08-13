@@ -98,7 +98,10 @@ internal static class TerrainCellCommand
 
         // Raw extracted-LAND provenance for the winner cell — shows the subrecord census the
         // relic gate keys on (VTEX-only pre-release relics are skipped at attach time).
-        foreach (var land in result.RawResult.EsmRecords.LandRecords
+        // EsmRecords is null when the analyzed file produced no raw ESM scan — then there is simply
+        // no raw-LAND provenance to report, and the section prints nothing.
+        var rawLandRecords = result.RawResult.EsmRecords?.LandRecords ?? [];
+        foreach (var land in rawLandRecords
                      .Where(l => l.ParentCellFormId == winner.FormId))
         {
             AnsiConsole.MarkupLine(

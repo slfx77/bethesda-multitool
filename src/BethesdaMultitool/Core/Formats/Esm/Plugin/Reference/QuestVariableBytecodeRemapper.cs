@@ -61,14 +61,12 @@ internal static class QuestVariableBytecodeRemapper
         IReadOnlyList<QuestVariableRecoveryMapping> freshMappings,
         IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
         IReadOnlyDictionary<uint, uint>? formIdAliases,
-        IReadOnlySet<string> skippedRecordTypes,
-        IReadOnlySet<string> plannerEnabledRecordTypes)
+        IReadOnlySet<string> skippedRecordTypes)
     {
         ArgumentNullException.ThrowIfNull(records);
         ArgumentNullException.ThrowIfNull(freshMappings);
         ArgumentNullException.ThrowIfNull(masterRecordsByFormId);
         ArgumentNullException.ThrowIfNull(skippedRecordTypes);
-        ArgumentNullException.ThrowIfNull(plannerEnabledRecordTypes);
 
         if (freshMappings.Count == 0)
         {
@@ -105,9 +103,9 @@ internal static class QuestVariableBytecodeRemapper
             }
         }
 
-        bool IsEligible(string recordType) =>
-            plannerEnabledRecordTypes.Contains(recordType)
-            && !skippedRecordTypes.Contains(recordType);
+        // Every record type is planner-owned since the 2026-08-11 legacy retirement, so
+        // eligibility reduces to "not explicitly skipped by --skip-record-type".
+        bool IsEligible(string recordType) => !skippedRecordTypes.Contains(recordType);
 
         if (IsEligible("SCPT"))
         {

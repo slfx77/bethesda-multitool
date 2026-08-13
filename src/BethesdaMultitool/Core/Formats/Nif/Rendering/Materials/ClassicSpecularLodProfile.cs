@@ -16,7 +16,11 @@ internal readonly record struct ClassicSpecularLodProfile(
 {
     internal static ClassicSpecularLodProfile ForGame(BethesdaGame game) => game switch
     {
-        BethesdaGame.FalloutNewVegas => new(true, 500f, 300f, 1f),
+        // FO3 parity 2026-08-10: FO3's shipped Fallout_default.ini authors the identical
+        // fSpecularLODDefaultStartFade=500 / fSpecularLODRange=300 pair, so the same envelope
+        // applies. The fade LAW (sphere-surface distance, piecewise ramp) remains an FNV
+        // decompile recovery assumed shared — flagged for opportunistic FO3 confirmation.
+        BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 => new(true, 500f, 300f, 1f),
         _ => default,
     };
 

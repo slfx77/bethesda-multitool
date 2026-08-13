@@ -29,29 +29,17 @@ internal static class CompareHeightmapsCommand
             return 1;
         }
 
-        // Determine target worldspace
-        uint targetFormId;
-        if (string.IsNullOrEmpty(worldspaceName))
+        // Determine the target worldspace from the FINAL file's own WRLD records (see
+        // WorldspaceSelector). Resolving against the data means a name that this file does not
+        // contain fails loudly here instead of degrading into "no heightmaps could be extracted".
+        if (!WorldspaceSelector.TryResolve(
+                esm2.Data, esm2.IsBigEndian, worldspaceName,
+                out var resolvedName, out var targetFormId))
         {
-            targetFormId = FalloutWorldspaces.KnownWorldspaces[FalloutWorldspaces.DefaultWorldspace];
-            worldspaceName = FalloutWorldspaces.DefaultWorldspace;
-        }
-        else if (FalloutWorldspaces.KnownWorldspaces.TryGetValue(worldspaceName, out var knownId))
-        {
-            targetFormId = knownId;
-        }
-        else
-        {
-            var parsed = EsmFileLoader.ParseFormId(worldspaceName);
-            if (parsed == null)
-            {
-                AnsiConsole.MarkupLine($"[red]ERROR:[/] Unknown worldspace '{worldspaceName}'");
-                return 1;
-            }
-
-            targetFormId = parsed.Value;
+            return 1;
         }
 
+        worldspaceName = resolvedName;
         AnsiConsole.MarkupLine($"Worldspace: [cyan]{worldspaceName}[/] (0x{targetFormId:X8})");
         AnsiConsole.MarkupLine($"Difference threshold: [cyan]{threshold}[/] world units");
         AnsiConsole.WriteLine();

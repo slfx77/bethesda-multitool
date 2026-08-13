@@ -298,10 +298,18 @@ internal static class GeckDialogueWriter
         sb.AppendLine($"  Responses:  {totalInfos:N0}");
         sb.AppendLine();
 
+        // One visited set for the WHOLE report: each topic's full chain renders exactly once
+        // (its first encounter) and every later encounter emits the "(see above)" stub. The old
+        // per-quest sets re-rendered shared topics in full under every linked quest, which is
+        // quadratic in shared-topic size × quest links — retail Fallout3.esm links one DIAL into
+        // 107 quests with GREETING carrying 2,542 INFOs, and the report OOM'd the process.
+        // FalloutNV.esm merely fit under the limit; its report shrinks (deduplicates) too.
+        var visited = new HashSet<uint>();
+
         // Render quest trees
         foreach (var (_, questNode) in tree.QuestTrees.OrderBy(q => q.Value.QuestName ?? ""))
         {
-            RenderQuestTree(sb, questNode, resolver);
+            RenderQuestTree(sb, questNode, resolver, visited);
         }
 
         // Render orphan topics
@@ -312,7 +320,6 @@ internal static class GeckDialogueWriter
             sb.AppendLine("  Orphan Topics (no quest link)");
             sb.AppendLine(new string('=', GeckReportHelpers.SeparatorWidth));
 
-            var visited = new HashSet<uint>();
             foreach (var topic in tree.OrphanTopics)
             {
                 RenderTopicTree(sb, topic, visited, "  ", resolver);
@@ -323,7 +330,7 @@ internal static class GeckDialogueWriter
     }
 
     internal static void RenderQuestTree(StringBuilder sb, QuestDialogueNode questNode,
-        FormIdResolver resolver)
+        FormIdResolver resolver, HashSet<uint>? reportVisited = null)
     {
         sb.AppendLine();
         var questLabel = questNode.QuestName ?? GeckReportHelpers.FormatFormId(questNode.QuestFormId);
@@ -331,7 +338,9 @@ internal static class GeckDialogueWriter
         sb.AppendLine($"{"",3}Quest: {questLabel} ({GeckReportHelpers.FormatFormId(questNode.QuestFormId)})");
         sb.AppendLine($"{"",3}{new string('=', GeckReportHelpers.SeparatorWidth - 6)}");
 
-        var visited = new HashSet<uint>();
+        // A caller-supplied set spans the whole report (see GenerateDialogueTreeReport); the
+        // per-quest fallback remains for direct single-quest rendering.
+        var visited = reportVisited ?? new HashSet<uint>();
         for (var i = 0; i < questNode.Topics.Count; i++)
         {
             var isLast = i == questNode.Topics.Count - 1;

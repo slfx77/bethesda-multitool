@@ -74,16 +74,20 @@ internal static class VerdictPlacedRefEncoder
             placed = placed with { EnableParentFormId = enableParentFormId };
         }
 
+        // Every optional link was settled by PlacedRefLinkPlanner; the encoder reads those
+        // decisions rather than re-validating, so no post-encode sanitation pass follows.
         var subs = RefrEncoder.EncodeNewPlacedReference(
-            placed, context.ValidFormIds, context.Plan.SourceToEmittedFormId,
+            placed, new PlanReferenceLookup(child),
             context.ResolveBaseRecordType(originalBaseFormId, placed.BaseFormId));
-        subs = subs with
-        {
-            Subrecords = PlacedRefTeleportSanitizer.Sanitize(subs.Subrecords, context),
-        };
+        AccountPlannedLinkDrops(child, context);
         PlannedPlacedRefEncoder.RecordEnableParentOutcome(placed, subs.Subrecords, context);
         if (subs.Subrecords.Count == 0)
         {
+            // The plan already counted this ref as an emit (PlanCellGates), so a
+            // serialization failure here silently desynchronizes the cell gates from
+            // reality. Name it rather than dropping without a trace.
+            context.Stats?.IncrementSkipped(child.Type);
+            context.Stats?.IncrementDropReason("refr.encoder-produced-no-subrecords");
             return null;
         }
 
@@ -106,6 +110,26 @@ internal static class VerdictPlacedRefEncoder
             child.Type, child.FormId, flags, subs.Subrecords);
     }
 
+    /// <summary>
+    ///     Counts the links the plan condemned on a new ref. The encoder silently honors the
+    ///     decision (it has no stats sink), so the accounting happens here beside it.
+    /// </summary>
+    private static void AccountPlannedLinkDrops(RecordPlan child, CellChildEncodeContext context)
+    {
+        if (context.Stats is null)
+        {
+            return;
+        }
+
+        foreach (var reference in child.References)
+        {
+            if (reference.Action == ResolvedRefAction.DropSubrecord && reference.Reason is { } reason)
+            {
+                context.Stats.IncrementDropReason(reason);
+            }
+        }
+    }
+
     private static byte[]? EncodeOverrideEmit(
         RecordPlan child,
         PlacedReference placed,
@@ -114,9 +138,12 @@ internal static class VerdictPlacedRefEncoder
         CellEncodeState state,
         ref int routeGroupType)
     {
-        // The verdict guarantees a master record exists; the guard is defensive.
+        // The verdict guarantees a master record exists (DecideOverride drops when it
+        // doesn't), so this is a planner-contract violation rather than a routine drop.
         if (!context.MasterByFormId.TryGetValue(child.FormId, out var masterRecord))
         {
+            context.Stats?.IncrementSkipped(child.Type);
+            context.Stats?.IncrementDropReason("refr.override-verdict-without-master");
             return null;
         }
 
@@ -129,12 +156,13 @@ internal static class VerdictPlacedRefEncoder
         if (encoded.Subrecords.Count == 0)
         {
             context.Stats?.IncrementSkipped(child.Type);
+            context.Stats?.IncrementDropReason("refr.encoder-produced-no-subrecords");
             return null;
         }
 
         encoded = encoded with
         {
-            Subrecords = PlannedPlacedRefEncoder.SanitizeOverrideSubrecords(encoded.Subrecords, context)
+            Subrecords = OverrideSubrecordSanitizer.Sanitize(encoded.Subrecords, context, child)
         };
 
         var masterForMerge = PlannedPlacedRefEncoder.StripXemi(masterRecord);

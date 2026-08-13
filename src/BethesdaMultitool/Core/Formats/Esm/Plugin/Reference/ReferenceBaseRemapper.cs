@@ -14,7 +14,8 @@ internal static class ReferenceBaseRemapper
 
     /// <summary>
     ///     True if a placed record of <paramref name="placedRecordType" /> may reference a base of
-    ///     <paramref name="baseRecordType" /> (ACHR to NPC_, ACRE to CREA, REFR to anything else).
+    ///     <paramref name="baseRecordType" /> (ACHR to NPC_, ACRE to CREA, PGRE to PROJ,
+    ///     REFR to anything else). All 174 PGREs in retail FalloutNV.esm point at PROJ bases.
     /// </summary>
     public static bool CanPlacedRecordUseBaseType(string placedRecordType, string baseRecordType)
     {
@@ -22,6 +23,7 @@ internal static class ReferenceBaseRemapper
         {
             "ACHR" => baseRecordType == "NPC_",
             "ACRE" => baseRecordType == "CREA",
+            "PGRE" => baseRecordType == "PROJ",
             "REFR" => baseRecordType is not ("NPC_" or "CREA"),
             _ => false
         };

@@ -69,12 +69,15 @@ public class WeatherColorParsingTests
     }
 
     [Theory]
+    // Mask offset follows the body, not the record length: 132 once Skin Dimmer is present
+    // (152-byte layout), otherwise 128. A 148-byte record has no Skin Dimmer, so it reads at
+    // 128 like the 132-byte one — 144/148 were the pre-2026-08-11 invented offsets.
     [InlineData(132, 128, false)]
     [InlineData(132, 128, true)]
-    [InlineData(148, 144, false)]
-    [InlineData(148, 144, true)]
-    [InlineData(152, 148, false)]
-    [InlineData(152, 148, true)]
+    [InlineData(148, 128, false)]
+    [InlineData(148, 128, true)]
+    [InlineData(152, 132, false)]
+    [InlineData(152, 132, true)]
     public void ReadImageSpaceCinematicFlags_PreservesLayoutOffsetsAndEndian(
         int length, int offset, bool bigEndian)
     {
@@ -93,8 +96,9 @@ public class WeatherColorParsingTests
     [Fact]
     public void ImageSpaceCinematic_PreservesWhetherMaskWasActuallyAuthored()
     {
+        // 148 bytes carries no Skin Dimmer, so its mask sits at 128 (see ReadImageSpaceCinematicFlags).
         var newLayoutBytes = new byte[148];
-        newLayoutBytes[144] = 0x07;
+        newLayoutBytes[128] = 0x07;
         var classic132 = new byte[132];
         classic132[128] = 0x02;
         var classicOldLayout = new ImageSpaceCinematic
@@ -120,6 +124,18 @@ public class WeatherColorParsingTests
         Assert.False(modernCnam.HasExplicitFlags);
     }
 
+    /// <summary>
+    ///     FO3/FNV IMGS DNAM: Skin Dimmer exists only in the 152-byte (form version ≥ 14) layout and
+    ///     shifts everything after +56; 148 and 132 omit it and differ only in trailing padding.
+    ///     <para>
+    ///         Corrected 2026-08-11 against retail bytes. This test previously pinned the mask at
+    ///         148/144/128 and asserted a four-float "Fade" block at <c>cinematicBase + 32</c> —
+    ///         both wrong. The mask sits immediately after the body (132 for 152-byte records, else
+    ///         128), and no fade block exists in this layout: that region is the mask plus the
+    ///         record's uninitialized engine stack, so the old assertions were pinning the
+    ///         implementation's own invention rather than the format.
+    ///     </para>
+    /// </summary>
     [Theory]
     [InlineData(132, false)]
     [InlineData(132, true)]
@@ -127,7 +143,7 @@ public class WeatherColorParsingTests
     [InlineData(148, true)]
     [InlineData(152, false)]
     [InlineData(152, true)]
-    public void ReadClassicImageSpaceDnam_NormalizesOldSkinAndFadeWithoutLosingAuthoredData(
+    public void ReadClassicImageSpaceDnam_NormalizesSkinDimmerWithoutLosingAuthoredData(
         int length, bool bigEndian)
     {
         var data = new byte[length];
@@ -153,20 +169,8 @@ public class WeatherColorParsingTests
         WriteFloat(cinematicBase + 24, 0.3f);
         WriteFloat(cinematicBase + 28, 0.4f);
 
-        if (length >= 148)
-        {
-            WriteFloat(cinematicBase + 32, 0.25f);
-            WriteFloat(cinematicBase + 36, 0.5f);
-            WriteFloat(cinematicBase + 40, 0.75f);
-            WriteFloat(cinematicBase + 44, 0.6f);
-        }
-
-        var maskOffset = length switch
-        {
-            >= 152 => 148,
-            >= 148 => 144,
-            _ => 128
-        };
+        // The mask dword sits immediately after the body: 132 when Skin Dimmer is present, else 128.
+        var maskOffset = hasSkin ? 132 : 128;
         if (bigEndian)
             BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(maskOffset, 4), 0x0F);
         else
@@ -187,11 +191,32 @@ public class WeatherColorParsingTests
         Assert.Equal(ImageSpaceCinematicFlags.All, decoded.Cinematic.Flags);
         Assert.Equal(0.1f, decoded.Tint.Red);
         Assert.Equal(0.4f, decoded.Tint.Amount);
-        Assert.Equal(length >= 148, decoded.Fade.IsAuthored);
-        Assert.Equal(length >= 148 ? 0.25f : 1f, decoded.Fade.Red);
-        Assert.Equal(length >= 148 ? 0.5f : 1f, decoded.Fade.Green);
-        Assert.Equal(length >= 148 ? 0.75f : 1f, decoded.Fade.Blue);
-        Assert.Equal(length >= 148 ? 0.6f : 0f, decoded.Fade.Amount);
+    }
+
+    /// <summary>
+    ///     Retail-shaped guard for the corrected mask offset: a 148-byte record's trailing padding
+    ///     (which retail fills with uninitialized stack) must NOT be mistaken for the mask. Writing
+    ///     the real mask at 128 and junk at the old 144 must still decode to <c>All</c>.
+    /// </summary>
+    [Theory]
+    [InlineData(132)]
+    [InlineData(148)]
+    [InlineData(152)]
+    public void ReadImageSpaceCinematicFlags_ReadsTheMaskNotTheUninitializedTail(int length)
+    {
+        var data = new byte[length];
+        var maskOffset = length >= 152 ? 132 : 128;
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(maskOffset, 4), 0x0F);
+
+        // Retail junk in the trailing dwords the old reader was pointing at.
+        for (var offset = maskOffset + 4; offset + 4 <= length; offset += 4)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(offset, 4), 0x11E3A4E0);
+        }
+
+        Assert.Equal(
+            ImageSpaceCinematicFlags.All,
+            MiscEnvironmentHandler.ReadImageSpaceCinematicFlags(data));
     }
 
     [Theory]

@@ -28,9 +28,11 @@ public sealed class BsaMalformedTests : IDisposable
         }
         catch (IOException)
         {
+            // best-effort temp-dir cleanup; a lingering handle must not fail the test run
         }
         catch (UnauthorizedAccessException)
         {
+            // best-effort temp-dir cleanup; a lingering handle must not fail the test run
         }
     }
 

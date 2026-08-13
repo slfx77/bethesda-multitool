@@ -56,13 +56,19 @@ public sealed record CellPlan
     /// <summary>FormID of the parent worldspace; null for interior cells.</summary>
     public uint? ParentWorldspaceFormId { get; init; }
 
-    // --- Planner-settled emission decisions (populated across the writer→planner refactor).
-    //     Null / empty / default means "not yet planned"; the writer falls back to computing
-    //     until the corresponding stage lands, at which point it reads these instead. ---
+    // --- Planner-settled emission decisions. These are the writer's ONLY source for these
+    //     choices: the writer-side fallbacks that used to recompute them were deleted with
+    //     the legacy emission path (2026-08-11), so a cell reaching the writer without them
+    //     throws rather than quietly taking a second opinion. ---
 
     /// <summary>
-    ///     Binary cell-merge classification (PersistentOnly vs LoadedReplacement vs Skip) the writer
-    ///     used to derive per-ref preservation. Null until the mode-planning stage populates it.
+    ///     Binary cell-merge classification (PersistentOnly vs LoadedReplacement vs Skip) that
+    ///     drives per-ref preservation. Settled by <c>CellSectionPlanner.PlanMergeMode</c>.
+    ///     <para>
+    ///     Still declared nullable: <c>CellSectionPlanner</c> constructs the plan in phases and
+    ///     the mode is attached after the children, so the property is briefly unset during
+    ///     construction. It is non-null on every plan the writer ever sees.
+    ///     </para>
     /// </summary>
     public CellMergeMode? Mode { get; init; }
 
@@ -74,8 +80,8 @@ public sealed record CellPlan
 
     /// <summary>
     ///     The planner's cell-emission verdict: true = emit this cell's bundle, false = suppress
-    ///     (ITM / interior-no-new-content / navmesh-only). Null until the gate-planning stage
-    ///     computes it from the per-ref verdicts.
+    ///     (ITM / interior-no-new-content / navmesh-only). Settled by <c>PlanCellGates</c>;
+    ///     nullable only for the same mid-construction window as <see cref="Mode" />.
     /// </summary>
     public bool? Emits { get; init; }
 

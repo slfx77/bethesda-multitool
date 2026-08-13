@@ -49,9 +49,20 @@
 //   * Fog is left to the shared per-pixel ApplyFog in the paired pixel shader. Retail computes a
 //     per-VERTEX linear fog into COLOR0 (oD0), but our fog stage keeps grass coherent with the
 //     terrain it sits on.
-//   * oT5.w — retail's smooth distance envelope, a fade-IN as well as a fade-out — is not applied.
-//     The viewer keeps its authoritative CPU hard end (2000 -> 3000) unchanged from today, so this
-//     shader changes LIGHTING ONLY and the soft blade silhouettes the user validated are preserved.
+//   * oT5.w — retail's smooth distance envelope — IS applied (EvaluateTes4GrassDistanceFade below).
+//     GRASS2020.vso derives d = length(clipPos) (`dp4 r2.w, r0, r0` / `rsq` / `rcp`, disassembly
+//     lines 81-85) and computes the two-sided linear ramp
+//         oT5.w = saturate((d - AlphaParam.x) / AlphaParam.y)
+//               * (1 - saturate((d - AlphaParam.z) / AlphaParam.w))
+//     (`add r1.xy, r2.w, -c5.xzzw` / `rcp c5.y` / `rcp c5.w` / `mul` / `max 0` / `min 1` /
+//     `add r0.w, -r1.y, 1` / `mul oT5.w, r1.x, r0.w`, lines 86-97); every paired pixel shader
+//     multiplies it into the blended output alpha (GRASS2002.pso line 2670, and the same closing
+//     `mul` in GRASS2003-2008 at lines 2707/2742/2790/2918/3051/3184). KNOWN DEVIATION: our d is
+//     the HORIZONTAL world distance from the fog camera (uCameraPosFogPower, the fog.hlsli
+//     convention) — the metric GrassDistanceCullPolicy's CPU hard end already uses — not retail's
+//     length(clipPos). One metric for ramp and cull means alpha reaches zero exactly where the
+//     KEPT hard cull (FadeStart + FadeRange, 2000 -> 3000) removes the draw, so the ramp hides
+//     the boundary while the cull keeps the draw count.
 //
 // FALSIFIABLE PREDICTION for the oracle pass: because the defect is `dot(cardNormal, sunDir)`
 // collapsing at high sun, the correction must be LARGEST at noon and near-nil at low sun. If a low
@@ -101,7 +112,36 @@ struct VSOutput
     nointerpolation float4 vTextureState : TEXCOORD4;
     nointerpolation uint4  vTexIndices   : TEXCOORD5;
     float3 vWorldPos : TEXCOORD6;
+    // Retail oT5.w: the two-sided distance envelope, multiplied into the blended alpha by the FS.
+    float vGrassDistanceFade : TEXCOORD7;
 };
+
+// Retail AlphaParam (c5) is CPU-driven; the recovered fill for its fade-OUT pair (c5.zw) is the
+// shipped Oblivion_default.ini [Grass] envelope — fGrassStartFadeDistance=2000 with
+// fGrassEndDistance=3000, i.e. range 1000 (TES4 authors an END distance; there is no
+// fGrassFadeRange, cross-checked against the Oblivion Remastered PDB setting names). These are the
+// SAME values GrassScatterProfile.ForGame(Oblivion) hands the CPU hard cull, which stays
+// authoritative at the 3000 end. They are compile-time constants because the envelope is per-game
+// static, not per-draw, and the blended PerDraw CB is full at its 256-byte CBV allocation
+// (ReferenceRendererConstants12.PerDrawConstants). Raising the distance is a USER decision, not a
+// shader default.
+static const float GrassFadeOutStart = 2000.0;
+static const float GrassFadeOutRange = 1000.0;
+// The fade-IN pair (c5.xy) has no recovered CPU fill and no known [Grass] INI key; a zero range
+// keeps that factor pinned at retail's saturate() ceiling of 1 rather than inventing values.
+static const float GrassFadeInStart = 0.0;
+static const float GrassFadeInRange = 0.0;
+
+/// Retail GRASS2020.vso oT5.w (disassembly lines 86-97):
+/// saturate((d - A.x) / A.y) * (1 - saturate((d - A.z) / A.w)).
+float EvaluateTes4GrassDistanceFade(float cameraDistance)
+{
+    float fadeIn = GrassFadeInRange > 0.0
+        ? saturate((cameraDistance - GrassFadeInStart) / GrassFadeInRange)
+        : 1.0;
+    float fadeOut = 1.0 - saturate((cameraDistance - GrassFadeOutStart) / GrassFadeOutRange);
+    return fadeIn * fadeOut;
+}
 
 /// Retail's decoded per-instance normal, recovered from the world matrix instead of a packed
 /// position. Falls back to world up for a degenerate (zero-scale) matrix.
@@ -154,6 +194,11 @@ VSOutput main(VSInput input)
         o.vGrassAmbient = uAmbientColor.rgb;
         o.vGrassDiffuse = EvaluateTes4GrassDiffuse(input.aVertexColor.rgb, placementNormal);
     }
+
+    // KNOWN DEVIATION (see header): retail's d is length(clipPos); ours is the horizontal world
+    // distance from the fog camera, the same metric the CPU hard cull applies at 3000.
+    o.vGrassDistanceFade = EvaluateTes4GrassDistanceFade(
+        length(worldPos.xy - uCameraPosFogPower.xy));
 
     o.vAlphaState = uAlphaState;
     o.vTextureState = uTextureState;

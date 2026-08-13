@@ -105,8 +105,32 @@ public sealed partial class WorldView3DControl
             return;
         }
 
+        // R snaps the view back to the loaded scene's framing (worldspace centroid / interior room).
+        // Guarded against text entry so the letter is never stolen from a focused text control, and
+        // first-press guarded so a held key re-frames once.
+        if (e.Key == VirtualKey.R && !TextEntryFocusGuard.IsTextEntryFocused(XamlRoot))
+        {
+            if (_toggleKeysDown.Add(e.Key)) ResetViewToSceneFraming();
+            e.Handled = true;
+            return;
+        }
+
         _controller.OnKeyDown(e.Key);
         e.Handled = true;
+    }
+
+    /// <summary>
+    ///     R (reset view): re-frames on the loaded scene by calling the same
+    ///     <see cref="ResetCameraToDataCentroid" /> the load path uses, so the keybind and the initial
+    ///     view can never drift apart — it already routes interiors to
+    ///     <see cref="ResetCameraToInteriorBounds" /> and exteriors to the worldspace centroid. In a
+    ///     projection (ortho) mode the visible framing comes from the ortho focus rather than the
+    ///     camera, so the focus is re-seeded from the reset camera.
+    /// </summary>
+    private void ResetViewToSceneFraming()
+    {
+        ResetCameraToDataCentroid();
+        if (ProjectionActive) InitProjectionFocusFromCamera();
     }
 
     private void OnRenderPanelKeyUp(object sender, KeyRoutedEventArgs e)

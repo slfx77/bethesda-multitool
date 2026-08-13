@@ -142,9 +142,20 @@ internal static class NifTexturingPropertyReader
         //   ≥ 20.1.0.2          — TexturingFlags (ushort, 2 bytes; FO3/FNV).
         // Then Texture Count (uint) + Has Base Texture (bool). Only (4.2.2.0, 10.0.1.2] reaches the
         // 6-byte arm — the legacy NetImmerse branch above handles Morrowind.
-        var applyModeOrFlagsSize = nif.BinaryVersion <= NifVersions.Gamebryo10012
-            ? 6
-            : nif.HasInlineStrings ? 4 : 2;
+        int applyModeOrFlagsSize;
+        if (nif.BinaryVersion <= NifVersions.Gamebryo10012)
+        {
+            applyModeOrFlagsSize = 6;
+        }
+        else if (nif.HasInlineStrings)
+        {
+            applyModeOrFlagsSize = 4;
+        }
+        else
+        {
+            applyModeOrFlagsSize = 2;
+        }
+
         if (pos + applyModeOrFlagsSize + 4 + 1 > end)
         {
             return false;

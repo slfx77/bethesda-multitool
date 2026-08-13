@@ -172,6 +172,14 @@ internal static class PlacedObjectCategoryResolver
                 { Name = "Initial State", Value = "Initially Disabled", Category = "Identity" });
         }
 
+        if (obj.IsImposter)
+        {
+            // XSRF special-rendering stand-in: the engine draws it only for scripted vantage
+            // set-pieces (e.g. the endgame view of the burning Legate camp), never in normal play.
+            properties.Add(new EsmPropertyEntry
+                { Name = "Special Rendering", Value = "Imposter (vantage-only)", Category = "Identity" });
+        }
+
         if (worldViewData?.RefrToCellIndex.TryGetValue(obj.FormId, out var parentCell) == true)
         {
             var cellName = parentCell.EditorId ?? parentCell.FullName ?? $"0x{parentCell.FormId:X8}";

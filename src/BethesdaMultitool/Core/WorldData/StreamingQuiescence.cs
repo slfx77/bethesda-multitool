@@ -51,22 +51,30 @@ internal static class StreamingQuiescence
     }
 
     /// <summary>
-    ///     Polls <paramref name="isQuiesced" /> until it is true or <paramref name="timeout" />
-    ///     elapses; true = settled, false = timed out. For callers whose frames are driven EXTERNALLY
-    ///     (e.g. the profiler's scenario loop) — stats only advance when frames render, so a pure
-    ///     delay-poll against a paused render loop spins on frozen stats forever. Gates that own their
-    ///     rendering must keep a render→check→delay loop instead.
+    ///     Polls <paramref name="isQuiesced" /> until it holds for <paramref name="consecutive" />
+    ///     successive polls or <paramref name="timeout" /> elapses; true = settled, false = timed
+    ///     out. The consecutive requirement exists because every counter in the predicate is a
+    ///     SINGLE-FRAME sample: a transient zero between terrain LOD refinements (or between a
+    ///     decode wave draining and the next enqueue) passes one poll while the scene is still
+    ///     loading — captures taken on such a gap shipped half-streamed terrain (2026-08-10).
+    ///     For callers whose frames are driven EXTERNALLY (e.g. the profiler's scenario loop) —
+    ///     stats only advance when frames render, so a pure delay-poll against a paused render loop
+    ///     spins on frozen stats forever. Gates that own their rendering must keep a
+    ///     render→check→delay loop instead.
     /// </summary>
     public static async Task<bool> PollAsync(
-        Func<bool> isQuiesced, TimeSpan timeout, TimeSpan interval, CancellationToken ct = default)
+        Func<bool> isQuiesced, TimeSpan timeout, TimeSpan interval, int consecutive = 1,
+        CancellationToken ct = default)
     {
         var waited = TimeSpan.Zero;
-        while (!isQuiesced())
+        var streak = 0;
+        while (true)
         {
+            streak = isQuiesced() ? streak + 1 : 0;
+            if (streak >= Math.Max(1, consecutive)) return true;
             if (waited >= timeout) return false;
             await Task.Delay(interval, ct);
             waited += interval;
         }
-        return true;
     }
 }

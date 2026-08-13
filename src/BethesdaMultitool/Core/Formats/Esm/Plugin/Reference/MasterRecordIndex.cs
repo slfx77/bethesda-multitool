@@ -190,7 +190,11 @@ public sealed record MasterRecordIndex
             }
 
             var record = current.Record!;
-            if (record.Header.Signature is not ("REFR" or "ACHR" or "ACRE" or "NAVM" or "LAND"))
+            // PGRE (placed grenade — mines and thrown ordnance) joined this gate 2026-08-07.
+            // Master files 174 of them; 17 sit in temporary-children GRUPs of cells this
+            // converter overrides, and without an index entry MasterChildCarryForward could not
+            // see them, so every one was destroyed on any run that touched those cells.
+            if (record.Header.Signature is not ("REFR" or "ACHR" or "ACRE" or "PGRE" or "NAVM" or "LAND"))
             {
                 continue;
             }
@@ -211,6 +215,12 @@ public sealed record MasterRecordIndex
         return locations;
     }
 
+    /// <remarks>
+    ///     PGRE is deliberately NOT in this projection. RefToCell widens
+    ///     <c>masterRefFormIds</c>, which feeds per-cell merge-mode decisions; adding PGRE here
+    ///     would perturb which cells are classified PersistentOnly vs LoadedReplacement for
+    ///     reasons unrelated to grenades. Carry-forward only needs ChildLocations + RefsByCell.
+    /// </remarks>
     private static Dictionary<uint, uint> BuildChildRecordToCellIndex(
         IReadOnlyDictionary<uint, MasterChildLocation> childLocations)
     {
@@ -226,7 +236,7 @@ public sealed record MasterRecordIndex
 
         foreach (var (formId, location) in childLocations)
         {
-            if (location.RecordType is not ("REFR" or "ACHR" or "ACRE"))
+            if (location.RecordType is not ("REFR" or "ACHR" or "ACRE" or "PGRE"))
             {
                 continue;
             }

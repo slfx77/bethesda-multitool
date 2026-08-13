@@ -139,6 +139,11 @@ public sealed partial class WorldView3DControl
     // This frame's raw camera timestep (see FrameProfileSample.DeltaSeconds).
     private float _lastDeltaSeconds;
 
+    // Raw-dt history for the median-of-3 camera timestep filter (single-writer: the render loop).
+    private float _frameDtPrev1;
+    private float _frameDtPrev2;
+    private int _frameDtSampleCount;
+
     // Cascade anchor resolved when the shadow capture was armed, reused verbatim by the frame-end pass.
     private Vector3 _shadowFrameAnchor;
 
@@ -307,7 +312,20 @@ public sealed partial class WorldView3DControl
         // Record the RAW timestep for the frame profiler before clamping: the clamp would hide
         // exactly the long-frame outliers a pacing investigation needs to see.
         _lastDeltaSeconds = deltaSeconds;
-        // Clamp pathological deltas (long pause, debugger break) to keep camera step bounded.
+        // Median-of-3 over the last three raw timesteps before the camera consumes the value. A
+        // single spiked frame (GC pause, compositor stall) otherwise integrates as a visible camera
+        // jump; the median rejects any lone outlier while — unlike an EMA — adding zero steady-state
+        // lag (when the three samples agree, the median IS the current sample). Missing history on
+        // the first two frames duplicates the current raw value, so those frames pass raw through.
+        var dtPrev1 = _frameDtSampleCount >= 1 ? _frameDtPrev1 : deltaSeconds;
+        var dtPrev2 = _frameDtSampleCount >= 2 ? _frameDtPrev2 : deltaSeconds;
+        _frameDtPrev2 = _frameDtPrev1;
+        _frameDtPrev1 = deltaSeconds;
+        if (_frameDtSampleCount < 2) _frameDtSampleCount++;
+        deltaSeconds = MathF.Max(MathF.Min(deltaSeconds, dtPrev1),
+            MathF.Min(MathF.Max(deltaSeconds, dtPrev1), dtPrev2));
+        // Clamp pathological deltas (long pause, debugger break) AFTER the median so a genuine
+        // multi-frame stall still reaches the camera bounded.
         if (deltaSeconds > 0.1f) deltaSeconds = 0.1f;
         _windClockSeconds += deltaSeconds; // drives the SpeedTree leaf-wind sway phase
 
@@ -1210,8 +1228,8 @@ public sealed partial class WorldView3DControl
 
         _water?.SetWaterReflection(
             waterReflectionBound ? _waterReflectionSrv!.Value.BindlessIndex : null,
-            (uint)surface.Width,
-            (uint)surface.Height);
+            surface.Width,
+            surface.Height);
 
         // Layer order matches D3D11: terrain → references → water → wireframe. Water is
         // alpha-blended depth-read, so it must come after terrain + references (which write
@@ -1259,6 +1277,15 @@ public sealed partial class WorldView3DControl
             _water is not null && _references is not null &&
             _water.CanStreamTransparency(cylinder);
         _references?.SetTransparencyStreamActive(streamTransparency);
+
+        // Re-assert this view's own category filter. The 2D map's top-down overlay borrows the shared
+        // reference renderer and applies the map legend's set for its pass; it deliberately does NOT
+        // restore ours afterwards, because restoring per pass flipped the filter twice per overlay
+        // render and invalidated the cull cache every time (measured: cullVeto=Invalidated on 205/205
+        // WastelandNV zoom-to-fit passes — the two sets genuinely differ, this view hides Sky and the
+        // map hides nothing). Re-asserting here instead makes the live view authoritative at the only
+        // point it matters. Free when unchanged: SetHiddenCategories is change-detecting.
+        _references?.SetHiddenCategories(_hiddenCategories);
 
         var visibleReferences = 0;
         if (_showReferences)
@@ -1359,7 +1386,9 @@ public sealed partial class WorldView3DControl
                 if (waterRingReserved)
                 {
                     _water.DeferStreamTailReservationRelease(WaterPassRingReservationBytes);
+#pragma warning disable S1854 // release-once latch: kept accurate so a later-added consumer cannot double-release the ring reservation
                     waterRingReserved = false;
+#pragma warning restore S1854
                 }
 
                 // Submerged translucent geometry is drawn BEFORE the stream opens, exactly as the
@@ -1393,8 +1422,20 @@ public sealed partial class WorldView3DControl
                 // drains and finishes below, which is the correct degradation — the water stream
                 // renders, only the interleaved reference draws are missing.
                 _references?.RenderBlendedDeferredUnified(
-                    _waterStreamInterleave, streamWaterProbe, _camera.Position.Z);
+                    _waterStreamInterleave, streamWaterProbe, _camera.Position.Z,
+                    _water.StreamMaxQueuedSurfaceHeight);
                 _water.DrainAllTransparency();
+                // Blended draws no queued surface can occlude (bounds bottom + camera above the
+                // frame's highest queued surface) issue AFTER the final drain: water writes no
+                // depth, so the camera-cell quad — whose CENTROID sort key is nearer than almost
+                // everything — would otherwise composite over smoke standing well above it. Same
+                // plane value as the unified call, so the partitions stay complementary.
+                if (streamWaterProbe is not null)
+                {
+                    _references?.RenderBlendedDeferredAboveAllWater(
+                        streamWaterProbe, _camera.Position.Z, _water.StreamMaxQueuedSurfaceHeight);
+                }
+
                 _water.FinishTransparencyStream();
                 _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.BlendedEnd);
 
@@ -1528,7 +1569,9 @@ public sealed partial class WorldView3DControl
             if (waterRingReserved)
             {
                 _ringBuffer12!.ReleaseTailReservation(WaterPassRingReservationBytes);
+#pragma warning disable S1854 // release-once latch: kept accurate so a later-added consumer cannot double-release the ring reservation
                 waterRingReserved = false;
+#pragma warning restore S1854
             }
 
             visibleWater = _showWater

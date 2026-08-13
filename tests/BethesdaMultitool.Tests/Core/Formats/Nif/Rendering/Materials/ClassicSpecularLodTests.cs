@@ -13,13 +13,17 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Materials;
 public sealed class ClassicSpecularLodTests
 {
     [Fact]
-    public void Profile_UsesRecoveredFnvDefaultsAndNoOtherGame()
+    public void Profile_UsesRecoveredClassicDefaultsForFnvAndFo3Only()
     {
+        // FO3 parity 2026-08-10: FO3's shipped Fallout_default.ini authors the identical
+        // fSpecularLODDefaultStartFade=500 / fSpecularLODRange=300 pair, so both classic
+        // Fallout titles share the envelope. Every other game stays disabled.
         foreach (var game in Enum.GetValues<BethesdaGame>())
         {
+            var expected = game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3;
             var profile = ClassicSpecularLodProfile.ForGame(game);
-            Assert.Equal(game == BethesdaGame.FalloutNewVegas, profile.Supported);
-            Assert.Equal(game == BethesdaGame.FalloutNewVegas, profile.Enabled);
+            Assert.Equal(expected, profile.Supported);
+            Assert.Equal(expected, profile.Enabled);
         }
 
         var fnv = ClassicSpecularLodProfile.ForGame(BethesdaGame.FalloutNewVegas);
@@ -29,6 +33,7 @@ public sealed class ClassicSpecularLodTests
         Assert.Equal(1f, fnv.LodAdjust);
         Assert.Equal(new Vector4(500f, 800f, 1f, 1f), fnv.ShaderParameters(true));
         Assert.Equal(0f, fnv.ShaderParameters(false).W);
+        Assert.Equal(fnv, ClassicSpecularLodProfile.ForGame(BethesdaGame.Fallout3));
     }
 
     [Theory]

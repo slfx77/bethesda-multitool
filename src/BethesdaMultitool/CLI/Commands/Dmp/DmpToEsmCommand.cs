@@ -203,17 +203,9 @@ public static class DmpToEsmCommand
             };
         command.Options.Add(diagnosticRetainMasterSubrecordsOpt);
 
-        var plannerTypesOpt = new Option<string[]>("--planner-types")
-        {
-            Description =
-                "Repeatable: record-type signature (STAT, WEAP, etc.) to route through the " +
-                "two-pass planner instead of legacy emission. Use 'all' for every ported " +
-                "encoder. Empty (default) = legacy emission for every type. CELL is a valid " +
-                "token; opting it in activates the planner's cell-hierarchy writer via " +
-                "EsmAssembler dispatch.",
-            AllowMultipleArgumentsPerToken = true,
-        };
-        command.Options.Add(plannerTypesOpt);
+        // --planner-types was removed 2026-08-11 with the legacy emission path. The planner
+        // owns every record type unconditionally; a partial set would mean "emit nothing" for
+        // the types left out, so there is no coherent subset to select any more.
 
         var diagSkipCellNavmOpt = new Option<bool>("--diag-skip-cell-navm")
         {
@@ -268,15 +260,13 @@ public static class DmpToEsmCommand
                 parseResult.GetValue(diagnosticKeepMasterFormIdOpt) ?? []);
             var diagnosticRetainMasterSubrecords = ParseDiagnosticSubrecordRetentions(
                 parseResult.GetValue(diagnosticRetainMasterSubrecordsOpt) ?? []);
-            var plannerTypesArgs = parseResult.GetValue(plannerTypesOpt) ?? [];
-            var plannerTypes = ResolvePlannerTypes(plannerTypesArgs);
 
             await RunAsync(dmp, pcEsm, output, author, description, compress, validate, verbose, eventLogJsonl,
                 secondaryData, secondaryData360, packAssets, writeMissingList, dialogueAudioCsv, overrideVanilla,
                 disableRefrEditorIdRemap, replaceCellTemporaries, recoverGaps, emitMasterCellNavmAugmentation,
                 recoverLeveledSpawns, inferUnresolvedCells, diagSkipCellNavm, diagSkipCellNewRefs, cellAuthorityPath,
                 skipWorldspaceFormIds, skipRecordTypes, diagnosticKeepMasterFormIds,
-                diagnosticRetainMasterSubrecords, plannerTypes, ct);
+                diagnosticRetainMasterSubrecords, ct);
         });
 
         return command;
@@ -311,7 +301,6 @@ public static class DmpToEsmCommand
         HashSet<string> skipRecordTypes,
         ImmutableHashSet<uint> diagnosticKeepMasterFormIds,
         ImmutableDictionary<uint, ImmutableHashSet<string>> diagnosticRetainMasterSubrecords,
-        HashSet<string> plannerEnabledRecordTypes,
         CancellationToken ct)
     {
         if (!File.Exists(dmpPath))
@@ -388,7 +377,6 @@ public static class DmpToEsmCommand
             SkipRecordTypes = skipRecordTypes,
             DiagnosticKeepMasterFormIds = diagnosticKeepMasterFormIds,
             DiagnosticRetainMasterSubrecords = diagnosticRetainMasterSubrecords,
-            PlannerEnabledRecordTypes = plannerEnabledRecordTypes,
             DialogueTextOverridesCsvPaths = dialogueAudioCsvPaths
         };
 
@@ -419,12 +407,6 @@ public static class DmpToEsmCommand
             AnsiConsole.MarkupLine(
                 $"[yellow]Master-subrecord diagnostics:[/] " +
                 Markup.Escape(retentionSummary));
-        }
-
-        if (plannerEnabledRecordTypes.Count > 0)
-        {
-            AnsiConsole.MarkupLine(
-                $"[cyan]Planner-enabled types:[/] {string.Join(", ", plannerEnabledRecordTypes.OrderBy(t => t, StringComparer.Ordinal))}");
         }
 
         if (recoverGaps)
@@ -604,55 +586,6 @@ public static class DmpToEsmCommand
             AnsiConsole.MarkupLine($"[red]✗ Conversion failed:[/] {Markup.Escape(result.ErrorMessage ?? "(unknown)")}");
             Environment.Exit(1);
         }
-    }
-
-    /// <summary>
-    ///     Resolve the <c>--planner-types</c> argument list into the set written into
-    ///     <see cref="PluginBuildOptions.PlannerEnabledRecordTypes" />. Special-cases
-    ///     <c>"all"</c> → every record type the planner registry currently knows. Unknown
-    ///     types print a red error + exit code 1 so a typo can't silently fall back to
-    ///     legacy emission.
-    /// </summary>
-    internal static HashSet<string> ResolvePlannerTypes(string[] args)
-    {
-        var result = new HashSet<string>(StringComparer.Ordinal);
-        if (args.Length == 0)
-        {
-            return result;
-        }
-
-        var known = PlannedEncoders.KnownRecordTypes().ToHashSet(StringComparer.Ordinal);
-
-        foreach (var raw in args)
-        {
-            if (string.IsNullOrWhiteSpace(raw))
-            {
-                continue;
-            }
-
-            var token = raw.Trim();
-            if (string.Equals(token, "all", StringComparison.OrdinalIgnoreCase))
-            {
-                foreach (var type in known)
-                {
-                    result.Add(type);
-                }
-                continue;
-            }
-
-            if (!known.Contains(token))
-            {
-                AnsiConsole.MarkupLine(
-                    $"[red]Error:[/] unknown planner type '{Markup.Escape(token)}'. " +
-                    $"Valid types: {string.Join(", ", known.OrderBy(t => t, StringComparer.Ordinal))}");
-                Environment.Exit(1);
-                return result;
-            }
-
-            result.Add(token);
-        }
-
-        return result;
     }
 
     /// <summary>

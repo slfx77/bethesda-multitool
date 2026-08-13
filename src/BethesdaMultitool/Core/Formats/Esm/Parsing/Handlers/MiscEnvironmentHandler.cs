@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
@@ -475,7 +476,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         string? editorId = null;
         var sounds = new List<WeatherSound>();
         var cloudLayers = new SortedDictionary<int, string>();
-        IReadOnlyList<WeatherColor>? colors = null;
+        List<WeatherColor>? colors = null;
         IReadOnlyList<WeatherColor>? cloudColors = null;
         List<WeatherAmbientCube>? directionalAmbientBands = null;
         IReadOnlyList<WeatherCloudAlpha>? cloudAlphas = null;
@@ -1161,17 +1162,24 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         };
 
     /// <summary>
-    ///     Classic IMGS DNAM stores its cinematic-mask dword at byte 128, 144, or 148 for the
-    ///     132-, 148-, and 152-byte layouts respectively. Only the low nibble is semantic; read the
-    ///     full dword with source endianness so Xbox records do not select the wrong byte.
+    ///     FO3/FNV IMGS DNAM stores its cinematic-mask dword IMMEDIATELY AFTER the body, so the
+    ///     offset depends only on whether Skin Dimmer is present: 132 for the 152-byte (form
+    ///     version ≥ 14) layout and 128 for both the 148- and 132-byte layouts. Only the low nibble
+    ///     is semantic; read the full dword with source endianness so Xbox records do not select the
+    ///     wrong byte.
+    ///     <para>
+    ///         Corrected 2026-08-11 (was 148/144/128, i.e. past the mask and into the record's
+    ///         uninitialized stack tail — retail values there include 0x004BF276 and 0x11E3A4E0).
+    ///         Measured against both retail masters: <c>Tops13thFloorImageSpace</c> (152 B) carries
+    ///         0x0000000F at 132, <c>RCDefaultImageSpace</c> (148 B) carries 0x0F at 128.
+    ///     </para>
     /// </summary>
     internal static ImageSpaceCinematicFlags ReadImageSpaceCinematicFlags(
         ReadOnlySpan<byte> data, bool isBigEndian = false)
     {
         var offset = data.Length switch
         {
-            >= 152 => 148,
-            >= 148 => 144,
+            >= 152 => 132,
             >= 132 => 128,
             _ => -1,
         };
@@ -1183,20 +1191,33 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     }
 
     /// <summary>
-    ///     Semantic classic DNAM reader. The 132-byte source variant authors a tail mask at +128
-    ///     but omits SkinDimmer and Fade; normalize those omissions to the manager defaults rather
-    ///     than reproducing TESImageSpace::Load's undefined short-read stack tail.
+    ///     Semantic FO3/FNV DNAM reader. Both games share a character-for-character identical xEdit
+    ///     definition, and three layouts ship in BOTH of them: 152 B (record form version ≥ 14) adds
+    ///     Skin Dimmer at +56 and shifts everything after it by four bytes; 148 B and 132 B omit it
+    ///     and differ only in trailing padding. Skin Dimmer is normalized to the manager default of
+    ///     1 when absent rather than reproducing TESImageSpace::Load's undefined short-read tail.
+    ///     <para>
+    ///         DNAM LENGTH is the discriminator on purpose: it is self-describing and cannot
+    ///         overrun, per the project's version-keyed-parsing convention (a field's size is read
+    ///         structurally). The record's form version is a cross-check only — see
+    ///         <see cref="WarnOnImageSpaceLayoutVersionMismatch" />. ⚠ xEdit declares Skin Dimmer
+    ///         <c>wbFromVersion(10)</c>, but retail data shows it first at version 14
+    ///         (132 B = v1-9, 148 B = v11-13, 152 B = v14-15, measured across both masters).
+    ///     </para>
+    ///     <para>
+    ///         There is NO fade block in this layout. A previous reader invented one from the four
+    ///         dwords after the cinematic tail — that region is the mask plus uninitialized engine
+    ///         stack (retail values there include 0x00000DE8 and 0x11E3A4E0). Removed 2026-08-11.
+    ///     </para>
     /// </summary>
     internal static ImageSpaceClassicData ReadClassicImageSpaceDnam(
         ReadOnlySpan<byte> data, bool isBigEndian)
     {
         if (data.Length < 132)
-            throw new ArgumentException("Classic IMGS DNAM requires at least 132 bytes.", nameof(data));
+            throw new ArgumentException("FO3/FNV IMGS DNAM requires at least 132 bytes.", nameof(data));
 
         var hasSkinDimmer = data.Length >= 152;
-        var hasFade = data.Length >= 148;
         var cinematicBase = (hasSkinDimmer ? 60 : 56) + 40;
-        var fadeBase = cinematicBase + 32;
         var hdr = new ImageSpaceHdr
         {
             EyeAdaptSpeed = ReadFloat(data, 0, isBigEndian),
@@ -1231,17 +1252,32 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             Blue = ReadFloat(data, cinematicBase + 24, isBigEndian),
             Amount = ReadFloat(data, cinematicBase + 28, isBigEndian),
         };
-        var fade = hasFade
-            ? new ImageSpaceFade
-            {
-                IsAuthored = true,
-                Red = ReadFloat(data, fadeBase, isBigEndian),
-                Green = ReadFloat(data, fadeBase + 4, isBigEndian),
-                Blue = ReadFloat(data, fadeBase + 8, isBigEndian),
-                Amount = ReadFloat(data, fadeBase + 12, isBigEndian),
-            }
-            : new ImageSpaceFade();
-        return new ImageSpaceClassicData(hdr, cinematic, tint, fade);
+        return new ImageSpaceClassicData(hdr, cinematic, tint);
+    }
+
+    /// <summary>
+    ///     Cross-checks the record's form version against the layout its DNAM length implies, and
+    ///     warns when they disagree. Length stays authoritative for decoding (it cannot overrun);
+    ///     a mismatch means either a mod authored an unusual record or the measured version
+    ///     threshold is wrong — both worth surfacing, and both silent before 2026-08-11.
+    /// </summary>
+    private static void WarnOnImageSpaceLayoutVersionMismatch(
+        uint formId, int dnamLength, int formVersion, BethesdaGame game)
+    {
+        if (GameProfiles.For(game).ImageSpaceSkinDimmerFormVersion is not { } skinDimmerFrom ||
+            formVersion <= 0)
+        {
+            return;
+        }
+
+        var lengthSaysSkinDimmer = dnamLength >= 152;
+        var versionSaysSkinDimmer = formVersion >= skinDimmerFrom;
+        if (lengthSaysSkinDimmer == versionSaysSkinDimmer) return;
+
+        Logger.Instance.Warn(
+            $"  [Semantic] IMGS 0x{formId:X8}: DNAM is {dnamLength} bytes (Skin Dimmer " +
+            $"{(lengthSaysSkinDimmer ? "present" : "absent")}) but form version {formVersion} " +
+            $"implies {(versionSaysSkinDimmer ? "present" : "absent")}. Decoded by length.");
     }
 
     #endregion
@@ -1602,7 +1638,6 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         ImageSpaceModernHdr? modernHdr = null;
         ImageSpaceCinematic? cinematic = null;
         ImageSpaceTint? tint = null;
-        ImageSpaceFade? fade = null;
         ImageSpaceDepthOfField? depthOfFieldData = null;
         string? lutTexturePath = null;
         var hasSplitModernHdr = false;
@@ -1622,16 +1657,19 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     }
 
                     break;
-                // FO3/FNV: a single DNAM block. The 152-byte layout includes Skin Dimmer and Fade;
-                // 148 omits Skin Dimmer, while 132 omits both. Each layout still authors a mask dword
-                // at its own tail. Size (not the header form version) is the discriminator.
+                // FO3/FNV: a single DNAM block (the HNAM/CNAM/TNAM split below is Skyrim-family).
+                // The 152-byte layout adds Skin Dimmer at +56 and shifts the rest by four; 148 and
+                // 132 omit it and differ only in trailing padding. LENGTH is the discriminator —
+                // self-describing and overrun-safe — with the record's form version cross-checked
+                // for a warning only (see WarnOnImageSpaceLayoutVersionMismatch).
                 case "DNAM" when sub.DataLength >= 132:
                 {
                     var classic = ReadClassicImageSpaceDnam(subData, record.IsBigEndian);
                     hdr = classic.Hdr;
                     cinematic = classic.Cinematic;
                     tint = classic.Tint;
-                    fade = classic.Fade;
+                    WarnOnImageSpaceLayoutVersionMismatch(
+                        record.FormId, sub.DataLength, ReadRecordFormVersion(record), Context.Game);
                     break;
                 }
                 // Skyrim/FO4-family legacy packed layout: seven HDR values, cinematic, then tint.
@@ -1712,7 +1750,6 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             ModernHdr = modernHdr,
             Cinematic = cinematic,
             Tint = tint,
-            Fade = fade,
             DepthOfField = depthOfField,
             DepthOfFieldData = depthOfFieldData,
             LutTexturePath = lutTexturePath,

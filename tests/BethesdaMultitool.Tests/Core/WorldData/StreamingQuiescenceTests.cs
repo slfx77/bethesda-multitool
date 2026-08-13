@@ -96,7 +96,7 @@ public sealed class StreamingQuiescenceTests
                 return true;
             },
             TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(10),
-            TestContext.Current.CancellationToken);
+            ct: TestContext.Current.CancellationToken);
         Assert.True(settled);
         Assert.Equal(1, calls);
     }
@@ -107,7 +107,7 @@ public sealed class StreamingQuiescenceTests
         var settled = await StreamingQuiescence.PollAsync(
             () => false,
             TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(10),
-            TestContext.Current.CancellationToken);
+            ct: TestContext.Current.CancellationToken);
         Assert.False(settled);
     }
 
@@ -118,7 +118,39 @@ public sealed class StreamingQuiescenceTests
         var settled = await StreamingQuiescence.PollAsync(
             () => ++calls >= 3,
             TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(10),
-            TestContext.Current.CancellationToken);
+            ct: TestContext.Current.CancellationToken);
         Assert.True(settled);
+    }
+
+    /// <summary>
+    ///     A single-frame quiescent gap (e.g. between terrain LOD refinements) must NOT satisfy a
+    ///     consecutive-poll requirement — captures taken on such gaps shipped half-streamed terrain.
+    /// </summary>
+    [Fact]
+    public async Task PollAsync_TransientGap_DoesNotSatisfyConsecutiveRequirement()
+    {
+        // Quiesced on poll 2 only (a one-poll gap), then busy again until poll 6+: the streak must
+        // reset and settle only after three CONSECUTIVE quiesced polls (6,7,8).
+        var calls = 0;
+        var settled = await StreamingQuiescence.PollAsync(
+            () => { calls++; return calls == 2 || calls >= 6; },
+            TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(10),
+            ct: TestContext.Current.CancellationToken,
+            consecutive: 3);
+        Assert.True(settled);
+        Assert.Equal(8, calls);
+    }
+
+    [Fact]
+    public async Task PollAsync_ConsecutiveRequirement_TimesOutWhenStreakNeverForms()
+    {
+        // Alternating quiesced/busy can never build a 2-streak.
+        var calls = 0;
+        var settled = await StreamingQuiescence.PollAsync(
+            () => ++calls % 2 == 0,
+            TimeSpan.FromMilliseconds(80), TimeSpan.FromMilliseconds(10),
+            ct: TestContext.Current.CancellationToken,
+            consecutive: 2);
+        Assert.False(settled);
     }
 }

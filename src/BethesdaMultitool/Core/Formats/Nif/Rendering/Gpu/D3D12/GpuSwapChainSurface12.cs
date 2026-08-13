@@ -345,7 +345,9 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
 
     public void Dispose()
     {
-        foreach (var b in _backBuffers) b.Dispose();
+        // Null-conditional: after a failed Resize the back-buffer slots are cleared (the old
+        // buffers were disposed before ResizeBuffers and no new ones were acquired).
+        foreach (var b in _backBuffers) b?.Dispose();
         _depthTexture?.Dispose();
         _depthTexture = null;
         _msaaColor?.Dispose();
@@ -490,6 +492,11 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     ///         fails. The frame command recorder owns CPU↔GPU sync; resize is a UI-thread
     ///         action that should drain the frame queue first.
     ///     </para>
+    ///     <para>
+    ///         Throws <see cref="SharpGenException" /> (after logging + releasing the partial
+    ///         state) when the device is removed mid-resize; the surface is then unusable and the
+    ///         owner must dispose and recreate it.
+    ///     </para>
     /// </summary>
     public void Resize(uint width, uint height)
     {
@@ -511,16 +518,42 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         _opaqueDepthCopy = null;
         _opaqueDepthSnapshotPrepared = false;
 
-        _swapChain.ResizeBuffers(BufferCount, width, height, Format.Unknown, SwapChainFlags.None).CheckError();
+        try
+        {
+            _swapChain.ResizeBuffers(BufferCount, width, height, Format.Unknown, SwapChainFlags.None).CheckError();
 
-        var newBuffers = AcquireBackBuffers(_device, _swapChain, _rtvHeap);
-        for (int i = 0; i < newBuffers.Length; i++) _backBuffers[i] = newBuffers[i];
-        _depthTexture = CreateDepthBuffer(_device, width, height, _dsvHeap, _sampleCount);
-        _msaaColor = CreateSceneColor(_device, width, height, _sampleCount, _rtvHeap, _rtvDescriptorSize);
-        _hdrResolve = CreateHdrResolve(_device, width, height, _sampleCount);
+            var newBuffers = AcquireBackBuffers(_device, _swapChain, _rtvHeap);
+            for (int i = 0; i < newBuffers.Length; i++) _backBuffers[i] = newBuffers[i];
+            _depthTexture = CreateDepthBuffer(_device, width, height, _dsvHeap, _sampleCount);
+            _msaaColor = CreateSceneColor(_device, width, height, _sampleCount, _rtvHeap, _rtvDescriptorSize);
+            _hdrResolve = CreateHdrResolve(_device, width, height, _sampleCount);
 
-        _width = width;
-        _height = height;
+            _width = width;
+            _height = height;
+        }
+        catch (SharpGenException ex)
+        {
+            // Same handling as Create's catch: log + release everything this call created so a
+            // subsequent Dispose can't double-free. Device removal makes ResizeBuffers (or any of
+            // the recreations) fail, and before this catch the exception tore down the whole app
+            // from a XAML resize handler. Unlike Create (which returns null), Resize rethrows: a
+            // surface that lost its back buffers cannot present, so the owner must observe the
+            // failure, dispose the surface, and recreate it (WorldView3DControl.TryEnsureSurface
+            // does exactly that).
+            Log.Warn("GpuSwapChainSurface12.Resize failed ({0}x{1}): {2}", width, height, ex.Message);
+            _hdrResolve?.Dispose();
+            _hdrResolve = null;
+            _msaaColor?.Dispose();
+            _msaaColor = null;
+            _depthTexture?.Dispose();
+            _depthTexture = null;
+            for (int i = 0; i < _backBuffers.Length; i++)
+            {
+                _backBuffers[i]?.Dispose();
+                _backBuffers[i] = null!; // Dispose tolerates cleared slots (see its comment)
+            }
+            throw;
+        }
     }
 
     /// <summary>

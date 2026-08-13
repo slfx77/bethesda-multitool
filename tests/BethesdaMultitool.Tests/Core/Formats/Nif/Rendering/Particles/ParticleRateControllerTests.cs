@@ -55,6 +55,92 @@ public sealed class ParticleRateControllerTests
         Assert.Empty(keys);
     }
 
+    /// <summary>
+    ///     The NVNellisArtillery Idle shape: sequences author BirthRate as a large constant pose
+    ///     (2250) and do ALL the gating through the NiPSysEmitterCtlr's second interpolator slot —
+    ///     EmitterActive. A constant-false bool must zero the emitter regardless of the rate, or
+    ///     the rest state bakes permanent full-density firing smoke.
+    /// </summary>
+    [Fact]
+    public void Sample_ConstantFalseEmitterActiveZeroesANonzeroRate()
+    {
+        var controller = new ParticleRateControllerDefinition
+        {
+            ConstantValue = 2250f,
+            EmitterActiveConstant = false,
+        };
+
+        Assert.Equal(0f, controller.Sample(0f));
+        Assert.Equal(0f, controller.Sample(1.7f));
+    }
+
+    /// <summary>
+    ///     The Forward (fire) shape: EmitterActive pulses (0,false) (0.033,true) (0.133,false) so
+    ///     smoke exists only inside the muzzle window. Bool tracks step — the value holds until the
+    ///     next key — and ride the same mapped clock as the rate keys.
+    /// </summary>
+    [Fact]
+    public void Sample_EmitterActiveKeysGateTheRateStepwise()
+    {
+        var controller = new ParticleRateControllerDefinition
+        {
+            ConstantValue = 300f,
+            EmitterActiveKeys =
+            [
+                new ParticleBoolKey(0f, false),
+                new ParticleBoolKey(0.0333f, true),
+                new ParticleBoolKey(0.1333f, false),
+            ],
+        };
+
+        Assert.Equal(0f, controller.Sample(0f)); // before the pulse
+        Assert.Equal(300f, controller.Sample(0.05f)); // inside the pulse
+        Assert.Equal(0f, controller.Sample(0.5f)); // after the pulse
+    }
+
+    [Fact]
+    public void Sample_EmitterActiveKeysTakePrecedenceOverTheConstant()
+    {
+        var controller = new ParticleRateControllerDefinition
+        {
+            ConstantValue = 90f,
+            EmitterActiveConstant = false,
+            EmitterActiveKeys = [new ParticleBoolKey(0f, true)],
+        };
+
+        Assert.Equal(90f, controller.Sample(1f));
+    }
+
+    [Fact]
+    public void Sample_NoAuthoredEmitterActiveMeansNoGate()
+    {
+        var controller = new ParticleRateControllerDefinition { ConstantValue = 42f };
+
+        Assert.Equal(42f, controller.Sample(0f));
+    }
+
+    /// <summary>The gate evaluates on the MAPPED clock: a looping controller window must wrap the
+    /// sample time before stepping the bool track, exactly like the rate keys.</summary>
+    [Fact]
+    public void Sample_EmitterActiveEvaluatesOnTheMappedControllerClock()
+    {
+        var controller = new ParticleRateControllerDefinition
+        {
+            // 0..1 looping window: wall 2.25 maps to 0.25.
+            ControllerTiming = new ParticleControllerTiming(
+                1f, 0f, 0f, 1f, ParticleControllerCycle.Loop),
+            ConstantValue = 10f,
+            EmitterActiveKeys =
+            [
+                new ParticleBoolKey(0f, true),
+                new ParticleBoolKey(0.5f, false),
+            ],
+        };
+
+        Assert.Equal(10f, controller.Sample(2.25f)); // wraps into the active half
+        Assert.Equal(0f, controller.Sample(2.75f)); // wraps into the inactive half
+    }
+
     [Fact]
     public void Sample_InterpolatesLinearKeysAfterSequenceAndControllerClocks()
     {

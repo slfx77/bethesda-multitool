@@ -86,6 +86,45 @@ public class EncodedSubrecordFormIdRemapperTests
         Assert.Equal(0x01005678u, ReadFormId(remapped[2].Bytes, 0));
     }
 
+    [Fact]
+    public void Remap_PwatDnam_RewritesTheWaterFormIdAndLeavesTheFlagWordAlone()
+    {
+        // PWAT DNAM is { uint32 Flags @0, WATR FormID @4 } — flags FIRST, per xEdit and all 29
+        // retail PWATs. This arm shipped transposed: it remapped offset 0, corrupting the flag
+        // word and leaving a proto-new water reference pointing at its stale source FormID.
+        // The flag value below is deliberately also a key in the alias map, so a regression that
+        // remaps offset 0 rewrites it and fails loudly instead of silently passing.
+        const uint flags = 0x1000_0000; // bit 28 = "Depth", set on 42 of 48 captured PWATs
+        var aliases = new Dictionary<uint, uint>
+        {
+            [0x0000BEEF] = 0x01004321,
+            [flags] = 0xDEADBEEF
+        };
+
+        var dnam = new byte[8];
+        SubrecordEncoder.WriteInt32(dnam, 0, unchecked((int)flags));
+        SubrecordEncoder.WriteFormId(dnam, 4, 0x0000BEEF);
+
+        var remapped = EncodedSubrecordFormIdRemapper.Remap("PWAT",
+            [new EncodedSubrecord("DNAM", dnam)], aliases);
+
+        Assert.Equal(flags, ReadFormId(remapped[0].Bytes, 0));
+        Assert.Equal(0x01004321u, ReadFormId(remapped[0].Bytes, 4));
+    }
+
+    [Fact]
+    public void Remap_PwatDnam_ShorterThanEightBytes_IsLeftUntouched()
+    {
+        var aliases = new Dictionary<uint, uint> { [0x0000BEEF] = 0x01004321 };
+        var dnam = new byte[4];
+        SubrecordEncoder.WriteFormId(dnam, 0, 0x0000BEEF);
+
+        var remapped = EncodedSubrecordFormIdRemapper.Remap("PWAT",
+            [new EncodedSubrecord("DNAM", dnam)], aliases);
+
+        Assert.Equal(0x0000BEEFu, ReadFormId(remapped[0].Bytes, 0));
+    }
+
     private static uint ReadFormId(byte[] bytes, int offset)
     {
         return BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset, 4));

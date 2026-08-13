@@ -445,6 +445,8 @@ public class GenericOnlyEncoderTests
     [InlineData("CLMT")]
     [InlineData("GRAS")]
     [InlineData("IMGS")]
+    [InlineData("PWAT")]
+    [InlineData("TREE")]
     public void NewlyWiredTypes_AreRegisteredAndDispatchable(string recordType)
     {
         Assert.True(

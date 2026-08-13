@@ -3,7 +3,6 @@ using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.SpeedTree;
-using BethesdaMultitool.Core.Utils;
 
 namespace EsmAnalyzer.Commands.SpeedTree;
 
@@ -48,28 +47,20 @@ internal static class SpeedTreeMetadata
         using var mmf = MemoryMappedFile.CreateFromFile(esmPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
         var records = new RecordParser(result.EsmRecords, result.FormIdMap, accessor, result.FileSize).ParseAll();
-        foreach (var rec in records.GenericRecords)
+
+        // SpeedTreeRecordSource walks BOTH the typed Trees list (FNV/FO3, where TREE is deliberately absent
+        // from GenericRecords) and the generic records (Oblivion/Skyrim/FO4). A GenericRecords-only scan
+        // silently resolved no ICON at all on FNV/FO3.
+        foreach (var entry in SpeedTreeRecordSource.Enumerate(records))
         {
-            if (rec.ModelPath is not { } mp || !SpeedTreeModelPath.IsSpt(mp))
-            {
-                continue;
-            }
-
-            // ICON is the engine's leaf atlas. FNV exposes it via the typed Fields; Oblivion/TES4 records
-            // decode through SchemaRecordDecoder, so it lives in DecodedTree instead — resolve from both.
-            var leaf = SpeedTreeTreeRecordReader.ResolveLeafIcon(rec.Fields, rec.DecodedTree);
-
-            var archivePath = SpeedTreeModelPath.ToArchivePath(mp);
-            var (billboardWidth, billboardHeight) = ExtractTreeBillboardSize(rec.Fields, rec.IsBigEndian);
-            map[archivePath] = new TreeMetadata(
-                archivePath,
-                rec.EditorId,
-                leaf,
-                ExtractTreeSeed(rec.Fields, rec.IsBigEndian)
-                    ?? SpeedTreeTreeRecordReader.ResolveFirstSeed(rec.DecodedTree),
-                ExtractObjectBoundsHeight(rec.Bounds),
-                billboardWidth,
-                billboardHeight);
+            map[entry.ArchivePath] = new TreeMetadata(
+                entry.ArchivePath,
+                entry.EditorId,
+                entry.LeafTexturePath,
+                entry.Seed,
+                ExtractObjectBoundsHeight(entry.Bounds),
+                entry.BillboardWidth,
+                entry.BillboardHeight);
         }
 
         return map;
@@ -132,122 +123,5 @@ internal static class SpeedTreeMetadata
 
         var height = bounds.Z2 - bounds.Z1;
         return height > 0 ? height : null;
-    }
-
-    private static uint? ExtractTreeSeed(Dictionary<string, object?> fields, bool bigEndian)
-    {
-        if (!fields.TryGetValue("SNAM", out var snam))
-        {
-            return null;
-        }
-
-        if (TryGetUInt32(snam, out var direct))
-        {
-            return direct;
-        }
-
-        if (snam is Dictionary<string, object?> dict)
-        {
-            if (dict.TryGetValue("Seed", out var seed) && TryGetUInt32(seed, out var seedValue))
-            {
-                return seedValue;
-            }
-
-            // TREE/SNAM with a single 4-byte payload currently resolves through the generic 4-byte schema.
-            if (dict.TryGetValue("Sound FormID", out var legacy) && TryGetUInt32(legacy, out var legacyValue))
-            {
-                return legacyValue;
-            }
-        }
-
-        if (snam is byte[] { Length: >= 4 } raw)
-        {
-            return BinaryUtils.ReadUInt32(raw, 0, bigEndian);
-        }
-
-        return null;
-    }
-
-    private static (float? Width, float? Height) ExtractTreeBillboardSize(
-        Dictionary<string, object?> fields,
-        bool bigEndian)
-    {
-        if (!fields.TryGetValue("BNAM", out var bnam))
-        {
-            return (null, null);
-        }
-
-        if (TryGetNamedFloat(bnam, "Width", out var width) &&
-            TryGetNamedFloat(bnam, "Height", out var height))
-        {
-            return (width, height);
-        }
-
-        if (bnam is byte[] { Length: >= 8 } raw)
-        {
-            return (BinaryUtils.ReadFloat(raw, 0, bigEndian), BinaryUtils.ReadFloat(raw, 4, bigEndian));
-        }
-
-        return (null, null);
-    }
-
-    private static bool TryGetNamedFloat(object? container, string name, out float value)
-    {
-        if (container is Dictionary<string, object?> dict && dict.TryGetValue(name, out var raw))
-        {
-            return TryGetFloat(raw, out value);
-        }
-
-        if (container is System.Collections.IDictionary idict && idict.Contains(name))
-        {
-            return TryGetFloat(idict[name], out value);
-        }
-
-        value = 0f;
-        return false;
-    }
-
-    private static bool TryGetFloat(object? raw, out float value)
-    {
-        switch (raw)
-        {
-            case float f:
-                value = f;
-                return true;
-            case double d:
-                value = (float)d;
-                return true;
-            case int i:
-                value = i;
-                return true;
-            case uint u:
-                value = u;
-                return true;
-            default:
-                value = 0f;
-                return false;
-        }
-    }
-
-    private static bool TryGetUInt32(object? raw, out uint value)
-    {
-        switch (raw)
-        {
-            case uint u:
-                value = u;
-                return true;
-            case int i when i >= 0:
-                value = (uint)i;
-                return true;
-            case ushort us:
-                value = us;
-                return true;
-            case byte b:
-                value = b;
-                return true;
-            default:
-                value = 0;
-                return false;
-        }
     }
 }

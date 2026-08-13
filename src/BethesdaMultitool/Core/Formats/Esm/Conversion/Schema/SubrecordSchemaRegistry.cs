@@ -127,7 +127,7 @@ public static class SubrecordSchemaRegistry
             static key => ComputeFixedLeLayout(key.Signature, key.RecordType, key.DataLength));
     }
 
-    private static IReadOnlyDictionary<int, LeFieldKind>? ComputeFixedLeLayout(
+    private static Dictionary<int, LeFieldKind>? ComputeFixedLeLayout(
         string signature, string recordType, int dataLength)
     {
         var schema = ResolveExplicitSchema(signature, recordType, dataLength);
@@ -450,7 +450,6 @@ public static class SubrecordSchemaRegistry
         RegisterSimpleFormId(schemas, "XEMI", "Emittance FormID");
         RegisterSimpleFormId(schemas, "XLKR", "Linked Reference FormID");
         RegisterSimpleFormId(schemas, "XMRC", "Merchant Container FormID");
-        RegisterSimpleFormId(schemas, "XSRD", "Sound Reference FormID");
         RegisterSimpleFormId(schemas, "XTRG", "Target FormID");
 
         // Additional non-FormID 4-byte values
@@ -477,7 +476,11 @@ public static class SubrecordSchemaRegistry
         RegisterSimple4Byte(schemas, "XPRD", "Patrol Data");
         RegisterSimple4Byte(schemas, "XRAD", "Radiation Level");
         RegisterSimple4Byte(schemas, "XRNK", "Faction Rank");
-        RegisterSimple4Byte(schemas, "XSRF", "Sound Reference Flags");
+        // xEdit wbDefinitionsFNV: XSRF = Special Rendering Flags (0x2 Imposter, 0x4 Use Full
+        // Shader in LOD); XSRD = its 4 raw data bytes. Neither is a FormID — labeling XSRD one
+        // only affected diff rendering (both registrations swap 4 bytes identically).
+        RegisterSimple4Byte(schemas, "XSRD", "Special Rendering Data");
+        RegisterSimple4Byte(schemas, "XSRF", "Special Rendering Flags");
         RegisterSimple4Byte(schemas, "XXXX", "Size Prefix");
         RegisterSimpleFormId(schemas, "RNAM", "FormID");
         schemas[new SchemaKey("NAM9", null, 4)] = SubrecordSchema.Simple4Byte("FormID");

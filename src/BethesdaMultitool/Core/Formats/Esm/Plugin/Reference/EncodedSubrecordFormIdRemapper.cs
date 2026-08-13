@@ -162,8 +162,12 @@ internal static class EncodedSubrecordFormIdRemapper
                 ? Offset0WhenAtLeast4(subrecord)
                 : [],
             "ASPC" => signature is "SNAM" or "RDAT" ? Offset0WhenAtLeast4(subrecord) : [],
-            // PWAT DNAM is { WATR FormID @0, flags @4 } — only the first word is a reference.
-            "PWAT" => signature == "DNAM" && subrecord.Bytes.Length >= 8 ? [0] : [],
+            // PWAT DNAM is { uint32 Flags @0, WATR FormID @4 } — flags FIRST. See the layout
+            // remark on PwatEncoder.EncodePwatDnam. This arm carried the transposed layout until
+            // 2026-08-07: it was rewriting the FLAG word as if it were a reference and leaving
+            // the real WATR FormID unremapped, so a PWAT pointing at a proto-new water kept its
+            // stale source FormID while its flags were corrupted.
+            "PWAT" => signature == "DNAM" && subrecord.Bytes.Length >= 8 ? [4] : [],
             // ANIO DATA is the IDLE animation FormID (not a data blob, despite the signature).
             "ANIO" => signature == "DATA" ? Offset0WhenAtLeast4(subrecord) : [],
             // CLMT WLST is an array of 12-byte entries: WTHR FormID @0, chance @4, GLOB FormID @8.
@@ -176,7 +180,7 @@ internal static class EncodedSubrecordFormIdRemapper
         => subrecord.Bytes.Length >= 4 ? [0] : [];
 
     /// <summary>CLMT WLST: per 12-byte entry, FormIDs sit at +0 (WTHR) and +8 (GLOB).</summary>
-    private static IReadOnlyList<int> WlstFormIdOffsets(EncodedSubrecord subrecord)
+    private static List<int> WlstFormIdOffsets(EncodedSubrecord subrecord)
     {
         if (subrecord.Bytes.Length < 12 || subrecord.Bytes.Length % 12 != 0)
         {

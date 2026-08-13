@@ -170,11 +170,15 @@ public sealed partial class WorldView3DControl
             float? hit;
             if (c.Collision is not null)
             {
-                // Warm mesh: exact triangle raycast. The origin slack can still admit a surface just
-                // above the step plane, so every returned world-space hit is explicitly windowed below.
+                // Warm mesh: exact triangle raycast, restricted to faces shallow enough to STAND on.
+                // A steep face is a wall (WalkHorizontalCollision owns it); accepting one here let the
+                // capsule ring — which samples exactly where the sweep stops the camera — lift the feet
+                // one step height per frame up a cave wall until the camera popped out through it.
+                // The origin slack can still admit a surface just above the step plane, so every
+                // returned world-space hit is explicitly windowed below.
                 var localOrigin = Vector3.Transform(origin, c.InverseWorld);
                 var localDir = Vector3.TransformNormal(down, c.InverseWorld);
-                hit = c.Collision.RaycastNearest(localOrigin, localDir, out var tLocal)
+                hit = c.Collision.RaycastNearestWalkable(localOrigin, localDir, c.World, out var tLocal)
                     ? Vector3.Transform(localOrigin + localDir * tLocal, c.World).Z
                     : null;
             }
@@ -269,7 +273,17 @@ public sealed partial class WorldView3DControl
                     var distanceSquared = (ddx * ddx) + (ddy * ddy);
                     if (resolution.Mesh is { } collision)
                     {
-                        TryAddWarmRaycastCandidate(p, collision, centerX, centerY, reach, into);
+                        // The cache builds ONE ordinary entry per model path under category Unknown, so
+                        // CollisionMeshBuilder's vegetation rule never saw this placement's category and
+                        // a tree's synthesized canopy soup arrived here as walkable ground ("walk mode
+                        // can stand on SPT leaves"). Re-apply the policy at the placement site;
+                        // authored Havok is exempt and stays solid.
+                        if (WalkCollisionFallbackPolicy.AllowsResolvedCollisionMesh(
+                                resolution.Source, p.ModelPath, category))
+                        {
+                            TryAddWarmRaycastCandidate(p, collision, centerX, centerY, reach, into);
+                        }
+
                         continue;
                     }
 
@@ -352,7 +366,13 @@ public sealed partial class WorldView3DControl
                 p.ModelPath!, cold.Category) ?? CollisionMeshResolution.Unresolved;
             if (resolution.Mesh is { } collision)
             {
-                TryAddWarmRaycastCandidate(p, collision, centerX, centerY, reach, into);
+                // Same placement-site vegetation/SpeedTree gate as the warm pass above.
+                if (WalkCollisionFallbackPolicy.AllowsResolvedCollisionMesh(
+                        resolution.Source, p.ModelPath, cold.Category))
+                {
+                    TryAddWarmRaycastCandidate(p, collision, centerX, centerY, reach, into);
+                }
+
                 continue;
             }
 

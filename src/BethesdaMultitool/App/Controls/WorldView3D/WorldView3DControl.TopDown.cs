@@ -106,6 +106,31 @@ public sealed partial class WorldView3DControl
             return null;
         }
 
+        // === Terrain depth pre-pass scope gate ===
+        // The pre-pass exists so placed references depth-test against the ground (partially buried
+        // meshes get clipped); it writes NO colour — the 2D map draws its own terrain layer beneath.
+        // Its cell set is the CULL CYLINDER, which at whole-worldspace zoom is the entire worldspace:
+        // measured on WastelandNV zoom-to-fit, terrainVisible=16,395 cells every pass, admitted for
+        // full-detail build (33x33 grid + 4-layer blend weights + textures, ~150 KB of GPU geometry
+        // each) at a hard 16 cells/pass — 583 passes reached only 9,312 cells, i.e. ~6.3 minutes and
+        // ~2.4 GB of geometry to finish. Worse, `NewUploads` stays non-zero for that whole time, so
+        // StreamingQuiescence never reports quiesced and the overlay re-renders the FULL scene
+        // (1.29 M-candidate cull + ~41 k submesh draws + readback, ~371 ms) on a loop indefinitely.
+        //
+        // At that zoom one CELL covers ~16 screen px, so the ground silhouette a 33x33 mesh resolves
+        // is far below what the readback can show, and every reference on it is sub-pixel. Gate the
+        // pre-pass on the SAME projected-cell-size threshold the 2D map already uses to swap its own
+        // terrain layer to the aggregate LOD bitmap (TerrainAggregateScreenPxThreshold = 24 px/cell),
+        // so the two agree about when the view is an overview rather than a per-cell view.
+        // TRADE-OFF (visible, deliberate): below the threshold references are no longer occluded by
+        // terrain, so geometry authored beneath the surface (vault/cave shells, foundation blocks)
+        // can show as specks. Interiors always keep the pre-pass — their ceiling clip is what makes
+        // the floor plan readable, and a single interior cell is never an overview.
+        var worldUnitsPerPixel = (worldMaxX - worldMinX) / MathF.Max(ssWidth, 1);
+        var pixelsPerCell = _cellSize / MathF.Max(worldUnitsPerPixel, 1e-6f);
+        var terrainDepthEnabled = interiorCellFormId is not null
+                                  || pixelsPerCell >= TopDownTerrainDepthMinPixelsPerCell;
+
         ulong fenceValue;
         bool isComplete;
         bool isFullySettled;
@@ -152,7 +177,10 @@ public sealed partial class WorldView3DControl
                     lightVisibility: cylinder);
 
                 target.Bind(cmd);
-                _terrain!.RenderDepthOnly(viewProj, cylinder); // depth pre-pass: ground occludes refs
+                if (terrainDepthEnabled)
+                {
+                    _terrain!.RenderDepthOnly(viewProj, cylinder); // depth pre-pass: ground occludes refs
+                }
                 // SpeedTree leaf cards re-face the billboard basis; the live frame sets it from the
                 // perspective camera, but this ortho capture looks straight down (east→+X right,
                 // north→+Y up per TopDownViewProjBuilder). Lay the leaf cards flat in the ground plane
@@ -161,7 +189,15 @@ public sealed partial class WorldView3DControl
                 // weather strength zero intentionally retains GRASS2000's five-unit minimum bend;
                 // only the Animations switch requests the undeformed rest pose.
                 _references.SetLeafBillboardBasis(System.Numerics.Vector3.UnitX, System.Numerics.Vector3.UnitY);
-                _references.SetWind(WindDirection, 0f, 0f);
+                // MUST be the CAPTURE seam, never SetWind: the leaf basis above is re-supplied by the
+                // live frame every tick, but the wind rig INTEGRATES history — SetWind(dir, 0, 0) writes
+                // the live rig's lastTime = 0 and foldStrength = 0, so the next live frame's
+                // `_matrixTimes *= foldStrength / S` zeroes all four oscillator clocks. Every canopy
+                // group then restarts at phase 0 (yaw 0, pitch 0.61·S — the cos extreme) in unison, and
+                // this overlay re-renders on a loop while streaming converges, so the reset repeats: the
+                // 2026-08-11 "SPT trees sway too strongly again" report. The capture rig is per-render
+                // state the live frame's SetWind clears, so a one-shot render cannot perturb live sway.
+                _references.SetWindForCapture(WindDirection, 0f, 0f);
                 _references.Render(
                     viewProj,
                     cylinder,
@@ -196,7 +232,13 @@ public sealed partial class WorldView3DControl
                     // resolution-invariant. No restore is needed: the live frame re-supplies the
                     // binding unconditionally every frame.
                     _water.SetWaterReflection(null, 0, 0);
-                    _water.Render(viewProj, cylinder);
+                    // Pin the water clock: the 2D map is a STATIC view of the world (user ruling
+                    // 2026-08-10), and the overlay re-renders while streaming converges — a live
+                    // clock re-phases the noise scroll, shader time, and the legacy water00..31
+                    // frame on every pass. t=0 matches the SetWindForCapture(dir, 0, 0) pose pin above and
+                    // makes settled overlay renders pixel-stable. No restore needed: the live frame
+                    // renders through the null-time overloads, which fall back to the live clock.
+                    _water.RenderAtTime(viewProj, cylinder, default, 0f, isPerspectiveProjection: false);
                 }
                 target.RecordReadback(cmd);
             }
@@ -227,12 +269,19 @@ public sealed partial class WorldView3DControl
                 }
             }
 
-            isComplete = TopDownStreamingComplete() && !ceilingNeedsAnotherPass;
+            // Terrain only participates in convergence when this pass actually rendered it. When the
+            // scope gate skipped the pre-pass, _terrain.LastStats is whatever the last call left
+            // behind (RenderInternal resets it on entry, so nothing clears it while skipped) — reading
+            // it would pin the overlay incomplete on a stale non-zero NewUploads forever.
+            var terrainStatsForQuiescence = terrainDepthEnabled ? _terrain.LastStats : null;
+            isComplete = StreamingQuiescence.IsQuiesced(
+                    _references!.LastStats, terrainStatsForQuiescence, strict: false)
+                && !ceilingNeedsAnotherPass;
             // Strict variant for one-shot consumers (2D map EXPORT tiles): also waits out the
             // texture-withheld window. The live overlay keeps keying on the loose IsComplete —
             // a pinned ReferenceTexturePending would make it re-render forever.
             isFullySettled = StreamingQuiescence.IsQuiesced(
-                    _references.LastStats, _terrain.LastStats, strict: true)
+                    _references.LastStats, terrainStatsForQuiescence, strict: true)
                 && !ceilingNeedsAnotherPass;
             _gpu12.PumpDebugMessages();
         }
@@ -255,8 +304,13 @@ public sealed partial class WorldView3DControl
         finally
         {
             _references.ShowInitiallyDisabled = prevShowDisabled;
-            // Restore the 3D view's own category filter (the authoritative live-view set).
-            _references.SetHiddenCategories(_hiddenCategories);
+            // Deliberately NOT restoring the 3D view's category filter here. The two sets genuinely
+            // differ (this control hides Sky, the 2D map legend hides nothing), so restoring per pass
+            // was two REAL filter changes per overlay render, and each one invalidates the cull cache
+            // outright — measured cullVeto=Invalidated on 205/205 WastelandNV zoom-to-fit passes,
+            // costing a full 1.29 M-candidate re-cull (85-190 ms) on every one. The live frame path
+            // re-asserts its own set before it renders (WorldView3DControl.Frame.cs), which is the
+            // only moment the live value has to be correct, so nothing observable changes.
             _references.StreamingThrottled = prevRefThrottled;
             _terrain.StreamingThrottled = prevTerrainThrottled;
         }
@@ -277,6 +331,52 @@ public sealed partial class WorldView3DControl
         var speedTreeBranchInstances = referenceStats.ReferenceSpeedTreeBranchInstances;
         var speedTreeLeafInstances = referenceStats.ReferenceSpeedTreeLeafInstances;
         var speedTreeBillboardInstances = referenceStats.ReferenceSpeedTreeBillboardInstances;
+
+        // Per-pass cost attribution for the 2D map's convergence benchmark. Without this the map's
+        // own trace only shows total request duration, which cannot distinguish "the pass is
+        // expensive" (cull/resolve/draw over a whole worldspace) from "there are many passes"
+        // (streaming backlog) — the two need opposite fixes.
+        if (Map2DProfilerTrace.IsEnabled)
+        {
+            var terrainStats = _terrain.LastStats;
+            Map2DProfilerTrace.Event("topdown-render-stats", string.Concat(
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"cells={referenceStats.ReferenceCellsVisited} candidates={referenceStats.ReferenceCandidates} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"culled={referenceStats.ReferenceCulled} drawn={referenceStats.ReferenceDrawn} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"cullMs={referenceStats.ReferenceCullMilliseconds:F1} meshUpMs={referenceStats.ReferenceMeshUploadMilliseconds:F1} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"cbMs={referenceStats.ReferenceCbUpdateMilliseconds:F1} srvMs={referenceStats.ReferenceSrvBindMilliseconds:F1} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"drawMs={referenceStats.ReferenceDrawCallMilliseconds:F1} refCpuMs={referenceStats.CpuFrameMilliseconds:F1} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"submeshDraws={referenceStats.ReferenceSubmeshDraws} srvBinds={referenceStats.ReferenceSrvBinds} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"meshMissing={referenceStats.ReferenceMeshMissing} texPending={referenceStats.ReferenceTexturePending} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"decodeReq={referenceStats.ReferenceDecodeRequests} decodeQueued={referenceStats.ReferenceQueuedDecodes} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"decodeStarts={referenceStats.ReferenceDecodeStarts} decodeActive={referenceStats.ReferenceActiveDecodes} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"meshUploads={referenceStats.ReferenceGpuUploads} cacheMiss={referenceStats.ReferenceMeshCacheMisses} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"texResolveQueued={referenceStats.ReferenceTextureQueuedResolves} texResolveActive={referenceStats.ReferenceTextureActiveResolves} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"texPendResolve={referenceStats.ReferenceTexturePendingResolves} texPendUpload={referenceStats.ReferenceTexturePendingUploads} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"cullCacheHit={referenceStats.ReferenceCullCacheHit} cullVeto={referenceStats.ReferenceCullCacheVeto} batchReuse={referenceStats.ReferenceBatchesReused} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"terrainCpuMs={terrainStats.CpuFrameMilliseconds:F1} terrainNewUploads={terrainStats.NewUploads} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"terrainDraws={terrainStats.TerrainDraws} terrainTruncated={terrainStats.TerrainDrawsTruncated} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"terrainVisible={terrainStats.VisibleCandidates} terrainTexMiss={terrainStats.TextureCacheMisses} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"terrainTexPendResolve={terrainStats.TexturePendingResolves} terrainTexPendUpload={terrainStats.TexturePendingUploads} "),
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"terrainDepth={terrainDepthEnabled} pxPerCell={pixelsPerCell:F1} ssPixels={ssWidth}x{ssHeight}")));
+        }
 
         var readbackTask = Task.Run(() =>
         {
@@ -308,22 +408,6 @@ public sealed partial class WorldView3DControl
             }
         }
     }
-
-    /// <summary>
-    ///     Heuristic completeness: is any terrain/mesh/texture streaming work still ACTIVE this frame?
-    ///     While false the 2D map keeps re-requesting so the overlay fills in (the 3D control's live
-    ///     loop is idle when the map is showing, so nothing else drives the caches forward).
-    ///     <para>
-    ///         Keyed on in-flight work (uploads this frame + queued/active decodes + texture queue
-    ///         depth) — deliberately NOT on <c>ReferenceMeshMissing</c>/<c>ReferenceTexturePending</c>,
-    ///         which count assets that returned null/pending THIS frame and never reach zero when a
-    ///         region has permanently-missing/cut meshes or textures (those are negative-cached, not
-    ///         re-queued). Settling on "nothing actively loading" lets the overlay converge instead of
-    ///         re-requesting forever.
-    ///     </para>
-    /// </summary>
-    private bool TopDownStreamingComplete() =>
-        StreamingQuiescence.IsQuiesced(_references!.LastStats, _terrain!.LastStats, strict: false);
 
     /// <summary>Blocks until <paramref name="fence" /> reaches <paramref name="value" />. Safe to
     /// call off the UI thread (fence read + event are thread-safe). The fence is a parameter, not

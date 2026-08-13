@@ -165,12 +165,37 @@ public sealed partial class WorldView3DControl
         }
         else
         {
-            // Resize requires GPU idle so the back buffers aren't referenced by in-flight
-            // command lists. The recorder's WaitForGpuIdle drains the queue.
-            _commandRecorder12!.WaitForGpuIdle();
-            _surface12.Resize(width, height);
-            EnsureDepthSrv(); // depth resource was recreated → repoint the SRV at the new one
-            HideStatus();
+            try
+            {
+                // Resize requires GPU idle so the back buffers aren't referenced by in-flight
+                // command lists. The recorder's WaitForGpuIdle drains the queue.
+                _commandRecorder12!.WaitForGpuIdle();
+                _surface12.Resize(width, height);
+                EnsureDepthSrv(); // depth resource was recreated → repoint the SRV at the new one
+                HideStatus();
+            }
+            catch (SharpGen.Runtime.SharpGenException ex)
+            {
+                // CONFIRMED crash path: a GPU device removal during a resize throws here from a
+                // XAML SizeChanged/CompositionScaleChanged/Loaded handler, which previously
+                // escaped straight to App.UnhandledException and killed the process. Attribute
+                // the removal, drop the dead surface, and let the next TryEnsureSurface call
+                // recreate it (Create already tolerates a removed device by returning null).
+                Log.Warn("WorldView3DControl: surface resize to {0}x{1} failed: {2}",
+                    width, height, ex.Message);
+                _gpu12!.LogDeviceRemovedDiagnostics("surface-resize");
+                try
+                {
+                    _surface12.Dispose();
+                }
+                catch (SharpGen.Runtime.SharpGenException)
+                {
+                    // Disposing a surface on a removed device can itself fail; the resources die
+                    // with the device either way.
+                }
+                _surface12 = null;
+                ShowStatus("3D view: GPU device removed during resize — the surface will be recreated (see logs).");
+            }
         }
     }
 

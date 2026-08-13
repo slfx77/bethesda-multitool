@@ -33,6 +33,9 @@ internal static class PdbStructLayouts
         0x23, // PWAT — RuntimePlaceableWaterReader (the parent-WATR pointer lives inside an
               //        8-byte embedded struct the generic reader only hex-dumps, so a typed
               //        read is the only way to recover it)
+        0x25, // TREE — RuntimeTreeReader (SNAM's NiTPrimitiveArray and CNAM's OBJ_TREE are
+              //        both embedded structs >8 bytes, which the generic reader replaces with
+              //        a placeholder string instead of walking — see RuntimeTreeReader)
         0x27, // FURN — RuntimeWorldObjectReader
         0x28, // WEAP — RuntimeItemReader
         0x29, // AMMO — RuntimeItemReader

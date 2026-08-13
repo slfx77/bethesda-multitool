@@ -327,6 +327,16 @@ internal static class EsmRecordScanner
             return null;
         }
 
+        // A torn header with a scribbled DataSize passes every scalar gate AND the first-subrecord
+        // probe (its leading data bytes are the real record's), then blinds the skip-ahead scanner
+        // to everything the bogus size spans — xex44 lost a 4.4 MB chunk tail (a whole
+        // cell-children GRUP) to one stale REFR claiming 4.5 MB. Large claims must prove their
+        // extent structurally before they may be trusted.
+        if (!RecordValidator.HasTrustworthyExtent(data, i, headerSize, dataLength, isBigEndian, flags, dataSize))
+        {
+            return null;
+        }
+
         return new DetectedMainRecord(recordType, dataSize, flags, formId, i, isBigEndian)
         {
             HeaderSize = headerSize, // 20 for Oblivion (TES4 w/o version trailer), 24 for FO3/FNV/Skyrim+

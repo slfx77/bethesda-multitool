@@ -75,6 +75,12 @@ internal static class RecordFlattener
         result.AddRange(
             records.ActorValueInfos.Select(r => new FlatRecord(r.FormId, "AVIF", r.EditorId, r.FullName)));
 
+        // Typed collections that used to live in GenericRecords. Without these rows
+        // `btool list -t PWAT` / `-t TREE` silently return nothing.
+        result.AddRange(
+            records.PlaceableWaters.Select(r => new FlatRecord(r.FormId, "PWAT", r.EditorId, null)));
+        result.AddRange(records.Trees.Select(r => new FlatRecord(r.FormId, "TREE", r.EditorId, null)));
+
         // Generic
         result.AddRange(
             records.GenericRecords.Select(r => new FlatRecord(r.FormId, r.RecordType, r.EditorId, r.FullName)));

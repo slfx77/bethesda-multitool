@@ -36,10 +36,11 @@ internal static class PlanCellSectionBuilder
         return BuildCellSectionCore(plan, masterByFormId, options, stats, masterIndex).SectionBytes;
     }
     /// <summary>
-    ///     Full-result variant: also reports which NAVM FormIDs were actually written, so
-    ///     NAVI rows and NVEX valid-sets can be built from real emission rather than the
-    ///     plan (a planned NAVM whose cell got suppressed must not get a NAVI row — the
-    ///     engine null-derefs NavMeshInfoMap over dangling NVMI entries).
+    ///     Full-result variant: also reports which NAVM FormIDs were written and which placed
+    ///     refs/children the bundles ended up containing. The written-NAVM set is retained as
+    ///     the writer's own view for NVEX sanitation; NAVI now takes its rows and NVCI graph
+    ///     from the plan (<c>PlanNavmEmission</c> / <c>PlanNavmConnectivity</c>), which is what
+    ///     lets NAVI be built without waiting for this pass.
     /// </summary>
     internal static CellSectionBuildResult BuildCellSectionCore(
         EmitPlan plan,
@@ -65,9 +66,10 @@ internal static class PlanCellSectionBuilder
             ? []
             : new HashSet<uint>(masterIndex.RefToCell.Keys);
 
-        IReadOnlyDictionary<uint, PlannerXespParentClassifier.Resolution> xespParentIndex = stats is null
-            ? new Dictionary<uint, PlannerXespParentClassifier.Resolution>()
-            : PlannerXespParentClassifier.BuildIndex(plan, masterByFormId, masterRefFormIds);
+        // The XESP census indexes every captured child, so only build it when a stats sink
+        // is actually collecting.
+        var xespClassifier = new PlannerXespParentClassifier(
+            plan, masterByFormId, masterRefFormIds, indexCapturedChildren: stats is not null);
 
         // Master ref FormIDs the plan emits anywhere (cross-cell moves included): a moved
         // ref's home cell must neither carry-forward nor tombstone it.
@@ -85,7 +87,7 @@ internal static class PlanCellSectionBuilder
 
         var context = new CellChildEncodeContext(
             plan, masterByFormId, validFormIds, options, stats, masterIndex, masterRefFormIds,
-            dmpBaseTypes, xespParentIndex)
+            dmpBaseTypes, xespClassifier)
         {
             GloballyEmittedMasterRefs = globallyEmittedMasterRefs,
         };
@@ -94,15 +96,12 @@ internal static class PlanCellSectionBuilder
         if (bundles.Count == 0)
         {
             return new CellSectionBuildResult(null, emittedNavmFormIds,
-                ImmutableHashSet<uint>.Empty, ImmutableHashSet<uint>.Empty,
-                ImmutableDictionary<uint, NavmConnectivity>.Empty);
+                ImmutableHashSet<uint>.Empty, ImmutableHashSet<uint>.Empty);
         }
 
         SanitizeNavmNvexInBundles(bundles, emittedNavmFormIds, masterByFormId);
         DeletedRefLinkStripper.Apply(bundles, stats);
 
-        // Emitted-navmesh NVEX/NVDP connectivity → NVCI reconstruction (post-sanitize; empty NVCI beside live links null-derefs the cross-cell A*).
-        var navmConnectivity = NavmConnectivityExtractor.Extract(bundles, validFormIds);
         var newWorldspaces = BuildNewWorldspaces(plan, options);
 
         var sectionBytes = CellGrupBuilder.BuildCellSection(
@@ -111,8 +110,7 @@ internal static class PlanCellSectionBuilder
             sectionBytes,
             emittedNavmFormIds,
             EmittedPlacedReferenceCollector.Collect(bundles),
-            OverriddenChildFormIdCollector.Collect(bundles),
-            navmConnectivity);
+            OverriddenChildFormIdCollector.Collect(bundles));
     }
 
     /// <summary>
@@ -238,15 +236,25 @@ internal static class PlanCellSectionBuilder
 
             var isMasterAnchored = cellPlan.CellRecordPlan.Master is not null;
             var dmpCell = cellPlan.CellRecordPlan.Model as CellRecord;
-            var (mode, dropRenderCullingMarkers) =
-                CellDecisionFallback.Resolve(cellPlan, isMasterAnchored, dmpCell, context);
+
+            // The merge mode and marker-drop decision are settled at plan time by
+            // CellSectionPlanner.PlanMergeMode. The CellDecisionFallback that re-derived them
+            // here was deleted in the 2026-08-11 retirement (Stage H1): production always
+            // supplies masterRefFormIds, so Mode was never null outside hand-built fixtures.
+            if (cellPlan.Mode is not { } mode)
+            {
+                throw new InvalidOperationException(
+                    $"CELL 0x{cellFormId:X8} reached the writer without a planned merge mode. " +
+                    "CellSectionPlanner.PlanMergeMode must settle it for every cell.");
+            }
+
             var state = new CellEncodeState
             {
                 CellFormId = cellFormId,
                 Mode = mode,
                 IsMasterAnchored = isMasterAnchored,
                 IsInterior = cellPlan.Context.IsInterior,
-                DropRenderCullingMarkers = dropRenderCullingMarkers,
+                DropRenderCullingMarkers = cellPlan.DropRenderCullingMarkers,
                 RefDecisions = cellPlan.RefDecisions,
             };
 
@@ -260,17 +268,18 @@ internal static class PlanCellSectionBuilder
             EncodeBucketChildren(cellPlan.VwdChildren, 10, context, state, persistent, vwd, temporary, landPrefix, navmPrefix);
             EncodeBucketChildren(cellPlan.TemporaryChildren, 9, context, state, persistent, vwd, temporary, landPrefix, navmPrefix);
 
-            // Cell-emission gates. Planner-settled values (CellPlan.Emits) win; the inline
-            // computation only runs for plans that predate the gate-planning stage. Full
-            // rationale for each gate (navmesh-only ownership transfer, ITM blanking class,
-            // fragile interior master seek/scan attach) lives on CellChildVerdictPlanner.
-            var usePlannedGates = cellPlan.Emits is not null;
-            var suppressNavmOnly = usePlannedGates
-                ? cellPlan.NavmOnlySuppressed
-                : isMasterAnchored
-                  && state.GenuineChildCount > 0
-                  && state.GenuineChildCount == state.GenuineNavmCount;
-            if (suppressNavmOnly)
+            // Cell-emission gates are settled at plan time by CellChildVerdictPlanner's
+            // PlanCellGates; the writer only applies them. (The inline re-computation that
+            // used to shadow them went with retirement Stage H1.) Full rationale for each
+            // gate — navmesh-only ownership transfer, ITM blanking class, fragile interior
+            // master seek/scan attach — lives on CellChildVerdictPlanner.
+            if (cellPlan.Emits is not { } emits)
+            {
+                throw new InvalidOperationException(
+                    $"CELL 0x{cellFormId:X8} reached the writer without a planned emission gate.");
+            }
+
+            if (cellPlan.NavmOnlySuppressed)
             {
                 navmPrefix.Clear();
                 state.EmittedNavmFormIds.Clear();
@@ -278,31 +287,11 @@ internal static class PlanCellSectionBuilder
                 context.Stats?.IncrementDropReason("cell.navmesh-only-override-suppressed");
             }
 
-            if (usePlannedGates)
+            if (!emits)
             {
-                if (!cellPlan.Emits!.Value)
-                {
-                    context.Stats?.IncrementDropReason(
-                        cellPlan.SuppressReason ?? "cell.itm-override-suppressed");
-                    continue;
-                }
-            }
-            else
-            {
-                // Planned LAND counts as genuine content for the ITM gate (mirrors the
-                // planner-side PlanCellGates rule): a master cell whose only captured
-                // change is terrain must still emit its override.
-                if (isMasterAnchored && state.GenuineChildCount == 0 && landPrefix.Count == 0)
-                {
-                    context.Stats?.IncrementDropReason("cell.itm-override-suppressed");
-                    continue;
-                }
-
-                if (isMasterAnchored && cellPlan.Context.IsInterior && state.GenuineNewCount == 0)
-                {
-                    context.Stats?.IncrementDropReason("cell.interior-no-new-content-suppressed");
-                    continue;
-                }
+                context.Stats?.IncrementDropReason(
+                    cellPlan.SuppressReason ?? "cell.itm-override-suppressed");
+                continue;
             }
 
             // LAND and NAVM both live in Temporary Children; LAND first, then NAVM, then
@@ -386,7 +375,7 @@ internal static class PlanCellSectionBuilder
                 state.GenuineNavmCount++;
                 continue;
             }
-            if (child.Type is not ("REFR" or "ACHR" or "ACRE"))
+            if (child.Type is not ("REFR" or "ACHR" or "ACRE" or "PGRE"))
             {
                 continue;
             }

@@ -348,6 +348,23 @@ internal sealed class FlythroughCameraController
                 return;
             }
 
+            // Floor of last resort. Clipping through geometry (or drifting off the loaded grid while
+            // airborne) leaves NO floor under the camera and no armed jump, which used to fall forever.
+            // Restore the last confirmed floor pose; with none ever recorded, freeze the camera where
+            // it is rather than inventing a height to teleport to.
+            if (_voidRecovery.TryObserveFallStep(
+                    descending: true, floorKnown: ground is not null, newZ,
+                    out var fallOutcome, out var fallSafePosition))
+            {
+                _airborne = false;
+                _verticalVelocity = 0f;
+                _walkZSettled = true;
+                _camera.Position = fallOutcome == WalkFallOutcome.Restore
+                    ? fallSafePosition
+                    : new Vector3(pos.X, pos.Y, newZ);
+                return;
+            }
+
             if (ground is float floorGround)
             {
                 var floor = floorGround + EyeHeight;
@@ -397,6 +414,16 @@ internal sealed class FlythroughCameraController
             _airborne = true;
             _verticalVelocity = 0f;
             return;
+        }
+
+        // A step-up under a low roof must not push the eye through it. Only an actual RISE can, and
+        // only then is the ceiling sampled — the ceiling query rebuilds the same 3x3 candidate set as
+        // the ground capsule, so running it every grounded frame would double walk-mode collision cost
+        // for the flat-ground case that can never bonk. The fall check above deliberately uses the
+        // unclamped ground target so a low roof cannot be read as a ledge.
+        if (target > pos.Z + 1f && CeilingHeightSampler is { } ceilingSampler)
+        {
+            target = WalkVerticalMath.ClampToCeiling(target, ceilingSampler(pos.X, pos.Y), CeilingHeadroom);
         }
 
         var blend = 1f - MathF.Exp(-WalkStepSmoothingRate * deltaSeconds);

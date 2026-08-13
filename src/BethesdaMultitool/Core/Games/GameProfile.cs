@@ -153,6 +153,17 @@ public sealed record GameProfile
     public int? WideTimeOfDayBandsFormVersion { get; init; }
 
     /// <summary>
+    ///     Form version at which the FO3/FNV IMGS DNAM gains Skin Dimmer (and so shifts every field
+    ///     after +56 by four bytes): 14 for Fallout 3 and Fallout: New Vegas, <c>null</c> for games
+    ///     whose IMGS is not the single-DNAM layout. ⚠ Measured from retail data across both
+    ///     masters (132 B = v1-9, 148 B = v11-13, 152 B = v14-15) — xEdit's FO3/FNV definition
+    ///     declares <c>wbFromVersion(10, …)</c>, which does not match either shipped file.
+    ///     Decoding keys on the DNAM length; this threshold only powers a mismatch warning, so a
+    ///     wrong value can never corrupt a parse.
+    /// </summary>
+    public int? ImageSpaceSkinDimmerFormVersion { get; init; }
+
+    /// <summary>
     ///     True when WATR ships its noise/normal layers as NAM2/NAM3/NAM4 zstrings and that layout
     ///     has been verified against retail data: Skyrim, FO4, FO76. Deliberately false for
     ///     Starfield — its WATR layout is unverified; flip when the Starfield WATR RE lands.

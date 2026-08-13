@@ -179,7 +179,7 @@ public sealed class EsmPlanner
         // Legacy-pipeline bridge (2026-08-05, NVULfountain class): base types with no planner
         // extractor row (MSTT / TACT / PWAT / ...) emit through the legacy top-level loop, and
         // their source->allocated FormIDs never reached this map — so every placed ref naming
-        // one dropped as refr.dangling-base under --planner-types (6 refs in xex21, including
+        // one dropped as refr.dangling-base under planner emission (6 refs in xex21, including
         // the RadioNVNewVegasRadio station ref and the NVULfountain). Merge them so the verdict
         // pass resolves the base like any planner-allocated one. Planner allocations win ties
         // (merged AFTER the cell-section AddRanges: a source FormID can be dual-booked by the
@@ -280,14 +280,20 @@ public sealed class EsmPlanner
                     sourceToEmitted, emittedFormIds, verdictInputs),
             };
             plan = PostVerdictScriptClosurePlanner.Apply(plan, masterRecords);
-        }
 
-        if (masterRecordsByFormId is not null && !plan.CellsByFormId.IsEmpty)
-        {
+            // The cell gates above decide which navmeshes survive, so the written-NAVM set
+            // is knowable now — NAVI no longer has to wait for the cell section to be built.
             plan = plan with
             {
-                NavmDoorLinks = NavmDoorLinkPlanner.Build(plan, masterRecordsByFormId),
+                EmittedNavmFormIds = PlanNavmEmission.Compute(
+                    plan.CellsByFormId, verdictInputs.DiagnosticSkipCellNavm),
             };
+        }
+
+        // Phase G: door links, per-subrecord link resolution, NVCI connectivity.
+        if (masterRecordsByFormId is not null && !plan.CellsByFormId.IsEmpty)
+        {
+            plan = CellPlanFinalizer.Apply(plan, masterRecordsByFormId);
         }
 
         return plan;

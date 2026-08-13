@@ -279,6 +279,179 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
         };
     }
 
+    /// <summary>
+    ///     Parse all Tree (TREE) records — SpeedTree seeds plus leaf-animation and billboard
+    ///     parameters. The DMP corpus carries no serialized TREE bytes at all, so in practice
+    ///     every recovered tree arrives through the runtime overlay below.
+    /// </summary>
+    internal List<TreeRecord> ParseTrees()
+    {
+        var trees = ParseRecordList("TREE", 512,
+            ParseTreeFromAccessor,
+            record => new TreeRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+
+        // TREE was previously routed through the generic-record path, which cannot recover
+        // SNAM or CNAM: both live in embedded structs larger than the 8-byte limit above which
+        // the generic reader emits a placeholder string instead of walking. RuntimeTreeReader
+        // decodes them from the PDB-declared layout.
+        Context.MergeRuntimeOverlayRecords(
+            trees,
+            [0x25],
+            record => record.FormId,
+            static (reader, entry) => reader.ReadRuntimeTree(entry),
+            MergeTree,
+            "trees");
+
+        return trees;
+    }
+
+    private static TreeRecord MergeTree(TreeRecord esm, TreeRecord runtime)
+    {
+        return esm with
+        {
+            EditorId = esm.EditorId ?? runtime.EditorId,
+            ModelPath = esm.ModelPath ?? runtime.ModelPath,
+            IconPath = esm.IconPath ?? runtime.IconPath,
+            Bounds = esm.Bounds ?? runtime.Bounds,
+            ModelTextureData = esm.ModelTextureData ?? runtime.ModelTextureData,
+            // Serialized values win when present; the runtime copy only backfills what the
+            // ESM side never supplied. A captured seed list of length 0 is not "recovered".
+            Seeds = esm.Seeds is { Count: > 0 } ? esm.Seeds : runtime.Seeds,
+            Data = esm.Data ?? runtime.Data,
+            BillboardSize = esm.BillboardSize ?? runtime.BillboardSize,
+            Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
+            IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian
+        };
+    }
+
+    private TreeRecord? ParseTreeFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new TreeRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? modelPath = null;
+        string? iconPath = null;
+        byte[]? textureHashData = null;
+        ObjectBounds? bounds = null;
+        List<uint>? seeds = null;
+        TreeData? treeData = null;
+        TreeBillboardSize? billboard = null;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODT" when sub.DataLength > 0:
+                    textureHashData = subData.ToArray();
+                    break;
+                case "ICON":
+                    iconPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                // SNAM is a packed uint32 seed array of any length (1 seed on 9 of the 10 proto
+                // records, 5 on WhiteOak01). The exact-multiple guard rejects a truncated tail.
+                case "SNAM" when sub.DataLength >= 4 && sub.DataLength % 4 == 0:
+                    seeds = ReadTreeSeeds(subData, record.IsBigEndian);
+                    break;
+                // Exact-length guards, not >=: this handler is game-agnostic, and Skyrim's TREE
+                // CNAM is a 48-byte struct with no BNAM at all. Decoding that as FNV's OBJ_TREE
+                // would silently produce garbage rather than skipping.
+                case "CNAM" when sub.DataLength == 32:
+                    treeData = ReadTreeData(subData, record.IsBigEndian);
+                    break;
+                case "BNAM" when sub.DataLength == 8:
+                    billboard = new TreeBillboardSize
+                    {
+                        Width = BinaryUtils.ReadFloat(subData, 0, record.IsBigEndian),
+                        Height = BinaryUtils.ReadFloat(subData, 4, record.IsBigEndian)
+                    };
+                    break;
+            }
+        }
+
+        return new TreeRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            ModelPath = modelPath,
+            ModelTextureData = textureHashData,
+            IconPath = iconPath,
+            Bounds = bounds,
+            Seeds = seeds,
+            Data = treeData,
+            BillboardSize = billboard,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private static List<uint> ReadTreeSeeds(ReadOnlySpan<byte> subData, bool bigEndian)
+    {
+        var seeds = new List<uint>(subData.Length / 4);
+        for (var i = 0; i + 4 <= subData.Length; i += 4)
+        {
+            seeds.Add(bigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(subData[i..])
+                : BinaryPrimitives.ReadUInt32LittleEndian(subData[i..]));
+        }
+
+        return seeds;
+    }
+
+    /// <summary>
+    ///     Decodes the 32-byte CNAM payload. Field 5 is a SIGNED INT32
+    ///     (<c>OBJ_TREE.iCanopyShadowRadius</c>), not a float — see <see cref="TreeData" />.
+    /// </summary>
+    private static TreeData ReadTreeData(ReadOnlySpan<byte> d, bool bigEndian)
+    {
+        return new TreeData
+        {
+            LeafCurvature = BinaryUtils.ReadFloat(d, 0, bigEndian),
+            MinLeafAngle = BinaryUtils.ReadFloat(d, 4, bigEndian),
+            MaxLeafAngle = BinaryUtils.ReadFloat(d, 8, bigEndian),
+            BranchDimmingValue = BinaryUtils.ReadFloat(d, 12, bigEndian),
+            LeafDimmingValue = BinaryUtils.ReadFloat(d, 16, bigEndian),
+            ShadowRadius = bigEndian
+                ? BinaryPrimitives.ReadInt32BigEndian(d[20..])
+                : BinaryPrimitives.ReadInt32LittleEndian(d[20..]),
+            RockSpeed = BinaryUtils.ReadFloat(d, 24, bigEndian),
+            RustleSpeed = BinaryUtils.ReadFloat(d, 28, bigEndian)
+        };
+    }
+
     private PlaceableWaterRecord? ParsePwatFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = Context.ReadRecordData(record, buffer);

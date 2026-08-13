@@ -65,7 +65,12 @@ public sealed class TreeEncoder : IRecordEncoder
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
 
-    /// <summary>TREE CNAM payload (32 bytes, 8 LE floats).</summary>
+    /// <summary>
+    ///     TREE CNAM payload: 32 bytes, seven LE floats and one LE signed int32 at +20.
+    ///     Layout is the engine's <c>OBJ_TREE</c> struct — see <see cref="TreeData" /> for the
+    ///     PDB citation. <c>ShadowRadius</c> was encoded as a float until 2026-08-07, which
+    ///     wrote a denormal where the engine reads a cell count.
+    /// </summary>
     internal static byte[] EncodeCnamData(TreeData data)
     {
         var bytes = new byte[32];
@@ -74,7 +79,7 @@ public sealed class TreeEncoder : IRecordEncoder
         BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(8, 4), data.MaxLeafAngle);
         BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(12, 4), data.BranchDimmingValue);
         BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(16, 4), data.LeafDimmingValue);
-        BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(20, 4), data.ShadowRadius);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(20, 4), data.ShadowRadius);
         BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(24, 4), data.RockSpeed);
         BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(28, 4), data.RustleSpeed);
         return bytes;

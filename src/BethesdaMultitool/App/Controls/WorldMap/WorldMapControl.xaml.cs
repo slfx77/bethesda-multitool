@@ -101,6 +101,12 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private Vector2 _panOffsetAtStart;
     private Vector2 _panStartScreen;
 
+    /// <summary>
+    ///     Last non-zero canvas size, the baseline <see cref="MapCanvas_SizeChanged" /> re-centres
+    ///     against. Zero until the first real layout.
+    /// </summary>
+    private Vector2 _lastCanvasSize;
+
     // --- WASD keyboard panning ---
     // Held W/A/S/D keys; the viewport timer integrates a steady screen-space nudge each tick while
     // any are down (and is kept alive until they're released). Screen-space px/tick so the pan rate
@@ -450,6 +456,34 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // NullReferenceException — visible as "TerrainTextures streaming failed" in the log.
         Unloaded += (_, _) => CancelTerrainStream();
         Unloaded += (_, _) => CancelTopDownOverlay();
+        // Resize/maximize must keep the same world point under the view centre. _panOffset is a
+        // SCREEN-space translation, so an untouched pan pins the top-left corner and the centre drifts
+        // by half the size delta — and the 2D→3D handoff reads that centre.
+        MapCanvas.SizeChanged += MapCanvas_SizeChanged;
+    }
+
+    /// <summary>
+    ///     Re-derives the pan offset across a canvas resize so the centred world point stays centred.
+    ///     Measured against the last NON-ZERO size rather than <c>e.PreviousSize</c>: cell-browser mode
+    ///     collapses the canvas to 0×0, and resizing the window while collapsed would otherwise arrive
+    ///     as a 0 → new transition with no centre to carry over. The very first layout has no prior
+    ///     size and is framed by the load path instead.
+    /// </summary>
+    private void MapCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var newSize = new Vector2((float)e.NewSize.Width, (float)e.NewSize.Height);
+        if (newSize.X < 1f || newSize.Y < 1f) return;
+
+        var previousSize = _lastCanvasSize;
+        _lastCanvasSize = newSize;
+        if (previousSize.X < 1f || previousSize.Y < 1f) return;
+
+        _panOffset = WorldMapViewportMath.PreserveCenterOnResize(
+            _panOffset, _zoom, previousSize.X, previousSize.Y, newSize.X, newSize.Y);
+
+        // A grown viewport exposes cells the old one culled, so re-kick streaming alongside the redraw.
+        EnsureViewportTimerRunning();
+        MapCanvas.Invalidate();
     }
 
     // --- Navigation ---

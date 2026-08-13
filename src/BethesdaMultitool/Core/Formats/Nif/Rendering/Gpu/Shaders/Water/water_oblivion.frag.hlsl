@@ -113,24 +113,21 @@ float4 main(PSInput input) : SV_Target
         float2 legacyUv = input.vWorldPos.xy * fMacro + uLegacySurface0.zw * t;
         pert = gWaterTextures[NonUniformResourceIndex(noiseIndex)].Sample(gWaterSampler, legacyUv).xyz * 2.0 - 1.0;
     }
-    // Ripple distance attenuation, ported exactly from WATER000.pso (oblivion_water_pkg019.asm:
-    //   def c14, 2.0, -1.0, 0.0, -0.000122
-    //   mad r2.w, dist, c14.w, -c14.y   -> 1 - dist*0.000122
-    //   mul r3.w, r2.w, r2.w            -> squared
-    //   mul r0.xy, r3.w, r0             -> perturbation.xy *= atten
-    // 0.000122 is 1/8192 to the disassembler's 6 decimal places, so the linear term reaches ZERO at
-    // exactly 8192 world units — the same two-cell envelope FNV expresses as its noiseFade ramp.
+    // Ripple distance attenuation, ported exactly from WATER000.pso (oblivion_water_pkg019.asm,
+    // regenerated 2026-08-08 with the fixed decoder):
+    //   def c14, 2, -1, 0, -0.000122070312       (-0.000122070312 = -2^-13 = -1/8192 EXACTLY)
+    //   mad_sat r2.w, r1.w, c14.w, -c14.y   -> saturate(1 - dist/8192)
+    //   mul r3.w, r2.w, r2.w                -> squared
+    //   mul r0.xy, r3.w, r0                 -> perturbation.xy *= atten^2 (Z untouched)
+    // The linear term reaches ZERO at exactly 8192 world units — the same two-cell envelope FNV
+    // expresses as its noiseFade ramp — and past it the whole far field is intentionally FLAT.
     //
-    // The asm carries no _sat on any of those three instructions, and retail never needs one: its
-    // water grid and fog far plane mean distXY cannot exceed the envelope. This viewer permits a
-    // 34,000-unit aerial camera, where the UNSATURATED term crosses zero and then grows without
-    // bound — at the frame edge of the reported top-down pose (distXY ~ 25,000) it reaches ~4.2, so
-    // an encoded +-0.42 perturbation became +-1.7 and normalize() tilted the surface normal up to
-    // ~72 degrees from vertical, lighting the pow(...,SunPower) lobe across the whole far field.
-    // saturate() is therefore an OUT-OF-ENVELOPE GUARD, not recovered engine math: inside retail's
-    // envelope it is bit-identical to the asm, and outside it clamps to the engine's own zero
-    // instead of extrapolating. It also fixes the detail-map blend below, whose weight uses the
-    // UNSQUARED term and so went NEGATIVE past 8192 (colour extrapolation).
+    // CORRECTION 2026-08-08: this comment previously claimed "the asm carries no _sat" and called
+    // our saturate() an out-of-envelope guard rather than engine math. That was an artifact of the
+    // 2026-07-06 dump, whose decoder dropped every destination modifier (93 saturating
+    // instructions across the WATER family printed unsaturated). The shipped bytecode saturates
+    // in hardware: saturate() here IS the recovered instruction, verified by raw-token decode
+    // (dst token 0x80180002, DSTMOD bit 20 set) and by two independent disassemblers agreeing.
     float oblivionLinearDistanceAtten = saturate(1.0 - distXY * 0.000122);
     float oblivionDistanceAtten = oblivionLinearDistanceAtten * oblivionLinearDistanceAtten;
     pert.xy *= oblivionDistanceAtten;
@@ -183,18 +180,21 @@ float4 main(PSInput input) : SV_Target
     // detail substantially. A missing/empty TNAM skips this term, matching retail DefaultWater.
     if (uNormalIndices.y != 0xFFFFFFFFu && uLegacySurface1.z != 0.0)
     {
-        // SAME UV SCALE as the NormalMap — re-verified against the asm 2026-08-07:
-        //   asm 26: add   r2.xy, a6, c0/*Scroll*/          <- the NormalMap UV
-        //   asm 27: texld r0, r2, s1/*NormalMap*/
-        //   asm 40: mad   r1.xy, r3/*N*/, c4.xxxx, r2      <- DetailMap UV = N.xy*0.1 + THAT SAME r2
-        //   asm 45: texld r1, r1, s2/*DetailMap*/
-        // with def c4 = (0.1, 0.0002, 2496.0, 4.0), so the 0.1 normal offset is exact and there is
-        // no additional tiling divisor anywhere in the program.
-        // Previously this multiplied fMacro by 4.75, attributed to an ini [Water]
-        // fTileTextureDivisor — but that key is MORROWIND's (docs/research/
-        // morrowind_atmosphere_water_model.md lists TileTextureDivisor=4.75 under MORROWIND.ini),
-        // not Oblivion's. It made the detail map tile 4.75x finer than retail. Inactive for Tamriel,
-        // whose DefaultWater leaves TNAM empty, but wrong for every water that authors one.
+        // SAME UV BASE as the NormalMap — WATER000.pso (oblivion_water_pkg019.asm, regenerated
+        // 2026-08-08 with the fixed decoder, cross-checked by two independent disassemblers):
+        //   add   r2.xy, t6, c0/*Scroll*/          <- the NormalMap UV (t6 = mesh texcoord0)
+        //   texld r0, r2, s1/*NormalMap*/
+        //   mad   r1.xy, r3/*N*/, c4.xxxx, r2      <- DetailMap UV = N.xy*0.1 + THAT SAME r2
+        //   texld r1, r1, s2/*DetailMap*/
+        // with def c4 = (0.1, 0.0002, 2496.0, 4.0): the 0.1 normal offset is exact and WATER000
+        // applies no extra divisor between the two samplers.
+        // CORRECTION 2026-08-08: this block previously multiplied fMacro by 4.75 citing ini
+        // [Water] fTileTextureDivisor, and the first removal rationale called that key
+        // "MORROWIND's". Both provenance claims were wrong: Oblivion_default.ini:209 ships
+        // fTileTextureDivisor=4.7500 in ITS OWN [Water] section (fSurfaceTileSize=2048 is :210).
+        // The key is real; it just does not act between NormalMap and DetailMap in this PS — if
+        // it acts anywhere, it is in the engine's water-grid MESH UV generation, which is the
+        // still-open recovery item for this file's world-derived UV stand-in.
         float2 detailUv = input.vWorldPos.xy * fMacro + uLegacySurface0.zw * t + N.xy * 0.1;
         float3 detail = gWaterTextures[NonUniformResourceIndex(uNormalIndices.y)]
             .Sample(gWaterSampler, detailUv).rgb;

@@ -168,6 +168,7 @@ internal static class EsmDataExtractor
             byte? teleportFlags = null;
             uint? enableParentFormId = null;
             byte? enableParentFlags = null;
+            uint? specialRenderingFlags = null;
             uint? linkedRefKeywordFormId = null;
             uint? linkedRefFormId = null;
             var isMapMarker = false;
@@ -279,6 +280,11 @@ internal static class EsmDataExtractor
                             : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
                         enableParentFlags = sub.Data[4];
                         break;
+                    case "XSRF" when sub.Data.Length >= 4: // Special Rendering Flags (0x2 = Imposter)
+                        specialRenderingFlags = bigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data)
+                            : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
+                        break;
                     case "XLKR" when sub.Data.Length >= 8:
                         linkedRefKeywordFormId = bigEndian
                             ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data.AsSpan(0, 4))
@@ -341,6 +347,7 @@ internal static class EsmDataExtractor
                 TeleportFlags = teleportFlags,
                 EnableParentFormId = enableParentFormId,
                 EnableParentFlags = enableParentFlags,
+                SpecialRenderingFlags = specialRenderingFlags,
                 IsMapMarker = isMapMarker,
                 MarkerType = markerType,
                 MarkerName = markerName,

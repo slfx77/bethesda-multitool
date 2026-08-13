@@ -133,9 +133,29 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         // panel and select it (SelectorBar has no XAML default-selection attribute).
         WorldSettingsPresenter.Content = WorldMapControl.SettingsPanel;
         WorldPanelSelector.SelectedItem = WorldPanelSettingsItem;
+        SetupCollapsiblePanels();
         KeyDown += SingleFileTab_KeyDown;
         Loaded += SingleFileTab_Loaded;
         Unloaded += SingleFileTab_Unloaded;
+    }
+
+    /// <summary>
+    ///     Makes the panels flanking the world and actor viewers collapsible, so the viewer can take
+    ///     the whole width. Collapse state is in-memory: this app has no persisted settings store,
+    ///     so panels reopen expanded next session.
+    /// </summary>
+    private void SetupCollapsiblePanels()
+    {
+        // Each controller stays alive through its Click subscriptions on the panel buttons.
+        _ = new PanelCollapseController(
+            WorldRightPanelColumn, WorldRightSplitter, WorldRightPanelContent,
+            WorldRightCollapsedStrip, CollapseWorldPanelButton, ExpandWorldPanelButton);
+        _ = new PanelCollapseController(
+            NpcListColumn, NpcLeftSplitter, NpcListPanelContent,
+            NpcListCollapsedStrip, CollapseNpcListPanelButton, ExpandNpcListPanelButton);
+        _ = new PanelCollapseController(
+            NpcSidePanelColumn, NpcRightSplitter, NpcSidePanelContent,
+            NpcSideCollapsedStrip, CollapseNpcSidePanelButton, ExpandNpcSidePanelButton);
     }
 
     private void ReorderSubTabsForGameDataWorkflow()

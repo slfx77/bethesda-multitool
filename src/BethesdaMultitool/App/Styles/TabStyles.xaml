@@ -202,6 +202,58 @@
   </Style>
 
   <!--
+    Collapsible side panels (PanelCollapseController). The collapse chevron sits in the panel
+    header; the expand chevron fills the slim strip the collapsed panel leaves behind. Both are
+    chrome-less so they read as an affordance on the panel, not as a command button — each USE
+    SITE must still set AutomationProperties.Name, since a glyph carries no accessible name.
+    -->
+  <Style x:Key="PanelCollapseButtonStyle"
+         TargetType="Button">
+    <Setter Property="Padding"
+            Value="5" />
+    <Setter Property="MinWidth"
+            Value="0" />
+    <Setter Property="MinHeight"
+            Value="0" />
+    <Setter Property="VerticalAlignment"
+            Value="Top" />
+    <Setter Property="Background"
+            Value="Transparent" />
+    <Setter Property="BorderThickness"
+            Value="0" />
+  </Style>
+
+  <Style x:Key="PanelExpandButtonStyle"
+         TargetType="Button">
+    <Setter Property="Padding"
+            Value="4,10" />
+    <Setter Property="MinWidth"
+            Value="0" />
+    <Setter Property="MinHeight"
+            Value="0" />
+    <Setter Property="HorizontalAlignment"
+            Value="Stretch" />
+    <Setter Property="VerticalAlignment"
+            Value="Stretch" />
+    <Setter Property="VerticalContentAlignment"
+            Value="Top" />
+    <Setter Property="Background"
+            Value="Transparent" />
+    <Setter Property="BorderThickness"
+            Value="0" />
+  </Style>
+
+  <!--  Slim card the collapsed panel shrinks to; sized by PanelCollapseState.DefaultStripWidth.  -->
+  <Style x:Key="CollapsedPanelStripStyle"
+         TargetType="Border"
+         BasedOn="{StaticResource CardBorderStyle}">
+    <Setter Property="Padding"
+            Value="2" />
+    <Setter Property="VerticalAlignment"
+            Value="Stretch" />
+  </Style>
+
+  <!--
     Consistent "no data loaded" placeholder text for each sub-tab in SingleFileTab.
     Centered in the tab's content area, secondary color, large enough to read.
     -->

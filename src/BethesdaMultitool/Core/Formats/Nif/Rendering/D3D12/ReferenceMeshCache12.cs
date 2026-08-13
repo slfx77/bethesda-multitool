@@ -315,7 +315,21 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     ///     The live 60fps loop leaves this <c>true</c> to keep motion smooth; the top-down overlay
     ///     sets it <c>false</c> for the duration of its render. Set via <see cref="ReferenceRenderer12.StreamingThrottled"/>.
     /// </summary>
-    public bool StreamingThrottled { get; set; } = true;
+    public bool StreamingThrottled
+    {
+        get => _streamingThrottled;
+        set
+        {
+            _streamingThrottled = value;
+            // Forward to the texture cache's DISPATCH step: the on-demand overlay renders lift the
+            // mesh budgets but were still promoting at most 16×scale textures per pass, making the
+            // 2D map's rendered-meshes convergence texture-dispatch-bound (dozens of full
+            // re-cull + re-render + readback passes to drain a cold worldspace's texture backlog).
+            _textureCache.StreamingThrottled = value;
+        }
+    }
+
+    private bool _streamingThrottled = true;
 
     /// <summary>
     ///     Time-based streaming pace: per-frame allowances × the last frame's duration relative to
@@ -494,17 +508,31 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
         // Producers are drained; let the persist writer flush the queued disk writes before the stats
         // log. Bounded wait — an abandoned tail write just means those meshes re-decode next session.
+        //
+        // MUST be a NON-PUMPING wait (same reason as DrainDecodeTasksForDispose above): Dispose runs
+        // on the STA UI thread during a worldspace switch, and a managed Task.Wait there becomes a COM
+        // pumping wait that can dispatch input back into XAML mid-callback — CXcpDispatcher::
+        // CheckReentrancy then fail-fasts the process with a stowed 0xc000027b / E_UNEXPECTED. That
+        // was the crash: three WER reports (2026-08-07, and two on 08-11) share fault bucket
+        // StackHash12_f74 at Microsoft.UI.Xaml.dll+0x3ace5d, and both 08-11 per-process logs end with
+        // a COMPLETED worldspace switch and no following "building cell grid" line — i.e. the process
+        // died in the NEXT switch's teardown, here. NonPumpingWait never throws on a faulted task, so
+        // the fault is observed explicitly below.
         if (_persistQueue is not null)
         {
             _persistQueue.Writer.TryComplete();
-            try
+            if (_persistWriterTask is { } persistWriterTask)
             {
-                _persistWriterTask?.Wait(TimeSpan.FromSeconds(30));
-            }
-            catch (AggregateException ex)
-            {
-                Log.Warn("ReferenceMeshCache12: persist writer faulted during dispose: {0}",
-                    ex.GetBaseException().Message);
+                if (!Core.Orchestration.NonPumpingWait.Wait(persistWriterTask, TimeSpan.FromSeconds(30)))
+                {
+                    Log.Warn("ReferenceMeshCache12: persist writer did not flush within 30s during " +
+                             "dispose; abandoning the tail write (those meshes re-decode next session).");
+                }
+                else if (persistWriterTask.Exception is { } persistWriterFault)
+                {
+                    Log.Warn("ReferenceMeshCache12: persist writer faulted during dispose: {0}",
+                        persistWriterFault.GetBaseException().Message);
+                }
             }
         }
 
@@ -1093,7 +1121,25 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 GpuTextureCache12.Entry diffuse;
                 if (string.IsNullOrEmpty(sub.DiffuseTexturePath))
                 {
-                    diffuse = _textureCache.WhitePixel;
+                    // Untextured shape with an authored legacy NiMaterialProperty: bind its diffuse
+                    // as a pinned 1×1 solid instead of the white fallback. This approximates
+                    // Gamebryo's fixed-function output (matAmbient × sceneAmbient + matDiffuse ×
+                    // diffuseLight + matEmissive) — exact when Ambient == Diffuse (Bethesda's
+                    // authoring norm) and exact for the authored-black case this fixes
+                    // (SewerExitGateExterior01's 'black' Plane02 rendered lit near-white).
+                    // Material-less shapes keep the legacy WhitePixel path byte-identical.
+                    if (sub.MaterialDiffuse is { } materialDiffuse)
+                    {
+                        var baseColor =
+                            NifMaterialDiffusePolicy.ResolveUntexturedBaseColor(materialDiffuse);
+                        diffuse = _textureCache.GetOrCreateSynthetic(
+                            NifMaterialDiffusePolicy.SyntheticTextureKey(baseColor), 1, 1,
+                            NifMaterialDiffusePolicy.ToRgbaPixel(baseColor));
+                    }
+                    else
+                    {
+                        diffuse = _textureCache.WhitePixel;
+                    }
                 }
                 else if (string.Equals(sub.DiffuseTexturePath, RenderableSubmesh.WaterSurfaceTexturePath, StringComparison.Ordinal))
                 {

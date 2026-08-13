@@ -152,6 +152,8 @@ internal static class SunShadowMath
         return lateralSquared <= lateralLimit * lateralLimit;
     }
 
+    /// <summary>Builds the cascade re-render pose key: quantized sun direction, snapped coverage
+    /// center, radius, and content version — the map re-renders only when the key changes.</summary>
     /// <param name="snap">
     ///     Coverage-center quantum. Defaults to <see cref="CenterSnap" />; callers building a
     ///     PER-CASCADE key pass a step proportional to that cascade's radius, so a far cascade whose

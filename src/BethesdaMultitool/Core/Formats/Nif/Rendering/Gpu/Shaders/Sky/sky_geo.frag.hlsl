@@ -15,7 +15,7 @@ cbuffer SkyGeo : register(b0)
     float4 uCamPosScale;
     float4 uTintParam;     // rgb = layer tint, a = layer fade/opacity
     float4 uScrollMode;    // xy = cloud UV scroll, z = mode, w = authored atmosphere blend weights
-    uint4  uTexIndex;      // x = bindless diffuse index
+    uint4  uTexIndex;      // x = bindless diffuse index; y = 1 -> FO3/FNV 3-row fallback horizon ramp
     float4 uSkyUpper;      // recovered SKY BlendColor[2]
     float4 uSkyLower;      // recovered SKY BlendColor[1]
     float4 uSkyHorizon;    // recovered SKY BlendColor[0]
@@ -49,7 +49,27 @@ float4 main(PSInput input) : SV_Target
             return float4(lerp(uSkyHorizon.rgb, weighted, input.vColor.a), 1.0);
         }
 
-        // Missing-asset fallback only: shaped horizon -> authored sky upper by elevation.
+        // Missing-asset fallback only.
+        // FO3/FNV (uTexIndex.y == 1): 3-row elevation ramp over the SAME rows Atmosphere::Update
+        // feeds SkyShader::pBlendColor — row0 = SkyColor[8] NAM0 Horizon, row1 = SkyColor[7]
+        // SkyLower, row2 = SkyColor[0] SkyUpper, stored UNCONDITIONALLY (no sun-elevation gate on
+        // row 0): tools/GhidraProject/atmosphere_decompiled.txt, asm 0x8246884C-0x82468924. The dome
+        // must meet the fogged terrain with the authored Horizon row; the 2-row fallback below uses
+        // the CPU-shaped HorizonGlow horizon, which collapses to saturated SkyLower at noon (glow=0)
+        // — the reported sharp fog/skybox horizon seam. Only the row MAPPING is decompile-grounded;
+        // the ~12° Horizon->SkyLower band width approximates the authored dome's row0/row1
+        // vertex-weight transition (this procedural fallback mesh carries no authored weights).
+        if (uTexIndex.y == 1)
+        {
+            const float kLowerBandZ = 0.2079; // sin(12°), inside the 10-15° horizon band
+            float z = saturate(dir.z);
+            float3 band = lerp(uSkyHorizon.rgb, uSkyLower.rgb, saturate(z / kLowerBandZ));
+            float3 ramp = lerp(band, uSkyUpper.rgb, saturate((z - kLowerBandZ) / (1.0 - kLowerBandZ)));
+            return float4(ramp, 1.0);
+        }
+
+        // Every other game: shaped horizon -> authored sky upper by elevation. Kept BIT-IDENTICAL to
+        // the pre-ramp math — the 3-row mapping above is grounded in FNV's decompile only.
         float3 sky = lerp(uTintParam.rgb, uSkyUpper.rgb, saturate(dir.z));
         return float4(sky, 1.0);
     }

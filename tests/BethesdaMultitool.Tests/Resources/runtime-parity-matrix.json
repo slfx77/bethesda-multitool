@@ -1,88 +1,2570 @@
 [
-  { "semanticModel": "NpcRecord", "recordCodes": ["NPC_"], "typedRuntimeReader": "RuntimeActorReader.ReadRuntimeNpc", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "stats", "inventory"], "derived": ["faction links"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeNpc", "NpcRecordHandler.ParseNpcs"], "confidence": "high", "nextAction": "Audit remaining template or facegen gaps only if parity regressions appear." },
-  { "semanticModel": "CreatureRecord", "recordCodes": ["CREA"], "typedRuntimeReader": "RuntimeActorReader.ReadRuntimeCreature", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "stats", "inventory"], "derived": ["faction links"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeCreature", "CreatureRecordHandler.ParseCreatures"], "confidence": "high", "nextAction": "Backfill any missing combat-style or package joins only if a dump exposes them." },
-  { "semanticModel": "RaceRecord", "recordCodes": ["RACE"], "typedRuntimeReader": "RuntimeRaceReader.ReadRuntimeRace", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "skill boosts", "height/weight", "data flags", "facegen clamp values", "default hair (male/female)", "default hair color", "voice types (male/female)", "older/younger race links", "abilities (spell list)", "hair styles (hair list)", "eye colors (eye list)"], "derived": [], "esmOnly": ["description (lFileOffset-backed)", "head/body model paths (ppHeadModelFiles/ppBodyModelFiles arrays)", "head/body texture paths (ppHeadTextureFiles/ppBodyTextureFiles arrays)", "facegen mean coordinates (MeanFaceCoordMale/Female)", "body texture models (pBodyTextureModels)"] }, "evidence": ["RuntimeRaceReader.ReadRuntimeRace", "ActorRecordHandler.ParseRaces (MergeRuntimeRecords)", "PDB TESRace: 1260 bytes, RACE_DATA 36B, TESAttributes 12B, BSSimpleList walks for spells/hair/eyes"], "confidence": "high", "nextAction": "Tier 1 fields covered (RACE_DATA, attributes, clamp values, voice/hair/age pointers, BSSimpleList walks). Tier 2 would be head/body model path arrays (ppHeadModelFiles at +192, 384B) — complex 2D pointer arrays, ESM already provides these. Low priority." },
-  { "semanticModel": "FactionRecord", "recordCodes": ["FACT"], "typedRuntimeReader": "RuntimeActorReader.ReadRuntimeFaction", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "flags", "crime data"], "derived": ["member links"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeFaction", "ActorRecordHandler.ParseFactions"], "confidence": "high", "nextAction": "Keep member-link derivation in the semantic layer rather than the runtime reader." },
-  { "semanticModel": "EncounterZoneRecord", "recordCodes": ["ECZN"], "typedRuntimeReader": "RuntimeEncounterZoneReader.ReadRuntimeEncounterZone", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["owner (pointer follow)", "rank", "minimum level", "flags"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeEncounterZoneReader.ReadRuntimeEncounterZone", "MiscGameSystemHandler.ParseEncounterZones (MergeRuntimeRecords 0x61)", "PDB BGSEncounterZone: 64 bytes, FormType 0x61, ENCOUNTER_ZONE_DATA 8B at +40 (Owner pointer 4B + Rank int8 + MinLevel int8 + Flags uint8 + padding)"], "confidence": "high", "nextAction": "All ENCOUNTER_ZONE_DATA fields covered. GameData block (16B at +48) is runtime-mutated state, not parity-relevant." },
-  { "semanticModel": "QuestRecord", "recordCodes": ["QUST"], "typedRuntimeReader": "RuntimeDialogueReader.ReadRuntimeQuest", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "script links", "objectives", "flags/priority/delay", "stage indices/flags"], "derived": ["dialogue joins"], "esmOnly": ["stage log entries (resolved from ESM file at runtime via m_fileOffset, not stored as durable string)"] }, "evidence": ["RuntimeStructReader.ReadRuntimeQuest", "RuntimeQuestTerminalReader.ReadRuntimeQuest", "DialogueRecordHandler.ParseQuests", "PDB types_full: TESQuestStageItem.GetLogEntry(TESForm*) + m_fileOffset/m_bHasLogEntry", "savegame_decompiled: TESQuest::SaveGame[_v2]/LoadGame[_v2] serialize stage index, flags, log index, and optional note payloads, but not stage log text"], "confidence": "high", "nextAction": "All runtime-accessible QUST fields covered. Stage log entries confirmed ESM-only. No further runtime work needed." },
-  { "semanticModel": "DialogTopicRecord", "recordCodes": ["DIAL"], "typedRuntimeReader": "RuntimeDialogueReader.ReadRuntimeDialogTopic", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay + derived QUEST_INFO linkage", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "topic metadata", "journal index", "response count when m_uiTopicCount survives"], "derived": ["quest/info linkage", "quest form and response count from QUEST_INFO when raw topic count is absent"], "esmOnly": ["topic default speaker (TNAM, ESM-authored only)"] }, "evidence": ["RuntimeStructReader.ReadRuntimeDialogTopic", "RuntimeStructReader.WalkTopicQuestInfoList", "DialogueRecordHandler.ParseDialogTopics", "DialogueRuntimeMerger.MergeRuntimeDialogTopicLinks"], "confidence": "high", "nextAction": "All runtime-accessible DIAL fields covered. Topic default speaker confirmed ESM-only. No further runtime work needed." },
-  { "semanticModel": "DialogueRecord", "recordCodes": ["INFO"], "typedRuntimeReader": "RuntimeDialogueReader.ReadRuntimeDialogueInfo", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["speaker selectors", "conditions", "dialogue flags", "add-topic links", "link-from topics", "link-to topics", "follow-up INFOs", "perk/skill stat", "said-once flag"], "derived": ["topic linkage via QUEST_INFO walk"], "esmOnly": ["response text (NAM1)", "result script source/bytecode (SCHR/SCDA/SCTX)", "iFileOffset (transient)"] }, "evidence": ["RuntimeStructReader.ReadRuntimeDialogueInfo", "DialogueRuntimeMerger.MergeRuntimeDialogueData", "DialogueRuntimeMerger.MergeRuntimeDialogueTopicLinks", "RuntimeDialogueReader.ReadConversationData", "Real sample dumps: m_listAddTopics positive on Debug/xex4/xex44/MemDebug", "TESConversationData validated: LinkFrom 457-609 decodes, LinkTo 2667-4595 decodes, FollowUp 256-642 decodes across Debug/xex4/xex44/MemDebug (ReleaseBeta has 0 ConvData pointers)", "pPerkSkillStat: 3068/47811 speech challenge INFOs with valid pointer across all dump families", "All 12 PDB fields accounted for: 10 proven at runtime, 2 ESM-only (response text, result scripts), 1 transient (iFileOffset)"], "confidence": "high", "nextAction": "All TESTopicInfo fields fully investigated. No further runtime work needed for INFO." },
-  { "semanticModel": "NoteRecord", "recordCodes": ["NOTE"], "typedRuntimeReader": "RuntimeDialogueReader.ReadRuntimeNote", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "note type", "text"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeNote", "TextRecordHandler.ParseNotes"], "confidence": "high", "nextAction": "Leave as-is unless a dump shows missing note-body cases." },
-  { "semanticModel": "BookRecord", "recordCodes": ["BOOK"], "typedRuntimeReader": "RuntimeBookReader.ReadRuntimeBook", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "model path", "value", "weight", "flags", "skill taught", "enchantment FormID", "enchantment amount"], "derived": [], "esmOnly": ["book text (DESC, resolved via lFileOffset at +168)", "object bounds (OBND)"] }, "evidence": ["RuntimeBookReader.ReadRuntimeBook", "TextRecordHandler.ParseBooks (MergeRuntimeRecords 0x19)", "PDB TESObjectBOOK: 212 bytes, FormType 0x19, TESFullName BSStringT at +68, TESModel BSStringT at +80, TESEnchantableForm ptr at +136 + uint16 at +140, iValue uint32 at +152, fWeight float32 at +160, OBJ_BOOK 2B at +208"], "confidence": "high", "nextAction": "All TESObjectBOOK runtime fields covered. Book text is ESM-only (lFileOffset-backed). No further runtime work needed." },
-  { "semanticModel": "TerminalRecord", "recordCodes": ["TERM"], "typedRuntimeReader": "RuntimeDialogueReader.ReadRuntimeTerminal", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "menu text", "script link"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeTerminal", "TextRecordHandler.ParseTerminals"], "confidence": "high", "nextAction": "Only extend if terminal submenus prove missing in dump-backed output." },
-  { "semanticModel": "ScriptRecord", "recordCodes": ["SCPT"], "typedRuntimeReader": "RuntimeScriptReader.ReadRuntimeScript", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "variables", "script text"], "derived": ["cross references"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeScript", "ScriptRecordHandler.ParseScripts"], "confidence": "high", "nextAction": "Keep result-script and variable cross-reference logic in the semantic layer." },
-  { "semanticModel": "RuntimeScriptData", "recordCodes": ["SCPT"], "typedRuntimeReader": "RuntimeScriptReader.ReadRuntimeScript", "genericLayoutAvailable": false, "currentMergeMode": "same-dump runtime sidecar + conflict-checked semantic enrichment", "status": "typed-runtime", "highValueFields": { "exact": ["raw script header", "compiled bytes", "source text", "explicit variable identities", "referenced objects", "list-completeness evidence"], "derived": ["safe effective variable count for a zeroed runtime header"], "esmOnly": [] }, "evidence": ["RuntimeScriptReader.ReadRuntimeScript", "ScriptRuntimeMerger.MergeRuntimeScriptData", "RecordCollection.RuntimeScripts"], "confidence": "high", "nextAction": "Retain as same-dump recovery metadata only; never emit it as a second semantic SCPT record." },
-  { "semanticModel": "WeaponRecord", "recordCodes": ["WEAP"], "typedRuntimeReader": "RuntimeItemReader.ReadRuntimeWeapon", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "damage", "model"], "derived": ["projectile joins"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeWeapon", "WeaponRecordHandler.ParseWeapons"], "confidence": "high", "nextAction": "Verify only the remaining mod or animation edge fields if needed." },
-  { "semanticModel": "ArmorRecord", "recordCodes": ["ARMO"], "typedRuntimeReader": "RuntimeItemReader.ReadRuntimeArmor", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "value", "model"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeArmor", "ItemRecordHandler.ParseArmor"], "confidence": "high", "nextAction": "Only revisit if armor addon relationships need dump-specific enrichment." },
-  { "semanticModel": "AmmoRecord", "recordCodes": ["AMMO"], "typedRuntimeReader": "RuntimeItemReader.ReadRuntimeAmmo", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "value", "model"], "derived": ["projectile joins"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeAmmo", "ConsumableRecordHandler.ParseAmmo"], "confidence": "high", "nextAction": "No planned work beyond normal regression coverage." },
-  { "semanticModel": "ConsumableRecord", "recordCodes": ["ALCH"], "typedRuntimeReader": "RuntimeItemReader.ReadRuntimeConsumable", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "value", "weight"], "derived": ["effect joins"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeConsumable", "ConsumableRecordHandler.ParseConsumables"], "confidence": "high", "nextAction": "Only extend if dump-backed effect stacks need dedicated decoding." },
-  { "semanticModel": "MiscItemRecord", "recordCodes": ["MISC"], "typedRuntimeReader": "RuntimeItemReader.ReadRuntimeMiscItem", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "value", "weight"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeMiscItem", "ItemRecordHandler.ParseMiscItems"], "confidence": "high", "nextAction": "Leave typed reader as-is unless a specific misc subclass needs more fields." },
-  { "semanticModel": "KeyRecord", "recordCodes": ["KEYM"], "typedRuntimeReader": "RuntimeItemReader.ReadRuntimeKey", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "value", "model"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeKey", "ItemRecordHandler.ParseKeys"], "confidence": "high", "nextAction": "No additional runtime work planned." },
-  { "semanticModel": "ContainerRecord", "recordCodes": ["CONT"], "typedRuntimeReader": "RuntimeItemReader.ReadRuntimeContainer", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "contents", "script"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeContainer", "ItemRecordHandler.ParseContainers"], "confidence": "high", "nextAction": "Only extend if dump-only container ownership data becomes important." },
-  { "semanticModel": "PerkRecord", "recordCodes": ["PERK"], "typedRuntimeReader": "RuntimeMagicReader.ReadRuntimePerk", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "icon path", "trait", "min level", "ranks", "playable"], "derived": [], "esmOnly": ["description (lFileOffset-backed)", "perk entry chains (BGSPerkEntry linked list — complex condition/function data)", "alignment byte (DATA+4)"] }, "evidence": ["RuntimeMagicReader.ReadRuntimePerk", "EffectRecordHandler.ParsePerks (MergeRuntimeRecords 0x56)", "PDB BGSPerk: 96 bytes, PerkData 5B at +72, TESFullName BSStringT at +44, TESTexture BSStringT at +64"], "confidence": "high", "nextAction": "Tier 1 fields covered (PerkData, full name, icon). Tier 2 would be PerkEntries BSSimpleList<BGSPerkEntry*> at +88 — complex per-entry type dispatch, ESM already captures PRKE/EPFT chains. Low priority." },
-  { "semanticModel": "SpellRecord", "recordCodes": ["SPEL"], "typedRuntimeReader": "RuntimeMagicReader.ReadRuntimeSpell", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "spell type", "cost", "level", "flags", "effect FormIDs (EffectItem list walk)"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeMagicReader.ReadRuntimeSpell", "EffectRecordHandler.ParseSpells (MergeRuntimeRecords 0x14)", "PDB SpellItem: 84 bytes, SpellItemData 16B at +68, BSSimpleList<EffectItem*> at +56, EffectItem: pSetting(4)+magnitude(4)+area(4)+duration(4)+type(4)+actorValue(4)=24B"], "confidence": "high", "nextAction": "All SpellItem runtime fields covered including EffectItem linked list walking for effect FormIDs. No further runtime work needed." },
-  { "semanticModel": "CellRecord", "recordCodes": ["CELL"], "typedRuntimeReader": "RuntimeCellReader.ReadRuntimeCell", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "flags", "water", "worldspace", "runtime reference membership", "lighting template", "lighting template inheritance flags", "encounter zone", "music type", "acoustic space", "image space"], "derived": ["grid from pCellMap", "terrain lookup", "placed-object overlay from runtime reference membership", "runtime-only cell recovery from REFR parent/persistent cell signals"], "esmOnly": ["placed object subrecords (live on REFRs, not CELL struct)"] }, "evidence": ["RuntimeWorldCellLayoutProbe.Probe", "RuntimeStructReader.ReadRuntimeCell", "RuntimeStructReader.ReadAllWorldspaceCellMaps", "CellRecordHandler.ParseCells", "CellLinkageHandler.CreateVirtualCells", "RuntimeCellReader.ReadRuntimeCellProbeSnapshotFromBuffer (pLightingTemplate, iLightingTemplateInheritanceFlags)", "RuntimeCellReader.ReadCellExtraData (BSExtraData list walk: encounter zone 0x74, music 0x07, acoustic 0x81, image space 0x59)"], "confidence": "high", "nextAction": "All CELL runtime fields covered including BSExtraData list walking. No further runtime work needed." },
-  { "semanticModel": "WorldspaceRecord", "recordCodes": ["WRLD"], "typedRuntimeReader": "RuntimeCellReader.ReadRuntimeWorldspace", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "parent world", "climate", "water", "map data", "bounds", "default heights", "flags", "parent use flags", "image space", "music type", "map offset scale/z"], "derived": ["cell membership from pCellMap", "runtime cell-map-backed worldspace fallback when direct WRLD overlay is missing", "cell-backed worldspace recovery from runtime cell worldspace signals", "derived cell extents and bounds for partial worldspaces backed by linked cells", "encounter zone from unanimous linked cell coverage"], "esmOnly": ["full child-group serialization (GRUP structure, not a runtime field)"] }, "evidence": ["RuntimeWorldCellLayoutProbe.Probe", "RuntimeStructReader.ReadRuntimeWorldspace", "RuntimeStructReader.ReadAllWorldspaceCellMaps", "WorldRecordHandler.ParseWorldspaces", "WorldRecordHandler.EnsureWorldspacesForCells", "RuntimeCellReader.ReadWorldExtendedFields (cFlags, sParentUseFlags, pImageSpace, pMusicType, WorldMapOffsetData)", "WorldRecordHandler.MergeWorldspace (7 new fields)"], "confidence": "high", "nextAction": "All WRLD runtime fields covered. Tier 2/3 fields (LOD, canopy shadow, map texture, fixed dimensions) are low-priority rendering data. No further runtime work needed." },
-  { "semanticModel": "PlacedReference", "recordCodes": ["REFR", "ACHR", "ACRE"], "typedRuntimeReader": "RuntimeRefrReader.ReadRuntimeRefr", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay + map-marker projection", "status": "typed-runtime", "highValueFields": { "exact": ["position", "base form", "radius", "count", "editor id", "ownership", "encounter zone", "lock state", "enable parent", "persistent cell", "linked ref", "linked ref children", "teleport target", "map marker", "starting position", "package start location", "merchant container ref", "leveled-creature spawn refs"], "derived": ["cell assignment", "destination cell linkage", "starting world/cell when present"], "esmOnly": ["linked-ref keyword on runtime-only refs", "runtime-transient extras (ExtraWorn 0x0C, ExtraReferenceHandle 0x0D, ExtraWornLeft 0x0E — no ESM equivalent)"] }, "evidence": ["RuntimeRefrReader.ReadRuntimeRefr", "RuntimeRefrReader.ReadCount", "RuntimeRefrReader.ReadEditorId", "RuntimeStructReader.BuildRuntimeRefrExtraDataCensus", "RuntimeRefrExtraDataBaselineTests.RuntimeRefrExtraBaselines_MatchObservedDumpResults", "RuntimeDataEnricher.EnrichPlacedReferences", "CellLinkageHandler.ToPlacedReference"], "confidence": "high", "nextAction": "All semantic REFR fields covered. Remaining unhandled extras are runtime-transient state (worn equipment, ref handles) with no ESM equivalent. No further runtime work needed." },
-  { "semanticModel": "LeveledListRecord", "recordCodes": ["LVLI", "LVLN", "LVLC"], "typedRuntimeReader": "RuntimeCollectionReader.ReadRuntimeLeveledList", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["entries", "chance none", "flags", "chance global"], "derived": ["use and distribution analysis"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeLeveledList", "MiscCollectionHandler.ParseLeveledLists"], "confidence": "high", "nextAction": "Only extend if script-added leveled entries need dedicated semantic treatment." },
-  { "semanticModel": "GameSettingRecord", "recordCodes": ["GMST"], "typedRuntimeReader": null, "genericLayoutAvailable": true, "currentMergeMode": "esm typed parse; runtime generic fallback only", "status": "esm-sufficient", "highValueFields": { "exact": [], "derived": [], "esmOnly": ["typed setting values (float/int/string/bool determined by EditorId prefix)"] }, "evidence": ["MiscRecordHandler.ParseGameSettings", "RuntimeGenericReader.ReadGenericRecord", "PDB SettingT<GameSettingCollection>: 12 bytes — NOT a TESForm subclass, no FormID at +12, uValue is an untyped union, pKey is a pointer to setting name. ESM parser already extracts all values with correct typing."], "confidence": "high", "nextAction": "No typed runtime reader feasible — 12-byte non-TESForm struct with union value type. ESM parser fully covers GMST." },
-  { "semanticModel": "GlobalRecord", "recordCodes": ["GLOB"], "typedRuntimeReader": "RuntimeGlobalReader.ReadRuntimeGlobal", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["value type (cType)", "value (fValue)"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeGlobalReader.ReadRuntimeGlobal", "MiscBasicTypeHandler.ParseGlobals (MergeRuntimeRecords 0x06)", "PDB TESGlobal: 48 bytes, cType int8 at +40, fValue float32 at +44"], "confidence": "high", "nextAction": "All TESGlobal runtime fields covered. No further runtime work needed." },
-  { "semanticModel": "EnchantmentRecord", "recordCodes": ["ENCH"], "typedRuntimeReader": "RuntimeMagicReader.ReadRuntimeEnchantment", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "enchant type", "charge amount", "enchant cost", "flags", "effects (EffectItem list walk with magnitude/area/duration/type/actorValue)"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeMagicReader.ReadRuntimeEnchantment", "EffectRecordHandler.ParseEnchantments (MergeRuntimeRecords 0x13)", "PDB EnchantmentItem: 84 bytes, EnchantmentItemData 16B at +68, BSSimpleList<EffectItem*> at +56, EffectItem 24B per entry"], "confidence": "high", "nextAction": "All EnchantmentItem runtime fields covered including full EffectItem data per effect. No further runtime work needed." },
-  { "semanticModel": "BaseEffectRecord", "recordCodes": ["MGEF"], "typedRuntimeReader": "RuntimeMagicReader.ReadRuntimeBaseEffect", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "model path", "icon", "flags", "base cost", "associated item", "magic school", "resist value", "archetype", "actor value", "light", "projectile speed", "effect shader", "enchant effect", "casting/bolt/hit/area sounds", "CE enchant/barter factors", "counter effects (BSSimpleList walk)"], "derived": [], "esmOnly": ["description (lFileOffset-backed)", "filter validation function/item pointers (code pointers, not data)"] }, "evidence": ["RuntimeMagicReader.ReadRuntimeBaseEffect", "EffectRecordHandler.ParseBaseEffects (MergeRuntimeRecords 0x10)", "PDB EffectSetting: 192 bytes, EffectSettingData 72B at +104 (all 18 fields mapped), BSSimpleList<EffectSetting*> counterEffects at +176", "ESM parser also fixed: now extracts all 10 previously-missing DATA fields (light, projectile speed, effect shader, enchant effect, 4 sounds, 2 CE factors)"], "confidence": "high", "nextAction": "All EffectSetting runtime fields covered. ESM parser gap (10 missing DATA fields) also fixed. No further runtime work needed." },
-  { "semanticModel": "WeaponModRecord", "recordCodes": ["IMOD"], "typedRuntimeReader": "RuntimeWeaponModReader.ReadRuntimeWeaponMod", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "model path", "value", "weight"], "derived": [], "esmOnly": ["description (lFileOffset-backed at +136)", "icon path (TESTexture BSStringT at +112, already from ESM ICON)"] }, "evidence": ["RuntimeWeaponModReader.ReadRuntimeWeaponMod", "MiscItemHandler.ParseWeaponMods (MergeRuntimeRecords 0x67)", "PDB TESObjectIMOD: 192 bytes, FormType 0x67, TESFullName BSStringT at +68, TESModel BSStringT at +80, iValue uint32 at +144, fWeight float32 at +152"], "confidence": "high", "nextAction": "All TESObjectIMOD runtime fields covered. No further runtime work needed." },
-  { "semanticModel": "RecipeRecord", "recordCodes": ["RCPE"], "typedRuntimeReader": "RuntimeRecipeReader.ReadRuntimeRecipe", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "required skill", "required skill level", "category FormID (pointer follow)", "subcategory FormID (pointer follow)"], "derived": [], "esmOnly": ["ingredient list (BSSimpleList<TESRecipeComponent*> at +76)", "output list (BSSimpleList<TESRecipeComponent*> at +84)"] }, "evidence": ["RuntimeRecipeReader.ReadRuntimeRecipe", "MiscItemHandler.ParseRecipes (MergeRuntimeRecords 0x6A)", "PDB TESRecipe: 108 bytes, FormType 0x6A, TESFullName BSStringT at +44, RECIPE_DATA 16B at +52, pRecipeCat pointer at +100, pRecipeSubCat pointer at +104"], "confidence": "high", "nextAction": "All TESRecipe scalar fields covered. Ingredient/output BSSimpleLists are ESM-only (RCIL/RCOD subrecords cover these). No further runtime work needed." },
-  { "semanticModel": "RecipeCategoryRecord", "recordCodes": ["RCCT"], "typedRuntimeReader": "RuntimeRecipeCategoryReader.ReadRuntimeRecipeCategory", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name (BSStringT at +44)", "flags (RECIPE_CATEGORY_DATA 1B at +52)"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeRecipeCategoryReader.ReadRuntimeRecipeCategory", "MiscBasicTypeHandler.ParseRecipeCategories (MergeRuntimeRecords 0x6B)", "PDB TESRecipeCategory: 56 bytes, FormType 0x6B, TESFullName BSStringT at +44, RECIPE_CATEGORY_DATA 1B at +52"], "confidence": "high", "nextAction": "All TESRecipeCategory fields covered. No further runtime work needed." },
-  { "semanticModel": "ConstructibleObjectRecord", "recordCodes": ["COBJ"], "typedRuntimeReader": "RuntimeConstructibleObjectReader.ReadRuntimeConstructibleObject", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["created item FormID (pCreatedItem pointer follow at +192)"], "derived": [], "esmOnly": ["full name (TESFullName at +68)", "model path (TESModel at +80)", "texture hashes (TESModel MODT)", "ingredient list (CNTO inline list — pRequiredItems is the materialized BGSListForm with anonymous FormID)", "conditions (CTDA + CIS1/CIS2 — not stored as separate runtime field)", "workbench keyword FormID (BNAM — stored elsewhere in BGSConstructibleObject)"] }, "evidence": ["RuntimeConstructibleObjectReader.ReadRuntimeConstructibleObject", "MiscItemHandler.ParseConstructibleObjects (MergeRuntimeRecords 0x32)", "PDB BGSConstructibleObject: 196 bytes, FormType 0x32, pRequiredItems (BGSListForm) at +188, pCreatedItem (TESBoundObject) at +192"], "confidence": "high", "nextAction": "Created item FormID covered. pRequiredItems is the materialized inline ingredient list (typically anonymous FormID 0), not parity-relevant. NOTE: Fallout: New Vegas uses RCPE/RCCT for recipes; COBJ has 0 records in the FNV main ESM. Reader is dormant on FNV data but forward-compatible with Fallout 4 dumps." },
-  { "semanticModel": "ChallengeRecord", "recordCodes": ["CHAL"], "typedRuntimeReader": "RuntimeChallengeReader.ReadRuntimeChallenge", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "challenge type", "threshold", "flags", "interval", "values", "script FormID"], "derived": [], "esmOnly": ["description (lFileOffset-backed at +56)", "icon (TESTexture at +76, already from ESM ICON)"] }, "evidence": ["RuntimeChallengeReader.ReadRuntimeChallenge", "MiscBasicTypeHandler.ParseChallenges (MergeRuntimeRecords 0x71)", "PDB TESChallenge: 140 bytes, FormType 0x71, TESFullName BSStringT at +44, CHALLENGE_DATA 24B at +100, pFormScript pointer at +64"], "confidence": "high", "nextAction": "All TESChallenge runtime fields covered. No further runtime work needed." },
-  { "semanticModel": "ReputationRecord", "recordCodes": ["REPU"], "typedRuntimeReader": "RuntimeReputationReader.ReadRuntimeReputation", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "positive value", "negative value"], "derived": [], "esmOnly": ["texture/icon paths (TESTexture at +56, BGSMessageIcon at +68 — cosmetic, ESM ICON subrecord covers these)"] }, "evidence": ["RuntimeReputationReader.ReadRuntimeReputation", "MiscBasicTypeHandler.ParseReputations (MergeRuntimeRecords 0x68)", "PDB TESReputation: 96 bytes, FormType 0x68, TESFullName BSStringT at +44, fPositiveValue float32 at +84, fNegativeValue float32 at +88"], "confidence": "high", "nextAction": "All TESReputation runtime fields covered. No further runtime work needed." },
-  { "semanticModel": "ProjectileRecord", "recordCodes": ["PROJ"], "typedRuntimeReader": "RuntimeEffectReader.ReadProjectilePhysics", "genericLayoutAvailable": false, "currentMergeMode": "esm + full runtime enrichment", "status": "typed-runtime", "highValueFields": { "exact": ["flags", "gravity", "speed", "range", "tracer chance", "explosion proximity", "explosion timer", "muzzle flash duration", "fade-out time", "force", "rotation xyz", "bounce multiplier", "sound level", "light", "muzzle flash light", "explosion", "active sound", "countdown sound", "deactivate sound", "default weapon source", "full name", "model path"], "derived": ["weapon join"], "esmOnly": ["muzzle flash model (TESModel at +196, separate from main model)"] }, "evidence": ["RuntimeStructReader.ReadProjectilePhysics (21 BGSProjectileData fields + 3 outer BGSProjectile fields)", "CombatEffectHandler.ParseProjectiles (full 84-byte DATA subrecord)", "CombatEffectHandler.EnrichProjectilesWithRuntime", "RuntimeParityDumpIntegrationTests.RuntimeReader_OnAllDumps_ReadsProjectilePhysicsData: 100% decode rate across 5 dump families (93-112 PROJ per dump), speed 91-109, explosion 39-49, countdown 5-10, default weapon 13-17, rotation 12-96, bounce 9-96"], "confidence": "high", "nextAction": "All BGSProjectile fields fully investigated. MuzzleFlashModel (secondary TESModel at +196) is ESM-only subrecord NAM1 — not worth a runtime read. No further runtime work needed for PROJ." },
-  { "semanticModel": "ExplosionRecord", "recordCodes": ["EXPL"], "typedRuntimeReader": "RuntimeExplosionReader.ReadRuntimeExplosion", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "model path", "force", "damage", "radius", "light FormID", "sound FormIDs", "flags", "IS radius", "impact data set FormID", "enchantment FormID"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeExplosionReader.ReadRuntimeExplosion", "CombatEffectHandler.ParseExplosions (MergeRuntimeRecords 0x51)", "PDB BGSExplosion: 184 bytes, FormType 0x51, TESFullName BSStringT at +68, TESModel BSStringT at +80, TESEnchantableForm ptr at +104, BGSExplosionData 52B at +132 (9 fields: force/damage/radius/light/sound1/flags/ISRadius/impactDataSet/sound2)"], "confidence": "high", "nextAction": "All BGSExplosion runtime fields covered. No further runtime work needed." },
-  { "semanticModel": "MessageRecord", "recordCodes": ["MESG"], "typedRuntimeReader": "RuntimeMessageReader.ReadRuntimeMessage", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "flags (MessageBox/AutoDisplay)", "display time"], "derived": [], "esmOnly": ["description (lFileOffset-backed at +56)", "button text (BSSimpleList<MESSAGEBOX_BUTTON*> at +64, from ESM ITXT)", "icon (pIcon pointer at +60, from ESM ICON)", "quest FormID (from ESM QNAM)"] }, "evidence": ["RuntimeMessageReader.ReadRuntimeMessage", "TextRecordHandler.ParseMessages (MergeRuntimeRecords 0x62)", "PDB BGSMessage: 80 bytes, FormType 0x62, TESFullName BSStringT at +44, iFlags uint32 at +72, iDisplayTime uint32 at +76"], "confidence": "high", "nextAction": "All BGSMessage scalar runtime fields covered. Description and buttons are ESM-only. No further runtime work needed." },
-  { "semanticModel": "ClassRecord", "recordCodes": ["CLAS"], "typedRuntimeReader": "RuntimeClassReader.ReadRuntimeClass", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "icon", "tag skills (4×int32)", "flags", "barter/services flags", "training skill", "training level", "SPECIAL attribute weights (7 bytes)"], "derived": [], "esmOnly": ["description (lFileOffset-backed)"] }, "evidence": ["RuntimeClassReader.ReadRuntimeClass", "MiscBasicTypeHandler.ParseClasses (MergeRuntimeRecords 0x07)", "PDB TESClass: 112 bytes, CLASS_DATA 28B at +84, TESAttributes 7B at +80, TESFullName BSStringT at +44, TESTexture BSStringT at +64"], "confidence": "high", "nextAction": "All TESClass runtime fields covered. No further runtime work needed." },
-  { "semanticModel": "FormListRecord", "recordCodes": ["FLST"], "typedRuntimeReader": "RuntimeCollectionReader.ReadRuntimeFormList", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["form ids"], "derived": ["use analysis"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeFormList", "MiscCollectionHandler.ParseFormLists"], "confidence": "high", "nextAction": "Keep script-added list-count handling as a future enhancement only." },
-  { "semanticModel": "ActivatorRecord", "recordCodes": ["ACTI"], "typedRuntimeReader": "RuntimeWorldObjectReader.ReadRuntimeActivator", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["name", "model", "script", "sound"], "derived": ["use analysis"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeActivator", "MiscWorldObjectHandler.ParseActivators"], "confidence": "high", "nextAction": "Only extend if destructible or loop-sound semantics become important." },
-  { "semanticModel": "LightRecord", "recordCodes": ["LIGH"], "typedRuntimeReader": "RuntimeWorldObjectReader.ReadRuntimeLight", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["light data", "model", "bounds"], "derived": ["use analysis"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeLight", "MiscWorldObjectHandler.ParseLights"], "confidence": "high", "nextAction": "No further work planned unless dump-only light flags prove missing." },
-  { "semanticModel": "DoorRecord", "recordCodes": ["DOOR"], "typedRuntimeReader": "RuntimeWorldObjectReader.ReadRuntimeDoor", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["name", "model", "script", "sounds"], "derived": ["teleport linkage"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeDoor", "MiscWorldObjectHandler.ParseDoors"], "confidence": "high", "nextAction": "Keep teleport-cell resolution in the semantic layer." },
-  { "semanticModel": "StaticRecord", "recordCodes": ["STAT"], "typedRuntimeReader": "RuntimeWorldObjectReader.ReadRuntimeStatic", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["model", "bounds"], "derived": ["use analysis"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeStatic", "MiscStaticObjectHandler.ParseStatics"], "confidence": "high", "nextAction": "No additional runtime work planned." },
-  { "semanticModel": "StaticCollectionRecord", "recordCodes": ["SCOL"], "typedRuntimeReader": "RuntimeStaticCollectionReader.ReadRuntimeStaticCollection", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["edid", "baked collection model (TESModel.cModel @68)", "bounds (TESBoundObject.BoundData @52)", "per-part ONAM base STAT FormID (esm only)", "per-part DATA placements (esm only)"], "derived": [], "esmOnly": ["per-part ONAM/DATA part list — BGSStaticCollection ends at structSize 96 with no part-list field, so parts are never runtime-recoverable"] }, "evidence": ["RuntimeStaticCollectionReader.ReadRuntimeStaticCollection", "MiscStaticObjectHandler.ParseStaticCollections (MergeRuntimeOverlayRecords 0x21)", "ScolEncoder.EncodeNew emits part-less when a baked MODL exists (USER RULING 2026-08-05)"], "confidence": "high", "nextAction": "Part list is structurally unrecoverable at runtime; the baked model is what the engine draws, which is enough for a placed ref to resolve." },
-  { "semanticModel": "PlaceableWaterRecord", "recordCodes": ["PWAT"], "typedRuntimeReader": "RuntimePlaceableWaterReader.ReadRuntimePlaceableWater", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["edid", "model (TESModel.cModel @68)", "bounds (TESBoundObject.BoundData @52)", "parent WATR FormID (BGSPlaceableWater.Data +4 pointer, WATR-type-checked)", "flags (BGSPlaceableWater.Data +0)"], "derived": [], "esmOnly": ["model texture data (MODT)"] }, "evidence": ["RuntimePlaceableWaterReader.ReadRuntimePlaceableWater", "MiscStaticObjectHandler.ParsePlaceableWaters (MergeRuntimeOverlayRecords 0x23)", "dmp struct-layout on xex21: 10/10 PWATs resolve a type-checked WATR at struct offset 92 with semantically matching names"], "confidence": "high", "nextAction": "The generic reader cannot do this — it hex-dumps the 8-byte Data struct instead of walking the pointer inside, which is why PWAT emitted from neither pipeline before the typed reader." },
-  { "semanticModel": "FurnitureRecord", "recordCodes": ["FURN"], "typedRuntimeReader": "RuntimeWorldObjectReader.ReadRuntimeFurniture", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["name", "model", "script", "marker flags"], "derived": ["use analysis"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeFurniture", "MiscStaticObjectHandler.ParseFurniture"], "confidence": "high", "nextAction": "Only extend if furniture marker-slot detail needs more decoding." },
-  { "semanticModel": "PackageRecord", "recordCodes": ["PACK"], "typedRuntimeReader": "RuntimePackageReader.ReadRuntimePackage", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["schedule", "targets", "flags"], "derived": ["spawn resolution"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimePackage", "AiRecordHandler.ParsePackages"], "confidence": "high", "nextAction": "Keep package-to-spawn resolution in the semantic layer." },
-  { "semanticModel": "GenericEsmRecord", "recordCodes": ["MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR", "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IDLM", "PWAT"], "typedRuntimeReader": "RuntimeGenericReader.ReadGenericRecord", "genericLayoutAvailable": true, "currentMergeMode": "runtime generic fallback for non-specialized forms; ASPC is dispatched to RuntimeAcousticSpaceReader from inside ReadGenericRecord and still returns a GenericEsmRecord", "status": "generic-only", "highValueFields": { "exact": ["generic readable fields"], "derived": [], "esmOnly": ["typed semantics"] }, "evidence": ["RuntimeStructReader.ReadGenericRecord", "RecordParserContext.MergeRuntimeGenericRecords", "ASPC exception: RuntimeAcousticSpaceProbe + RuntimeAcousticSpaceReader recover the per-build BGSAcousticSpace layout, which the generic shift probe mis-fitted as +4"], "confidence": "high", "nextAction": "Promote individual form types out of GenericEsmRecord only after typed readers are proven." },
-  { "semanticModel": "SoundRecord", "recordCodes": ["SOUN"], "typedRuntimeReader": "RuntimeSoundReader.ReadRuntimeSound", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["sound file path", "min/max attenuation distance", "static attenuation", "flags", "start/end time", "random percent chance"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeSoundReader.ReadRuntimeSound", "MiscEnvironmentHandler.ParseSounds (MergeRuntimeRecords 0x0D)", "PDB TESSound: 116 bytes, FormType 0x0D, TESSoundFile.cSoundFile BSStringT at +68, SOUND_DATA 36B at +76, cRandomPercentChance int8 at +112"], "confidence": "high", "nextAction": "All TESSound runtime fields covered. No further runtime work needed." },
-  { "semanticModel": "TextureSetRecord", "recordCodes": ["TXST"], "typedRuntimeReader": null, "genericLayoutAvailable": true, "currentMergeMode": "esm typed parse; runtime generic fallback only", "status": "esm-sufficient", "highValueFields": { "exact": [], "derived": [], "esmOnly": ["texture paths (TX00-TX05 stored as NiTexture* pointer array at runtime, not string paths)", "flags (iFlags at +160, already captured from ESM DNAM)"] }, "evidence": ["MiscEnvironmentHandler.ParseTextureSets", "RuntimeGenericReader.ReadGenericRecord", "PDB BGSTextureSet: 192 bytes, pTextures at +72 (opaque pointer array to NiTexture objects), pDecalData pointer at +156, iFlags uint16 at +160. Texture paths exist only in ESM subrecords TX00-TX05; runtime stores NiTexture* pointers instead."], "confidence": "high", "nextAction": "No typed runtime reader beneficial — texture paths are NiTexture* pointers at runtime (not strings), and iFlags is already captured from ESM DNAM subrecord." },
-  { "semanticModel": "MaterialSwapRecord", "recordCodes": ["MSWP"], "typedRuntimeReader": null, "genericLayoutAvailable": false, "currentMergeMode": "esm typed parse only (FO4/FO76 type; does not exist in FNV)", "status": "esm-only", "highValueFields": { "exact": [], "derived": [], "esmOnly": ["BNAM->SNAM material path substitutions (stored normalized to the materials\\-relative lowercase form)", "editor id"] }, "evidence": ["TerrainTextureRecordHandler.ParseMaterialSwaps", "MSWP 0x00112D06 'HitTechMetalPanel02Full': BNAM 'Architecture\\Buildings\\HighTech\\HitTechMetalPanel_01.BGSM' -> SNAM 'architecture\\buildings\\hightech\\HitTechFullPanels_02.BGSM'"], "confidence": "high", "nextAction": "None - MSWP is FO4/FO76-only, so no FNV runtime dump can ever carry one; the ESM parse is complete." },
-  { "semanticModel": "LandscapeTextureRecord", "recordCodes": ["LTEX"], "typedRuntimeReader": null, "genericLayoutAvailable": true, "currentMergeMode": "esm typed parse; runtime generic fallback only", "status": "esm-sufficient", "highValueFields": { "exact": [], "derived": [], "esmOnly": ["editor id", "icon paths", "texture set reference", "friction/restitution/material bytes", "specular exponent", "grass references"] }, "evidence": ["MiscEnvironmentHandler.ParseLandscapeTextures", "LtexEncoder.EncodeNew", "PDB TESLandTexture: 56 bytes, FormType 0x12. LAND texture layers need LTEX FormID preservation, while terrain texture/material authoring data remains plugin-authored and is captured from ESM/LTEX subrecords."], "confidence": "high", "nextAction": "Keep LTEX as ESM/plugin-authored support data unless runtime dumps expose useful additional TESLandTexture fields beyond the serialized subrecords." },
-  { "semanticModel": "GrassRecord", "recordCodes": ["GRAS"], "typedRuntimeReader": null, "genericLayoutAvailable": true, "currentMergeMode": "esm typed parse; runtime generic fallback only", "status": "esm-sufficient", "highValueFields": { "exact": [], "derived": [], "esmOnly": ["model path", "density", "min/max slope", "unit from water", "water op", "position range", "height range", "color range", "wave period", "flags"] }, "evidence": ["MiscEnvironmentHandler.ParseGrass", "GrasEncoder.EncodeNew", "TXST DODT + GRAS pipeline commit f8011bc0 — GRAS records are placement metadata referenced by LTEX, fully captured from ESM MODL/DATA subrecords. No runtime mutation observed across MemDebug/Debug/xex* dumps."], "confidence": "high", "nextAction": "Keep GRAS as ESM-only support data unless a dump exposes runtime-only grass density / wave-period adjustments." },
-  { "semanticModel": "ArmaRecord", "recordCodes": ["ARMA"], "typedRuntimeReader": null, "genericLayoutAvailable": true, "currentMergeMode": "esm typed parse; runtime generic fallback only", "status": "esm-sufficient", "highValueFields": { "exact": [], "derived": [], "esmOnly": ["biped model lists", "value", "weight", "enchantment"] }, "evidence": ["MiscItemHandler.ParseArmorAddons", "RuntimeGenericReader.ReadGenericRecord", "PDB TESObjectARMA: 416 bytes — pure composition of base classes (TESBipedModelForm, TESEnchantableForm, TESValueForm, etc.) with 0 own-class fields. All fields are inherited and already covered by ESM subrecords."], "confidence": "high", "nextAction": "No typed runtime reader needed — ARMA is purely composite with no own-class fields." },
-  { "semanticModel": "WaterRecord", "recordCodes": ["WATR"], "typedRuntimeReader": "RuntimeWaterReader.ReadRuntimeWater", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name (BSStringT at +44)", "damage (sAttackDamage uint16 at +56)", "opacity (cAlpha uint8 at +128)", "sound FormID (pWaterSound pointer at +140)", "WaterShaderData 196B at +148 (shared schema with ESM DNAM)"], "derived": [], "esmOnly": ["noise normal map (NiPointer<BSRenderedTexture> — runtime render object only)", "spell pointer (pSpellItem at +392 — not exposed by model)", "pWaterWeatherControl (unknown PDB type 0x000270E8)"] }, "evidence": ["RuntimeWaterReader.ReadRuntimeWater", "MiscEnvironmentHandler.ParseWater (MergeRuntimeRecords 0x4E)", "PDB TESWaterForm: 420 bytes, FormType 0x4E, TESFullName BSStringT at +44, sAttackDamage uint16 at +56, cAlpha uint8 at +128, pWaterSound pointer at +140, WaterShaderData 196B at +148"], "confidence": "high", "nextAction": "Core fields covered. pSpellItem and pRemappedWaterForm pointers exist but ESM model doesn't expose those slots — could be added later if needed." },
-  { "semanticModel": "BodyPartDataRecord", "recordCodes": ["BPTD"], "typedRuntimeReader": null, "genericLayoutAvailable": true, "currentMergeMode": "esm typed parse; runtime generic fallback only", "status": "esm-sufficient", "highValueFields": { "exact": [], "derived": [], "esmOnly": ["body part array (pPartArray — opaque type, PDB cannot resolve)", "ragdoll link (pRagdollData pointer)"] }, "evidence": ["MiscItemHandler.ParseBodyPartData", "RuntimeGenericReader.ReadGenericRecord", "PDB BGSBodyPartData: 132 bytes, 2 own-class fields. pPartArray has unknown PDB type (opaque). pRagdollData is a BGSRagdoll pointer. ESM NAM5 subrecord extracts texture count."], "confidence": "high", "nextAction": "No typed runtime reader feasible — pPartArray type is unresolvable from PDB. Would require Ghidra decompilation of BGSBodyPartData accessors." },
-  { "semanticModel": "ActorValueInfoRecord", "recordCodes": ["AVIF"], "typedRuntimeReader": "RuntimeActorReader.ReadRuntimeAvif", "genericLayoutAvailable": false, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["identity", "full name"], "derived": ["actor value resolver index"], "esmOnly": [] }, "evidence": ["RuntimeStructReader.ReadRuntimeAvif", "MiscGameSystemHandler.ParseActorValueInfos"], "confidence": "high", "nextAction": "Keep AV-code ordering logic in the semantic layer." },
-  { "semanticModel": "CombatStyleRecord", "recordCodes": ["CSTY"], "typedRuntimeReader": null, "genericLayoutAvailable": true, "currentMergeMode": "esm typed parse; runtime generic fallback only", "status": "esm-sufficient", "highValueFields": { "exact": [], "derived": [], "esmOnly": ["SimpleCombatStyleData (64B)", "CombatStyleData (92B)", "AdvancedCombatStyleData (84B)"] }, "evidence": ["MiscGameSystemHandler.ParseCombatStyles", "RuntimeGenericReader.ReadGenericRecord", "PDB TESCombatStyle: 280 bytes, 3 own-class fields — all opaque nested structs (SimpleData 64B, Data 92B, AdvancedData 84B). ESM CSTD/CSAD/CSSD subrecords already decompose these via schema."], "confidence": "high", "nextAction": "No typed runtime reader needed — ESM schema parsing already extracts all combat style parameters." },
-  { "semanticModel": "LightingTemplateRecord", "recordCodes": ["LGTM"], "typedRuntimeReader": "RuntimeLightingTemplateReader.ReadRuntimeLightingTemplate", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["INTERIOR_DATA (AmbientColor, DirectionalColor, FogColor, FogNear/Far/Power/ClipDist, DirectionalRotationXY/Z, DirectionalFade)"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeLightingTemplateReader.ReadRuntimeLightingTemplate", "MiscGameSystemHandler.ParseLightingTemplates (MergeRuntimeRecords 0x65)", "PDB BGSLightingTemplate: 84 bytes, FormType 0x65, INTERIOR_DATA 44B at +40 (first 40B match ESM DATA schema)"], "confidence": "high", "nextAction": "All INTERIOR_DATA fields covered via shared SubrecordDataReader schema. No further runtime work needed." },
-  { "semanticModel": "NavMeshRecord", "recordCodes": ["NAVM"], "typedRuntimeReader": "RuntimeNavMeshReader.ReadRuntimeNavMesh", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["parent cell (pointer follow)", "vertex count (BSSimpleArray)", "triangle count (BSSimpleArray)", "door portal count (BSSimpleArray)"], "derived": [], "esmOnly": ["full vertex/triangle/edge geometry (per-element arrays — engine refines mesh at load, so per-element parity isn't meaningful)"] }, "evidence": ["RuntimeNavMeshReader.ReadRuntimeNavMesh", "MiscGameSystemHandler.ParseNavMeshes (MergeRuntimeRecords 0x43)", "PDB NavMesh: 280 bytes, FormType 0x43, pParentCell at +52, Vertices BSSimpleArray at +56 (count at +64), Triangles BSSimpleArray at +72 (count at +80), DoorPortals BSSimpleArray at +104 (count at +112). BSSimpleArray layout: data ptr +0, capacity +4, count +8, reserved +12."], "confidence": "high", "nextAction": "Tier-1 fields covered (cell link + array counts). Per-element geometry remains ESM-sufficient — runtime navmesh diverges from ESM by design (engine rebakes mesh on load). Consider walking the per-element arrays only if AI pathfinding analysis is needed." },
-  { "semanticModel": "WeatherRecord", "recordCodes": ["WTHR"], "typedRuntimeReader": null, "genericLayoutAvailable": true, "currentMergeMode": "esm typed parse; runtime generic fallback only", "status": "esm-sufficient", "highValueFields": { "exact": [], "derived": [], "esmOnly": ["cloud layer data (8 opaque fields)", "color arrays", "fog parameters", "HDR data", "precipitation model", "image space parameter mods"] }, "evidence": ["MiscEnvironmentHandler.ParseWeather", "RuntimeGenericReader.ReadGenericRecord", "PDB TESWeather: 900 bytes (largest struct), 12 own-class fields — 8 are opaque/unknown types (cloud textures, color arrays, fog data, HDR data). Would require extensive Ghidra decompilation to map the internal array layouts."], "confidence": "high", "nextAction": "No typed runtime reader feasible — 8 of 12 own-class fields have unknown/opaque PDB types. The 900B struct is mostly undocumented internal rendering data." },
-  { "semanticModel": "ClimateRecord", "recordCodes": ["CLMT"], "typedRuntimeReader": null, "genericLayoutAvailable": true, "currentMergeMode": "esm typed parse; no runtime overlay", "status": "esm-sufficient", "highValueFields": { "exact": [], "derived": [], "esmOnly": ["sun + sun-glare texture paths (FNAM/GNAM)", "celestial model (MODL)", "weather list + chances (WLST)", "sunrise/sunset/volatility/moon timing (TNAM)"] }, "evidence": ["MiscEnvironmentHandler.ParseClimate", "Atmosphere roadmap P2a: promoted from GenericEsmRecord to a typed model so the viewer's AtmosphereState can read the worldspace climate's weather list + sun timing. All fields are plugin-authored CLMT subrecords; no runtime TESClimate mutation is consumed."], "confidence": "high", "nextAction": "Keep CLMT as ESM-only support data. A typed runtime TESClimate reader is only needed if runtime sun-angle / weather-transition state must be captured (atmosphere P2b reads that from the decompile, not a runtime struct)." },
-  { "semanticModel": "ImageSpaceRecord", "recordCodes": ["IMGS"], "typedRuntimeReader": null, "genericLayoutAvailable": true, "currentMergeMode": "esm typed parse; no runtime overlay", "status": "esm-sufficient", "highValueFields": { "exact": [], "derived": [], "esmOnly": ["HDR block (eye adapt, TargetLUM/UpperLUMClamp, bright scale/clamp)", "cinematic (saturation/contrast+pivot/brightness)", "tint color + amount"] }, "evidence": ["MiscEnvironmentHandler.ParseImageSpaces", "docs/research/fnv_engine_hdr_imagespace.md: FO3/FNV single DNAM (152B v>=10 / 132B older, engine TESImageSpace::Load branches on size); cell XCIM / worldspace INAM select it; viewer tonemap stage consumes the values"], "confidence": "high", "nextAction": "Keep IMGS as ESM-only support data. Weather per-band IMAD modifiers are the follow-up (Sky::UpdateHDRValues band blend)." },
-  { "semanticModel": "ImageSpaceModifierRecord", "recordCodes": ["IMAD"], "typedRuntimeReader": "RuntimeImageSpaceModifierReader.ReadRuntimeImageSpaceModifier", "genericLayoutAvailable": true, "currentMergeMode": "esm typed parse + append-only typed runtime recovery", "status": "typed-runtime", "highValueFields": { "exact": ["animatable duration/flag", "21 ordered multiply/add parameter timelines", "scalar and tint/fade color timelines", "final-layout intro/outro sound references", "canonical ordered reconstructed subrecords"], "derived": [], "esmOnly": ["unknown raw subrecords and byte-exact raw ordering when an ESM record exists"] }, "evidence": ["MiscEnvironmentHandler.ParseImageSpaceModifiers", "RuntimeImageSpaceModifierReader.ReadRuntimeImageSpaceModifier", "xex21/xex22 Release Beta 0x740 layout and August MemDebug PDB 0x748 layout"], "confidence": "high", "nextAction": "Retain raw-record precedence and add another runtime layout only with matching PDB/decompile and corpus evidence." },
-  { "semanticModel": "EyesRecord", "recordCodes": ["EYES"], "typedRuntimeReader": "RuntimeCharacterAppearanceReader.ReadRuntimeEyes", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "texture path", "flags (playable)"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeCharacterAppearanceReader.ReadRuntimeEyes", "MiscBasicTypeHandler.ParseEyes (MergeRuntimeRecords 0x0B)", "PDB TESEyes: 68 bytes, FormType 0x0B, TESFullName BSStringT at +44, TextureName BSStringT at +56, cFlags int8 at +64"], "confidence": "high", "nextAction": "All TESEyes runtime fields covered. No further runtime work needed." },
-  { "semanticModel": "HairRecord", "recordCodes": ["HAIR"], "typedRuntimeReader": "RuntimeCharacterAppearanceReader.ReadRuntimeHair", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name", "model path", "texture path", "flags (playable)"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeCharacterAppearanceReader.ReadRuntimeHair", "MiscBasicTypeHandler.ParseHair (MergeRuntimeRecords 0x0A)", "PDB TESHair: 92 bytes, FormType 0x0A, TESFullName BSStringT at +44, cModel BSStringT at +56, TextureName BSStringT at +80, cFlags int8 at +88"], "confidence": "high", "nextAction": "All TESHair runtime fields covered. No further runtime work needed." },
-  { "semanticModel": "HeadPartRecord", "recordCodes": ["HDPT"], "typedRuntimeReader": "RuntimeHeadPartReader.ReadRuntimeHeadPart", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name (BSStringT at +44)", "model path (BSStringT at +56)", "flags (int8 at +84)"], "derived": [], "esmOnly": ["extra parts list (HNAM FormIDs — BSSimpleList<BGSHeadPart*> at +88, not walked)"] }, "evidence": ["RuntimeHeadPartReader.ReadRuntimeHeadPart", "MiscBasicTypeHandler.ParseHeadParts (MergeRuntimeRecords 0x09)", "PDB BGSHeadPart: 96 bytes, FormType 0x09"], "confidence": "high", "nextAction": "Core fields covered. Extra parts list walking is low-value." },
-  { "semanticModel": "VoiceTypeRecord", "recordCodes": ["VTYP"], "typedRuntimeReader": "RuntimeVoiceTypeReader.ReadRuntimeVoiceType", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["flags (VOICE_TYPE_DATA byte at +40 — bit 0 default-dialogue, bit 1 female)"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeVoiceTypeReader.ReadRuntimeVoiceType", "MiscBasicTypeHandler.ParseVoiceTypes (MergeRuntimeRecords 0x5D)", "PDB BGSVoiceType: 44 bytes, FormType 0x5D, Data 1B at +40"], "confidence": "high", "nextAction": "All BGSVoiceType fields covered. No further runtime work needed." },
-  { "semanticModel": "MenuIconRecord", "recordCodes": ["MICN"], "typedRuntimeReader": "RuntimeMenuIconReader.ReadRuntimeMenuIcon", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["icon path (TextureName BSStringT at +44)"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeMenuIconReader.ReadRuntimeMenuIcon", "MiscBasicTypeHandler.ParseMenuIcons (MergeRuntimeRecords 0x05)", "PDB BGSMenuIcon: 52 bytes, FormType 0x05, single own-class field"], "confidence": "high", "nextAction": "All BGSMenuIcon fields covered. No further runtime work needed." },
-  { "semanticModel": "LoadScreenTypeRecord", "recordCodes": ["LSCT"], "typedRuntimeReader": "RuntimeLoadScreenTypeReader.ReadRuntimeLoadScreenType", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["LoadScreenType_Data 88B (Type/X/Y/Width/Height/Orientation/Font1/FontColor1RGB/FontAlignment1/Font2/FontColor2RGB/Stats — full 22-field schema)"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeLoadScreenTypeReader.ReadRuntimeLoadScreenType", "MiscEnvironmentHandler.ParseLoadScreenTypes (MergeRuntimeRecords 0x6E)", "PDB TESLoadScreenType: 128 bytes, FormType 0x6E, LoadScreenType_Data 88B at +40 (shared SubrecordDataReader schema with ESM DATA)"], "confidence": "high", "nextAction": "All TESLoadScreenType fields covered via shared schema. No further runtime work needed." },
-  { "semanticModel": "IdleAnimationRecord", "recordCodes": ["IDLE"], "typedRuntimeReader": "RuntimeIdleAnimationReader.ReadRuntimeIdleAnimation", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["model path (cModel at +44)", "IDLE_DATA byte fields (AnimData/LoopMin/LoopMax/ReplayDelay/FlagsEx at +72)", "parent idle FormID (pParentIdle pointer at +84)"], "derived": [], "esmOnly": ["previous idle FormID (ANAM second slot — runtime doesn't separate parent vs prev)", "condition count (CTDA — runtime conditions are state-only)"] }, "evidence": ["RuntimeIdleAnimationReader.ReadRuntimeIdleAnimation", "AiRecordHandler.ParseIdleAnimations (MergeRuntimeRecords 0x48)", "PDB TESIdleForm: 92 bytes, FormType 0x48"], "confidence": "high", "nextAction": "Core fields covered. ANAM previous-idle is ESM-only convention." },
-  { "semanticModel": "CameraPathRecord", "recordCodes": ["CPTH"], "typedRuntimeReader": "RuntimeCameraPathReader.ReadRuntimeCameraPath", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["PATH_DATA byte (flags at +56)", "parent path FormID (pParentPath pointer at +64)", "previous path FormID (pPrevPath pointer at +68)"], "derived": [], "esmOnly": ["camera shot list (SNAM FormIDs — runtime BSSimpleList not walked)", "condition count"] }, "evidence": ["RuntimeCameraPathReader.ReadRuntimeCameraPath", "WorldRecordHandler.ParseCameraPaths (MergeRuntimeRecords 0x5C)", "PDB BGSCameraPath: 72 bytes, FormType 0x5C"], "confidence": "high", "nextAction": "Core fields covered. Shot list walking is low-priority." },
-  { "semanticModel": "ImpactDataRecord", "recordCodes": ["IPCT"], "typedRuntimeReader": "RuntimeImpactDataReader.ReadRuntimeImpactData", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["model path (cModel at +44)", "decal texture set FormID (pDecalTextureSet at +88)", "sound 1/2 FormIDs (pSound1/pSound2 at +92/+96)"], "derived": [], "esmOnly": ["IMPACT_DATA_DATA 24B numeric tuning (decal min size, depth, scale, etc.)", "DecalData 36B at +100 (color/alpha)"] }, "evidence": ["RuntimeImpactDataReader.ReadRuntimeImpactData", "CombatEffectHandler.ParseImpactData (MergeRuntimeRecords 0x5E)", "PDB BGSImpactData: 136 bytes, FormType 0x5E"], "confidence": "high", "nextAction": "Identity + reference fields covered. Numeric tuning blocks (DATA/DODT) could be added via shared schema if parity needed." },
-  { "semanticModel": "AudioLocationControllerRecord", "recordCodes": ["ALOC"], "typedRuntimeReader": "RuntimeAudioLocationControllerReader.ReadRuntimeAudioLocationController", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name (BSStringT at +44)", "timer uint32s (LocationDelay/LayerTime/LoopTime/MediaStartTime at +52..+64)"], "derived": [], "esmOnly": ["12+ FormID-referenced media sets / sounds (HNAM/ZNAM/XNAM/YNAM/etc. — runtime stores resolved pointers but the 'configured' set differs from currently-playing)"] }, "evidence": ["RuntimeAudioLocationControllerReader.ReadRuntimeAudioLocationController", "MiscEnvironmentHandler.ParseAudioLocationControllers (MergeRuntimeRecords 0x70)", "PDB MediaLocationController: 200 bytes, FormType 0x70 — boolean state fields (bIsActive/bInCombat/bIsDay) skipped as runtime-mutated"], "confidence": "high", "nextAction": "Core static timer fields covered. Runtime boolean state (bIsActive/etc) intentionally skipped." },
-  { "semanticModel": "PlacedGrenadeRecord", "recordCodes": ["PGRE"], "typedRuntimeReader": null, "genericLayoutAvailable": true, "currentMergeMode": "esm typed parse only (placed projectiles are transient at runtime)", "status": "esm-sufficient", "highValueFields": { "exact": ["base FormID (NAME subrecord)", "position (DATA float×3)"], "derived": [], "esmOnly": ["all REFR-family fields — runtime grenades are transient TESObjectREFR derivatives, not persisted via TESForm hash tables"] }, "evidence": ["WorldRecordHandler.ParsePlacedGrenades", "PDB GrenadeProjectile: 400 bytes, FormType 0x3E, inherits TESObjectREFR + Projectile + MobileObject"], "confidence": "high", "nextAction": "Runtime reader skipped intentionally — transient state. ESM-only parsing captures placement intent." },
-  { "semanticModel": "RegionRecord", "recordCodes": ["REGN"], "typedRuntimeReader": "RuntimeRegionReader.ReadRuntimeRegion", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["worldspace FormID (pWorldSpace pointer at +48)", "EmittanceColor RGB (NiColor at +60)"], "derived": [], "esmOnly": ["RDAT region-data tuples (variable-length per-region content)", "RPLI/RPLD point lists", "pCurrentWeather (runtime state)"] }, "evidence": ["RuntimeRegionReader.ReadRuntimeRegion", "WorldRecordHandler.ParseRegions (MergeRuntimeRecords 0x37)", "PDB TESRegion: 72 bytes, FormType 0x37"], "confidence": "high", "nextAction": "Static fields covered. RDAT block parsing is variable-length and out of scope." },
-  { "semanticModel": "CaravanCardRecord", "recordCodes": ["CCRD"], "typedRuntimeReader": "RuntimeCaravanCardReader.ReadRuntimeCaravanCard", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name (BSStringT at +68)", "model path (BSStringT at +80)", "value (uint32 at +140)", "script FormID (pFormScript at +148)", "pickup/putdown sound FormIDs (+160/+164)"], "derived": [], "esmOnly": ["CARAVANCARDDATA suit/rank tuple (8B at +196 — encoding varies per build)"] }, "evidence": ["RuntimeCaravanCardReader.ReadRuntimeCaravanCard", "MiscGameSystemHandler.ParseCaravanCards (MergeRuntimeRecords 0x73)", "PDB TESCaravanCard: 204 bytes, FormType 0x73"], "confidence": "high", "nextAction": "Identity + value + sound refs covered. Suit/rank tuple unpacking is low-priority." },
-  { "semanticModel": "CaravanMoneyRecord", "recordCodes": ["CMNY"], "typedRuntimeReader": "RuntimeCaravanMoneyReader.ReadRuntimeCaravanMoney", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["value (uint32 DATA / iValue)"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeCaravanMoneyReader.ReadRuntimeCaravanMoney", "MiscGameSystemHandler.ParseCaravanMoney (MergeRuntimeRecords 0x74)", "PDB TESCaravanMoney: form type 0x74, iValue field serialized as CMNY DATA"], "confidence": "high", "nextAction": "All known CMNY gameplay fields covered." },
-  { "semanticModel": "DebrisRecord", "recordCodes": ["DEBR"], "typedRuntimeReader": "RuntimeDebrisReader.ReadRuntimeDebris", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["variant count (walks DataList BSSimpleList at +44)"], "derived": [], "esmOnly": ["per-variant model paths (MODL subrecords)", "per-variant BGSDebrisData (opaque)"] }, "evidence": ["RuntimeDebrisReader.ReadRuntimeDebris", "MiscWorldObjectHandler.ParseDebris (MergeRuntimeRecords 0x52)", "PDB BGSDebris: 52 bytes, FormType 0x52, single own-class field is BSSimpleList<BGSDebrisData *> at +44"], "confidence": "high", "nextAction": "Variant count covered via BSSimpleList walk. Per-variant binary data is opaque." },
-  { "semanticModel": "IngredientRecord", "recordCodes": ["INGR"], "typedRuntimeReader": "RuntimeIngredientReader.ReadRuntimeIngredient", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["full name (BSStringT at +68)", "model path (BSStringT at +96)", "weight (float at +152)", "equip type (uint32 at +160)"], "derived": [], "esmOnly": ["EffectItem list (m_item/m_pkNext at +80 — legacy Oblivion EffectItemList walk)"] }, "evidence": ["RuntimeIngredientReader.ReadRuntimeIngredient", "MiscItemHandler.ParseIngredients (MergeRuntimeRecords 0x1D)", "PDB IngredientItem: 180 bytes, FormType 0x1D — FNV has 1 record but forward-compatible with Oblivion-era ingredients"], "confidence": "high", "nextAction": "Identity + weight + equip type covered. FNV only has 1 INGR record; ALCH is the primary consumable type." },
-  { "semanticModel": "NavMeshInfoMapRecord", "recordCodes": ["NAVI"], "typedRuntimeReader": "RuntimeNavMeshInfoMapReader.ReadRuntimeNavMeshInfoMap", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["bUpdateAll flag (+40)", "bInit flag (+76)"], "derived": [], "esmOnly": ["NiTPointerMap / NiTMap navmesh info hashes (variable-length)"] }, "evidence": ["RuntimeNavMeshInfoMapReader.ReadRuntimeNavMeshInfoMap", "MiscGameSystemHandler.ParseNavMeshInfoMaps (MergeRuntimeRecords 0x38)", "PDB NavMeshInfoMap: 80 bytes, FormType 0x38, 1 record per ESM"], "confidence": "high", "nextAction": "Boolean flags covered. Hash-table walking is out of scope for a singleton-style metadata record." },
-  { "semanticModel": "CaravanDeckRecord", "recordCodes": ["CDCK"], "typedRuntimeReader": "RuntimeCaravanDeckReader.ReadRuntimeCaravanDeck", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["joker count (CARAVANDECKDATA uint32 at +56)"], "derived": [], "esmOnly": ["card list (CNTO / pDeck BSSimpleList<TESCaravanCard*> at +52 — runtime is a pointer-to-list, not inline)"] }, "evidence": ["RuntimeCaravanDeckReader.ReadRuntimeCaravanDeck", "MiscGameSystemHandler.ParseCaravanDecks (MergeRuntimeRecords 0x75)", "PDB TESCaravanDeck: 60 bytes, FormType 0x75"], "confidence": "high", "nextAction": "Joker count covered. Card list walking requires pointer-deref + heap-list traversal — out of scope." },
-  { "semanticModel": "SurvivalStageRecord", "recordCodes": ["RADS", "DEHY", "HUNG", "SLPD"], "typedRuntimeReader": "RuntimeSurvivalStageReader.ReadRuntimeSurvivalStage", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["threshold (uint32 at DATA+0)", "modifier (uint32 at DATA+4)"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeSurvivalStageReader.ReadRuntimeSurvivalStage (shared across all 4 form types)", "MiscGameSystemHandler.ParseRadiationStages/ParseDehydrationStages/ParseHungerStages/ParseSleepDeprivationStages (MergeRuntimeRecords 0x5A/0x76/0x77/0x78)", "PDB BGSRadiationStage/Dehydration/Hunger/SleepDeprevation: all 48 bytes, identical layout with 8B DATA at +40"], "confidence": "high", "nextAction": "All 4 hardcore-mode stage types covered via single shared reader. SemanticModel is also shared." },
-  { "semanticModel": "MusicTypeRecord", "recordCodes": ["MUSC"], "typedRuntimeReader": "RuntimeMusicTypeReader.ReadRuntimeMusicType", "genericLayoutAvailable": true, "currentMergeMode": "esm + typed runtime overlay", "status": "typed-runtime", "highValueFields": { "exact": ["sound file path (BSStringT at +44)", "attenuation (float32 at +52)"], "derived": [], "esmOnly": [] }, "evidence": ["RuntimeMusicTypeReader.ReadRuntimeMusicType", "MiscEnvironmentHandler.ParseMusicTypes (MergeRuntimeRecords 0x66)", "PDB BGSMusicType: 68 bytes, FormType 0x66, TESSoundFile.cSoundFile BSStringT at +44, fAttenuation float32 at +52"], "confidence": "high", "nextAction": "All BGSMusicType runtime fields covered. No further runtime work needed." }
+  {
+    "semanticModel": "NpcRecord",
+    "recordCodes": [
+      "NPC_"
+    ],
+    "typedRuntimeReader": "RuntimeActorReader.ReadRuntimeNpc",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "stats",
+        "inventory"
+      ],
+      "derived": [
+        "faction links"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeNpc",
+      "NpcRecordHandler.ParseNpcs"
+    ],
+    "confidence": "high",
+    "nextAction": "Audit remaining template or facegen gaps only if parity regressions appear."
+  },
+  {
+    "semanticModel": "CreatureRecord",
+    "recordCodes": [
+      "CREA"
+    ],
+    "typedRuntimeReader": "RuntimeActorReader.ReadRuntimeCreature",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "stats",
+        "inventory"
+      ],
+      "derived": [
+        "faction links"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeCreature",
+      "CreatureRecordHandler.ParseCreatures"
+    ],
+    "confidence": "high",
+    "nextAction": "Backfill any missing combat-style or package joins only if a dump exposes them."
+  },
+  {
+    "semanticModel": "RaceRecord",
+    "recordCodes": [
+      "RACE"
+    ],
+    "typedRuntimeReader": "RuntimeRaceReader.ReadRuntimeRace",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "skill boosts",
+        "height/weight",
+        "data flags",
+        "facegen clamp values",
+        "default hair (male/female)",
+        "default hair color",
+        "voice types (male/female)",
+        "older/younger race links",
+        "abilities (spell list)",
+        "hair styles (hair list)",
+        "eye colors (eye list)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "description (lFileOffset-backed)",
+        "head/body model paths (ppHeadModelFiles/ppBodyModelFiles arrays)",
+        "head/body texture paths (ppHeadTextureFiles/ppBodyTextureFiles arrays)",
+        "facegen mean coordinates (MeanFaceCoordMale/Female)",
+        "body texture models (pBodyTextureModels)"
+      ]
+    },
+    "evidence": [
+      "RuntimeRaceReader.ReadRuntimeRace",
+      "ActorRecordHandler.ParseRaces (MergeRuntimeRecords)",
+      "PDB TESRace: 1260 bytes, RACE_DATA 36B, TESAttributes 12B, BSSimpleList walks for spells/hair/eyes"
+    ],
+    "confidence": "high",
+    "nextAction": "Tier 1 fields covered (RACE_DATA, attributes, clamp values, voice/hair/age pointers, BSSimpleList walks). Tier 2 would be head/body model path arrays (ppHeadModelFiles at +192, 384B) — complex 2D pointer arrays, ESM already provides these. Low priority."
+  },
+  {
+    "semanticModel": "FactionRecord",
+    "recordCodes": [
+      "FACT"
+    ],
+    "typedRuntimeReader": "RuntimeActorReader.ReadRuntimeFaction",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "flags",
+        "crime data"
+      ],
+      "derived": [
+        "member links"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeFaction",
+      "ActorRecordHandler.ParseFactions"
+    ],
+    "confidence": "high",
+    "nextAction": "Keep member-link derivation in the semantic layer rather than the runtime reader."
+  },
+  {
+    "semanticModel": "EncounterZoneRecord",
+    "recordCodes": [
+      "ECZN"
+    ],
+    "typedRuntimeReader": "RuntimeEncounterZoneReader.ReadRuntimeEncounterZone",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "owner (pointer follow)",
+        "rank",
+        "minimum level",
+        "flags"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeEncounterZoneReader.ReadRuntimeEncounterZone",
+      "MiscGameSystemHandler.ParseEncounterZones (MergeRuntimeRecords 0x61)",
+      "PDB BGSEncounterZone: 64 bytes, FormType 0x61, ENCOUNTER_ZONE_DATA 8B at +40 (Owner pointer 4B + Rank int8 + MinLevel int8 + Flags uint8 + padding)"
+    ],
+    "confidence": "high",
+    "nextAction": "All ENCOUNTER_ZONE_DATA fields covered. GameData block (16B at +48) is runtime-mutated state, not parity-relevant."
+  },
+  {
+    "semanticModel": "QuestRecord",
+    "recordCodes": [
+      "QUST"
+    ],
+    "typedRuntimeReader": "RuntimeDialogueReader.ReadRuntimeQuest",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "script links",
+        "objectives",
+        "flags/priority/delay",
+        "stage indices/flags"
+      ],
+      "derived": [
+        "dialogue joins"
+      ],
+      "esmOnly": [
+        "stage log entries (resolved from ESM file at runtime via m_fileOffset, not stored as durable string)"
+      ]
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeQuest",
+      "RuntimeQuestTerminalReader.ReadRuntimeQuest",
+      "DialogueRecordHandler.ParseQuests",
+      "PDB types_full: TESQuestStageItem.GetLogEntry(TESForm*) + m_fileOffset/m_bHasLogEntry",
+      "savegame_decompiled: TESQuest::SaveGame[_v2]/LoadGame[_v2] serialize stage index, flags, log index, and optional note payloads, but not stage log text"
+    ],
+    "confidence": "high",
+    "nextAction": "All runtime-accessible QUST fields covered. Stage log entries confirmed ESM-only. No further runtime work needed."
+  },
+  {
+    "semanticModel": "DialogTopicRecord",
+    "recordCodes": [
+      "DIAL"
+    ],
+    "typedRuntimeReader": "RuntimeDialogueReader.ReadRuntimeDialogTopic",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay + derived QUEST_INFO linkage",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "topic metadata",
+        "journal index",
+        "response count when m_uiTopicCount survives"
+      ],
+      "derived": [
+        "quest/info linkage",
+        "quest form and response count from QUEST_INFO when raw topic count is absent"
+      ],
+      "esmOnly": [
+        "topic default speaker (TNAM, ESM-authored only)"
+      ]
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeDialogTopic",
+      "RuntimeStructReader.WalkTopicQuestInfoList",
+      "DialogueRecordHandler.ParseDialogTopics",
+      "DialogueRuntimeMerger.MergeRuntimeDialogTopicLinks"
+    ],
+    "confidence": "high",
+    "nextAction": "All runtime-accessible DIAL fields covered. Topic default speaker confirmed ESM-only. No further runtime work needed."
+  },
+  {
+    "semanticModel": "DialogueRecord",
+    "recordCodes": [
+      "INFO"
+    ],
+    "typedRuntimeReader": "RuntimeDialogueReader.ReadRuntimeDialogueInfo",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "speaker selectors",
+        "conditions",
+        "dialogue flags",
+        "add-topic links",
+        "link-from topics",
+        "link-to topics",
+        "follow-up INFOs",
+        "perk/skill stat",
+        "said-once flag"
+      ],
+      "derived": [
+        "topic linkage via QUEST_INFO walk"
+      ],
+      "esmOnly": [
+        "response text (NAM1)",
+        "result script source/bytecode (SCHR/SCDA/SCTX)",
+        "iFileOffset (transient)"
+      ]
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeDialogueInfo",
+      "DialogueRuntimeMerger.MergeRuntimeDialogueData",
+      "DialogueRuntimeMerger.MergeRuntimeDialogueTopicLinks",
+      "RuntimeDialogueReader.ReadConversationData",
+      "Real sample dumps: m_listAddTopics positive on Debug/xex4/xex44/MemDebug",
+      "TESConversationData validated: LinkFrom 457-609 decodes, LinkTo 2667-4595 decodes, FollowUp 256-642 decodes across Debug/xex4/xex44/MemDebug (ReleaseBeta has 0 ConvData pointers)",
+      "pPerkSkillStat: 3068/47811 speech challenge INFOs with valid pointer across all dump families",
+      "All 12 PDB fields accounted for: 10 proven at runtime, 2 ESM-only (response text, result scripts), 1 transient (iFileOffset)"
+    ],
+    "confidence": "high",
+    "nextAction": "All TESTopicInfo fields fully investigated. No further runtime work needed for INFO."
+  },
+  {
+    "semanticModel": "NoteRecord",
+    "recordCodes": [
+      "NOTE"
+    ],
+    "typedRuntimeReader": "RuntimeDialogueReader.ReadRuntimeNote",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "note type",
+        "text"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeNote",
+      "TextRecordHandler.ParseNotes"
+    ],
+    "confidence": "high",
+    "nextAction": "Leave as-is unless a dump shows missing note-body cases."
+  },
+  {
+    "semanticModel": "BookRecord",
+    "recordCodes": [
+      "BOOK"
+    ],
+    "typedRuntimeReader": "RuntimeBookReader.ReadRuntimeBook",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "model path",
+        "value",
+        "weight",
+        "flags",
+        "skill taught",
+        "enchantment FormID",
+        "enchantment amount"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "book text (DESC, resolved via lFileOffset at +168)",
+        "object bounds (OBND)"
+      ]
+    },
+    "evidence": [
+      "RuntimeBookReader.ReadRuntimeBook",
+      "TextRecordHandler.ParseBooks (MergeRuntimeRecords 0x19)",
+      "PDB TESObjectBOOK: 212 bytes, FormType 0x19, TESFullName BSStringT at +68, TESModel BSStringT at +80, TESEnchantableForm ptr at +136 + uint16 at +140, iValue uint32 at +152, fWeight float32 at +160, OBJ_BOOK 2B at +208"
+    ],
+    "confidence": "high",
+    "nextAction": "All TESObjectBOOK runtime fields covered. Book text is ESM-only (lFileOffset-backed). No further runtime work needed."
+  },
+  {
+    "semanticModel": "TerminalRecord",
+    "recordCodes": [
+      "TERM"
+    ],
+    "typedRuntimeReader": "RuntimeDialogueReader.ReadRuntimeTerminal",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "menu text",
+        "script link"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeTerminal",
+      "TextRecordHandler.ParseTerminals"
+    ],
+    "confidence": "high",
+    "nextAction": "Only extend if terminal submenus prove missing in dump-backed output."
+  },
+  {
+    "semanticModel": "ScriptRecord",
+    "recordCodes": [
+      "SCPT"
+    ],
+    "typedRuntimeReader": "RuntimeScriptReader.ReadRuntimeScript",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "variables",
+        "script text"
+      ],
+      "derived": [
+        "cross references"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeScript",
+      "ScriptRecordHandler.ParseScripts"
+    ],
+    "confidence": "high",
+    "nextAction": "Keep result-script and variable cross-reference logic in the semantic layer."
+  },
+  {
+    "semanticModel": "RuntimeScriptData",
+    "recordCodes": [
+      "SCPT"
+    ],
+    "typedRuntimeReader": "RuntimeScriptReader.ReadRuntimeScript",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "same-dump runtime sidecar + conflict-checked semantic enrichment",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "raw script header",
+        "compiled bytes",
+        "source text",
+        "explicit variable identities",
+        "referenced objects",
+        "list-completeness evidence"
+      ],
+      "derived": [
+        "safe effective variable count for a zeroed runtime header"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeScriptReader.ReadRuntimeScript",
+      "ScriptRuntimeMerger.MergeRuntimeScriptData",
+      "RecordCollection.RuntimeScripts"
+    ],
+    "confidence": "high",
+    "nextAction": "Retain as same-dump recovery metadata only; never emit it as a second semantic SCPT record."
+  },
+  {
+    "semanticModel": "WeaponRecord",
+    "recordCodes": [
+      "WEAP"
+    ],
+    "typedRuntimeReader": "RuntimeItemReader.ReadRuntimeWeapon",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "damage",
+        "model"
+      ],
+      "derived": [
+        "projectile joins"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeWeapon",
+      "WeaponRecordHandler.ParseWeapons"
+    ],
+    "confidence": "high",
+    "nextAction": "Verify only the remaining mod or animation edge fields if needed."
+  },
+  {
+    "semanticModel": "ArmorRecord",
+    "recordCodes": [
+      "ARMO"
+    ],
+    "typedRuntimeReader": "RuntimeItemReader.ReadRuntimeArmor",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "value",
+        "model"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeArmor",
+      "ItemRecordHandler.ParseArmor"
+    ],
+    "confidence": "high",
+    "nextAction": "Only revisit if armor addon relationships need dump-specific enrichment."
+  },
+  {
+    "semanticModel": "AmmoRecord",
+    "recordCodes": [
+      "AMMO"
+    ],
+    "typedRuntimeReader": "RuntimeItemReader.ReadRuntimeAmmo",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "value",
+        "model"
+      ],
+      "derived": [
+        "projectile joins"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeAmmo",
+      "ConsumableRecordHandler.ParseAmmo"
+    ],
+    "confidence": "high",
+    "nextAction": "No planned work beyond normal regression coverage."
+  },
+  {
+    "semanticModel": "ConsumableRecord",
+    "recordCodes": [
+      "ALCH"
+    ],
+    "typedRuntimeReader": "RuntimeItemReader.ReadRuntimeConsumable",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "value",
+        "weight"
+      ],
+      "derived": [
+        "effect joins"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeConsumable",
+      "ConsumableRecordHandler.ParseConsumables"
+    ],
+    "confidence": "high",
+    "nextAction": "Only extend if dump-backed effect stacks need dedicated decoding."
+  },
+  {
+    "semanticModel": "MiscItemRecord",
+    "recordCodes": [
+      "MISC"
+    ],
+    "typedRuntimeReader": "RuntimeItemReader.ReadRuntimeMiscItem",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "value",
+        "weight"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeMiscItem",
+      "ItemRecordHandler.ParseMiscItems"
+    ],
+    "confidence": "high",
+    "nextAction": "Leave typed reader as-is unless a specific misc subclass needs more fields."
+  },
+  {
+    "semanticModel": "KeyRecord",
+    "recordCodes": [
+      "KEYM"
+    ],
+    "typedRuntimeReader": "RuntimeItemReader.ReadRuntimeKey",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "value",
+        "model"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeKey",
+      "ItemRecordHandler.ParseKeys"
+    ],
+    "confidence": "high",
+    "nextAction": "No additional runtime work planned."
+  },
+  {
+    "semanticModel": "ContainerRecord",
+    "recordCodes": [
+      "CONT"
+    ],
+    "typedRuntimeReader": "RuntimeItemReader.ReadRuntimeContainer",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "contents",
+        "script"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeContainer",
+      "ItemRecordHandler.ParseContainers"
+    ],
+    "confidence": "high",
+    "nextAction": "Only extend if dump-only container ownership data becomes important."
+  },
+  {
+    "semanticModel": "PerkRecord",
+    "recordCodes": [
+      "PERK"
+    ],
+    "typedRuntimeReader": "RuntimeMagicReader.ReadRuntimePerk",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "icon path",
+        "trait",
+        "min level",
+        "ranks",
+        "playable"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "description (lFileOffset-backed)",
+        "perk entry chains (BGSPerkEntry linked list — complex condition/function data)",
+        "alignment byte (DATA+4)"
+      ]
+    },
+    "evidence": [
+      "RuntimeMagicReader.ReadRuntimePerk",
+      "EffectRecordHandler.ParsePerks (MergeRuntimeRecords 0x56)",
+      "PDB BGSPerk: 96 bytes, PerkData 5B at +72, TESFullName BSStringT at +44, TESTexture BSStringT at +64"
+    ],
+    "confidence": "high",
+    "nextAction": "Tier 1 fields covered (PerkData, full name, icon). Tier 2 would be PerkEntries BSSimpleList<BGSPerkEntry*> at +88 — complex per-entry type dispatch, ESM already captures PRKE/EPFT chains. Low priority."
+  },
+  {
+    "semanticModel": "SpellRecord",
+    "recordCodes": [
+      "SPEL"
+    ],
+    "typedRuntimeReader": "RuntimeMagicReader.ReadRuntimeSpell",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "spell type",
+        "cost",
+        "level",
+        "flags",
+        "effect FormIDs (EffectItem list walk)"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeMagicReader.ReadRuntimeSpell",
+      "EffectRecordHandler.ParseSpells (MergeRuntimeRecords 0x14)",
+      "PDB SpellItem: 84 bytes, SpellItemData 16B at +68, BSSimpleList<EffectItem*> at +56, EffectItem: pSetting(4)+magnitude(4)+area(4)+duration(4)+type(4)+actorValue(4)=24B"
+    ],
+    "confidence": "high",
+    "nextAction": "All SpellItem runtime fields covered including EffectItem linked list walking for effect FormIDs. No further runtime work needed."
+  },
+  {
+    "semanticModel": "CellRecord",
+    "recordCodes": [
+      "CELL"
+    ],
+    "typedRuntimeReader": "RuntimeCellReader.ReadRuntimeCell",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "flags",
+        "water",
+        "worldspace",
+        "runtime reference membership",
+        "lighting template",
+        "lighting template inheritance flags",
+        "encounter zone",
+        "music type",
+        "acoustic space",
+        "image space"
+      ],
+      "derived": [
+        "grid from pCellMap",
+        "terrain lookup",
+        "placed-object overlay from runtime reference membership",
+        "runtime-only cell recovery from REFR parent/persistent cell signals"
+      ],
+      "esmOnly": [
+        "placed object subrecords (live on REFRs, not CELL struct)"
+      ]
+    },
+    "evidence": [
+      "RuntimeWorldCellLayoutProbe.Probe",
+      "RuntimeStructReader.ReadRuntimeCell",
+      "RuntimeStructReader.ReadAllWorldspaceCellMaps",
+      "CellRecordHandler.ParseCells",
+      "CellLinkageHandler.CreateVirtualCells",
+      "RuntimeCellReader.ReadRuntimeCellProbeSnapshotFromBuffer (pLightingTemplate, iLightingTemplateInheritanceFlags)",
+      "RuntimeCellReader.ReadCellExtraData (BSExtraData list walk: encounter zone 0x74, music 0x07, acoustic 0x81, image space 0x59)"
+    ],
+    "confidence": "high",
+    "nextAction": "All CELL runtime fields covered including BSExtraData list walking. No further runtime work needed."
+  },
+  {
+    "semanticModel": "WorldspaceRecord",
+    "recordCodes": [
+      "WRLD"
+    ],
+    "typedRuntimeReader": "RuntimeCellReader.ReadRuntimeWorldspace",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "parent world",
+        "climate",
+        "water",
+        "map data",
+        "bounds",
+        "default heights",
+        "flags",
+        "parent use flags",
+        "image space",
+        "music type",
+        "map offset scale/z"
+      ],
+      "derived": [
+        "cell membership from pCellMap",
+        "runtime cell-map-backed worldspace fallback when direct WRLD overlay is missing",
+        "cell-backed worldspace recovery from runtime cell worldspace signals",
+        "derived cell extents and bounds for partial worldspaces backed by linked cells",
+        "encounter zone from unanimous linked cell coverage"
+      ],
+      "esmOnly": [
+        "full child-group serialization (GRUP structure, not a runtime field)"
+      ]
+    },
+    "evidence": [
+      "RuntimeWorldCellLayoutProbe.Probe",
+      "RuntimeStructReader.ReadRuntimeWorldspace",
+      "RuntimeStructReader.ReadAllWorldspaceCellMaps",
+      "WorldRecordHandler.ParseWorldspaces",
+      "WorldRecordHandler.EnsureWorldspacesForCells",
+      "RuntimeCellReader.ReadWorldExtendedFields (cFlags, sParentUseFlags, pImageSpace, pMusicType, WorldMapOffsetData)",
+      "WorldRecordHandler.MergeWorldspace (7 new fields)"
+    ],
+    "confidence": "high",
+    "nextAction": "All WRLD runtime fields covered. Tier 2/3 fields (LOD, canopy shadow, map texture, fixed dimensions) are low-priority rendering data. No further runtime work needed."
+  },
+  {
+    "semanticModel": "PlacedReference",
+    "recordCodes": [
+      "REFR",
+      "ACHR",
+      "ACRE"
+    ],
+    "typedRuntimeReader": "RuntimeRefrReader.ReadRuntimeRefr",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay + map-marker projection",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "position",
+        "base form",
+        "radius",
+        "count",
+        "editor id",
+        "ownership",
+        "encounter zone",
+        "lock state",
+        "enable parent",
+        "persistent cell",
+        "linked ref",
+        "linked ref children",
+        "teleport target",
+        "map marker",
+        "starting position",
+        "package start location",
+        "merchant container ref",
+        "leveled-creature spawn refs"
+      ],
+      "derived": [
+        "cell assignment",
+        "destination cell linkage",
+        "starting world/cell when present"
+      ],
+      "esmOnly": [
+        "linked-ref keyword on runtime-only refs",
+        "runtime-transient extras (ExtraWorn 0x0C, ExtraReferenceHandle 0x0D, ExtraWornLeft 0x0E — no ESM equivalent)"
+      ]
+    },
+    "evidence": [
+      "RuntimeRefrReader.ReadRuntimeRefr",
+      "RuntimeRefrReader.ReadCount",
+      "RuntimeRefrReader.ReadEditorId",
+      "RuntimeStructReader.BuildRuntimeRefrExtraDataCensus",
+      "RuntimeRefrExtraDataBaselineTests.RuntimeRefrExtraBaselines_MatchObservedDumpResults",
+      "RuntimeDataEnricher.EnrichPlacedReferences",
+      "CellLinkageHandler.ToPlacedReference"
+    ],
+    "confidence": "high",
+    "nextAction": "All semantic REFR fields covered. Remaining unhandled extras are runtime-transient state (worn equipment, ref handles) with no ESM equivalent. No further runtime work needed."
+  },
+  {
+    "semanticModel": "LeveledListRecord",
+    "recordCodes": [
+      "LVLI",
+      "LVLN",
+      "LVLC"
+    ],
+    "typedRuntimeReader": "RuntimeCollectionReader.ReadRuntimeLeveledList",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "entries",
+        "chance none",
+        "flags",
+        "chance global"
+      ],
+      "derived": [
+        "use and distribution analysis"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeLeveledList",
+      "MiscCollectionHandler.ParseLeveledLists"
+    ],
+    "confidence": "high",
+    "nextAction": "Only extend if script-added leveled entries need dedicated semantic treatment."
+  },
+  {
+    "semanticModel": "GameSettingRecord",
+    "recordCodes": [
+      "GMST"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm typed parse; runtime generic fallback only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "typed setting values (float/int/string/bool determined by EditorId prefix)"
+      ]
+    },
+    "evidence": [
+      "MiscRecordHandler.ParseGameSettings",
+      "RuntimeGenericReader.ReadGenericRecord",
+      "PDB SettingT<GameSettingCollection>: 12 bytes — NOT a TESForm subclass, no FormID at +12, uValue is an untyped union, pKey is a pointer to setting name. ESM parser already extracts all values with correct typing."
+    ],
+    "confidence": "high",
+    "nextAction": "No typed runtime reader feasible — 12-byte non-TESForm struct with union value type. ESM parser fully covers GMST."
+  },
+  {
+    "semanticModel": "GlobalRecord",
+    "recordCodes": [
+      "GLOB"
+    ],
+    "typedRuntimeReader": "RuntimeGlobalReader.ReadRuntimeGlobal",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "value type (cType)",
+        "value (fValue)"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeGlobalReader.ReadRuntimeGlobal",
+      "MiscBasicTypeHandler.ParseGlobals (MergeRuntimeRecords 0x06)",
+      "PDB TESGlobal: 48 bytes, cType int8 at +40, fValue float32 at +44"
+    ],
+    "confidence": "high",
+    "nextAction": "All TESGlobal runtime fields covered. No further runtime work needed."
+  },
+  {
+    "semanticModel": "EnchantmentRecord",
+    "recordCodes": [
+      "ENCH"
+    ],
+    "typedRuntimeReader": "RuntimeMagicReader.ReadRuntimeEnchantment",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "enchant type",
+        "charge amount",
+        "enchant cost",
+        "flags",
+        "effects (EffectItem list walk with magnitude/area/duration/type/actorValue)"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeMagicReader.ReadRuntimeEnchantment",
+      "EffectRecordHandler.ParseEnchantments (MergeRuntimeRecords 0x13)",
+      "PDB EnchantmentItem: 84 bytes, EnchantmentItemData 16B at +68, BSSimpleList<EffectItem*> at +56, EffectItem 24B per entry"
+    ],
+    "confidence": "high",
+    "nextAction": "All EnchantmentItem runtime fields covered including full EffectItem data per effect. No further runtime work needed."
+  },
+  {
+    "semanticModel": "BaseEffectRecord",
+    "recordCodes": [
+      "MGEF"
+    ],
+    "typedRuntimeReader": "RuntimeMagicReader.ReadRuntimeBaseEffect",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "model path",
+        "icon",
+        "flags",
+        "base cost",
+        "associated item",
+        "magic school",
+        "resist value",
+        "archetype",
+        "actor value",
+        "light",
+        "projectile speed",
+        "effect shader",
+        "enchant effect",
+        "casting/bolt/hit/area sounds",
+        "CE enchant/barter factors",
+        "counter effects (BSSimpleList walk)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "description (lFileOffset-backed)",
+        "filter validation function/item pointers (code pointers, not data)"
+      ]
+    },
+    "evidence": [
+      "RuntimeMagicReader.ReadRuntimeBaseEffect",
+      "EffectRecordHandler.ParseBaseEffects (MergeRuntimeRecords 0x10)",
+      "PDB EffectSetting: 192 bytes, EffectSettingData 72B at +104 (all 18 fields mapped), BSSimpleList<EffectSetting*> counterEffects at +176",
+      "ESM parser also fixed: now extracts all 10 previously-missing DATA fields (light, projectile speed, effect shader, enchant effect, 4 sounds, 2 CE factors)"
+    ],
+    "confidence": "high",
+    "nextAction": "All EffectSetting runtime fields covered. ESM parser gap (10 missing DATA fields) also fixed. No further runtime work needed."
+  },
+  {
+    "semanticModel": "WeaponModRecord",
+    "recordCodes": [
+      "IMOD"
+    ],
+    "typedRuntimeReader": "RuntimeWeaponModReader.ReadRuntimeWeaponMod",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "model path",
+        "value",
+        "weight"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "description (lFileOffset-backed at +136)",
+        "icon path (TESTexture BSStringT at +112, already from ESM ICON)"
+      ]
+    },
+    "evidence": [
+      "RuntimeWeaponModReader.ReadRuntimeWeaponMod",
+      "MiscItemHandler.ParseWeaponMods (MergeRuntimeRecords 0x67)",
+      "PDB TESObjectIMOD: 192 bytes, FormType 0x67, TESFullName BSStringT at +68, TESModel BSStringT at +80, iValue uint32 at +144, fWeight float32 at +152"
+    ],
+    "confidence": "high",
+    "nextAction": "All TESObjectIMOD runtime fields covered. No further runtime work needed."
+  },
+  {
+    "semanticModel": "RecipeRecord",
+    "recordCodes": [
+      "RCPE"
+    ],
+    "typedRuntimeReader": "RuntimeRecipeReader.ReadRuntimeRecipe",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "required skill",
+        "required skill level",
+        "category FormID (pointer follow)",
+        "subcategory FormID (pointer follow)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "ingredient list (BSSimpleList<TESRecipeComponent*> at +76)",
+        "output list (BSSimpleList<TESRecipeComponent*> at +84)"
+      ]
+    },
+    "evidence": [
+      "RuntimeRecipeReader.ReadRuntimeRecipe",
+      "MiscItemHandler.ParseRecipes (MergeRuntimeRecords 0x6A)",
+      "PDB TESRecipe: 108 bytes, FormType 0x6A, TESFullName BSStringT at +44, RECIPE_DATA 16B at +52, pRecipeCat pointer at +100, pRecipeSubCat pointer at +104"
+    ],
+    "confidence": "high",
+    "nextAction": "All TESRecipe scalar fields covered. Ingredient/output BSSimpleLists are ESM-only (RCIL/RCOD subrecords cover these). No further runtime work needed."
+  },
+  {
+    "semanticModel": "RecipeCategoryRecord",
+    "recordCodes": [
+      "RCCT"
+    ],
+    "typedRuntimeReader": "RuntimeRecipeCategoryReader.ReadRuntimeRecipeCategory",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name (BSStringT at +44)",
+        "flags (RECIPE_CATEGORY_DATA 1B at +52)"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeRecipeCategoryReader.ReadRuntimeRecipeCategory",
+      "MiscBasicTypeHandler.ParseRecipeCategories (MergeRuntimeRecords 0x6B)",
+      "PDB TESRecipeCategory: 56 bytes, FormType 0x6B, TESFullName BSStringT at +44, RECIPE_CATEGORY_DATA 1B at +52"
+    ],
+    "confidence": "high",
+    "nextAction": "All TESRecipeCategory fields covered. No further runtime work needed."
+  },
+  {
+    "semanticModel": "ConstructibleObjectRecord",
+    "recordCodes": [
+      "COBJ"
+    ],
+    "typedRuntimeReader": "RuntimeConstructibleObjectReader.ReadRuntimeConstructibleObject",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "created item FormID (pCreatedItem pointer follow at +192)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "full name (TESFullName at +68)",
+        "model path (TESModel at +80)",
+        "texture hashes (TESModel MODT)",
+        "ingredient list (CNTO inline list — pRequiredItems is the materialized BGSListForm with anonymous FormID)",
+        "conditions (CTDA + CIS1/CIS2 — not stored as separate runtime field)",
+        "workbench keyword FormID (BNAM — stored elsewhere in BGSConstructibleObject)"
+      ]
+    },
+    "evidence": [
+      "RuntimeConstructibleObjectReader.ReadRuntimeConstructibleObject",
+      "MiscItemHandler.ParseConstructibleObjects (MergeRuntimeRecords 0x32)",
+      "PDB BGSConstructibleObject: 196 bytes, FormType 0x32, pRequiredItems (BGSListForm) at +188, pCreatedItem (TESBoundObject) at +192"
+    ],
+    "confidence": "high",
+    "nextAction": "Created item FormID covered. pRequiredItems is the materialized inline ingredient list (typically anonymous FormID 0), not parity-relevant. NOTE: Fallout: New Vegas uses RCPE/RCCT for recipes; COBJ has 0 records in the FNV main ESM. Reader is dormant on FNV data but forward-compatible with Fallout 4 dumps."
+  },
+  {
+    "semanticModel": "ChallengeRecord",
+    "recordCodes": [
+      "CHAL"
+    ],
+    "typedRuntimeReader": "RuntimeChallengeReader.ReadRuntimeChallenge",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "challenge type",
+        "threshold",
+        "flags",
+        "interval",
+        "values",
+        "script FormID"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "description (lFileOffset-backed at +56)",
+        "icon (TESTexture at +76, already from ESM ICON)"
+      ]
+    },
+    "evidence": [
+      "RuntimeChallengeReader.ReadRuntimeChallenge",
+      "MiscBasicTypeHandler.ParseChallenges (MergeRuntimeRecords 0x71)",
+      "PDB TESChallenge: 140 bytes, FormType 0x71, TESFullName BSStringT at +44, CHALLENGE_DATA 24B at +100, pFormScript pointer at +64"
+    ],
+    "confidence": "high",
+    "nextAction": "All TESChallenge runtime fields covered. No further runtime work needed."
+  },
+  {
+    "semanticModel": "ReputationRecord",
+    "recordCodes": [
+      "REPU"
+    ],
+    "typedRuntimeReader": "RuntimeReputationReader.ReadRuntimeReputation",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "positive value",
+        "negative value"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "texture/icon paths (TESTexture at +56, BGSMessageIcon at +68 — cosmetic, ESM ICON subrecord covers these)"
+      ]
+    },
+    "evidence": [
+      "RuntimeReputationReader.ReadRuntimeReputation",
+      "MiscBasicTypeHandler.ParseReputations (MergeRuntimeRecords 0x68)",
+      "PDB TESReputation: 96 bytes, FormType 0x68, TESFullName BSStringT at +44, fPositiveValue float32 at +84, fNegativeValue float32 at +88"
+    ],
+    "confidence": "high",
+    "nextAction": "All TESReputation runtime fields covered. No further runtime work needed."
+  },
+  {
+    "semanticModel": "ProjectileRecord",
+    "recordCodes": [
+      "PROJ"
+    ],
+    "typedRuntimeReader": "RuntimeEffectReader.ReadProjectilePhysics",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + full runtime enrichment",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "flags",
+        "gravity",
+        "speed",
+        "range",
+        "tracer chance",
+        "explosion proximity",
+        "explosion timer",
+        "muzzle flash duration",
+        "fade-out time",
+        "force",
+        "rotation xyz",
+        "bounce multiplier",
+        "sound level",
+        "light",
+        "muzzle flash light",
+        "explosion",
+        "active sound",
+        "countdown sound",
+        "deactivate sound",
+        "default weapon source",
+        "full name",
+        "model path"
+      ],
+      "derived": [
+        "weapon join"
+      ],
+      "esmOnly": [
+        "muzzle flash model (TESModel at +196, separate from main model)"
+      ]
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadProjectilePhysics (21 BGSProjectileData fields + 3 outer BGSProjectile fields)",
+      "CombatEffectHandler.ParseProjectiles (full 84-byte DATA subrecord)",
+      "CombatEffectHandler.EnrichProjectilesWithRuntime",
+      "RuntimeParityDumpIntegrationTests.RuntimeReader_OnAllDumps_ReadsProjectilePhysicsData: 100% decode rate across 5 dump families (93-112 PROJ per dump), speed 91-109, explosion 39-49, countdown 5-10, default weapon 13-17, rotation 12-96, bounce 9-96"
+    ],
+    "confidence": "high",
+    "nextAction": "All BGSProjectile fields fully investigated. MuzzleFlashModel (secondary TESModel at +196) is ESM-only subrecord NAM1 — not worth a runtime read. No further runtime work needed for PROJ."
+  },
+  {
+    "semanticModel": "ExplosionRecord",
+    "recordCodes": [
+      "EXPL"
+    ],
+    "typedRuntimeReader": "RuntimeExplosionReader.ReadRuntimeExplosion",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "model path",
+        "force",
+        "damage",
+        "radius",
+        "light FormID",
+        "sound FormIDs",
+        "flags",
+        "IS radius",
+        "impact data set FormID",
+        "enchantment FormID"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeExplosionReader.ReadRuntimeExplosion",
+      "CombatEffectHandler.ParseExplosions (MergeRuntimeRecords 0x51)",
+      "PDB BGSExplosion: 184 bytes, FormType 0x51, TESFullName BSStringT at +68, TESModel BSStringT at +80, TESEnchantableForm ptr at +104, BGSExplosionData 52B at +132 (9 fields: force/damage/radius/light/sound1/flags/ISRadius/impactDataSet/sound2)"
+    ],
+    "confidence": "high",
+    "nextAction": "All BGSExplosion runtime fields covered. No further runtime work needed."
+  },
+  {
+    "semanticModel": "MessageRecord",
+    "recordCodes": [
+      "MESG"
+    ],
+    "typedRuntimeReader": "RuntimeMessageReader.ReadRuntimeMessage",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "flags (MessageBox/AutoDisplay)",
+        "display time"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "description (lFileOffset-backed at +56)",
+        "button text (BSSimpleList<MESSAGEBOX_BUTTON*> at +64, from ESM ITXT)",
+        "icon (pIcon pointer at +60, from ESM ICON)",
+        "quest FormID (from ESM QNAM)"
+      ]
+    },
+    "evidence": [
+      "RuntimeMessageReader.ReadRuntimeMessage",
+      "TextRecordHandler.ParseMessages (MergeRuntimeRecords 0x62)",
+      "PDB BGSMessage: 80 bytes, FormType 0x62, TESFullName BSStringT at +44, iFlags uint32 at +72, iDisplayTime uint32 at +76"
+    ],
+    "confidence": "high",
+    "nextAction": "All BGSMessage scalar runtime fields covered. Description and buttons are ESM-only. No further runtime work needed."
+  },
+  {
+    "semanticModel": "ClassRecord",
+    "recordCodes": [
+      "CLAS"
+    ],
+    "typedRuntimeReader": "RuntimeClassReader.ReadRuntimeClass",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "icon",
+        "tag skills (4×int32)",
+        "flags",
+        "barter/services flags",
+        "training skill",
+        "training level",
+        "SPECIAL attribute weights (7 bytes)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "description (lFileOffset-backed)"
+      ]
+    },
+    "evidence": [
+      "RuntimeClassReader.ReadRuntimeClass",
+      "MiscBasicTypeHandler.ParseClasses (MergeRuntimeRecords 0x07)",
+      "PDB TESClass: 112 bytes, CLASS_DATA 28B at +84, TESAttributes 7B at +80, TESFullName BSStringT at +44, TESTexture BSStringT at +64"
+    ],
+    "confidence": "high",
+    "nextAction": "All TESClass runtime fields covered. No further runtime work needed."
+  },
+  {
+    "semanticModel": "FormListRecord",
+    "recordCodes": [
+      "FLST"
+    ],
+    "typedRuntimeReader": "RuntimeCollectionReader.ReadRuntimeFormList",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "form ids"
+      ],
+      "derived": [
+        "use analysis"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeFormList",
+      "MiscCollectionHandler.ParseFormLists"
+    ],
+    "confidence": "high",
+    "nextAction": "Keep script-added list-count handling as a future enhancement only."
+  },
+  {
+    "semanticModel": "ActivatorRecord",
+    "recordCodes": [
+      "ACTI"
+    ],
+    "typedRuntimeReader": "RuntimeWorldObjectReader.ReadRuntimeActivator",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "name",
+        "model",
+        "script",
+        "sound"
+      ],
+      "derived": [
+        "use analysis"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeActivator",
+      "MiscWorldObjectHandler.ParseActivators"
+    ],
+    "confidence": "high",
+    "nextAction": "Only extend if destructible or loop-sound semantics become important."
+  },
+  {
+    "semanticModel": "LightRecord",
+    "recordCodes": [
+      "LIGH"
+    ],
+    "typedRuntimeReader": "RuntimeWorldObjectReader.ReadRuntimeLight",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "light data",
+        "model",
+        "bounds"
+      ],
+      "derived": [
+        "use analysis"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeLight",
+      "MiscWorldObjectHandler.ParseLights"
+    ],
+    "confidence": "high",
+    "nextAction": "No further work planned unless dump-only light flags prove missing."
+  },
+  {
+    "semanticModel": "DoorRecord",
+    "recordCodes": [
+      "DOOR"
+    ],
+    "typedRuntimeReader": "RuntimeWorldObjectReader.ReadRuntimeDoor",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "name",
+        "model",
+        "script",
+        "sounds"
+      ],
+      "derived": [
+        "teleport linkage"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeDoor",
+      "MiscWorldObjectHandler.ParseDoors"
+    ],
+    "confidence": "high",
+    "nextAction": "Keep teleport-cell resolution in the semantic layer."
+  },
+  {
+    "semanticModel": "StaticRecord",
+    "recordCodes": [
+      "STAT"
+    ],
+    "typedRuntimeReader": "RuntimeWorldObjectReader.ReadRuntimeStatic",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "model",
+        "bounds"
+      ],
+      "derived": [
+        "use analysis"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeStatic",
+      "MiscStaticObjectHandler.ParseStatics"
+    ],
+    "confidence": "high",
+    "nextAction": "No additional runtime work planned."
+  },
+  {
+    "semanticModel": "StaticCollectionRecord",
+    "recordCodes": [
+      "SCOL"
+    ],
+    "typedRuntimeReader": "RuntimeStaticCollectionReader.ReadRuntimeStaticCollection",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "edid",
+        "baked collection model (TESModel.cModel @68)",
+        "bounds (TESBoundObject.BoundData @52)",
+        "per-part ONAM base STAT FormID (esm only)",
+        "per-part DATA placements (esm only)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "per-part ONAM/DATA part list — BGSStaticCollection ends at structSize 96 with no part-list field, so parts are never runtime-recoverable"
+      ]
+    },
+    "evidence": [
+      "RuntimeStaticCollectionReader.ReadRuntimeStaticCollection",
+      "MiscStaticObjectHandler.ParseStaticCollections (MergeRuntimeOverlayRecords 0x21)",
+      "ScolEncoder.EncodeNew emits part-less when a baked MODL exists (USER RULING 2026-08-05)"
+    ],
+    "confidence": "high",
+    "nextAction": "Part list is structurally unrecoverable at runtime; the baked model is what the engine draws, which is enough for a placed ref to resolve."
+  },
+  {
+    "semanticModel": "PlaceableWaterRecord",
+    "recordCodes": [
+      "PWAT"
+    ],
+    "typedRuntimeReader": "RuntimePlaceableWaterReader.ReadRuntimePlaceableWater",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "edid",
+        "model (TESModel.cModel @68)",
+        "bounds (TESBoundObject.BoundData @52)",
+        "parent WATR FormID (BGSPlaceableWater.Data +4 pointer, WATR-type-checked)",
+        "flags (BGSPlaceableWater.Data +0)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "model texture data (MODT)"
+      ]
+    },
+    "evidence": [
+      "RuntimePlaceableWaterReader.ReadRuntimePlaceableWater",
+      "MiscStaticObjectHandler.ParsePlaceableWaters (MergeRuntimeOverlayRecords 0x23)",
+      "dmp struct-layout on xex21: 10/10 PWATs resolve a type-checked WATR at struct offset 92 with semantically matching names"
+    ],
+    "confidence": "high",
+    "nextAction": "The generic reader cannot do this — it hex-dumps the 8-byte Data struct instead of walking the pointer inside, which is why PWAT emitted from neither pipeline before the typed reader."
+  },
+  {
+    "semanticModel": "TreeRecord",
+    "recordCodes": [
+      "TREE"
+    ],
+    "typedRuntimeReader": "RuntimeTreeReader.ReadRuntimeTree",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay (runtime is the only source — the DMP corpus carries zero carved ESM TREE bytes)",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "edid",
+        "model (TESModel.cModel @68)",
+        "leaf texture / ICON (TESTexture.TextureName @92)",
+        "bounds (TESBoundObject.BoundData @52)",
+        "SpeedTree seeds / SNAM (NiTPrimitiveArray @108: m_pBase +4, m_usSize +10)",
+        "leaf-animation data / CNAM (OBJ_TREE @124, 7 floats + int32 iCanopyShadowRadius @+20)",
+        "billboard dimensions / BNAM (NiPoint2 @156)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "model texture data (MODT) — TESModel keeps a live TextureList, not the packed blob"
+      ]
+    },
+    "evidence": [
+      "RuntimeTreeReader.ReadRuntimeTree",
+      "MiscStaticObjectHandler.ParseTrees (MergeRuntimeOverlayRecords 0x25)",
+      "PDB Fallout_Release_MemDebug.pdb: OBJ_TREE = LF_STRUCTURE 0x0002dbf9 (Size 32); NiTArray<unsigned int,...> = LF_FIELDLIST 0xf92c (vfptr@0, m_pBase@4, m_usMaxSize@8, m_usSize@10, m_usESize@12, m_usGrowBy@14); NiPoint2 = LF_CLASS 0x000116bc (Size 8)",
+      "dmp struct-layout on xex44: WhiteOak01 (0x0003C356) reports m_usSize 5 and its payload at VA 0x5105B540 reads 301409/363767/554776/603335/844198, byte-identical to the SNAM of the same record in Sample/ESM/360_proto/FalloutNV.esm; all other TREEs report size 1",
+      "iCanopyShadowRadius decodes as int 512 on OasisElm01; as a float those bytes are a ~7e-43 denormal"
+    ],
+    "confidence": "high",
+    "nextAction": "None — layout is PDB-derived and cross-checked against both the runtime dump and the 360 proto ESM oracle."
+  },
+  {
+    "semanticModel": "FurnitureRecord",
+    "recordCodes": [
+      "FURN"
+    ],
+    "typedRuntimeReader": "RuntimeWorldObjectReader.ReadRuntimeFurniture",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "name",
+        "model",
+        "script",
+        "marker flags"
+      ],
+      "derived": [
+        "use analysis"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeFurniture",
+      "MiscStaticObjectHandler.ParseFurniture"
+    ],
+    "confidence": "high",
+    "nextAction": "Only extend if furniture marker-slot detail needs more decoding."
+  },
+  {
+    "semanticModel": "PackageRecord",
+    "recordCodes": [
+      "PACK"
+    ],
+    "typedRuntimeReader": "RuntimePackageReader.ReadRuntimePackage",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "schedule",
+        "targets",
+        "flags"
+      ],
+      "derived": [
+        "spawn resolution"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimePackage",
+      "AiRecordHandler.ParsePackages"
+    ],
+    "confidence": "high",
+    "nextAction": "Keep package-to-spawn resolution in the semantic layer."
+  },
+  {
+    "semanticModel": "GenericEsmRecord",
+    "recordCodes": [
+      "MSTT",
+      "TACT",
+      "CAMS",
+      "ANIO",
+      "IPDS",
+      "EFSH",
+      "RGDL",
+      "LSCR",
+      "ASPC",
+      "MSET",
+      "CHIP",
+      "CSNO",
+      "DOBJ",
+      "ADDN",
+      "IDLM"
+    ],
+    "typedRuntimeReader": "RuntimeGenericReader.ReadGenericRecord",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "runtime generic fallback for non-specialized forms; ASPC is dispatched to RuntimeAcousticSpaceReader from inside ReadGenericRecord and still returns a GenericEsmRecord",
+    "status": "generic-only",
+    "highValueFields": {
+      "exact": [
+        "generic readable fields"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "typed semantics"
+      ]
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadGenericRecord",
+      "RecordParserContext.MergeRuntimeGenericRecords",
+      "ASPC exception: RuntimeAcousticSpaceProbe + RuntimeAcousticSpaceReader recover the per-build BGSAcousticSpace layout, which the generic shift probe mis-fitted as +4"
+    ],
+    "confidence": "high",
+    "nextAction": "Promote individual form types out of GenericEsmRecord only after typed readers are proven. PWAT left 2026-08-06 and TREE 2026-08-07; both had required subrecords inside embedded structs the generic reader will not walk."
+  },
+  {
+    "semanticModel": "SoundRecord",
+    "recordCodes": [
+      "SOUN"
+    ],
+    "typedRuntimeReader": "RuntimeSoundReader.ReadRuntimeSound",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "sound file path",
+        "min/max attenuation distance",
+        "static attenuation",
+        "flags",
+        "start/end time",
+        "random percent chance"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeSoundReader.ReadRuntimeSound",
+      "MiscEnvironmentHandler.ParseSounds (MergeRuntimeRecords 0x0D)",
+      "PDB TESSound: 116 bytes, FormType 0x0D, TESSoundFile.cSoundFile BSStringT at +68, SOUND_DATA 36B at +76, cRandomPercentChance int8 at +112"
+    ],
+    "confidence": "high",
+    "nextAction": "All TESSound runtime fields covered. No further runtime work needed."
+  },
+  {
+    "semanticModel": "TextureSetRecord",
+    "recordCodes": [
+      "TXST"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm typed parse; runtime generic fallback only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "texture paths (TX00-TX05 stored as NiTexture* pointer array at runtime, not string paths)",
+        "flags (iFlags at +160, already captured from ESM DNAM)"
+      ]
+    },
+    "evidence": [
+      "MiscEnvironmentHandler.ParseTextureSets",
+      "RuntimeGenericReader.ReadGenericRecord",
+      "PDB BGSTextureSet: 192 bytes, pTextures at +72 (opaque pointer array to NiTexture objects), pDecalData pointer at +156, iFlags uint16 at +160. Texture paths exist only in ESM subrecords TX00-TX05; runtime stores NiTexture* pointers instead."
+    ],
+    "confidence": "high",
+    "nextAction": "No typed runtime reader beneficial — texture paths are NiTexture* pointers at runtime (not strings), and iFlags is already captured from ESM DNAM subrecord."
+  },
+  {
+    "semanticModel": "MaterialSwapRecord",
+    "recordCodes": [
+      "MSWP"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm typed parse only (FO4/FO76 type; does not exist in FNV)",
+    "status": "esm-only",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "BNAM->SNAM material path substitutions (stored normalized to the materials\\-relative lowercase form)",
+        "editor id"
+      ]
+    },
+    "evidence": [
+      "TerrainTextureRecordHandler.ParseMaterialSwaps",
+      "MSWP 0x00112D06 'HitTechMetalPanel02Full': BNAM 'Architecture\\Buildings\\HighTech\\HitTechMetalPanel_01.BGSM' -> SNAM 'architecture\\buildings\\hightech\\HitTechFullPanels_02.BGSM'"
+    ],
+    "confidence": "high",
+    "nextAction": "None - MSWP is FO4/FO76-only, so no FNV runtime dump can ever carry one; the ESM parse is complete."
+  },
+  {
+    "semanticModel": "LandscapeTextureRecord",
+    "recordCodes": [
+      "LTEX"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm typed parse; runtime generic fallback only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "editor id",
+        "icon paths",
+        "texture set reference",
+        "friction/restitution/material bytes",
+        "specular exponent",
+        "grass references"
+      ]
+    },
+    "evidence": [
+      "MiscEnvironmentHandler.ParseLandscapeTextures",
+      "LtexEncoder.EncodeNew",
+      "PDB TESLandTexture: 56 bytes, FormType 0x12. LAND texture layers need LTEX FormID preservation, while terrain texture/material authoring data remains plugin-authored and is captured from ESM/LTEX subrecords."
+    ],
+    "confidence": "high",
+    "nextAction": "Keep LTEX as ESM/plugin-authored support data unless runtime dumps expose useful additional TESLandTexture fields beyond the serialized subrecords."
+  },
+  {
+    "semanticModel": "GrassRecord",
+    "recordCodes": [
+      "GRAS"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm typed parse; runtime generic fallback only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "model path",
+        "density",
+        "min/max slope",
+        "unit from water",
+        "water op",
+        "position range",
+        "height range",
+        "color range",
+        "wave period",
+        "flags"
+      ]
+    },
+    "evidence": [
+      "MiscEnvironmentHandler.ParseGrass",
+      "GrasEncoder.EncodeNew",
+      "TXST DODT + GRAS pipeline commit f8011bc0 — GRAS records are placement metadata referenced by LTEX, fully captured from ESM MODL/DATA subrecords. No runtime mutation observed across MemDebug/Debug/xex* dumps."
+    ],
+    "confidence": "high",
+    "nextAction": "Keep GRAS as ESM-only support data unless a dump exposes runtime-only grass density / wave-period adjustments."
+  },
+  {
+    "semanticModel": "ArmaRecord",
+    "recordCodes": [
+      "ARMA"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm typed parse; runtime generic fallback only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "biped model lists",
+        "value",
+        "weight",
+        "enchantment"
+      ]
+    },
+    "evidence": [
+      "MiscItemHandler.ParseArmorAddons",
+      "RuntimeGenericReader.ReadGenericRecord",
+      "PDB TESObjectARMA: 416 bytes — pure composition of base classes (TESBipedModelForm, TESEnchantableForm, TESValueForm, etc.) with 0 own-class fields. All fields are inherited and already covered by ESM subrecords."
+    ],
+    "confidence": "high",
+    "nextAction": "No typed runtime reader needed — ARMA is purely composite with no own-class fields."
+  },
+  {
+    "semanticModel": "WaterRecord",
+    "recordCodes": [
+      "WATR"
+    ],
+    "typedRuntimeReader": "RuntimeWaterReader.ReadRuntimeWater",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name (BSStringT at +44)",
+        "damage (sAttackDamage uint16 at +56)",
+        "opacity (cAlpha uint8 at +128)",
+        "sound FormID (pWaterSound pointer at +140)",
+        "WaterShaderData 196B at +148 (shared schema with ESM DNAM)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "noise normal map (NiPointer<BSRenderedTexture> — runtime render object only)",
+        "spell pointer (pSpellItem at +392 — not exposed by model)",
+        "pWaterWeatherControl (unknown PDB type 0x000270E8)"
+      ]
+    },
+    "evidence": [
+      "RuntimeWaterReader.ReadRuntimeWater",
+      "MiscEnvironmentHandler.ParseWater (MergeRuntimeRecords 0x4E)",
+      "PDB TESWaterForm: 420 bytes, FormType 0x4E, TESFullName BSStringT at +44, sAttackDamage uint16 at +56, cAlpha uint8 at +128, pWaterSound pointer at +140, WaterShaderData 196B at +148"
+    ],
+    "confidence": "high",
+    "nextAction": "Core fields covered. pSpellItem and pRemappedWaterForm pointers exist but ESM model doesn't expose those slots — could be added later if needed."
+  },
+  {
+    "semanticModel": "BodyPartDataRecord",
+    "recordCodes": [
+      "BPTD"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm typed parse; runtime generic fallback only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "body part array (pPartArray — opaque type, PDB cannot resolve)",
+        "ragdoll link (pRagdollData pointer)"
+      ]
+    },
+    "evidence": [
+      "MiscItemHandler.ParseBodyPartData",
+      "RuntimeGenericReader.ReadGenericRecord",
+      "PDB BGSBodyPartData: 132 bytes, 2 own-class fields. pPartArray has unknown PDB type (opaque). pRagdollData is a BGSRagdoll pointer. ESM NAM5 subrecord extracts texture count."
+    ],
+    "confidence": "high",
+    "nextAction": "No typed runtime reader feasible — pPartArray type is unresolvable from PDB. Would require Ghidra decompilation of BGSBodyPartData accessors."
+  },
+  {
+    "semanticModel": "ActorValueInfoRecord",
+    "recordCodes": [
+      "AVIF"
+    ],
+    "typedRuntimeReader": "RuntimeActorReader.ReadRuntimeAvif",
+    "genericLayoutAvailable": false,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "identity",
+        "full name"
+      ],
+      "derived": [
+        "actor value resolver index"
+      ],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeStructReader.ReadRuntimeAvif",
+      "MiscGameSystemHandler.ParseActorValueInfos"
+    ],
+    "confidence": "high",
+    "nextAction": "Keep AV-code ordering logic in the semantic layer."
+  },
+  {
+    "semanticModel": "CombatStyleRecord",
+    "recordCodes": [
+      "CSTY"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm typed parse; runtime generic fallback only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "SimpleCombatStyleData (64B)",
+        "CombatStyleData (92B)",
+        "AdvancedCombatStyleData (84B)"
+      ]
+    },
+    "evidence": [
+      "MiscGameSystemHandler.ParseCombatStyles",
+      "RuntimeGenericReader.ReadGenericRecord",
+      "PDB TESCombatStyle: 280 bytes, 3 own-class fields — all opaque nested structs (SimpleData 64B, Data 92B, AdvancedData 84B). ESM CSTD/CSAD/CSSD subrecords already decompose these via schema."
+    ],
+    "confidence": "high",
+    "nextAction": "No typed runtime reader needed — ESM schema parsing already extracts all combat style parameters."
+  },
+  {
+    "semanticModel": "LightingTemplateRecord",
+    "recordCodes": [
+      "LGTM"
+    ],
+    "typedRuntimeReader": "RuntimeLightingTemplateReader.ReadRuntimeLightingTemplate",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "INTERIOR_DATA (AmbientColor, DirectionalColor, FogColor, FogNear/Far/Power/ClipDist, DirectionalRotationXY/Z, DirectionalFade)"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeLightingTemplateReader.ReadRuntimeLightingTemplate",
+      "MiscGameSystemHandler.ParseLightingTemplates (MergeRuntimeRecords 0x65)",
+      "PDB BGSLightingTemplate: 84 bytes, FormType 0x65, INTERIOR_DATA 44B at +40 (first 40B match ESM DATA schema)"
+    ],
+    "confidence": "high",
+    "nextAction": "All INTERIOR_DATA fields covered via shared SubrecordDataReader schema. No further runtime work needed."
+  },
+  {
+    "semanticModel": "NavMeshRecord",
+    "recordCodes": [
+      "NAVM"
+    ],
+    "typedRuntimeReader": "RuntimeNavMeshReader.ReadRuntimeNavMesh",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "parent cell (pointer follow)",
+        "vertex count (BSSimpleArray)",
+        "triangle count (BSSimpleArray)",
+        "door portal count (BSSimpleArray)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "full vertex/triangle/edge geometry (per-element arrays — engine refines mesh at load, so per-element parity isn't meaningful)"
+      ]
+    },
+    "evidence": [
+      "RuntimeNavMeshReader.ReadRuntimeNavMesh",
+      "MiscGameSystemHandler.ParseNavMeshes (MergeRuntimeRecords 0x43)",
+      "PDB NavMesh: 280 bytes, FormType 0x43, pParentCell at +52, Vertices BSSimpleArray at +56 (count at +64), Triangles BSSimpleArray at +72 (count at +80), DoorPortals BSSimpleArray at +104 (count at +112). BSSimpleArray layout: data ptr +0, capacity +4, count +8, reserved +12."
+    ],
+    "confidence": "high",
+    "nextAction": "Tier-1 fields covered (cell link + array counts). Per-element geometry remains ESM-sufficient — runtime navmesh diverges from ESM by design (engine rebakes mesh on load). Consider walking the per-element arrays only if AI pathfinding analysis is needed."
+  },
+  {
+    "semanticModel": "WeatherRecord",
+    "recordCodes": [
+      "WTHR"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm typed parse; runtime generic fallback only",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "cloud layer data (8 opaque fields)",
+        "color arrays",
+        "fog parameters",
+        "HDR data",
+        "precipitation model",
+        "image space parameter mods"
+      ]
+    },
+    "evidence": [
+      "MiscEnvironmentHandler.ParseWeather",
+      "RuntimeGenericReader.ReadGenericRecord",
+      "PDB TESWeather: 900 bytes (largest struct), 12 own-class fields — 8 are opaque/unknown types (cloud textures, color arrays, fog data, HDR data). Would require extensive Ghidra decompilation to map the internal array layouts."
+    ],
+    "confidence": "high",
+    "nextAction": "No typed runtime reader feasible — 8 of 12 own-class fields have unknown/opaque PDB types. The 900B struct is mostly undocumented internal rendering data."
+  },
+  {
+    "semanticModel": "ClimateRecord",
+    "recordCodes": [
+      "CLMT"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm typed parse; no runtime overlay",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "sun + sun-glare texture paths (FNAM/GNAM)",
+        "celestial model (MODL)",
+        "weather list + chances (WLST)",
+        "sunrise/sunset/volatility/moon timing (TNAM)"
+      ]
+    },
+    "evidence": [
+      "MiscEnvironmentHandler.ParseClimate",
+      "Atmosphere roadmap P2a: promoted from GenericEsmRecord to a typed model so the viewer's AtmosphereState can read the worldspace climate's weather list + sun timing. All fields are plugin-authored CLMT subrecords; no runtime TESClimate mutation is consumed."
+    ],
+    "confidence": "high",
+    "nextAction": "Keep CLMT as ESM-only support data. A typed runtime TESClimate reader is only needed if runtime sun-angle / weather-transition state must be captured (atmosphere P2b reads that from the decompile, not a runtime struct)."
+  },
+  {
+    "semanticModel": "ImageSpaceRecord",
+    "recordCodes": [
+      "IMGS"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm typed parse; no runtime overlay",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [],
+      "derived": [],
+      "esmOnly": [
+        "HDR block (eye adapt, TargetLUM/UpperLUMClamp, bright scale/clamp)",
+        "cinematic (saturation/contrast+pivot/brightness)",
+        "tint color + amount"
+      ]
+    },
+    "evidence": [
+      "MiscEnvironmentHandler.ParseImageSpaces",
+      "docs/research/fnv_engine_hdr_imagespace.md: FO3/FNV single DNAM (152B v>=10 / 132B older, engine TESImageSpace::Load branches on size); cell XCIM / worldspace INAM select it; viewer tonemap stage consumes the values"
+    ],
+    "confidence": "high",
+    "nextAction": "Keep IMGS as ESM-only support data. Weather per-band IMAD modifiers are the follow-up (Sky::UpdateHDRValues band blend)."
+  },
+  {
+    "semanticModel": "ImageSpaceModifierRecord",
+    "recordCodes": [
+      "IMAD"
+    ],
+    "typedRuntimeReader": "RuntimeImageSpaceModifierReader.ReadRuntimeImageSpaceModifier",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm typed parse + append-only typed runtime recovery",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "animatable duration/flag",
+        "21 ordered multiply/add parameter timelines",
+        "scalar and tint/fade color timelines",
+        "final-layout intro/outro sound references",
+        "canonical ordered reconstructed subrecords"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "unknown raw subrecords and byte-exact raw ordering when an ESM record exists"
+      ]
+    },
+    "evidence": [
+      "MiscEnvironmentHandler.ParseImageSpaceModifiers",
+      "RuntimeImageSpaceModifierReader.ReadRuntimeImageSpaceModifier",
+      "xex21/xex22 Release Beta 0x740 layout and August MemDebug PDB 0x748 layout"
+    ],
+    "confidence": "high",
+    "nextAction": "Retain raw-record precedence and add another runtime layout only with matching PDB/decompile and corpus evidence."
+  },
+  {
+    "semanticModel": "EyesRecord",
+    "recordCodes": [
+      "EYES"
+    ],
+    "typedRuntimeReader": "RuntimeCharacterAppearanceReader.ReadRuntimeEyes",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "texture path",
+        "flags (playable)"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeCharacterAppearanceReader.ReadRuntimeEyes",
+      "MiscBasicTypeHandler.ParseEyes (MergeRuntimeRecords 0x0B)",
+      "PDB TESEyes: 68 bytes, FormType 0x0B, TESFullName BSStringT at +44, TextureName BSStringT at +56, cFlags int8 at +64"
+    ],
+    "confidence": "high",
+    "nextAction": "All TESEyes runtime fields covered. No further runtime work needed."
+  },
+  {
+    "semanticModel": "HairRecord",
+    "recordCodes": [
+      "HAIR"
+    ],
+    "typedRuntimeReader": "RuntimeCharacterAppearanceReader.ReadRuntimeHair",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name",
+        "model path",
+        "texture path",
+        "flags (playable)"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeCharacterAppearanceReader.ReadRuntimeHair",
+      "MiscBasicTypeHandler.ParseHair (MergeRuntimeRecords 0x0A)",
+      "PDB TESHair: 92 bytes, FormType 0x0A, TESFullName BSStringT at +44, cModel BSStringT at +56, TextureName BSStringT at +80, cFlags int8 at +88"
+    ],
+    "confidence": "high",
+    "nextAction": "All TESHair runtime fields covered. No further runtime work needed."
+  },
+  {
+    "semanticModel": "HeadPartRecord",
+    "recordCodes": [
+      "HDPT"
+    ],
+    "typedRuntimeReader": "RuntimeHeadPartReader.ReadRuntimeHeadPart",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name (BSStringT at +44)",
+        "model path (BSStringT at +56)",
+        "flags (int8 at +84)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "extra parts list (HNAM FormIDs — BSSimpleList<BGSHeadPart*> at +88, not walked)"
+      ]
+    },
+    "evidence": [
+      "RuntimeHeadPartReader.ReadRuntimeHeadPart",
+      "MiscBasicTypeHandler.ParseHeadParts (MergeRuntimeRecords 0x09)",
+      "PDB BGSHeadPart: 96 bytes, FormType 0x09"
+    ],
+    "confidence": "high",
+    "nextAction": "Core fields covered. Extra parts list walking is low-value."
+  },
+  {
+    "semanticModel": "VoiceTypeRecord",
+    "recordCodes": [
+      "VTYP"
+    ],
+    "typedRuntimeReader": "RuntimeVoiceTypeReader.ReadRuntimeVoiceType",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "flags (VOICE_TYPE_DATA byte at +40 — bit 0 default-dialogue, bit 1 female)"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeVoiceTypeReader.ReadRuntimeVoiceType",
+      "MiscBasicTypeHandler.ParseVoiceTypes (MergeRuntimeRecords 0x5D)",
+      "PDB BGSVoiceType: 44 bytes, FormType 0x5D, Data 1B at +40"
+    ],
+    "confidence": "high",
+    "nextAction": "All BGSVoiceType fields covered. No further runtime work needed."
+  },
+  {
+    "semanticModel": "MenuIconRecord",
+    "recordCodes": [
+      "MICN"
+    ],
+    "typedRuntimeReader": "RuntimeMenuIconReader.ReadRuntimeMenuIcon",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "icon path (TextureName BSStringT at +44)"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeMenuIconReader.ReadRuntimeMenuIcon",
+      "MiscBasicTypeHandler.ParseMenuIcons (MergeRuntimeRecords 0x05)",
+      "PDB BGSMenuIcon: 52 bytes, FormType 0x05, single own-class field"
+    ],
+    "confidence": "high",
+    "nextAction": "All BGSMenuIcon fields covered. No further runtime work needed."
+  },
+  {
+    "semanticModel": "LoadScreenTypeRecord",
+    "recordCodes": [
+      "LSCT"
+    ],
+    "typedRuntimeReader": "RuntimeLoadScreenTypeReader.ReadRuntimeLoadScreenType",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "LoadScreenType_Data 88B (Type/X/Y/Width/Height/Orientation/Font1/FontColor1RGB/FontAlignment1/Font2/FontColor2RGB/Stats — full 22-field schema)"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeLoadScreenTypeReader.ReadRuntimeLoadScreenType",
+      "MiscEnvironmentHandler.ParseLoadScreenTypes (MergeRuntimeRecords 0x6E)",
+      "PDB TESLoadScreenType: 128 bytes, FormType 0x6E, LoadScreenType_Data 88B at +40 (shared SubrecordDataReader schema with ESM DATA)"
+    ],
+    "confidence": "high",
+    "nextAction": "All TESLoadScreenType fields covered via shared schema. No further runtime work needed."
+  },
+  {
+    "semanticModel": "IdleAnimationRecord",
+    "recordCodes": [
+      "IDLE"
+    ],
+    "typedRuntimeReader": "RuntimeIdleAnimationReader.ReadRuntimeIdleAnimation",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "model path (cModel at +44)",
+        "IDLE_DATA byte fields (AnimData/LoopMin/LoopMax/ReplayDelay/FlagsEx at +72)",
+        "parent idle FormID (pParentIdle pointer at +84)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "previous idle FormID (ANAM second slot — runtime doesn't separate parent vs prev)",
+        "condition count (CTDA — runtime conditions are state-only)"
+      ]
+    },
+    "evidence": [
+      "RuntimeIdleAnimationReader.ReadRuntimeIdleAnimation",
+      "AiRecordHandler.ParseIdleAnimations (MergeRuntimeRecords 0x48)",
+      "PDB TESIdleForm: 92 bytes, FormType 0x48"
+    ],
+    "confidence": "high",
+    "nextAction": "Core fields covered. ANAM previous-idle is ESM-only convention."
+  },
+  {
+    "semanticModel": "CameraPathRecord",
+    "recordCodes": [
+      "CPTH"
+    ],
+    "typedRuntimeReader": "RuntimeCameraPathReader.ReadRuntimeCameraPath",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "PATH_DATA byte (flags at +56)",
+        "parent path FormID (pParentPath pointer at +64)",
+        "previous path FormID (pPrevPath pointer at +68)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "camera shot list (SNAM FormIDs — runtime BSSimpleList not walked)",
+        "condition count"
+      ]
+    },
+    "evidence": [
+      "RuntimeCameraPathReader.ReadRuntimeCameraPath",
+      "WorldRecordHandler.ParseCameraPaths (MergeRuntimeRecords 0x5C)",
+      "PDB BGSCameraPath: 72 bytes, FormType 0x5C"
+    ],
+    "confidence": "high",
+    "nextAction": "Core fields covered. Shot list walking is low-priority."
+  },
+  {
+    "semanticModel": "ImpactDataRecord",
+    "recordCodes": [
+      "IPCT"
+    ],
+    "typedRuntimeReader": "RuntimeImpactDataReader.ReadRuntimeImpactData",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "model path (cModel at +44)",
+        "decal texture set FormID (pDecalTextureSet at +88)",
+        "sound 1/2 FormIDs (pSound1/pSound2 at +92/+96)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "IMPACT_DATA_DATA 24B numeric tuning (decal min size, depth, scale, etc.)",
+        "DecalData 36B at +100 (color/alpha)"
+      ]
+    },
+    "evidence": [
+      "RuntimeImpactDataReader.ReadRuntimeImpactData",
+      "CombatEffectHandler.ParseImpactData (MergeRuntimeRecords 0x5E)",
+      "PDB BGSImpactData: 136 bytes, FormType 0x5E"
+    ],
+    "confidence": "high",
+    "nextAction": "Identity + reference fields covered. Numeric tuning blocks (DATA/DODT) could be added via shared schema if parity needed."
+  },
+  {
+    "semanticModel": "AudioLocationControllerRecord",
+    "recordCodes": [
+      "ALOC"
+    ],
+    "typedRuntimeReader": "RuntimeAudioLocationControllerReader.ReadRuntimeAudioLocationController",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name (BSStringT at +44)",
+        "timer uint32s (LocationDelay/LayerTime/LoopTime/MediaStartTime at +52..+64)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "12+ FormID-referenced media sets / sounds (HNAM/ZNAM/XNAM/YNAM/etc. — runtime stores resolved pointers but the 'configured' set differs from currently-playing)"
+      ]
+    },
+    "evidence": [
+      "RuntimeAudioLocationControllerReader.ReadRuntimeAudioLocationController",
+      "MiscEnvironmentHandler.ParseAudioLocationControllers (MergeRuntimeRecords 0x70)",
+      "PDB MediaLocationController: 200 bytes, FormType 0x70 — boolean state fields (bIsActive/bInCombat/bIsDay) skipped as runtime-mutated"
+    ],
+    "confidence": "high",
+    "nextAction": "Core static timer fields covered. Runtime boolean state (bIsActive/etc) intentionally skipped."
+  },
+  {
+    "semanticModel": "PlacedGrenadeRecord",
+    "recordCodes": [
+      "PGRE"
+    ],
+    "typedRuntimeReader": null,
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm typed parse only (placed projectiles are transient at runtime)",
+    "status": "esm-sufficient",
+    "highValueFields": {
+      "exact": [
+        "base FormID (NAME subrecord)",
+        "position (DATA float×3)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "all REFR-family fields — runtime grenades are transient TESObjectREFR derivatives, not persisted via TESForm hash tables"
+      ]
+    },
+    "evidence": [
+      "WorldRecordHandler.ParsePlacedGrenades",
+      "PDB GrenadeProjectile: 400 bytes, FormType 0x3E, inherits TESObjectREFR + Projectile + MobileObject"
+    ],
+    "confidence": "high",
+    "nextAction": "Runtime reader skipped intentionally — transient state. ESM-only parsing captures placement intent."
+  },
+  {
+    "semanticModel": "RegionRecord",
+    "recordCodes": [
+      "REGN"
+    ],
+    "typedRuntimeReader": "RuntimeRegionReader.ReadRuntimeRegion",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "worldspace FormID (pWorldSpace pointer at +48)",
+        "EmittanceColor RGB (NiColor at +60)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "RDAT region-data tuples (variable-length per-region content)",
+        "RPLI/RPLD point lists",
+        "pCurrentWeather (runtime state)"
+      ]
+    },
+    "evidence": [
+      "RuntimeRegionReader.ReadRuntimeRegion",
+      "WorldRecordHandler.ParseRegions (MergeRuntimeRecords 0x37)",
+      "PDB TESRegion: 72 bytes, FormType 0x37"
+    ],
+    "confidence": "high",
+    "nextAction": "Static fields covered. RDAT block parsing is variable-length and out of scope."
+  },
+  {
+    "semanticModel": "CaravanCardRecord",
+    "recordCodes": [
+      "CCRD"
+    ],
+    "typedRuntimeReader": "RuntimeCaravanCardReader.ReadRuntimeCaravanCard",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name (BSStringT at +68)",
+        "model path (BSStringT at +80)",
+        "value (uint32 at +140)",
+        "script FormID (pFormScript at +148)",
+        "pickup/putdown sound FormIDs (+160/+164)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "CARAVANCARDDATA suit/rank tuple (8B at +196 — encoding varies per build)"
+      ]
+    },
+    "evidence": [
+      "RuntimeCaravanCardReader.ReadRuntimeCaravanCard",
+      "MiscGameSystemHandler.ParseCaravanCards (MergeRuntimeRecords 0x73)",
+      "PDB TESCaravanCard: 204 bytes, FormType 0x73"
+    ],
+    "confidence": "high",
+    "nextAction": "Identity + value + sound refs covered. Suit/rank tuple unpacking is low-priority."
+  },
+  {
+    "semanticModel": "CaravanMoneyRecord",
+    "recordCodes": [
+      "CMNY"
+    ],
+    "typedRuntimeReader": "RuntimeCaravanMoneyReader.ReadRuntimeCaravanMoney",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "value (uint32 DATA / iValue)"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeCaravanMoneyReader.ReadRuntimeCaravanMoney",
+      "MiscGameSystemHandler.ParseCaravanMoney (MergeRuntimeRecords 0x74)",
+      "PDB TESCaravanMoney: form type 0x74, iValue field serialized as CMNY DATA"
+    ],
+    "confidence": "high",
+    "nextAction": "All known CMNY gameplay fields covered."
+  },
+  {
+    "semanticModel": "DebrisRecord",
+    "recordCodes": [
+      "DEBR"
+    ],
+    "typedRuntimeReader": "RuntimeDebrisReader.ReadRuntimeDebris",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "variant count (walks DataList BSSimpleList at +44)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "per-variant model paths (MODL subrecords)",
+        "per-variant BGSDebrisData (opaque)"
+      ]
+    },
+    "evidence": [
+      "RuntimeDebrisReader.ReadRuntimeDebris",
+      "MiscWorldObjectHandler.ParseDebris (MergeRuntimeRecords 0x52)",
+      "PDB BGSDebris: 52 bytes, FormType 0x52, single own-class field is BSSimpleList<BGSDebrisData *> at +44"
+    ],
+    "confidence": "high",
+    "nextAction": "Variant count covered via BSSimpleList walk. Per-variant binary data is opaque."
+  },
+  {
+    "semanticModel": "IngredientRecord",
+    "recordCodes": [
+      "INGR"
+    ],
+    "typedRuntimeReader": "RuntimeIngredientReader.ReadRuntimeIngredient",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "full name (BSStringT at +68)",
+        "model path (BSStringT at +96)",
+        "weight (float at +152)",
+        "equip type (uint32 at +160)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "EffectItem list (m_item/m_pkNext at +80 — legacy Oblivion EffectItemList walk)"
+      ]
+    },
+    "evidence": [
+      "RuntimeIngredientReader.ReadRuntimeIngredient",
+      "MiscItemHandler.ParseIngredients (MergeRuntimeRecords 0x1D)",
+      "PDB IngredientItem: 180 bytes, FormType 0x1D — FNV has 1 record but forward-compatible with Oblivion-era ingredients"
+    ],
+    "confidence": "high",
+    "nextAction": "Identity + weight + equip type covered. FNV only has 1 INGR record; ALCH is the primary consumable type."
+  },
+  {
+    "semanticModel": "NavMeshInfoMapRecord",
+    "recordCodes": [
+      "NAVI"
+    ],
+    "typedRuntimeReader": "RuntimeNavMeshInfoMapReader.ReadRuntimeNavMeshInfoMap",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "bUpdateAll flag (+40)",
+        "bInit flag (+76)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "NiTPointerMap / NiTMap navmesh info hashes (variable-length)"
+      ]
+    },
+    "evidence": [
+      "RuntimeNavMeshInfoMapReader.ReadRuntimeNavMeshInfoMap",
+      "MiscGameSystemHandler.ParseNavMeshInfoMaps (MergeRuntimeRecords 0x38)",
+      "PDB NavMeshInfoMap: 80 bytes, FormType 0x38, 1 record per ESM"
+    ],
+    "confidence": "high",
+    "nextAction": "Boolean flags covered. Hash-table walking is out of scope for a singleton-style metadata record."
+  },
+  {
+    "semanticModel": "CaravanDeckRecord",
+    "recordCodes": [
+      "CDCK"
+    ],
+    "typedRuntimeReader": "RuntimeCaravanDeckReader.ReadRuntimeCaravanDeck",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "joker count (CARAVANDECKDATA uint32 at +56)"
+      ],
+      "derived": [],
+      "esmOnly": [
+        "card list (CNTO / pDeck BSSimpleList<TESCaravanCard*> at +52 — runtime is a pointer-to-list, not inline)"
+      ]
+    },
+    "evidence": [
+      "RuntimeCaravanDeckReader.ReadRuntimeCaravanDeck",
+      "MiscGameSystemHandler.ParseCaravanDecks (MergeRuntimeRecords 0x75)",
+      "PDB TESCaravanDeck: 60 bytes, FormType 0x75"
+    ],
+    "confidence": "high",
+    "nextAction": "Joker count covered. Card list walking requires pointer-deref + heap-list traversal — out of scope."
+  },
+  {
+    "semanticModel": "SurvivalStageRecord",
+    "recordCodes": [
+      "RADS",
+      "DEHY",
+      "HUNG",
+      "SLPD"
+    ],
+    "typedRuntimeReader": "RuntimeSurvivalStageReader.ReadRuntimeSurvivalStage",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "threshold (uint32 at DATA+0)",
+        "modifier (uint32 at DATA+4)"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeSurvivalStageReader.ReadRuntimeSurvivalStage (shared across all 4 form types)",
+      "MiscGameSystemHandler.ParseRadiationStages/ParseDehydrationStages/ParseHungerStages/ParseSleepDeprivationStages (MergeRuntimeRecords 0x5A/0x76/0x77/0x78)",
+      "PDB BGSRadiationStage/Dehydration/Hunger/SleepDeprevation: all 48 bytes, identical layout with 8B DATA at +40"
+    ],
+    "confidence": "high",
+    "nextAction": "All 4 hardcore-mode stage types covered via single shared reader. SemanticModel is also shared."
+  },
+  {
+    "semanticModel": "MusicTypeRecord",
+    "recordCodes": [
+      "MUSC"
+    ],
+    "typedRuntimeReader": "RuntimeMusicTypeReader.ReadRuntimeMusicType",
+    "genericLayoutAvailable": true,
+    "currentMergeMode": "esm + typed runtime overlay",
+    "status": "typed-runtime",
+    "highValueFields": {
+      "exact": [
+        "sound file path (BSStringT at +44)",
+        "attenuation (float32 at +52)"
+      ],
+      "derived": [],
+      "esmOnly": []
+    },
+    "evidence": [
+      "RuntimeMusicTypeReader.ReadRuntimeMusicType",
+      "MiscEnvironmentHandler.ParseMusicTypes (MergeRuntimeRecords 0x66)",
+      "PDB BGSMusicType: 68 bytes, FormType 0x66, TESSoundFile.cSoundFile BSStringT at +44, fAttenuation float32 at +52"
+    ],
+    "confidence": "high",
+    "nextAction": "All BGSMusicType runtime fields covered. No further runtime work needed."
+  }
 ]

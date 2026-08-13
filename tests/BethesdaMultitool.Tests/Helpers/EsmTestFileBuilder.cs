@@ -351,6 +351,14 @@ internal sealed class EsmTestFileBuilder
             subs.Add(("XESP", xesp));
         }
 
+        // XSRF subrecord (Special Rendering Flags, 4 bytes; 0x2 = Imposter)
+        if (r.SpecialRenderingFlags.HasValue)
+        {
+            var xsrf = new byte[4];
+            BinaryPrimitives.WriteUInt32LittleEndian(xsrf, r.SpecialRenderingFlags.Value);
+            subs.Add(("XSRF", xsrf));
+        }
+
 #pragma warning disable S1244 // exact comparison against the 1f default sentinel — XSCL is omitted only at exactly 1.0
         if (r.Scale != 1f)
 #pragma warning restore S1244
@@ -455,6 +463,7 @@ internal sealed class EsmTestFileBuilder
         public string? EditorId { get; init; }
         public uint? EnableParentFormId { get; init; }
         public byte EnableParentFlags { get; init; }
+        public uint? SpecialRenderingFlags { get; init; }
         public float Scale { get; init; } = 1f;
         public float? Radius { get; init; }
         public float X { get; init; }

@@ -414,6 +414,7 @@ internal static class NifGeometryExtractor
             var materialAlpha = 1f;
             var materialGlossiness = 10f;
             var specularColor = (R: 0f, G: 0f, B: 0f);
+            (float R, float G, float B)? materialDiffuse = null;
             var isEyeEnvmap = false;
             var envMapScale = 0f;
             var isDecal = false;
@@ -610,6 +611,10 @@ internal static class NifGeometryExtractor
                 materialAlpha *= NifBlockParsers.ReadMaterialAlpha(data, nif, propRefs);
                 materialGlossiness = NifBlockParsers.ReadMaterialGlossiness(data, nif, propRefs);
                 specularColor = NifBlockParsers.ReadMaterialSpecularColor(data, nif, propRefs);
+                // Legacy (BsVersion < 26) ambient/diffuse lanes only; FO3+ streams yield null here,
+                // which keeps the untextured white-fallback bind inert for those games.
+                materialDiffuse = NifMaterialDiffusePolicy.Carry(
+                    nif.BsVersion, NifBlockParsers.ReadMaterialDiffuse(data, nif, propRefs));
 
                 // FO4/FO76 external material (.bgsm/.bgem): the engine gives the material's render state
                 // priority over the NIF's inline NiAlphaProperty/NiStencilProperty — the NIF commonly
@@ -846,6 +851,7 @@ internal static class NifGeometryExtractor
                     submesh.IsBillboard = true;
                     submesh.BillboardMode = billboardMode;
                 }
+                submesh.MaterialDiffuse = materialDiffuse;
                 submesh.SpecularMapTexturePath = specularMapPath;
                 submesh.GradientMapTexturePath = gradientMapPath;
                 submesh.GradientMapV = gradientMapV;

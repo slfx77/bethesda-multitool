@@ -100,6 +100,13 @@ public sealed class Logger
     }
 
     /// <summary>
+    ///     True when a file sink is currently open (see <see cref="SetLogFile" />). Lets late
+    ///     call sites (e.g. window constructors) open a fallback log WITHOUT re-opening — and
+    ///     thereby disposing — a sink the process entry path already established.
+    /// </summary>
+    public bool HasLogFile => _logFileWriter is not null;
+
+    /// <summary>
     ///     Disable file logging.
     /// </summary>
     public void CloseLogFile()

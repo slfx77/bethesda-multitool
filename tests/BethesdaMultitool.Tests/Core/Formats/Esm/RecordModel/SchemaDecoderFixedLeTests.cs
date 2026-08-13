@@ -102,13 +102,13 @@ public class SchemaDecoderFixedLeTests
             WriteFixedLe(bytes, f.Offset, f.Type, value);
 
             // Real schema (fixed-LE signature) → overlay applies → little-endian read.
-            var real = DecodeField(recordType, f, length, bytes, out var realNode);
+            var real = DecodeField(recordType, f, bytes, out var realNode);
             Assert.True(real, $"{recordType}/{f.Signature}@{f.Offset} did not decode a node");
             AssertDecoded(f, realNode!, bytes, value, true);
 
             // Control (a signature with no fixed-LE registration) → no overlay → byte-swapped read. Proves
             // the overlay — not some incidental path — is what changed the value.
-            var control = DecodeField("ZZZZ", f with { Signature = "ZZZZ" }, length, bytes, out var controlNode);
+            var control = DecodeField("ZZZZ", f with { Signature = "ZZZZ" }, bytes, out var controlNode);
             Assert.True(control, "control decode produced no node");
             AssertDecoded(f, controlNode!, bytes, value, false);
 
@@ -191,7 +191,7 @@ public class SchemaDecoderFixedLeTests
     ///     offset, decodes it big-endian, and returns the field's decoded node.
     /// </summary>
     private static bool DecodeField(
-        string recordType, SubrecordSchemaRegistry.FixedLeFieldInfo f, int length, byte[] bytes, out DecodedNode? node)
+        string recordType, SubrecordSchemaRegistry.FixedLeFieldInfo f, byte[] bytes, out DecodedNode? node)
     {
         var members = new List<MemberDef>();
         if (f.Offset > 0)

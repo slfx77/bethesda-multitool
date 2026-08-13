@@ -359,11 +359,16 @@ public sealed class FnvTerrainNormalMapTests
             resolver,
             "public bool LandscapeNormalMappingEnabled =>",
             "public GpuTextureCache12.Entry? EngineDefaultNormal");
+        // FO3 parity 2026-08-10: the landscape shader family is byte-identical between FO3 and
+        // FNV (all 16 packages), so the pass is enabled for the classic pair and no one else.
         Assert.Contains(
-            "_game == BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas;",
+            "_game is BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas",
             enabledProperty,
             StringComparison.Ordinal);
-        Assert.DoesNotContain("Fallout3", enabledProperty, StringComparison.Ordinal);
+        Assert.Contains(
+            "or BethesdaMultitool.Core.Games.BethesdaGame.Fallout3;",
+            enabledProperty,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("Oblivion", enabledProperty, StringComparison.Ordinal);
         Assert.DoesNotContain("Skyrim", enabledProperty, StringComparison.Ordinal);
         Assert.DoesNotContain("Fallout4", enabledProperty, StringComparison.Ordinal);

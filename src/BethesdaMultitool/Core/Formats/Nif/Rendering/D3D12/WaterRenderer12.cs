@@ -1318,14 +1318,19 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     }
 
     /// <summary>
-    ///     Capture-only deterministic entry point. Uses one authored clock for legacy frame selection,
-    ///     noise scrolling, and shader time instead of renderer construction time.
+    ///     Deterministic entry point (scene capture + the static top-down/export overlays). Uses one
+    ///     authored clock for legacy frame selection, noise scrolling, and shader time instead of
+    ///     renderer construction time. <paramref name="isPerspectiveProjection" /> defaults to true for
+    ///     the capture path; the ortho overlay/export callers pass false so the FNV WATER001 contract
+    ///     evaluations (this flag's only consumers) see the true projection mode if a preflight is
+    ///     ever armed on those paths.
     /// </summary>
     internal int RenderAtTime(
         Matrix4x4 viewProj,
         VisibilityCylinder cylinder,
         Vector3 renderOrigin,
-        float animationTimeSeconds)
+        float animationTimeSeconds,
+        bool isPerspectiveProjection = true)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(animationTimeSeconds);
         if (!float.IsFinite(animationTimeSeconds))
@@ -1338,7 +1343,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             viewProj,
             cylinder,
             renderOrigin,
-            isPerspectiveProjection: true,
+            isPerspectiveProjection,
             animationTimeSeconds);
     }
 
@@ -1351,6 +1356,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         bool deferFnvBatches = false)
     {
         LastStats.Reset();
+        // NaN = "this frame queued no stream water". Reset unconditionally (legacy inline frames
+        // included) so the above-all-water classification can never read a previous frame's plane —
+        // the same stale-state discipline as the partition telemetry counters.
+        StreamMaxQueuedSurfaceHeight = float.NaN;
         // The opaque snapshot is valid as a shader resource only for this host-bracketed pass.
         // Consume it up front so every early return fails closed and no later frame can sample a
         // resource that the host has transitioned back to CopyDest/ResolveDest.
@@ -1436,7 +1445,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
 
         segmentStarted = StartTiming();
         _fnvWaterCellDrawBatches.Clear();
-        if (_game == BethesdaGame.FalloutNewVegas && cellVisible > 0)
+        if (_game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 && cellVisible > 0)
         {
             // Keep each XCWT material contiguous so one CB/normal prepass can drive exactly the
             // generated CELL packets that authored it, ordered farthest-first WITHIN the material.
@@ -1554,7 +1563,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             return float.IsFinite(depth) ? depth : float.PositiveInfinity;
         }
 
-        if (_game == BethesdaGame.FalloutNewVegas && nifVisible > 1)
+        if (_game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 && nifVisible > 1)
         {
             _visibleNifScratch.Sort((left, right) =>
             {
@@ -1623,7 +1632,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         LastStats.InstanceBuildMilliseconds = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartTiming();
-        if (_game == BethesdaGame.FalloutNewVegas && _fnvWaterCellDrawBatches.Count > 0)
+        if (_game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 && _fnvWaterCellDrawBatches.Count > 0)
         {
             if (deferFnvBatches)
             {
@@ -1648,18 +1657,28 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 _streamNoisePrepasses = 0;
                 _streamDrawnCells = 0;
                 _streamDrewNifPackets = false;
-                _streamVisibleSurfaces = visibleSurfaces;
                 _streamNifVisible = nifVisible;
                 _streamArgs = new FnvBatchDrawArgs(
                     cmd, frameIndex, viewProj, cylinder.Position, renderOrigin, elapsedSeconds,
                     fnvWater001Snapshot.BindlessIndex, fnvWater001Snapshot.Width,
                     fnvWater001Snapshot.Height, _depthBindlessIndex != NoNormalMap);
 
+                // Track the highest surface actually queued while the entries are built: the
+                // reference renderer's wholly-above-all-water classification orders blended draws
+                // against THIS frame's drawn water, nothing wider.
+                var maxQueuedSurfaceZ = float.NaN;
                 foreach (var batch in _fnvWaterCellDrawBatches)
                 {
                     for (var offset = 0; offset < batch.InstanceCount; offset++)
                     {
                         var instance = batch.StartInstance + offset;
+                        var cellHeight = _visibleWaterScratch[instance].Height;
+                        if (float.IsFinite(cellHeight) &&
+                            !(cellHeight <= maxQueuedSurfaceZ))
+                        {
+                            maxQueuedSurfaceZ = cellHeight;
+                        }
+
                         _streamPending.Add(new PendingStreamBatch(
                             _fnvWaterSortScratch[instance].Depth, batch.WaterFormId,
                             batch.Material, instance, 1, useFnvWater001,
@@ -1671,6 +1690,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 for (var j = 0; j < nifVisible; j++)
                 {
                     var geometry = _visibleNifScratch[j];
+                    var planeTop = geometry.BoundsMax.Z;
+                    if (float.IsFinite(planeTop) && !(planeTop <= maxQueuedSurfaceZ))
+                    {
+                        maxQueuedSurfaceZ = planeTop;
+                    }
+
                     _streamPending.Add(new PendingStreamBatch(
                         NifViewDepth(geometry), geometry.WaterFormId,
                         ResolveFnvWaterMaterial(geometry.WaterFormId),
@@ -1678,6 +1703,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                         Water001: false, IsNifPacketBatch: true));
                     streamPacketCursor += geometry.TrianglePacketCount;
                 }
+
+                StreamMaxQueuedSurfaceHeight = maxQueuedSurfaceZ;
 
                 // One global farthest-first order across cells + NIF geometries. Kind/material/
                 // instance tiebreaks keep it TOTAL (stable across frames — the engine's stable
@@ -2013,12 +2040,22 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     // Entries are PER CELL / per placed-NIF geometry (engine granularity: one alpha-pass key per
     // shape); WaterFormId identifies the material for run coalescing and the total-order tiebreak.
     private readonly List<PendingStreamBatch> _streamPending = new(16);
+
+    /// <summary>
+    ///     The highest water surface QUEUED for this frame's transparency stream (visible cell
+    ///     heights + placed-NIF plane tops), or NaN when the frame queued none. Valid between
+    ///     <see cref="PrepareTransparencyStream" /> and <see cref="FinishTransparencyStream" />;
+    ///     reset every <c>RenderCore</c> so a non-streaming frame can never serve a stale plane.
+    ///     The reference renderer's wholly-above-all-water classification consumes it — bounded to
+    ///     the DRAWN water on purpose: water that never draws cannot occlude anything, and the
+    ///     unbounded world gather is what killed the original single-plane submerged split.
+    /// </summary>
+    public float StreamMaxQueuedSurfaceHeight { get; private set; } = float.NaN;
     private int _streamNext;
     private bool _streamFailed;
     private bool _streamUsedNoisePrepass;
     private int _streamDrawnCells;
     private bool _streamDrewNifPackets;
-    private int _streamVisibleSurfaces;
     private int _streamNifVisible;
     private FnvBatchDrawArgs _streamArgs;
     private uint _streamTailReservationBytes;
@@ -2148,14 +2185,18 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         _streamPending.Clear();
         _streamNext = 0;
         _streamFailed = false;
+        StreamMaxQueuedSurfaceHeight = float.NaN;
         ReleaseStreamTailReservation();
     }
 
-    /// <summary>True when this frame's water can enter the unified transparency stream: the FNV
-    /// per-WATR batch path with at least one visible generated cell. Everything else (other games,
-    /// NIF-only scenes) keeps the legacy inline water pass.</summary>
+    /// <summary>True when this frame's water can enter the unified transparency stream: the
+    /// classic-Fallout per-WATR batch path with at least one visible generated cell. FO3 parity
+    /// 2026-08-10: FO3 joins FNV — its BSBatchRenderer::SortAlphaPasses (0x00BD0440) sorts the
+    /// identical descending dot(worldPos, viewDir) key, so the per-cell farthest-first queue and
+    /// both water partitions (wholly-below and wholly-above-all) apply verbatim. Everything else
+    /// (other games, NIF-only scenes) keeps the legacy inline water pass.</summary>
     public bool CanStreamTransparency(VisibilityCylinder cylinder) =>
-        _game == BethesdaGame.FalloutNewVegas && GatherVisibleWater(cylinder) > 0;
+        _game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3 && GatherVisibleWater(cylinder) > 0;
 
     /// <summary>True while queued stream batches remain and the ring has not failed.</summary>
     public bool HasPendingTransparency => !_streamFailed && _streamNext < _streamPending.Count;

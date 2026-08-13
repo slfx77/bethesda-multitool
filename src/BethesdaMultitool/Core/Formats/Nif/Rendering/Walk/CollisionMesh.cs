@@ -64,10 +64,12 @@ internal static class CollisionMeshBuilder
                 CollisionMeshSource.AuthoredHavok);
         }
 
-        // Effects are presentation-only; vegetation (Plants/Trees) is walk-through unless it shipped
-        // authored Havok (handled above). Neither gets render-mesh collision synthesized for it.
+        // Effects are presentation-only; vegetation (Plants/Trees) and SpeedTree .spt recipes are
+        // walk-through unless they shipped authored Havok (handled above). None of them gets
+        // render-mesh collision synthesized for it — a .spt's soup is leaf billboards and fronds.
         if (WalkCollisionFallbackPolicy.IsEffectModel(modelPath, category)
-            || WalkCollisionFallbackPolicy.IsVegetation(category))
+            || WalkCollisionFallbackPolicy.IsVegetation(category)
+            || WalkCollisionFallbackPolicy.IsSpeedTreeModel(modelPath))
         {
             return CollisionBuildResult.None;
         }
@@ -159,6 +161,50 @@ internal sealed class CollisionMesh
                 best = tt;
                 hit = true;
             }
+        }
+
+        if (!hit) return false;
+        t = best;
+        return true;
+    }
+
+    /// <summary>
+    ///     Nearest forward hit whose face is shallow enough to STAND on once placed by
+    ///     <paramref name="world" /> (see <see cref="WalkSurfaceSlopePolicy.MinGroundNormalZ" />).
+    ///     Steep faces are walls owned by <see cref="WalkHorizontalCollision" />; the search continues
+    ///     PAST them to the real floor underneath rather than reporting the wall as ground. Accepting a
+    ///     wall face here let the walk capsule's ring samples ratchet the camera one step height per
+    ///     frame up a cave wall and out through it.
+    /// </summary>
+    public bool RaycastNearestWalkable(Vector3 localOrigin, Vector3 localDir, Matrix4x4 world, out float t)
+    {
+        t = 0f;
+        if (!RayHitsLocalAabb(localOrigin, localDir)) return false;
+
+        var positions = Positions;
+        var triangles = Triangles;
+        var best = float.MaxValue;
+        var hit = false;
+        for (var i = 0; i + 2 < triangles.Length; i += 3)
+        {
+            var a = positions[triangles[i]];
+            var b = positions[triangles[i + 1]];
+            var c = positions[triangles[i + 2]];
+            if (!RayTriangleIntersector.Intersect(localOrigin, localDir, a, b, c, out var tt) || tt >= best)
+            {
+                continue;
+            }
+
+            // The placement can rotate a locally-flat face into a wall (and vice versa), so the slope
+            // test must run on the WORLD normal. |n.z| keeps it winding-agnostic.
+            if (!WalkSurfaceSlopePolicy.IsGround(
+                    Vector3.TransformNormal(Vector3.Cross(b - a, c - a), world)))
+            {
+                continue;
+            }
+
+            best = tt;
+            hit = true;
         }
 
         if (!hit) return false;

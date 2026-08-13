@@ -61,12 +61,15 @@ internal sealed class TerrainTextureResolver12 : IDisposable
         _textureCache.GetOrUpload(EngineDefaultLandscapeTexture.DiffuseFor(_game));
 
     /// <summary>
-    ///     The recovered layered-normal pass is enabled only for Fallout: New Vegas in this slice.
-    ///     Other games keep their existing geometric-normal path until their own shader families are
-    ///     recovered and verified.
+    ///     The recovered layered-normal pass, enabled for the classic Fallout pair. FO3 parity
+    ///     2026-08-10: all 16 shader packages are byte-identical between FO3 and FNV (the SLS
+    ///     landscape family included) and FO3 ships the same landscape _N.dds chain, so the FNV
+    ///     recovery applies verbatim. Other games keep their geometric-normal path until their own
+    ///     shader families are recovered and verified.
     /// </summary>
     public bool LandscapeNormalMappingEnabled =>
-        _game == BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas;
+        _game is BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas
+            or BethesdaMultitool.Core.Games.BethesdaGame.Fallout3;
 
     /// <summary>
     ///     Engine-default landscape normal for FNV's no-BTXT/base-layer sentinel. Null means there is

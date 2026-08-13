@@ -101,6 +101,12 @@ internal static class WorldMapViewportHelper
         return 500f;
     }
 
+    /// <summary>
+    ///     Frames the worldspace on the cells that actually carry data, NOT on the full cell list: a
+    ///     WRLD's declared extents reach past its authored region (WastelandNV), and the bbox over every
+    ///     declared cell puts the view centre near the data's top edge — which the 2D→3D handoff then
+    ///     inherits as an out-of-bounds camera.
+    /// </summary>
     internal static void ZoomToFitWorldspace(
         List<CellRecord> cells, float canvasWidth, float canvasHeight,
         out float zoom, out Vector2 panOffset)
@@ -108,21 +114,11 @@ internal static class WorldMapViewportHelper
         zoom = 0.05f;
         panOffset = Vector2.Zero;
 
-        if (cells.Count == 0) return;
+        if (WorldMapViewportMath.TryGetOccupiedCellBounds(cells) is not { } bounds) return;
 
-        var cellsWithGrid = cells
-            .Where(c => c.GridX.HasValue && c.GridY.HasValue)
-            .ToList();
-
-        if (cellsWithGrid.Count == 0) return;
-
-        var cellWorldSize = CellSizeOf(cellsWithGrid[0]);
-        var minX = cellsWithGrid.Min(c => c.GridX!.Value) * cellWorldSize;
-        var maxX = (cellsWithGrid.Max(c => c.GridX!.Value) + 1) * cellWorldSize;
-        var minY = -(cellsWithGrid.Max(c => c.GridY!.Value) + 1) * cellWorldSize;
-        var maxY = -cellsWithGrid.Min(c => c.GridY!.Value) * cellWorldSize;
-
-        ZoomToFitBounds(minX, minY, maxX, maxY, canvasWidth, canvasHeight, out zoom, out panOffset);
+        ZoomToFitBounds(
+            bounds.MinX, bounds.MinY, bounds.MaxX, bounds.MaxY,
+            canvasWidth, canvasHeight, out zoom, out panOffset);
     }
 
     internal static void ZoomToFitCell(

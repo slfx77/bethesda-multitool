@@ -11,8 +11,38 @@ internal static class WalkCollisionFallbackPolicy
     public static bool AllowsObjectBoundsFallback(
         string? modelPath, PlacedObjectCategory category = PlacedObjectCategory.Unknown)
     {
-        return !IsEffectModel(modelPath, category) && !IsVegetation(category);
+        return !IsEffectModel(modelPath, category) &&
+               !IsVegetation(category) &&
+               !IsSpeedTreeModel(modelPath);
     }
+
+    /// <summary>
+    ///     Gate for an already-RESOLVED warm collision mesh, applied at the placement site. The shared
+    ///     mesh cache builds one ordinary entry per model path under
+    ///     <see cref="PlacedObjectCategory.Unknown" />, so the vegetation rule inside
+    ///     <see cref="CollisionMeshBuilder.Build" /> never sees the placement's real category and a
+    ///     tree's synthesized canopy soup reached walk mode as solid ground — "walk mode can stand on
+    ///     SPT leaves". Leaf cards re-face the camera every frame, so a surface built from one is a
+    ///     floor that is not where it is drawn. Authored Havok is untouched and stays authoritative.
+    /// </summary>
+    public static bool AllowsResolvedCollisionMesh(
+        CollisionMeshSource source,
+        string? modelPath,
+        PlacedObjectCategory category)
+    {
+        if (source != CollisionMeshSource.VisualFallback) return true;
+        return !IsVegetation(category) && !IsSpeedTreeModel(modelPath);
+    }
+
+    /// <summary>
+    ///     True for a Gamebryo SpeedTree recipe (<c>.spt</c>). Its geometry is generated entirely from
+    ///     billboard leaf cards and frond strips — presentation, never a walk surface — and the
+    ///     placement's ESM category cannot be relied on to say so (a .spt may be placed as a plain
+    ///     static). Path-gated so it holds for every placement of the model.
+    /// </summary>
+    public static bool IsSpeedTreeModel(string? modelPath)
+        => modelPath is not null &&
+           modelPath.EndsWith(".spt", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     ///     Plants and trees are walk-through in the retail engine UNLESS they ship authored Havok — a

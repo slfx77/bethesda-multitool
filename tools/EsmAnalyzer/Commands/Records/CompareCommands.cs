@@ -21,7 +21,7 @@ public static class CompareCommands
         var file1Arg = new Argument<string>("file1") { Description = "Path to the first ESM file (e.g., proto)" };
         var file2Arg = new Argument<string>("file2") { Description = "Path to the second ESM file (e.g., final)" };
         var worldspaceOption = new Option<string?>("-w", "--worldspace")
-        { Description = "Worldspace to compare (default: WastelandNV)" };
+        { Description = "Worldspace EditorID or FormID, matched against the file (default: WastelandNV, else Wasteland)" };
         var outputOption = new Option<string>("-o", "--output")
         {
             Description = "Output file path for teleport commands",

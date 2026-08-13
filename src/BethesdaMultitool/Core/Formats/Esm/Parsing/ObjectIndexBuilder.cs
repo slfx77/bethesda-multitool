@@ -26,6 +26,7 @@ internal static class ObjectIndexBuilder
         List<FurnitureRecord> furniture,
         List<StaticCollectionRecord> staticCollections,
         List<PlaceableWaterRecord> placeableWaters,
+        List<TreeRecord> trees,
         List<WeaponRecord> weapons,
         List<ArmorRecord> armor,
         List<AmmoRecord> ammo,
@@ -59,6 +60,10 @@ internal static class ObjectIndexBuilder
         // so every placed water plane lost its MODL and the renderer dropped it. Same failure the SCOL
         // line above exists to prevent.
         AddToIndexes(placeableWaters, p => p.FormId, p => p.Bounds, p => p.ModelPath, boundsIndex, modelIndex);
+        // TREE moved out of GenericRecords 2026-08-07. Without this line every tree
+        // placement loses its .spt model path — the exact regression the PWAT note
+        // above records, repeated.
+        AddToIndexes(trees, t => t.FormId, t => t.Bounds, t => t.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(weapons, w => w.FormId, w => w.Bounds, w => w.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(armor, a => a.FormId, a => a.Bounds, a => a.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(ammo, a => a.FormId, a => a.Bounds, a => a.ModelPath, boundsIndex, modelIndex);

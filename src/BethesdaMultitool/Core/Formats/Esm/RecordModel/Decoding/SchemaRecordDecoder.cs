@@ -693,6 +693,21 @@ public static class SchemaRecordDecoder
         _ => ctx.ReadS32(data, offset)
     };
 
+    /// <summary>
+    ///     16-bit counterpart of <see cref="ReadU32Overridden" /> (UInt16LittleEndian fields; no
+    ///     word-swapped u16 exists, so only the plain-LE override applies).
+    /// </summary>
+    private static ushort ReadU16Overridden(byte[] data, int offset, DecodeContext ctx, LeFieldKind? le) =>
+        le == LeFieldKind.LittleEndian
+            ? BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(offset, 2))
+            : ctx.ReadU16(data, offset);
+
+    /// <summary>Signed counterpart of <see cref="ReadU16Overridden" />.</summary>
+    private static short ReadS16Overridden(byte[] data, int offset, DecodeContext ctx, LeFieldKind? le) =>
+        le == LeFieldKind.LittleEndian
+            ? BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(offset, 2))
+            : ctx.ReadS16(data, offset);
+
     private static (string? Value, object? Raw, uint? FormId) DecodeScalar(
         FieldDef field, byte[] data, int offset, int limit, DecodeContext ctx,
         IReadOnlyDictionary<int, LeFieldKind>? leMap, out int size)
@@ -710,17 +725,9 @@ public static class SchemaRecordDecoder
             case PrimType.S8:
                 return Fits(1, available, out size) ? Integer(field, (sbyte)data[offset]) : NoValue;
             case PrimType.U16:
-                return Fits(2, available, out size)
-                    ? Integer(field, le == LeFieldKind.LittleEndian
-                        ? BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(offset, 2))
-                        : ctx.ReadU16(data, offset))
-                    : NoValue;
+                return Fits(2, available, out size) ? Integer(field, ReadU16Overridden(data, offset, ctx, le)) : NoValue;
             case PrimType.S16:
-                return Fits(2, available, out size)
-                    ? Integer(field, le == LeFieldKind.LittleEndian
-                        ? BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(offset, 2))
-                        : ctx.ReadS16(data, offset))
-                    : NoValue;
+                return Fits(2, available, out size) ? Integer(field, ReadS16Overridden(data, offset, ctx, le)) : NoValue;
             case PrimType.U24:
                 return Fits(3, available, out size) ? Integer(field, ctx.ReadU24(data, offset)) : NoValue;
             case PrimType.U32:

@@ -1,3 +1,7 @@
+using BethesdaMultitool.Core.Formats.Esm.Planner.References;
+using BethesdaMultitool.Core.Formats.Esm.Planner;
+using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
+using System.Collections.Immutable;
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
@@ -191,7 +195,8 @@ public class PlacedRefEncoderTests
             RadioData = new RadioData { RangeType = 0, PositionRefFormId = 0x0BADF00D }
         };
 
-        var encoded = RefrEncoder.EncodeNewPlacedReference(placed, validFormIds: new HashSet<uint>());
+        // The plan condemns the anchor; XRDO keeps its subrecord and nulls the field.
+        var encoded = RefrEncoder.EncodeNewPlacedReference(placed, DanglingXrdoAnchor());
 
         var xrdo = Assert.Single(encoded.Subrecords, s => s.Signature == "XRDO");
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(xrdo.Bytes.AsSpan(12, 4)));
@@ -218,4 +223,31 @@ public class PlacedRefEncoderTests
         Assert.Equal(expected,
             ReferenceBaseRemapper.CanPlacedRecordUseBaseType(placedRecordType, baseRecordType));
     }
+
+    /// <summary>
+    ///     A plan whose only decision condemns the XRDO position reference — the shape
+    ///     <c>PlacedRefLinkPlanner</c> produces for a radio anchor that does not resolve.
+    /// </summary>
+    private static PlanReferenceLookup DanglingXrdoAnchor()
+    {
+        return new PlanReferenceLookup(new RecordPlan
+        {
+            Type = "REFR",
+            Disposition = RecordDisposition.New,
+            FormId = 0x010017A2,
+            References =
+            [
+                new ResolvedRef
+                {
+                    FieldPath = FieldPath.Member("XRDO", "PositionRef"),
+                    OriginalFormId = 0x0BADF00D,
+                    Action = ResolvedRefAction.NullRef,
+                    Reason = "refr.xrdo-anchor-dangling",
+                }
+            ],
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+        });
+    }
+
 }

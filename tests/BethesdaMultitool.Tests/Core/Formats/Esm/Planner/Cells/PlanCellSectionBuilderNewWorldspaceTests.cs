@@ -89,7 +89,7 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
         };
 
         var bytes = PlanCellSectionBuilder.BuildCellSection(
-            plan, new Dictionary<uint, ParsedMainRecord>(),
+            CellPlanTestHarness.Settle(plan, new Dictionary<uint, ParsedMainRecord>()), new Dictionary<uint, ParsedMainRecord>(),
             new PluginBuildOptions { CompressRecords = false });
 
         Assert.NotNull(bytes);
@@ -176,8 +176,9 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
         };
 
         var options = new PluginBuildOptions { CompressRecords = false };
-        var plannerBytes =
-            PlanCellSectionBuilder.BuildCellSection(plan, new Dictionary<uint, ParsedMainRecord>(), options);
+        var masters = new Dictionary<uint, ParsedMainRecord>();
+        var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
+            CellPlanTestHarness.Settle(plan, masters, options), masters, options);
 
         // Reconstruct the legacy path: encode the same CELL and WRLD via the primitive
         // encoders and feed them into CellGrupBuilder.BuildCellSection.

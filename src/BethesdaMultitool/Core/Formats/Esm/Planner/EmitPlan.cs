@@ -105,4 +105,20 @@ public sealed record EmitPlan
     ///     one-way XTEL destinations continue to target their retail door.
     /// </summary>
     public NavmDoorLinkPlan NavmDoorLinks { get; init; } = NavmDoorLinkPlan.Empty;
+
+    /// <summary>
+    ///     NAVM FormIDs the writer will emit, settled by <c>PlanNavmEmission</c>. NAVI rows are
+    ///     filtered through this so an NVMI entry never describes an unwritten navmesh.
+    /// </summary>
+    public ImmutableHashSet<uint> EmittedNavmFormIds { get; init; } = ImmutableHashSet<uint>.Empty;
+
+    /// <summary>
+    ///     Per-navmesh NVEX/NVDP connectivity for the NAVI record's NVCI arrays, settled by
+    ///     <c>PlanNavmConnectivity</c> so NAVI need not be built from emitted NAVM bytes.
+    /// </summary>
+    internal ImmutableDictionary<uint, Plugin.Nav.NavmConnectivity> NavmConnectivityByFormId
+    {
+        get;
+        init;
+    } = ImmutableDictionary<uint, Plugin.Nav.NavmConnectivity>.Empty;
 }

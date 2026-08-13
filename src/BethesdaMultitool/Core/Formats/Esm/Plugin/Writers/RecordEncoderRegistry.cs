@@ -222,7 +222,7 @@ public sealed class RecordEncoderRegistry
     /// </summary>
     public static bool IsCellChildRecordType(string recordType)
     {
-        return recordType is "REFR" or "ACHR" or "ACRE";
+        return recordType is "REFR" or "ACHR" or "ACRE" or "PGRE";
     }
 
     /// <summary>

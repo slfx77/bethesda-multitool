@@ -12,12 +12,37 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 ///     alter emission: a link that currently validates against a phantom allocated FormID
 ///     is reported as captured-and-dropped even if the writer still writes its XESP.
 /// </summary>
-internal static class PlannerXespParentClassifier
+internal sealed class PlannerXespParentClassifier
 {
     internal sealed record Resolution(
         uint FinalParentFormId,
         PlannerXespParentStatus Status,
         string Reason);
+
+    private readonly EmitPlan _plan;
+    private readonly IReadOnlyDictionary<uint, ParsedMainRecord> _masterByFormId;
+    private readonly IReadOnlySet<uint> _masterRefFormIds;
+    private readonly IReadOnlyDictionary<uint, Resolution> _index;
+
+    /// <summary>
+    ///     Indexes every captured cell child once, then answers per-XESP queries from plan
+    ///     data alone. Instance-based since 2026-08-12 (retirement Stage H4) so the
+    ///     classification no longer reaches back into the writer's encode context — it is a
+    ///     planner query that merely runs alongside the writer.
+    /// </summary>
+    public PlannerXespParentClassifier(
+        EmitPlan plan,
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterByFormId,
+        IReadOnlySet<uint> masterRefFormIds,
+        bool indexCapturedChildren = true)
+    {
+        _plan = plan;
+        _masterByFormId = masterByFormId;
+        _masterRefFormIds = masterRefFormIds;
+        _index = indexCapturedChildren
+            ? BuildIndex(plan, masterByFormId, masterRefFormIds)
+            : new Dictionary<uint, Resolution>();
+    }
 
     public static IReadOnlyDictionary<uint, Resolution> BuildIndex(
         EmitPlan plan,
@@ -55,16 +80,16 @@ internal static class PlannerXespParentClassifier
         return result;
     }
 
-    public static Resolution Classify(uint sourceParentFormId, CellChildEncodeContext context)
+    public Resolution Classify(uint sourceParentFormId)
     {
-        if (context.XespParentIndex.TryGetValue(sourceParentFormId, out var direct))
+        if (_index.TryGetValue(sourceParentFormId, out var direct))
         {
             return direct;
         }
 
-        if (context.Plan.SourceToEmittedFormId.TryGetValue(sourceParentFormId, out var remapped))
+        if (_plan.SourceToEmittedFormId.TryGetValue(sourceParentFormId, out var remapped))
         {
-            if (context.XespParentIndex.TryGetValue(remapped, out var remappedResolution))
+            if (_index.TryGetValue(remapped, out var remappedResolution))
             {
                 return remappedResolution;
             }
@@ -86,8 +111,8 @@ internal static class PlannerXespParentClassifier
                 "runtime-formid");
         }
 
-        if (context.MasterRefFormIds.Contains(sourceParentFormId)
-            || (context.MasterByFormId.TryGetValue(sourceParentFormId, out var master)
+        if (_masterRefFormIds.Contains(sourceParentFormId)
+            || (_masterByFormId.TryGetValue(sourceParentFormId, out var master)
                 && master.Header.Signature is "REFR" or "ACHR" or "ACRE"))
         {
             return new Resolution(
@@ -96,13 +121,14 @@ internal static class PlannerXespParentClassifier
                 "master-ref");
         }
 
-        if (context.Plan.EmittedFormIds.Contains(sourceParentFormId))
+        if (_plan.EmittedFormIds.Contains(sourceParentFormId))
         {
-            // Transitional plans can expose a valid emitted ref without cell verdicts.
+            // A top-level record (not a cell child) the plan emits — e.g. an activator or
+            // container base an XESP legitimately points at.
             return new Resolution(
                 sourceParentFormId,
                 PlannerXespParentStatus.LiveEmitted,
-                "emit-set-fallback");
+                "emitted-top-level");
         }
 
         return new Resolution(
@@ -118,7 +144,7 @@ internal static class PlannerXespParentClassifier
     {
         foreach (var child in children)
         {
-            if (child.Type is not ("REFR" or "ACHR" or "ACRE")
+            if (child.Type is not ("REFR" or "ACHR" or "ACRE" or "PGRE")
                 || child.Model is not PlacedReference placed)
             {
                 continue;
@@ -151,11 +177,10 @@ internal static class PlannerXespParentClassifier
                     verdict.DropReason ?? "planner-drop");
         }
 
-        return child.Disposition is RecordDisposition.New or RecordDisposition.Override
-            ? new Resolution(
-                child.FormId, PlannerXespParentStatus.LiveEmitted, "writer-fallback-emit")
-            : new Resolution(
-                child.FormId, PlannerXespParentStatus.CapturedDropped, "non-emitting-disposition");
+        // Every placed-ref child carries a verdict (the writer throws otherwise), so reaching
+        // here means a non-placed child type (LAND/NAVM) or a KeepMaster/Skip disposition.
+        return new Resolution(
+            child.FormId, PlannerXespParentStatus.CapturedDropped, "non-emitting-disposition");
     }
 
     private static void AddBest(

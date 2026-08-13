@@ -211,7 +211,7 @@ internal static class StructLayoutCommand
         MemoryMappedViewAccessor accessor,
         long fileSize,
         MinidumpInfo minidumpInfo,
-        IReadOnlyDictionary<uint, RuntimeEditorIdEntry> byFormId,
+        Dictionary<uint, RuntimeEditorIdEntry> byFormId,
         RuntimeEditorIdEntry record,
         int startOffset,
         int? length)

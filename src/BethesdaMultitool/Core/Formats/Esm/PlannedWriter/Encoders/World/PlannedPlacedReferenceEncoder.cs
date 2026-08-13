@@ -38,8 +38,7 @@ public sealed class PlannedPlacedReferenceEncoder : IPlannedRecordEncoder<Placed
     {
         return plan.Disposition switch
         {
-            RecordDisposition.New => RefrEncoder.EncodeNewPlacedReference(
-                model, refs.EmittedFormIds, refs.SourceToEmittedFormId),
+            RecordDisposition.New => RefrEncoder.EncodeNewPlacedReference(model, refs),
             RecordDisposition.Override => RefrEncoder.EncodePlacedReference(model),
             _ => throw new InvalidOperationException(
                 $"PlannedPlacedReferenceEncoder called with disposition {plan.Disposition}; expected New or Override."),

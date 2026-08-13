@@ -29,7 +29,43 @@ public sealed partial class WorldMapControl
             _panKeysDown.Add(e.Key);
             EnsureViewportTimerRunning(); // the timer integrates the pan + won't idle-stop while keys are held
             e.Handled = true;
+            return;
         }
+
+        // R snaps the view back to the active extent (worldspace overview / open interior cell).
+        // Guarded against text entry so the letter is never stolen from a focused text control.
+        // Not added to _panKeysDown: it is not an integrated motion key, and the re-frame is
+        // idempotent, so auto-repeat while held is harmless.
+        if (e.Key == Windows.System.VirtualKey.R && !TextEntryFocusGuard.IsTextEntryFocused(XamlRoot))
+        {
+            ResetViewToActiveExtent();
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    ///     R (reset view) / the toolbar's Zoom-to-Fit: re-frames on the active extent — the open
+    ///     interior/cell-detail cell via <see cref="WorldMapViewportHelper.ZoomToFitCell" />, otherwise
+    ///     the active worldspace via <see cref="ApplyZoomToFitWorldspace" />. Single entry point so the
+    ///     keybind and the toolbar button can never frame differently.
+    /// </summary>
+    internal void ResetViewToActiveExtent()
+    {
+        if (_state.Mode == ViewMode.CellDetail && _state.SelectedCell != null)
+        {
+            WorldMapViewportHelper.ZoomToFitCell(_state.SelectedCell,
+                (float)MapCanvas.ActualWidth, (float)MapCanvas.ActualHeight,
+                out _zoom, out _panOffset);
+        }
+        else if (GetActiveCells().Count > 0)
+        {
+            ApplyZoomToFitWorldspace();
+        }
+
+        // A re-frame invalidates any in-flight drag/pan momentum; the preload margin must not keep
+        // biasing toward the direction the user was panning before the snap.
+        _panVelocity = Vector2.Zero;
+        MapCanvas.Invalidate();
     }
 
     private void MapCanvas_KeyUp(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)

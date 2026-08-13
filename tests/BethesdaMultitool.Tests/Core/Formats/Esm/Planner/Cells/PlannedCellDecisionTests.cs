@@ -18,13 +18,13 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
 
 /// <summary>
-///     The writer must honor planner-settled cell decisions (<see cref="CellPlan.Mode" /> +
-///     <see cref="CellPlan.DropRenderCullingMarkers" />) and only compute them itself when the
-///     plan predates the mode-planning stage (Mode null). Regression guard for the
-///     writer→planner decision migration: if the writer silently reverts to recomputing,
-///     these planned-value-wins cases fail.
+///     The writer consumes planner-settled cell decisions (<see cref="CellPlan.Mode" /> +
+///     <see cref="CellPlan.DropRenderCullingMarkers" />) and has no way to recompute them:
+///     retirement Stage H1 (2026-08-11) deleted <c>CellDecisionFallback</c>, so a plan that
+///     arrives without a mode now throws rather than silently taking a second opinion.
+///     These cases pin that the planned values actually drive emission.
 /// </summary>
-public sealed class CellDecisionFallbackTests
+public sealed class PlannedCellDecisionTests
 {
     private const uint CellId = 0x000ABCDE; // interior, master-anchored
     private const uint MasterStatBaseId = 0x000A2001; // valid master base for new refs
@@ -43,14 +43,6 @@ public sealed class CellDecisionFallbackTests
         Assert.Equal(1, stats.DropReasonCounts.GetValueOrDefault("cell.persistent-only-nonpersistent-ref"));
     }
 
-    [Fact]
-    public void Null_Mode_Falls_Back_To_Writer_Computation_And_Emits()
-    {
-        var (section, stats) = BuildSection(null, false);
-
-        Assert.Equal(0, stats.DropReasonCounts.GetValueOrDefault("cell.persistent-only-nonpersistent-ref"));
-        Assert.NotNull(FindRecord(section, NewRefId));
-    }
 
     [Fact]
     public void Planned_Marker_Drop_Wins_Over_Writer_Fallback()
@@ -64,19 +56,11 @@ public sealed class CellDecisionFallbackTests
         Assert.Null(FindRecord(section, MarkerRefId));
     }
 
-    [Fact]
-    public void Null_Mode_Fallback_Emits_Marker_Placement()
-    {
-        var (section, stats) = BuildSection(null, false, true);
-
-        Assert.Equal(0, stats.DropReasonCounts.GetValueOrDefault("cell.render-culling-marker-dropped"));
-        Assert.NotNull(FindRecord(section, MarkerRefId));
-    }
 
     // ---- fixture plumbing ----------------------------------------------------------
 
     private static (byte[]? Section, ConversionPipelineStats Stats) BuildSection(
-        CellMergeMode? mode, bool dropMarkers, bool includeMarkerRef = false)
+        CellMergeMode mode, bool dropMarkers, bool includeMarkerRef = false)
     {
         var keeper = new PlacedReference
         {
@@ -168,8 +152,9 @@ public sealed class CellDecisionFallbackTests
         };
 
         var stats = new ConversionPipelineStats();
+        var settled = CellPlanTestHarness.Settle(plan, masterByFormId, masterIndex);
         var section = PlanCellSectionBuilder
-            .BuildCellSectionCore(plan, masterByFormId, new PluginBuildOptions(), stats, masterIndex)
+            .BuildCellSectionCore(settled, masterByFormId, new PluginBuildOptions(), stats, masterIndex)
             .SectionBytes;
         return (section, stats);
     }

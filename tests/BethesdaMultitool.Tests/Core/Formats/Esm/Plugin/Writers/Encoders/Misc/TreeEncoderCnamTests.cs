@@ -27,7 +27,10 @@ public sealed class TreeEncoderCnamTests : SubrecordEncoderTestBase<TreeData>
             MaxLeafAngle = 0.75f,
             BranchDimmingValue = 0.8f,
             LeafDimmingValue = 0.6f,
-            ShadowRadius = 12.0f,
+            // int32, not float — OBJ_TREE.iCanopyShadowRadius. Deliberately a value whose
+            // float bit pattern differs from its integer encoding, so a regression to
+            // WriteSingle fails the byte comparison instead of round-tripping.
+            ShadowRadius = 512,
             RockSpeed = 0.05f,
             RustleSpeed = 0.125f
         };
@@ -41,7 +44,7 @@ public sealed class TreeEncoderCnamTests : SubrecordEncoderTestBase<TreeData>
         //   8..11  float  MaxLeafAngle
         //   12..15 float  BranchDimmingValue
         //   16..19 float  LeafDimmingValue
-        //   20..23 float  ShadowRadius
+        //   20..23 INT32  ShadowRadius  (OBJ_TREE.iCanopyShadowRadius, PDB T_INT4)
         //   24..27 float  RockSpeed
         //   28..31 float  RustleSpeed
         var expected = new byte[32];
@@ -50,7 +53,7 @@ public sealed class TreeEncoderCnamTests : SubrecordEncoderTestBase<TreeData>
         BinaryPrimitives.WriteSingleLittleEndian(expected.AsSpan(8, 4), 0.75f);
         BinaryPrimitives.WriteSingleLittleEndian(expected.AsSpan(12, 4), 0.8f);
         BinaryPrimitives.WriteSingleLittleEndian(expected.AsSpan(16, 4), 0.6f);
-        BinaryPrimitives.WriteSingleLittleEndian(expected.AsSpan(20, 4), 12.0f);
+        BinaryPrimitives.WriteInt32LittleEndian(expected.AsSpan(20, 4), 512);
         BinaryPrimitives.WriteSingleLittleEndian(expected.AsSpan(24, 4), 0.05f);
         BinaryPrimitives.WriteSingleLittleEndian(expected.AsSpan(28, 4), 0.125f);
         return expected;
@@ -75,7 +78,7 @@ public sealed class TreeEncoderCnamTests : SubrecordEncoderTestBase<TreeData>
             MaxLeafAngle = BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(8, 4)),
             BranchDimmingValue = BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(12, 4)),
             LeafDimmingValue = BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(16, 4)),
-            ShadowRadius = BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(20, 4)),
+            ShadowRadius = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(20, 4)),
             RockSpeed = BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(24, 4)),
             RustleSpeed = BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(28, 4))
         });

@@ -23,11 +23,11 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 ///     pipeline currently supports. Each tier adds rows here as encoders ship.
 /// </summary>
 /// <remarks>
-///     <c>PluginBuildOptions.PlannerEnabledRecordTypes</c> selects which subset of these
-///     encoders are actually exercised per build. An entry here doesn't enable the planner
-///     for that type — the build options do. This factory is the single source of truth for
-///     "what types CAN the planner emit," used by <c>PluginBuilder</c> to detect mis-configured
-///     option sets (planner-enabled type with no registered encoder).
+///     Every type registered here is emitted by the planner on every build — the legacy
+///     emission path and its per-type opt-in were retired 2026-08-11. This factory is the
+///     single source of truth for "what the converter can emit"; a type that
+///     <c>PluginBuilder.EnumerateModelsByType</c> yields without a row here emits nothing,
+///     which <c>PlannerRoutingConsistencyTests</c> guards against.
 /// </remarks>
 public static class PlannedEncoders
 {
@@ -42,7 +42,7 @@ public static class PlannedEncoders
     /// <summary>
     ///     Distinct record-type signatures the planner pipeline can emit. Derived from
     ///     <see cref="BuildAll" /> so newly-registered encoders are picked up automatically.
-    ///     Used by the CLI's <c>--planner-types all</c> resolution and by the aggregate
+    ///     Used by the planner-state build and by the aggregate
     ///     parity harness to enumerate the encoder coverage.
     /// </summary>
     public static IEnumerable<string> KnownRecordTypes() =>
@@ -150,6 +150,7 @@ public static class PlannedEncoders
         yield return Simple<FurnitureRecord>("FURN", FurnEncoder.EncodeNew);
         yield return Simple<WaterRecord>("WATR", WatrEncoder.EncodeNew);
         yield return Simple<PlaceableWaterRecord>("PWAT", PwatEncoder.EncodeNew);
+        yield return Simple<TreeRecord>("TREE", TreeEncoder.EncodeNew);
         yield return Simple<WeatherRecord>("WTHR", WthrEncoder.EncodeNew);
         yield return Simple<LightingTemplateRecord>("LGTM", LgtmEncoder.EncodeNew);
         yield return Simple<EncounterZoneRecord>("ECZN", EczEncoder.EncodeNew);
@@ -208,10 +209,17 @@ public static class PlannedEncoders
         yield return new PlannedPlacedReferenceEncoder("ACHR");
         yield return new PlannedPlacedReferenceEncoder("ACRE");
 
-        // Tier 7a — PGRE (placed grenade). Structural mirror of the placed-reference
-        // encoders; cell-children dispatch routing is a follow-up that needs PGRE→parent
-        // cell mapping on the model. Registered now so the encoder ships with the
-        // primitive in place when routing lands.
-        yield return new PlannedPgreEncoder();
+
+        // PGRE deliberately has NO row. It is a cell child, so EsmPlanner.CellPipelineOwnedTypes
+        // strips it from the top-level catalog whenever CELL is enabled, and with CELL disabled
+        // it has no EnumerateModelsByType yield — a top-level planned encoder for it was
+        // unreachable by construction and only served to make PGRE look routed in
+        // KnownRecordTypes(). Removed 2026-08-07 along with PlannedPgreEncoder/PgreEncoder;
+        // verified byte-neutral (record census identical with and without the row).
+        // Captured PGREs emit through the cell pipeline since 2026-08-10: they ride the REFR
+        // extraction funnel (EsmWorldExtractor/EsmDescriptorScanner) into cell PlacedObjects,
+        // then CellChildAllocator → CellChildVerdictPlanner → PlanCellSectionBuilder →
+        // PlannedPlacedRefEncoder/RefrEncoder, exactly like REFR/ACHR/ACRE — still no
+        // top-level row here.
     }
 }

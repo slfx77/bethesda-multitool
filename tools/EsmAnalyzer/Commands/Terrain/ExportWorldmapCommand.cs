@@ -60,36 +60,16 @@ internal static class ExportWorldmapCommand
             return successCount > 0 ? 0 : 1;
         }
 
-        // Single worldspace mode
-        uint targetWorldspaceFormId;
-        if (string.IsNullOrEmpty(worldspaceName))
+        // Single worldspace mode — resolved against this file's own WRLD records (see
+        // WorldspaceSelector: the old FNV-only FormID table silently aliased FO3's "Wasteland").
+        if (!WorldspaceSelector.TryResolve(
+                esm.Data, bigEndian, worldspaceName,
+                out var resolvedName, out var targetWorldspaceFormId))
         {
-            targetWorldspaceFormId = FalloutWorldspaces.KnownWorldspaces["WastelandNV"];
-            worldspaceName = "WastelandNV";
-        }
-        else if (FalloutWorldspaces.KnownWorldspaces.TryGetValue(worldspaceName, out var knownId))
-        {
-            targetWorldspaceFormId = knownId;
-        }
-        else
-        {
-            var parsed = EsmFileLoader.ParseFormId(worldspaceName);
-            if (parsed == null)
-            {
-                AnsiConsole.MarkupLine($"[red]ERROR:[/] Unknown worldspace '{worldspaceName}'");
-                AnsiConsole.MarkupLine("[yellow]Known worldspaces:[/]");
-                foreach (var (name, formId) in FalloutWorldspaces.KnownWorldspaces.DistinctBy(kvp => kvp.Value))
-                {
-                    AnsiConsole.MarkupLine($"  {name}: 0x{formId:X8}");
-                }
-
-                return 1;
-            }
-
-            targetWorldspaceFormId = parsed.Value;
+            return 1;
         }
 
-        return GenerateSingleWorldmap(esm.Data, bigEndian, worldspaceName, targetWorldspaceFormId, outputDir, scale,
+        return GenerateSingleWorldmap(esm.Data, bigEndian, resolvedName, targetWorldspaceFormId, outputDir, scale,
             rawOutput, sourceType, analyzeOnly);
     }
 

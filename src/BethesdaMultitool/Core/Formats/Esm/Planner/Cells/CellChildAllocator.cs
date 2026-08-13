@@ -197,9 +197,9 @@ public sealed class CellChildAllocator
     private static bool IsAllocatablePlacedRef(PlacedReference placed, IReadOnlySet<uint> masterFormIds)
     {
         // Subtype whitelist. REFR/ACHR/ACRE are the active set today; PGRE/PMIS/PARW/PBEA/
-        // PCON/PHZD/PBAR are placed-object subtypes whose planner routing is incomplete
-        // (PlannedPgreEncoder exists but no production caller). Including them in the
-        // whitelist defensively means when routing lands the allocator already handles
+        // PCON/PHZD/PBAR are placed-object subtypes with no cell-children emission path yet.
+        // Including them in the whitelist defensively means when routing lands the allocator
+        // already handles
         // the same phantom-master shape correctly — no follow-up edit here required.
         // Omitting a subtype here doesn't drop the record; it would preserve the source
         // FormID verbatim. For DmpNew records that emit through the planner with a

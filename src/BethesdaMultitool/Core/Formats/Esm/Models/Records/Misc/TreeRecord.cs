@@ -38,8 +38,22 @@ public record TreeRecord
 }
 
 /// <summary>
-///     TREE CNAM payload (32 bytes, 8 LE floats). Matches the schema at
-///     <c>SubrecordCellAndMiscSchemas (CNAM, TREE, 32)</c>.
+///     TREE CNAM payload — 32 bytes: seven floats and one SIGNED INT32.
+///     <para>
+///     Field order and types are the engine's <c>OBJ_TREE</c> struct, read straight out of
+///     <c>Fallout_Release_MemDebug.pdb</c> (LF_FIELDLIST 0x0002dbf8, LF_STRUCTURE 0x0002dbf9,
+///     Size = 32), and they match xEdit's <c>wbStruct(CNAM)</c> one-for-one:
+///     </para>
+///     <list type="table">
+///         <item><description><c>+0  float  fCurveScalar</c>       → <see cref="LeafCurvature" /></description></item>
+///         <item><description><c>+4  float  fMinimumLeafAngle</c>  → <see cref="MinLeafAngle" /></description></item>
+///         <item><description><c>+8  float  fMaximumLeafAngle</c>  → <see cref="MaxLeafAngle" /></description></item>
+///         <item><description><c>+12 float  fBranchDimming</c>     → <see cref="BranchDimmingValue" /></description></item>
+///         <item><description><c>+16 float  fLeafDimming</c>       → <see cref="LeafDimmingValue" /></description></item>
+///         <item><description><c>+20 int32  iCanopyShadowRadius</c> → <see cref="ShadowRadius" /></description></item>
+///         <item><description><c>+24 float  fRockSpeed</c>         → <see cref="RockSpeed" /></description></item>
+///         <item><description><c>+28 float  fRustleSpeed</c>       → <see cref="RustleSpeed" /></description></item>
+///     </list>
 /// </summary>
 public record TreeData
 {
@@ -48,14 +62,23 @@ public record TreeData
     public float MaxLeafAngle { get; init; }
     public float BranchDimmingValue { get; init; }
     public float LeafDimmingValue { get; init; }
-    public float ShadowRadius { get; init; }
+
+    /// <summary>
+    ///     Canopy shadow radius in cells. INTEGER, not float — the PDB types this
+    ///     <c>iCanopyShadowRadius</c> as <c>T_INT4</c> and xEdit as <c>itS32</c>. Observed
+    ///     values are 128 / 512 / 64; decoding those bytes as a float yields ~7e-43 denormals,
+    ///     which is how the original float typing went unnoticed.
+    /// </summary>
+    public int ShadowRadius { get; init; }
+
     public float RockSpeed { get; init; }
     public float RustleSpeed { get; init; }
 }
 
 /// <summary>
-///     TREE BNAM payload (8 bytes, 2 LE floats). Matches the schema at
-///     <c>SubrecordCellAndMiscSchemas (BNAM, TREE, 8)</c>.
+///     TREE BNAM payload — 8 bytes, two floats. The engine's <c>NiPoint2 BillboardSize</c>
+///     (PDB LF_CLASS 0x000116bc, Size = 8, members <c>x</c>@0 and <c>y</c>@4), which xEdit
+///     names 'Billboard Dimensions' (Width, Height).
 /// </summary>
 public record TreeBillboardSize
 {

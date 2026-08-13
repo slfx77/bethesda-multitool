@@ -1,88 +1,125 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
+using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
-using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
-using BethesdaMultitool.Core.Formats.Esm.Reporting;
+using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
+using BethesdaMultitool.Core.Formats.Esm.Planner.References;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
 
+/// <summary>
+///     XTEL destination validity. FormID existence is not enough — prototype and retail data
+///     reuse the same REFR identity with different base types, so a teleport whose target
+///     resolves to a STAT would hand the engine a door it cannot open.
+///     <para>
+///     Owned by <c>PlacedRefLinkPlanner</c> since retirement Stage H5 (2026-08-12). It was
+///     previously a post-encode writer pass (<c>PlacedRefTeleportSanitizer</c>) that re-derived
+///     the answer from master records while serializing; the decision is now settled at plan
+///     time and the writer only obeys it.
+///     </para>
+/// </summary>
 public sealed class PlacedRefTeleportSanitizerTests
 {
+    private const uint CellId = 0x000DADAF;
+    private const uint SourceRef = 0x01000801;
     private const uint TargetRef = 0x0010F076;
     private const uint TargetBase = 0x0004E7F4;
 
     [Fact]
     public void Existing_Stat_Base_Refr_Is_Not_A_Valid_Xtel_Target()
     {
-        var master = new Dictionary<uint, ParsedMainRecord>
-        {
-            [TargetRef] = Record("REFR", TargetRef, TargetBase),
-            [TargetBase] = Record("STAT", TargetBase)
-        };
-        var stats = new ConversionPipelineStats();
+        var resolved = PlanXtelTo("STAT");
 
-        var sanitized = PlacedRefTeleportSanitizer.Sanitize(
-            [Xtel(TargetRef)], Context(master, stats));
-
-        Assert.Empty(sanitized);
-        Assert.Equal(1, stats.DropReasonCounts["refr.xtel-target-not-door"]);
+        Assert.Equal(ResolvedRefAction.DropSubrecord, resolved.Action);
+        Assert.Equal("refr.xtel-target-not-door", resolved.Reason);
     }
 
     [Fact]
     public void Existing_Door_Base_Refr_Remains_A_Valid_Xtel_Target()
     {
+        var resolved = PlanXtelTo("DOOR");
+
+        Assert.Equal(ResolvedRefAction.Resolved, resolved.Action);
+        Assert.Equal(TargetRef, resolved.FinalFormId);
+    }
+
+    /// <summary>
+    ///     Plans one new placed ref teleporting to <see cref="TargetRef" />, whose master base
+    ///     is <paramref name="baseSignature" />, and returns the planned XTEL decision.
+    /// </summary>
+    private static ResolvedRef PlanXtelTo(string baseSignature)
+    {
         var master = new Dictionary<uint, ParsedMainRecord>
         {
             [TargetRef] = Record("REFR", TargetRef, TargetBase),
-            [TargetBase] = Record("DOOR", TargetBase)
+            [TargetBase] = Record(baseSignature, TargetBase)
         };
 
-        var sanitized = PlacedRefTeleportSanitizer.Sanitize(
-            [Xtel(TargetRef)], Context(master, new ConversionPipelineStats()));
+        var child = new RecordPlan
+        {
+            Type = "REFR",
+            Disposition = RecordDisposition.New,
+            FormId = SourceRef,
+            SourceFormId = SourceRef,
+            Model = new PlacedReference
+            {
+                FormId = SourceRef,
+                RecordType = "REFR",
+                BaseFormId = TargetBase,
+                DestinationDoorFormId = TargetRef
+            },
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+        };
 
-        Assert.Single(sanitized);
-    }
+        var cell = new CellPlan
+        {
+            CellFormId = CellId,
+            CellRecordPlan = new RecordPlan
+            {
+                Type = "CELL",
+                Disposition = RecordDisposition.Override,
+                FormId = CellId,
+                References = ImmutableArray<ResolvedRef>.Empty,
+                ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+            },
+            Context = new PcEsmCellContext { CellFormId = CellId, IsInterior = true },
+            PersistentChildren = ImmutableArray<RecordPlan>.Empty,
+            VwdChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = [child],
+            Emits = true,
+            RefDecisions = ImmutableDictionary<uint, PlacedRefDecision>.Empty
+        };
 
-    private static CellChildEncodeContext Context(
-        IReadOnlyDictionary<uint, ParsedMainRecord> master,
-        ConversionPipelineStats stats)
-    {
         var plan = new EmitPlan
         {
             Records = ImmutableArray<RecordPlan>.Empty,
             SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-            EmittedFormIds = master.Keys.ToImmutableHashSet(),
+            EmittedFormIds = ImmutableHashSet.Create(SourceRef),
             RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
             Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(CellId, cell),
             Meta = new PlanMetadata
             {
                 NextObjectId = 0x800,
                 PlannerCoverage = ImmutableHashSet<string>.Empty
             }
         };
-        var masterRefs = new HashSet<uint> { TargetRef };
-        return new CellChildEncodeContext(
-            plan,
-            master,
-            [.. master.Keys],
-            new PluginBuildOptions(),
-            stats,
-            null,
-            masterRefs,
-            null,
-            PlannerXespParentClassifier.BuildIndex(plan, master, masterRefs));
-    }
 
-    private static EncodedSubrecord Xtel(uint target)
-    {
-        var bytes = new byte[32];
-        BinaryPrimitives.WriteUInt32LittleEndian(bytes, target);
-        return new EncodedSubrecord("XTEL", bytes);
+        var doorLinks = NavmDoorLinkPlanner.Build(plan, master);
+        var cells = PlacedRefLinkPlanner.Apply(
+            plan.CellsByFormId, master, plan.SourceToEmittedFormId, plan.EmittedFormIds,
+            doorLinks.ValidDoorRefFormIds);
+
+        var planned = cells[CellId].TemporaryChildren.Single();
+        return planned.References.Single(r => r.FieldPath == FieldPath.Subrecord("XTEL"));
     }
 
     private static ParsedMainRecord Record(string signature, uint formId, uint? name = null)
@@ -94,6 +131,12 @@ public sealed class PlacedRefTeleportSanitizerTests
             BinaryPrimitives.WriteUInt32LittleEndian(bytes, baseFormId);
             subrecords.Add(new ParsedSubrecord { Signature = "NAME", Data = bytes });
         }
+
+        subrecords.Add(new ParsedSubrecord
+        {
+            Signature = "EDID",
+            Data = Encoding.ASCII.GetBytes($"Test{signature}\0")
+        });
 
         return new ParsedMainRecord
         {

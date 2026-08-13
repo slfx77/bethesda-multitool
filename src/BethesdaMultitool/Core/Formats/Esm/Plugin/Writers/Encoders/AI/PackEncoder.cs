@@ -352,7 +352,8 @@ public sealed class PackEncoder : IRecordEncoder
 
     /// <summary>
     ///     Try remap-first-then-validity for an optional FormID. Mirrors the same policy
-    ///     used by RefrEncoder.ResolveOptionalFormId — returns null when the FormID is
+    ///     PACK's own copy of the placed-ref link policy (RefrEncoder's equivalent moved to
+    ///     PlacedRefLinkPlanner in 2026-08-12) — returns null when the FormID is
     ///     dangling with no remap, otherwise returns the resolved (possibly remapped) FormID.
     /// </summary>
     private static uint? ResolveOptionalFormId(

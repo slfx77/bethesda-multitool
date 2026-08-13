@@ -183,6 +183,28 @@ internal static class NifRenderPropertyReader
                 specB = BinaryUtils.ReadFloat(data, specularColorOffset + 8, nif.IsBigEndian);
             }
 
+            // Legacy streams (BsVersion < 26 — TES3/TES4-era Gamebryo) lay Ambient(12) + Diffuse(12)
+            // immediately before the specular color: the same 24 bytes GetMaterialSpecularColorOffset
+            // skips under this exact guard. Bethesda streams (FO3+) removed both lanes, so they stay
+            // null there — consumers must treat null as "no authored color", never as black.
+            (float R, float G, float B)? ambientColor = null;
+            (float R, float G, float B)? diffuseColor = null;
+            if (nif.BsVersion < 26 &&
+                specularColorOffset - 24 >= pos &&
+                specularColorOffset <= end)
+            {
+                var ambientOffset = specularColorOffset - 24;
+                var diffuseOffset = specularColorOffset - 12;
+                ambientColor = (
+                    BinaryUtils.ReadFloat(data, ambientOffset, nif.IsBigEndian),
+                    BinaryUtils.ReadFloat(data, ambientOffset + 4, nif.IsBigEndian),
+                    BinaryUtils.ReadFloat(data, ambientOffset + 8, nif.IsBigEndian));
+                diffuseColor = (
+                    BinaryUtils.ReadFloat(data, diffuseOffset, nif.IsBigEndian),
+                    BinaryUtils.ReadFloat(data, diffuseOffset + 4, nif.IsBigEndian),
+                    BinaryUtils.ReadFloat(data, diffuseOffset + 8, nif.IsBigEndian));
+            }
+
             // Emissive color sits between the specular color and glossiness in every layout the
             // spec/glossiness offsets already handle. FO3+ (BS > 26) appends an Emissive Mult float
             // after Alpha; older streams have none (mult stays 1).
@@ -207,7 +229,8 @@ internal static class NifRenderPropertyReader
                 BinaryUtils.ReadFloat(data, alphaOffset, nif.IsBigEndian),
                 BinaryUtils.ReadFloat(data, glossinessOffset, nif.IsBigEndian),
                 specR, specG, specB,
-                emR, emG, emB, emissiveMult, HasMaterial: true);
+                emR, emG, emB, emissiveMult, HasMaterial: true,
+                Ambient: ambientColor, Diffuse: diffuseColor);
         }
 
         return defaultInfo;
@@ -231,6 +254,25 @@ internal static class NifRenderPropertyReader
         return (info.EmissiveR * info.EmissiveMult,
             info.EmissiveG * info.EmissiveMult,
             info.EmissiveB * info.EmissiveMult);
+    }
+
+    /// <summary>
+    ///     The material's authored diffuse color, or null when the property list has no
+    ///     NiMaterialProperty at all or the stream is Bethesda-era (BsVersion >= 26 materials carry
+    ///     no ambient/diffuse lanes). Mirrors <see cref="ReadMaterialEmissive" />'s null-guarded
+    ///     shape deliberately: a material-less shape MUST resolve null (not a black default), or
+    ///     every untextured shape in every game would tint black.
+    /// </summary>
+    internal static (float R, float G, float B)? ReadMaterialDiffuse(byte[] data, NifInfo nif,
+        List<int> propertyRefs)
+    {
+        var info = ReadMaterialProperty(data, nif, propertyRefs);
+        if (!info.HasMaterial)
+        {
+            return null;
+        }
+
+        return info.Diffuse;
     }
 
     private static int GetMaterialGlossinessOffset(NifInfo nif)
@@ -392,5 +434,9 @@ internal static class NifRenderPropertyReader
         float EmissiveG = 1f,
         float EmissiveB = 1f,
         float EmissiveMult = 1f,
-        bool HasMaterial = false);
+        bool HasMaterial = false,
+        // Legacy (BsVersion < 26) NiMaterialProperty ambient/diffuse lanes. Null on Bethesda
+        // streams (FO3+ removed the fields) and when the shape has no material.
+        (float R, float G, float B)? Ambient = null,
+        (float R, float G, float B)? Diffuse = null);
 }

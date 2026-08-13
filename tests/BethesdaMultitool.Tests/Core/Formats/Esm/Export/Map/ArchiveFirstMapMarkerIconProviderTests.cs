@@ -266,9 +266,11 @@ public sealed class ArchiveFirstMapMarkerIconProviderTests
     private static void FillOpaque(byte[] rgba, int stride, int x0, int y0, int w, int h)
     {
         for (var y = y0; y < y0 + h; y++)
-        for (var x = x0; x < x0 + w; x++)
         {
-            SetTexel(rgba, stride, x, y, 255, 255, 255, 255);
+            for (var x = x0; x < x0 + w; x++)
+            {
+                SetTexel(rgba, stride, x, y, 255, 255, 255, 255);
+            }
         }
     }
 

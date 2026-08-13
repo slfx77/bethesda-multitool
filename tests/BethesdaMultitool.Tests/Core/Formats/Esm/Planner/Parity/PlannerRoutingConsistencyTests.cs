@@ -8,7 +8,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Parity;
 
 /// <summary>
 ///     Guards the four independent per-type tables a record has to appear in before
-///     <c>--planner-types all</c> can actually emit it. Nothing derives any of them from any
+///     the planner can actually emit it. Nothing derives any of them from any
 ///     other, and the failure when they disagree is silent:
 ///     <list type="number">
 ///         <item>
@@ -53,7 +53,6 @@ public sealed class PlannerRoutingConsistencyTests
         ["REFR"] = "Cell child: emits under CELL Children GRUPs, never a top-level GRUP.",
         ["ACHR"] = "Cell child: emits under CELL Children GRUPs, never a top-level GRUP.",
         ["ACRE"] = "Cell child: emits under CELL Children GRUPs, never a top-level GRUP.",
-        ["PGRE"] = "Encoder shipped ahead of routing — no PGRE→parent-cell mapping on the model yet.",
         ["DIAL"] = "DialogGrupBuilder owns DIAL/INFO emission; the plan is consumed only as preallocatedNewFormIds.",
         ["INFO"] = "DialogGrupBuilder owns DIAL/INFO emission; the plan is consumed only as preallocatedNewFormIds."
     };
@@ -72,7 +71,7 @@ public sealed class PlannerRoutingConsistencyTests
         Assert.True(
             missing.Count == 0,
             "Planned encoders with no DmpRecordSource.Extractors row (planner would emit an EMPTY GRUP " +
-            $"under --planner-types all): {string.Join(", ", missing)}");
+            $"under planner emission): {string.Join(", ", missing)}");
     }
 
     [Fact]

@@ -352,29 +352,11 @@ internal static class WorldMapOverlayBuilder
     ///     Map each SpeedTree <c>.spt</c> archive path → the leaf atlas the engine actually applies: the
     ///     <c>TREE</c> record's <c>ICON</c> field (the `.spt`'s own leaf material is a dev-era path that
     ///     often never shipped — e.g. WhiteOak's `treewoakleaves01b` vs the shipped `WhiteOakLeaves01.dds`).
+    ///     <see cref="SpeedTreeRecordSource" /> walks BOTH the typed <c>Trees</c> list (FNV/FO3) and the
+    ///     generic records (Oblivion/Skyrim/FO4); scanning only one drops every tree on the other family.
     /// </summary>
-    private static Dictionary<string, string> BuildSpeedTreeLeafTextures(RecordCollection semantic)
-    {
-        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var record in semantic.GenericRecords)
-        {
-            if (record.ModelPath is not { } modelPath || !SpeedTreeModelPath.IsSpt(modelPath))
-            {
-                continue;
-            }
-
-            // ICON is the engine's leaf atlas. FNV exposes it in the typed Fields; Oblivion/TES4 records decode
-            // via SchemaRecordDecoder, so it lives in DecodedTree — resolve from both. Without the DecodedTree
-            // fallback, Oblivion trees got no leaf atlas and the renderer fell back to the .spt's dev-era
-            // material name (which ships inconsistently), so every Oblivion leaf card rendered untextured.
-            if (SpeedTreeTreeRecordReader.ResolveLeafIcon(record.Fields, record.DecodedTree) is { } leaf)
-            {
-                map[SpeedTreeModelPath.ToArchivePath(modelPath)] = leaf;
-            }
-        }
-
-        return map;
-    }
+    private static Dictionary<string, string> BuildSpeedTreeLeafTextures(RecordCollection semantic) =>
+        SpeedTreeRecordSource.BuildLeafTextureMap(semantic);
 
     /// <summary>
     ///     Map each SpeedTree <c>.spt</c> archive path → the TREE record's CNAM dimming pair — the engine's
@@ -382,24 +364,8 @@ internal static class WorldMapOverlayBuilder
     ///     tree before Compute). Without these the generator falls back to the <c>.spt</c>'s token-3010
     ///     leaf default and neutral bark.
     /// </summary>
-    private static Dictionary<string, SpeedTreeDimming> BuildSpeedTreeDimming(RecordCollection semantic)
-    {
-        var map = new Dictionary<string, SpeedTreeDimming>(StringComparer.OrdinalIgnoreCase);
-        foreach (var record in semantic.GenericRecords)
-        {
-            if (record.ModelPath is not { } modelPath || !SpeedTreeModelPath.IsSpt(modelPath))
-            {
-                continue;
-            }
-
-            if (SpeedTreeTreeRecordReader.ResolveDimming(record.Fields, record.DecodedTree) is { } dimming)
-            {
-                map[SpeedTreeModelPath.ToArchivePath(modelPath)] = dimming;
-            }
-        }
-
-        return map;
-    }
+    private static Dictionary<string, SpeedTreeDimming> BuildSpeedTreeDimming(RecordCollection semantic) =>
+        SpeedTreeRecordSource.BuildDimmingMap(semantic);
 
     private static Dictionary<uint, List<NavMeshRecord>> BuildNavMeshIndex(
         List<NavMeshRecord> navMeshes, List<CellRecord> cells)
