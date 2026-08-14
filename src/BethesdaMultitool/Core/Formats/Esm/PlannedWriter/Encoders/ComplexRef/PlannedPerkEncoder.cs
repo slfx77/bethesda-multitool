@@ -6,10 +6,9 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.ComplexRef;
 
 /// <summary>
-///     Planned encoder for PERK. Transitional pass-through to legacy
-///     <c>PerkEncoder.EncodeNew(perk, validFormIds, remapTable)</c>; the legacy path
-///     sanitizes CTDA condition FormIDs against the union, which the planner now feeds
-///     from its emit set.
+///     Planned encoder for PERK. Reuses the shared
+///     <c>PerkEncoder.EncodeNew(perk, validFormIds, remapTable)</c> primitive, which sanitizes
+///     CTDA condition FormIDs against the plan's whole reference-liveness set.
 /// </summary>
 public sealed class PlannedPerkEncoder : IPlannedRecordEncoder<PerkRecord>
 {

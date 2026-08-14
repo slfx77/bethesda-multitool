@@ -8,10 +8,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.ComplexRef;
 /// <summary>
 ///     Planned encoder for SCOL (static collection). Transitional pass-through. Legacy
 ///     <c>ScolEncoder.EncodeNew(scol, masterFormIds, emittedNewStats)</c> takes the two
-///     validity sets separately; the planner conservatively passes
-///     <see cref="PlanReferenceLookup.EmittedFormIds" /> for both — the planner's emit set
-///     already unions master + planner-allocated, so an ONAM part that legitimately points
-///     at a master STAT or planner-allocated STAT still resolves.
+///     validity sets separately; the planner passes its final liveness set for both and its
+///     source alias table separately. This lets source-domain ONAM values validate against
+///     newly allocated STATs before PlanWriter's generic byte remapper writes the final ID.
 /// </summary>
 public sealed class PlannedScolEncoder : IPlannedRecordEncoder<StaticCollectionRecord>
 {
@@ -25,7 +24,8 @@ public sealed class PlannedScolEncoder : IPlannedRecordEncoder<StaticCollectionR
         return plan.Disposition switch
         {
             RecordDisposition.New => ScolEncoder.EncodeNew(
-                model, refs.EmittedFormIds, refs.EmittedFormIds),
+                model, refs.EmittedFormIds, refs.EmittedFormIds,
+                refs.SourceToEmittedFormId),
             RecordDisposition.Override => EmptyEncoded,
             _ => throw new InvalidOperationException(
                 $"PlannedScolEncoder called with disposition {plan.Disposition}; expected New or Override."),

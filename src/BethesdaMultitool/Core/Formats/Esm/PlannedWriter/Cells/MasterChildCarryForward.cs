@@ -11,7 +11,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 ///     Re-emits master cell children the DMP capture didn't cover. Under the in-game-proven
 ///     interior cell-ownership rule, overriding a CELL makes this plugin own the cell's
 ///     temporary children — every master temporary we don't re-emit is dropped by the engine.
-///     Ports the legacy carry-forward (PluginBuilder's PersistentOnly PreserveAllMissing /
+///     Ports the legacy carry-forward (PluginConversionPipeline's PersistentOnly PreserveAllMissing /
 ///     LoadedReplacement PreserveLoadedReplacementMissing branches), reusing the same
 ///     <see cref="CellStructuralReferencePreserver" /> filters and verbatim byte
 ///     reconstruction (XEMI stripped, compression cleared).

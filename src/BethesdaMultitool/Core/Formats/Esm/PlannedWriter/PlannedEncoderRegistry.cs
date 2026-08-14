@@ -2,9 +2,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 
 /// <summary>
 ///     Lookup table mapping record signature → <see cref="IPlannedRecordEncoder" />.
-///     The dispatch shim consults this when handing records to the writer; an unmapped
-///     type means the writer cannot service the request and the caller should fall back
-///     to the legacy pipeline (until that path is deleted in the final bulk-removal PR).
+///     The dispatch shim consults this before handing a type to the writer; an unmapped
+///     requested type is an invariant error because there is no alternate emission route.
 /// </summary>
 public sealed class PlannedEncoderRegistry
 {
@@ -37,6 +36,6 @@ public sealed class PlannedEncoderRegistry
             : throw new KeyNotFoundException(
                 $"No planned encoder registered for record type {recordType}.");
 
-    /// <summary>Total encoder count — for reporting how much of the migration is done.</summary>
+    /// <summary>Total registered encoder count.</summary>
     public int Count => _byType.Count;
 }

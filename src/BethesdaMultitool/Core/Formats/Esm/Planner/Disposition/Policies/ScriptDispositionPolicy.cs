@@ -6,7 +6,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies;
 /// <summary>
 ///     Per-SCPT policy: refuses to emit an Override when the DMP-captured script would
 ///     downgrade master's compiled bytecode. Ports the decision half of legacy
-///     <c>PluginBuilder.TryEncodeProvenScriptBearingOverride</c> (the encoding half moves
+///     <c>PluginConversionPipeline.TryEncodeProvenScriptBearingOverride</c> (the encoding half moves
 ///     into the planned writer in Tier 6.5).
 /// </summary>
 /// <remarks>

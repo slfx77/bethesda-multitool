@@ -33,11 +33,10 @@ public sealed class PlannedCellDecisionTests
     private const uint MarkerRefId = 0x01000902;
 
     [Fact]
-    public void Planned_PersistentOnly_Mode_Wins_Over_Writer_Fallback()
+    public void Planned_PersistentOnly_Mode_Is_Consumed_Without_Reclassification()
     {
-        // Planned PersistentOnly drops the non-persistent NEW ref. The writer-side
-        // fallback would classify Skip (empty master ref set), which does NOT gate new
-        // refs — so a drop here proves the planned Mode was consumed.
+        // PersistentOnly drops the non-persistent NEW ref; seeing the planned drop reason
+        // proves the writer consumed the verdict rather than reclassifying the cell.
         var (_, stats) = BuildSection(CellMergeMode.PersistentOnly, false);
 
         Assert.Equal(1, stats.DropReasonCounts.GetValueOrDefault("cell.persistent-only-nonpersistent-ref"));
@@ -45,10 +44,9 @@ public sealed class PlannedCellDecisionTests
 
 
     [Fact]
-    public void Planned_Marker_Drop_Wins_Over_Writer_Fallback()
+    public void Planned_Marker_Drop_Is_Consumed_Without_Reclassification()
     {
-        // A planned marker-drop policy kills the engine-base (0x20) marker placement; the
-        // writer fallback carries no marker policy for this fixture and would emit it.
+        // The planned marker-drop policy kills the engine-base (0x20) marker placement.
         var (section, stats) = BuildSection(
             CellMergeMode.LoadedReplacement, true, true);
 

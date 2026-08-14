@@ -13,15 +13,13 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 ///     Orchestrates the cell-section planning phases — catalog, disposition, child
 ///     allocation, and worldspace catalog — and produces the cell-related slices of
 ///     <see cref="EmitPlan" />. <see cref="EsmPlanner" /> calls this when <c>"CELL"</c>
-///     is in <c>PlannerEnabledRecordTypes</c>.
+///     is in the requested planner coverage.
 /// </summary>
 /// <remarks>
-///     Tier 6.1 ships the orchestration with empty child arrays in each
-///     <see cref="CellPlan" /> — the catalog runs, dispositions are decided, FormIDs
-///     are allocated, and worldspace plans are built, but per-cell placed-ref / LAND /
-///     NAVM record plans are populated in Tier 6.1b. <c>PlanCellSectionBuilder</c>
-///     still emits cell GRUPs through legacy <see cref="CellGrupBuilder" /> framing,
-///     just with the planner-side data shape replacing legacy bundles.
+///     This stage settles the complete cell hierarchy: CELL/WRLD dispositions, child and
+///     LAND/NAVM allocations, merge modes, and the inputs consumed by the planned cell
+///     section writer. The master placed-ref set is required; there is no writer-side
+///     fallback that can reconstruct a missing merge mode.
 /// </remarks>
 public sealed class CellSectionPlanner
 {
@@ -46,6 +44,7 @@ public sealed class CellSectionPlanner
         ArgumentNullException.ThrowIfNull(dmpWorldspaces);
         ArgumentNullException.ThrowIfNull(masterFormIds);
         ArgumentNullException.ThrowIfNull(allocator);
+        ArgumentNullException.ThrowIfNull(masterRefFormIds);
 
         var catalog = CellCatalog.Build(masterContexts, masterRecordsByFormId, dmpCells);
         if (catalog.Count == 0)
@@ -161,7 +160,7 @@ public sealed class CellSectionPlanner
         IReadOnlyDictionary<uint, CellLandDecision> landDecisions,
         CellChildAllocator.AllocationResult allocations,
         IReadOnlySet<uint> masterFormIds,
-        IReadOnlySet<uint>? masterRefFormIds,
+        IReadOnlySet<uint> masterRefFormIds,
         bool replaceCellTemporariesOnOverride)
     {
         var cells = ImmutableDictionary.CreateBuilder<uint, CellPlan>();
@@ -238,21 +237,14 @@ public sealed class CellSectionPlanner
     ///     cells classify via
     ///     <see cref="CellMerger.Classify" /> (any non-persistent master-resident capture ⇒
     ///     LoadedReplacement; persistent-only ⇒ PersistentOnly); brand-new cells emit all
-    ///     their children unconditionally (LoadedReplacement semantics). Returns null Mode
-    ///     when the master ref set wasn't supplied — the writer's transitional fallback
-    ///     (<c>CellDecisionFallback</c>) then computes both.
+    ///     their children unconditionally (LoadedReplacement semantics).
     /// </summary>
-    private static (CellMergeMode? Mode, bool DropRenderCullingMarkers) PlanMergeMode(
+    private static (CellMergeMode Mode, bool DropRenderCullingMarkers) PlanMergeMode(
         CellCatalogEntry entry,
         PcEsmCellContext context,
-        IReadOnlySet<uint>? masterRefFormIds,
+        IReadOnlySet<uint> masterRefFormIds,
         bool replaceCellTemporariesOnOverride)
     {
-        if (masterRefFormIds is null)
-        {
-            return (null, false);
-        }
-
         var isMasterAnchored = entry.MasterRecord is not null;
         var mode = (isMasterAnchored, entry.DmpModel) switch
         {

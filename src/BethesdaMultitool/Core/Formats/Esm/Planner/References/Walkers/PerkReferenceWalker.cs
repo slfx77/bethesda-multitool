@@ -1,11 +1,12 @@
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Magic;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers;
 
 /// <summary>
-///     Walks outgoing FormID references on a parsed <see cref="PerkRecord" />: each
-///     <c>PerkCondition</c> contributes its Parameter1FormId / Parameter2FormId when the
-///     condition function carries a FormID (HasPerk, GetIsID, etc. — typing is determined
+///     Walks outgoing FormID references on a parsed <see cref="PerkRecord" />. Top-level and
+///     grouped per-entry <c>PerkCondition</c> values contribute Parameter1FormId / Parameter2FormId
+///     when the condition function carries a FormID (HasPerk, GetIsID, etc. — typing is determined
 ///     upstream by the parser via <c>PerkCondition.Parameter1FormId</c>/<c>Parameter2FormId</c>
 ///     non-null markers).
 /// </summary>
@@ -27,14 +28,37 @@ public sealed class PerkReferenceWalker : IRecordReferenceWalker
             yield break;
         }
 
-        for (var i = 0; i < perk.Conditions.Count; i++)
+        foreach (var reference in WalkConditions(perk.Conditions, ""))
         {
-            var condition = perk.Conditions[i];
+            yield return reference;
+        }
+
+        for (var entryIndex = 0; entryIndex < perk.Entries.Count; entryIndex++)
+        {
+            var groups = perk.Entries[entryIndex].ConditionGroups;
+            for (var groupIndex = 0; groupIndex < groups.Count; groupIndex++)
+            {
+                var prefix = $"Entries[{entryIndex}].ConditionGroups[{groupIndex}].";
+                foreach (var reference in WalkConditions(groups[groupIndex].Conditions, prefix))
+                {
+                    yield return reference;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<RawReference> WalkConditions(
+        List<PerkCondition> conditions,
+        string pathPrefix)
+    {
+        for (var i = 0; i < conditions.Count; i++)
+        {
+            var condition = conditions[i];
             if (condition.Parameter1FormId is uint p1 && p1 != 0)
             {
                 yield return new RawReference
                 {
-                    FieldPath = FieldPath.IndexedMember("CTDA", i, "Parameter1"),
+                    FieldPath = pathPrefix + FieldPath.IndexedMember("CTDA", i, "Parameter1"),
                     FormId = p1,
                 };
             }
@@ -43,7 +67,7 @@ public sealed class PerkReferenceWalker : IRecordReferenceWalker
             {
                 yield return new RawReference
                 {
-                    FieldPath = FieldPath.IndexedMember("CTDA", i, "Parameter2"),
+                    FieldPath = pathPrefix + FieldPath.IndexedMember("CTDA", i, "Parameter2"),
                     FormId = p2,
                 };
             }

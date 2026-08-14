@@ -78,7 +78,7 @@ public sealed class PlannedNpcPackageResolutionTests
             Diagnostics = diagnostics
         };
         var sink = new RecordingSink();
-        PluginBuilder.ReportPlannerDiagnostics(plan, sink);
+        PluginConversionPipeline.ReportPlannerDiagnostics(plan, sink);
 
         Assert.Equal(2, sink.Events.Count);
         Assert.All(sink.Events, evt => Assert.Equal(ConversionEventSeverity.Decision, evt.Severity));

@@ -9,7 +9,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 ///     NAVI gets extended with NVMI/NVCI rows pointing at our new NAVM FormIDs. Without
 ///     this the FNV runtime null-derefs at FalloutNV+0x0069E09A during plugin load when
 ///     NavMeshInfoMap tries to resolve a new NAVM FormID. Mirrors the legacy emission
-///     pattern in PluginBuilder around line 3021.
+///     pattern in the retired legacy cell loop.
 /// </summary>
 internal static class PlannedNavmEntryBuilder
 {
@@ -65,7 +65,7 @@ internal static class PlannedNavmEntryBuilder
             // parent worldspace FormID. For new worldspaces we must use the EMITTED FormID
             // (post-allocation), otherwise NavMeshInfoMap setup at FalloutNV+0x0069DFDC
             // looks up a non-existent FormID and crashes. Matches legacy logic in
-            // PluginBuilder around line 3000.
+            // the retired legacy cell loop.
             //
             // Cell FormIDs follow the same emitted-FormID rule: if Pass 0 reallocated
             // the parent cell (proto FormID didn't match a master cell), the runtime

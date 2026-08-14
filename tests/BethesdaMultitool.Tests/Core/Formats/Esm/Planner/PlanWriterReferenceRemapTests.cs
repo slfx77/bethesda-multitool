@@ -139,7 +139,7 @@ public sealed class PlanWriterReferenceRemapTests
             new PlanWriter(PlannedEncoders.BuildRegistry(), sink).BuildGrupForType(
                 "SCPT", plan, new PluginBuildOptions { CompressRecords = false }));
 
-        Assert.Contains("planner/writer script-emission policies have diverged", exception.Message,
+        Assert.Contains("planner/writer emission policies have diverged", exception.Message,
             StringComparison.Ordinal);
         var warning = Assert.Single(sink.Events, evt =>
             evt.Code == "planned-encoder.warning" && evt.FormType == "SCPT");

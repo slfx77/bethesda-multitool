@@ -15,9 +15,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 ///     Walks an <see cref="EmitPlan" /> and produces a top-level GRUP for a requested record
 ///     type. It never allocates or chooses a reference target — those decisions happen in
 ///     the planner — but it applies the plan's settled source-to-emitted aliases to encoded
-///     FormID fields before serialization. Reuses the legacy byte-emission primitives
+///     FormID fields before serialization. Reuses the established byte-emission primitives
 ///     (<see cref="PluginRecordByteBuilder" />, <see cref="RecordMergeEngine" />,
-///     <see cref="TopLevelRecordEmitter" />) so Tier 1 parity is byte-exact.
+///     <see cref="TopLevelRecordEmitter" />).
 /// </summary>
 public sealed class PlanWriter
 {
@@ -164,16 +164,17 @@ public sealed class PlanWriter
 
             if (encoded.Subrecords.Count == 0)
             {
-                if (recordType == "SCPT" && record.Disposition == RecordDisposition.New)
+                if (record.Disposition == RecordDisposition.New)
                 {
                     throw new InvalidOperationException(
-                        $"Planned new SCPT 0x{record.FormId:X8} produced no bytes; "
-                        + "the planner/writer script-emission policies have diverged.");
+                        $"Planned new {recordType} 0x{record.FormId:X8} produced no bytes; "
+                        + "the planner/writer emission policies have diverged, or a "
+                        + "New-record non-emission policy is missing.");
                 }
 
-                // Encoder declined — matches legacy "no changes → skip override" path. This
-                // is the DelegatingPlannedEncoder empty-Override convention for ~49 Simple<T>
-                // types, so it is the single largest skip population under planner emission.
+                // Empty overrides can intentionally mean "no delta" and retain master bytes.
+                // New non-emission must be settled by planner policy before reaching the writer;
+                // accepting it here would create a phantom-live allocation.
                 _stats?.IncrementSkipped(recordType);
                 _stats?.IncrementDropReason("planned-encoder.declined");
                 continue;

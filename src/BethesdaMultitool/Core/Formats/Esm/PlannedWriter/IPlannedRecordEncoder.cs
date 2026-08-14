@@ -4,10 +4,9 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 
 /// <summary>
-///     Encoder contract for the planned-writer pipeline. Implementations are pure
-///     <c>(model, plan) → bytes</c> — no allocator, no <c>validFormIds</c>, no
-///     degrade-on-dangle fallback. Every reference the encoder needs is pre-resolved
-///     in <see cref="RecordPlan.References" /> and accessed via <see cref="PlanReferenceLookup" />.
+///     Encoder contract for the planned-writer pipeline. Implementations do not allocate
+///     FormIDs or choose dispositions. Field-level resolutions and the remaining whole-plan
+///     liveness/remap compatibility data are exposed through <see cref="PlanReferenceLookup" />.
 /// </summary>
 public interface IPlannedRecordEncoder
 {

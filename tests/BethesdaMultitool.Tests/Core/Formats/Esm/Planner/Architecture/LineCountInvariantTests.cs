@@ -5,7 +5,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Architecture;
 
 /// <summary>
 ///     Enforces the 500-LOC-per-file invariant on the new planner / planned-writer
-///     namespaces. The legacy <c>Plugin/Pipeline/PluginBuilder.cs</c> at ~5,200 LOC is the
+///     namespaces. The legacy <c>Plugin/Pipeline/PluginConversionPipeline.cs</c> at ~5,200 LOC is the
 ///     pattern the planner exists to kill — splitting concerns into small focused files is
 ///     a load-bearing architectural choice, not a stylistic one.
 /// </summary>

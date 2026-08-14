@@ -1,4 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers;
 
@@ -6,7 +8,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers;
 ///     Walks outgoing FormID references on a parsed INFO (<see cref="DialogueRecord" />):
 ///     parent topic + parent quest, speaker + speaker-related condition FormIDs, topic-link
 ///     chains (TCLT/TCLF/NAME), the PNAM previous-info chain, and SCRO refs inside each
-///     result-script block. Per-CTDA Reference fields are yielded so dialogue conditions
+///     result-script block. Semantic per-CTDA Reference fields are yielded so dialogue conditions
 ///     pointing at deleted refs can be sanitized via the degradation policy.
 /// </summary>
 public sealed class InfoReferenceWalker : IRecordReferenceWalker
@@ -88,12 +90,15 @@ public sealed class InfoReferenceWalker : IRecordReferenceWalker
         for (var c = 0; c < info.Conditions.Count; c++)
         {
             var condition = info.Conditions[c];
-            if (condition.Reference != 0)
+            if (DialogueConditionReferencePolicy.TryGetSemanticReference(
+                    condition,
+                    BethesdaGame.FalloutNewVegas,
+                    out var reference))
             {
                 yield return new RawReference
                 {
                     FieldPath = FieldPath.IndexedMember("CTDA", c, "Reference"),
-                    FormId = condition.Reference,
+                    FormId = reference,
                 };
             }
         }

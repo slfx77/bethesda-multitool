@@ -4,37 +4,48 @@ using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 namespace BethesdaMultitool.Core.Formats.Esm.Planner;
 
 /// <summary>
-///     The immutable output of <see cref="EsmPlanner" />. Every record disposition, FormID
-///     allocation, and reference resolution for the ESP that will be emitted is settled here.
-///     The <c>PlannedWriter</c> walks this and produces bytes — it never decides, allocates,
-///     or validates.
+///     The immutable planning result consumed by the top-level and cell serializers. It
+///     records dispositions, FormID allocations, and reference-resolution directives; it
+///     is not a census of bytes that ultimately reach the output plugin.
 /// </summary>
 /// <remarks>
-///     Invariant: <c>formId ∈ EmittedFormIds</c> ⇔ bytes for that FormID will be written.
-///     If this invariant ever breaks, the entire two-pass architecture's value collapses.
-///     Enforced by <c>PlanValidator</c> in phase E.
+///     <see cref="EmittedFormIds" /> is a post-load reference-liveness set, not a manifest of
+///     records written by this plugin: retained master identities are live without plugin
+///     bytes. Planned <c>New</c> records are still expected to serialize. The early AVIF,
+///     SCOL, and allocation-compatibility policies record their explicit holes in
+///     <see cref="FormIdReservations" />; later fail-closed planner suppressions can also
+///     consume slots and are intentionally outside that non-exhaustive audit array.
 /// </remarks>
 public sealed record EmitPlan
 {
     /// <summary>
-    ///     Every record that will appear in the output ESP, in emission order. Already
-    ///     topologically sorted: DIAL before INFOs, WRLD before child CELLs, NAVM before
-    ///     NAVI references. Within a GRUP, sorted by <see cref="RecordPlan.FormId" />.
+    ///     Top-level record plans retained after skip propagation, in containment order.
+    ///     <c>KeepMaster</c> entries remain for reference resolution but produce no plugin
+    ///     bytes; within a type, catalog insertion order is retained.
     /// </summary>
     public required ImmutableArray<RecordPlan> Records { get; init; }
 
     /// <summary>
     ///     Maps a DMP / proto source FormID to the plugin-range FormID it was allocated.
-    ///     Used by <c>PlannedWriter</c> when it needs to translate an incoming reference to
-    ///     its final emitted form. Identity entries (master → master) are NOT stored here —
+    ///     Used by the planned writer to translate an incoming reference to its final live
+    ///     FormID. Identity entries (master → master) are NOT stored here —
     ///     query <see cref="EmittedFormIds" /> for "will this resolve?" instead.
     /// </summary>
     public required ImmutableDictionary<uint, uint> SourceToEmittedFormId { get; init; }
 
     /// <summary>
-    ///     Every FormID that will appear in the output ESP — both retained master FormIDs
-    ///     (<c>KeepMaster</c> / <c>Override</c> dispositions) and freshly-allocated plugin
-    ///     FormIDs (<c>New</c> disposition). The single source of truth for
+    ///     Non-exhaustive early-policy reservation metadata (currently AVIF, SCOL, and the
+    ///     historical pre-planner WRLD slot). These slots are not live identities and
+    ///     serialize no record. Later reference/cell suppressions can consume additional
+    ///     unlisted slots.
+    /// </summary>
+    public ImmutableArray<FormIdReservation> FormIdReservations { get; init; } =
+        ImmutableArray<FormIdReservation>.Empty;
+
+    /// <summary>
+    ///     Every FormID considered live after the plugin and its masters load: retained
+    ///     master identities plus freshly allocated plugin FormIDs. Membership does not
+    ///     mean this plugin writes a record for the ID. This is the single source of truth for
     ///     "is this reference live?" — <c>PlannedWriter</c> encoders never consult any other
     ///     validity set.
     /// </summary>
@@ -53,16 +64,15 @@ public sealed record EmitPlan
         ImmutableHashSet<uint>.Empty;
 
     /// <summary>
-    ///     <c>FormId → index into <see cref="Records" /></c>. Lets the writer answer
-    ///     "where does this FormID live" in O(1). Populated alongside <see cref="Records" />
-    ///     by phase E.
+    ///     <c>FormId → index into <see cref="Records" /></c>, including retained
+    ///     <c>KeepMaster</c> plans. Populated alongside <see cref="Records" />.
     /// </summary>
     public required ImmutableDictionary<uint, int> RecordIndexByEmittedFormId { get; init; }
 
     /// <summary>
     ///     Every planner decision that produced anything noteworthy: skipped records,
     ///     degraded references, drop-cascades, ordering choices. Not bytes — diagnostics
-    ///     only. The legacy <c>IDiagnosticSink</c> reads these post-hoc.
+    ///     only. <c>PluginConversionPipeline</c> reports them through its progress sink.
     /// </summary>
     public required ImmutableArray<PlanDiagnostic> Diagnostics { get; init; }
 
@@ -70,23 +80,22 @@ public sealed record EmitPlan
     public required PlanMetadata Meta { get; init; }
 
     /// <summary>
-    ///     Per-cell decisions for cells the planner owns. Empty when the planner does not
-    ///     own the cell hierarchy (the default; legacy <c>CellGrupBuilder</c> runs). Populated
-    ///     once <c>"CELL"</c> appears in <c>PlannerEnabledRecordTypes</c> (Tier 5b.5+).
+    ///     Per-cell decisions for the planned cell hierarchy. Populated when <c>"CELL"</c>
+    ///     is in planner coverage; otherwise empty.
     /// </summary>
     public ImmutableDictionary<uint, CellPlan> CellsByFormId { get; init; } =
         ImmutableDictionary<uint, CellPlan>.Empty;
 
     /// <summary>
-    ///     Per-worldspace decisions for WRLD records whose cells the planner owns. Empty
-    ///     until the planner takes over the cell hierarchy.
+    ///     Per-worldspace decisions for WRLD records in the planned cell hierarchy.
     /// </summary>
     public ImmutableDictionary<uint, WorldspacePlan> WorldspacesByFormId { get; init; } =
         ImmutableDictionary<uint, WorldspacePlan>.Empty;
 
     /// <summary>
-    ///     New NAVM entries the planner has staged for NAVI override synthesis at write
-    ///     time. The <c>PlannedNaviEncoder</c> consumes this list once all cells emit.
+    ///     New NAVM entries staged for NAVI override synthesis. The planner settles the
+    ///     surviving NAVM set after cell verdicts; the conversion pipeline passes it and the
+    ///     connectivity map to <c>NavInfoMapBuilder</c>.
     /// </summary>
     public ImmutableArray<PlannedNavmEntry> NavmEntries { get; init; } =
         ImmutableArray<PlannedNavmEntry>.Empty;

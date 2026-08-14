@@ -15,7 +15,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 
 /// <summary>
 ///     Placed-ref (REFR/ACHR/ACRE) encoding for the planner cell writer. Ports the legacy
-///     per-ref filter chain from <c>PluginBuilder</c>'s cell-children merge loop — runtime-state
+///     per-ref filter chain from <c>PluginConversionPipeline</c>'s cell-children merge loop — runtime-state
 ///     skip, render-culling-marker drop, sparse-cell (PersistentOnly) preservation, parent-cell
 ///     mismatch guard, base remap-then-validate — plus the override-merge emission path
 ///     (<c>TryEncodeOverrideRef</c>: DMP live position merged onto master subrecords).

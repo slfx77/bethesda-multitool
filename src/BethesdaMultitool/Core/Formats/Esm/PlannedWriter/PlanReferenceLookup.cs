@@ -9,10 +9,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 /// </summary>
 /// <remarks>
 ///     Also exposes the whole-plan <see cref="EmittedFormIds" /> and
-///     <see cref="SourceToEmittedFormId" /> as transitional accessors. Encoders being
-///     migrated incrementally (Tier 2+) can pass these straight through to their legacy
-///     <c>EncodeNew(model, validFormIds, remapTable)</c> overload while the per-field
-///     walker / <see cref="ResolvedRef" /> work catches up.
+///     <see cref="SourceToEmittedFormId" /> as compatibility accessors for encoders whose
+///     existing primitives still consume a whole-plan liveness set or remap table. That is
+///     explicit technical debt, not an alternate writer route.
 /// </remarks>
 public sealed class PlanReferenceLookup
 {
@@ -37,8 +36,8 @@ public sealed class PlanReferenceLookup
     }
 
     /// <summary>
-    ///     Whole-plan emit set. Transitional accessor for encoders still delegating to
-    ///     legacy <c>EncodeNew(model, validFormIds, …)</c> overloads.
+    ///     Whole-plan reference-liveness set used by encoders whose existing primitives
+    ///     still accept a <c>validFormIds</c> argument.
     /// </summary>
     public IReadOnlySet<uint> EmittedFormIds =>
         _plan?.EmittedFormIds
@@ -47,8 +46,8 @@ public sealed class PlanReferenceLookup
             "Pass the plan via the (record, plan) constructor.");
 
     /// <summary>
-    ///     Whole-plan source→allocated FormID map. Transitional accessor for encoders still
-    ///     delegating to legacy <c>EncodeNew(model, …, remapTable)</c> overloads.
+    ///     Whole-plan source→allocated FormID map used by encoders whose existing primitives
+    ///     still accept a remap table.
     /// </summary>
     public IReadOnlyDictionary<uint, uint> SourceToEmittedFormId =>
         _plan?.SourceToEmittedFormId

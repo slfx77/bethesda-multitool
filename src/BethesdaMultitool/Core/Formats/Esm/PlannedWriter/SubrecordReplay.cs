@@ -5,22 +5,19 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 
 /// <summary>
-///     Replays a planner-computed <see cref="SubrecordDecision" /> list against a master
-///     record + encoder output, producing the final per-subrecord byte stream for an
-///     <c>Override</c> emit.
+///     Reserved, currently unused experiment for replaying a planner-computed
+///     <see cref="SubrecordDecision" /> list. Production override emission uses
+///     <c>RecordMergeEngine</c> and does not call this type.
 /// </summary>
 /// <remarks>
-///     Tier 0: stub. The legacy <c>RecordMergeEngine</c> still drives Override emission for
-///     all types. As tiers ship, encoders return <see cref="EncodedRecord" /> instances plus
-///     pre-computed <see cref="SubrecordDecision" /> lists; the replay walks those.
-///     The replay is pure — it never consults <c>SubrecordMergePolicy</c>, only the planner's
-///     decision array. Policy lookups belong in phase B (Disposition).
+///     No current planner stage populates a generic ordered decision list and this method
+///     always throws. Do not treat <see cref="RecordPlan.OverrideSubrecords" /> as an active
+///     generic writer contract until both production wiring and tests exist.
 /// </remarks>
 public static class SubrecordReplay
 {
     /// <summary>
-    ///     Replay one override record. Throws <see cref="NotImplementedException" /> until
-    ///     a tier needs it; Tier 0 ships the type signature only.
+    ///     Unimplemented; no production caller exists.
     /// </summary>
     public static IReadOnlyList<EncodedSubrecord> Replay(
         ParsedMainRecord master,
@@ -32,7 +29,7 @@ public static class SubrecordReplay
         ArgumentNullException.ThrowIfNull(decisions);
 
         throw new NotImplementedException(
-            "SubrecordReplay is stubbed until Tier 3 introduces real override records through the planned writer.");
+            "SubrecordReplay is not implemented or wired into production override emission.");
     }
 }
 

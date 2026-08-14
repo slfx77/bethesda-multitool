@@ -44,14 +44,14 @@ public sealed class TerminalReferenceWalkerTests
                     ReferencedObjects = [0x000A0012, 0x80000005, 0x000A0013],
                     Conditions =
                     [
-                        new DialogueCondition { Reference = 0x000A0014 },
-                        new DialogueCondition { Reference = 0 }
+                        new DialogueCondition { RunOn = 2, Reference = 0x000A0014 },
+                        new DialogueCondition { RunOn = 4, Reference = 0x000A0099 }
                     ]
                 },
                 new TerminalMenuItem
                 {
                     ReferencedObjects = [0x80000006, 0x000A0015],
-                    Conditions = [new DialogueCondition { Reference = 0x000A0016 }]
+                    Conditions = [new DialogueCondition { RunOn = 2, Reference = 0x000A0016 }]
                 }
             ]
         };

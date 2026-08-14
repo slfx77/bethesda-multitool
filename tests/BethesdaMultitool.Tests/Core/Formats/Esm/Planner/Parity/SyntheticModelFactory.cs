@@ -1,4 +1,5 @@
 using System.Reflection;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 
@@ -35,7 +36,7 @@ internal static class SyntheticModelFactory
     ///     Record types deliberately excluded from the aggregate sweep. See the class summary.
     /// </summary>
     public static readonly IReadOnlySet<string> SkippedRecordTypes =
-        new HashSet<string>(StringComparer.Ordinal) { "CELL", "REFR", "ACHR", "ACRE" };
+        new HashSet<string>(StringComparer.Ordinal) { "CELL", "REFR", "ACHR", "ACRE", "AVIF" };
 
     /// <summary>
     ///     Hooks for record types whose minimal fixture needs extra fields beyond the
@@ -44,6 +45,15 @@ internal static class SyntheticModelFactory
     private static readonly Dictionary<string, Func<object>> ExplicitOverrides =
         new(StringComparer.Ordinal)
         {
+            // New AVIFs are planner-owned reservations and are intentionally excluded
+            // from this direct-writer parity sweep. Keep SCOL in the sweep with a baked
+            // model so the synthetic New record is eligible for serialization.
+            ["SCOL"] = () => new StaticCollectionRecord
+            {
+                FormId = TestFormId,
+                EditorId = "TestSCOL",
+                ModelPath = "meshes/test-scol.nif"
+            },
             // IMAD's fixed DNAM count table and ordered frame streams are an atomic unit;
             // an EditorID-only model is intentionally rejected as a phantom target.
             ["IMAD"] = () => ImageSpaceModifierTestFactory.Complete(TestFormId)

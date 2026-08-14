@@ -89,16 +89,18 @@ public sealed class PackageReferenceWalkerTests
     }
 
     [Fact]
-    public void Ctda_Reference_Yields_Per_Condition_Path()
+    public void Ctda_Reference_Yields_Only_Semantic_Fnv_Slots()
     {
         var pack = new PackageRecord
         {
             FormId = 0x000ABCDE,
             Conditions =
             [
-                new DialogueCondition { Reference = 0x000ABCD0 },
-                new DialogueCondition { Reference = 0 }, // No ref → not yielded.
-                new DialogueCondition { Reference = 0x000ABCD1 }
+                new DialogueCondition { RunOn = 2, Reference = 0x000ABCD0 },
+                new DialogueCondition { RunOn = 2, Reference = 0 },
+                new DialogueCondition { RunOn = 4, Reference = 0x000ABCD1 },
+                new DialogueCondition { FunctionIndex = 0x006A, RunOn = 2, Reference = 0x000ABCD2 },
+                new DialogueCondition { RunOn = 2, Reference = 0x000ABCD3 }
             ]
         };
         var walker = new PackageReferenceWalker();
@@ -106,8 +108,10 @@ public sealed class PackageReferenceWalkerTests
         var refs = walker.Walk(pack).ToList();
 
         Assert.Contains(refs, r => r.FieldPath == "CTDA[0].Reference" && r.FormId == 0x000ABCD0);
-        Assert.Contains(refs, r => r.FieldPath == "CTDA[2].Reference" && r.FormId == 0x000ABCD1);
+        Assert.Contains(refs, r => r.FieldPath == "CTDA[4].Reference" && r.FormId == 0x000ABCD3);
         Assert.DoesNotContain(refs, r => r.FieldPath == "CTDA[1].Reference");
+        Assert.DoesNotContain(refs, r => r.FieldPath == "CTDA[2].Reference");
+        Assert.DoesNotContain(refs, r => r.FieldPath == "CTDA[3].Reference");
     }
 
     [Fact]

@@ -10,24 +10,22 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 ///     lists and yields <see cref="CatalogEntry" /> values keyed by signature.
 /// </summary>
 /// <remarks>
-///     Tier 0 ships with an empty type→list mapping. As each tier ports a record type, the
-///     enumeration adds the corresponding <see cref="RecordCollection" /> list. The empty
-///     default means a Tier 0 build with any non-trivial <c>enabledTypes</c> set still
-///     produces zero <see cref="SourceKind.DmpOverride" /> / <see cref="SourceKind.DmpNew" />
-///     entries — which is correct (no encoders yet), and the parity harness catches any
-///     accidental cross-pipeline interference.
+///     This table is intentionally broader than current production output coverage: a type
+///     can be enumerable before it has both a registered planned encoder and a current
+///     <c>PluginConversionPipeline.EnumerateModelsByType</c> dispatch row. Routing-consistency
+///     tests guard the required agreement; the tier labels below are migration history only.
 /// </remarks>
 public sealed class DmpRecordSource
 {
     /// <summary>
     ///     Per-record-type extractors. Each yields <c>(FormId, Model)</c> pairs in the same
-    ///     order legacy <c>EnumerateModelsByType</c> yields them — Tier 1 byte-exact parity
-    ///     depends on this. Add the type's row when its planned encoder ships.
+    ///     order as the current pipeline dispatch. Catalog insertion order, and therefore
+    ///     deterministic allocation order, depends on this sequence.
     /// </summary>
     private static readonly Dictionary<string, Func<RecordCollection, IEnumerable<(uint FormId, object Model)>>>
         Extractors = new(StringComparer.Ordinal)
         {
-            // Tier 1 — trivial static-data encoders.
+            // Historical migration group: Tier 1 trivial static-data encoders.
             ["GMST"] = c => c.GameSettings.Select(r => (r.FormId, (object)r)),
             ["GLOB"] = c => c.Globals.Select(r => (r.FormId, (object)r)),
             ["WEAP"] = c => c.Weapons.Select(r => (r.FormId, (object)r)),
@@ -36,7 +34,7 @@ public sealed class DmpRecordSource
             ["ALCH"] = c => c.Consumables.Select(r => (r.FormId, (object)r)),
             ["BOOK"] = c => c.Books.Select(r => (r.FormId, (object)r)),
             ["STAT"] = c => c.Statics.Select(r => (r.FormId, (object)r)),
-            // Tier 2 — simple FormID-ref encoders (FormIDs emitted verbatim or via WEAP's
+            // Historical migration group: Tier 2 simple FormID-ref encoders (FormIDs emitted verbatim or via WEAP's
             // transitional validFormIds/remapTable pass-through).
             ["DOOR"] = c => c.Doors.Select(r => (r.FormId, (object)r)),
             ["MISC"] = c => c.MiscItems.Select(r => (r.FormId, (object)r)),
@@ -51,7 +49,7 @@ public sealed class DmpRecordSource
             ["EXPL"] = c => c.Explosions.Select(r => (r.FormId, (object)r)),
             ["MGEF"] = c => c.BaseEffects.Select(r => (r.FormId, (object)r)),
             ["PROJ"] = c => c.Projectiles.Select(r => (r.FormId, (object)r)),
-            // Tier 2 expansion — character/misc/world/AI trivials.
+            // Historical migration group: Tier 2 character/misc/world/AI expansion.
             ["SOUN"] = c => c.Sounds.Select(r => (r.FormId, (object)r)),
             ["FACT"] = c => c.Factions.Select(r => (r.FormId, (object)r)),
             ["HAIR"] = c => c.Hair.Select(r => (r.FormId, (object)r)),
@@ -75,7 +73,7 @@ public sealed class DmpRecordSource
             ["DEBR"] = c => c.Debris.Select(r => (r.FormId, (object)r)),
             ["CSTY"] = c => c.CombatStyles.Select(r => (r.FormId, (object)r)),
             ["IMAD"] = c => c.ImageSpaceModifiers.Select(r => (r.FormId, (object)r)),
-            // Tier 3 — complex-ref encoders.
+            // Historical migration group: Tier 3 complex-ref encoders.
             ["SCPT"] = c => c.Scripts.Select(r => (r.FormId, (object)r)),
             ["PERK"] = c => c.Perks.Select(r => (r.FormId, (object)r)),
             ["CONT"] = c => c.Containers.Select(r => (r.FormId, (object)r)),
@@ -96,12 +94,12 @@ public sealed class DmpRecordSource
             ["CREA"] = c => c.Creatures.Select(r => (r.FormId, (object)r)),
             ["QUST"] = c => c.Quests.Select(r => (r.FormId, (object)r)),
             ["INFO"] = c => c.Dialogues.Select(r => (r.FormId, (object)r)),
-            // Tier 4 — cross-record coordination trivials.
+            // Historical migration group: Tier 4 cross-record coordination.
             ["PACK"] = c => c.Packages.Select(r => (r.FormId, (object)r)),
             ["CPTH"] = c => c.CameraPaths.Select(r => (r.FormId, (object)r)),
             ["DIAL"] = c => c.DialogTopics.Select(r => (r.FormId, (object)r)),
             ["MESG"] = c => c.Messages.Select(r => (r.FormId, (object)r)),
-            // Tier 5a — remaining top-level world / misc encoders. The cell-children
+            // Historical migration group: Tier 5a top-level world/misc encoders. The cell-children
             // record types (REFR/ACHR/ACRE/LAND/NAVM/PGRE) ship in Tier 5b along with
             // the cell-pipeline integration that nests them under CELL Children GRUPs.
             ["WRLD"] = c => c.Worldspaces.Select(r => (r.FormId, (object)r)),
@@ -114,7 +112,7 @@ public sealed class DmpRecordSource
             ["LSCT"] = c => c.LoadScreenTypes.Select(r => (r.FormId, (object)r)),
             ["REGN"] = c => c.Regions.Select(r => (r.FormId, (object)r)),
             ["SCOL"] = c => c.StaticCollections.Select(r => (r.FormId, (object)r)),
-            // Tier 5a cleanup — remaining trivial top-level encoders.
+            // Historical migration group: Tier 5a cleanup.
             ["ALOC"] = c => c.AudioLocationControllers.Select(r => (r.FormId, (object)r)),
             ["CCRD"] = c => c.CaravanCards.Select(r => (r.FormId, (object)r)),
             ["CMNY"] = c => c.CaravanMoney.Select(r => (r.FormId, (object)r)),
@@ -122,7 +120,7 @@ public sealed class DmpRecordSource
             ["FLST"] = c => c.FormLists.Select(r => (r.FormId, (object)r)),
             ["PWAT"] = c => c.PlaceableWaters.Select(r => (r.FormId, (object)r)),
             ["TREE"] = c => c.Trees.Select(r => (r.FormId, (object)r)),
-            // Tier 5d — last ordinary top-level types off the legacy encode path.
+            // Historical migration group: Tier 5d final ordinary top-level types.
             ["CLMT"] = c => c.Climate.Select(r => (r.FormId, (object)r)),
             ["GRAS"] = c => c.Grasses.Select(r => (r.FormId, (object)r)),
             ["IMGS"] = c => c.ImageSpaces.Select(r => (r.FormId, (object)r)),
@@ -130,12 +128,10 @@ public sealed class DmpRecordSource
             ["DEHY"] = c => c.DehydrationStages.Select(r => (r.FormId, (object)r)),
             ["HUNG"] = c => c.HungerStages.Select(r => (r.FormId, (object)r)),
             ["SLPD"] = c => c.SleepDeprivationStages.Select(r => (r.FormId, (object)r)),
-            // Tier 5c — generic-record types. These share one untyped RecordCollection list
-            // and are told apart by GenericEsmRecord.RecordType, mirroring the legacy
-            // EnumerateModelsByType filters exactly (PluginBuilder's FLOR/MSTT/ANIO/TACT/
-            // ASPC/ADDN yields). Without a row here the planner would silently emit an empty
-            // GRUP for the type: Enumerate skips unmapped types, every catalog entry stays
-            // master-only, and PlanWriter returns no bytes.
+            // Historical migration group: Tier 5c generic-record types. These share one
+            // untyped RecordCollection list and are partitioned by GenericEsmRecord.RecordType,
+            // matching PluginConversionPipeline's FLOR/MSTT/ANIO/TACT/ASPC/ADDN filters.
+            // Without a row, the DMP contributes no catalog candidate and no plugin GRUP bytes.
             ["FLOR"] = c => GenericsOfType(c, "FLOR"),
             ["MSTT"] = c => GenericsOfType(c, "MSTT"),
             ["ANIO"] = c => GenericsOfType(c, "ANIO"),
@@ -192,8 +188,7 @@ public sealed class DmpRecordSource
 
     /// <summary>
     ///     Enumerates every typed model known to the catalog. Alias validation uses this
-    ///     broader view so a planner-owned record can safely reference a master alias whose
-    ///     own record type is still routed through the legacy writer.
+    ///     broader view regardless of the requested planner-coverage subset.
     /// </summary>
     internal IEnumerable<(string Type, uint FormId, object Model)> EnumerateAll()
     {
@@ -208,8 +203,8 @@ public sealed class DmpRecordSource
 
     /// <summary>
     ///     True when <see cref="DmpRecordSource" /> knows how to enumerate the given record
-    ///     type. <c>EsmPlanner.Build</c> uses this so unmapped types route to the legacy
-    ///     pipeline without a wasted catalog pass.
+    ///     type. Routing-consistency tests use this contract; an enabled unmapped type simply
+    ///     contributes no DMP catalog candidates.
     /// </summary>
     public static bool SupportsType(string recordType) => Extractors.ContainsKey(recordType);
 }

@@ -1,9 +1,8 @@
 namespace BethesdaMultitool.Core.Formats.Esm.Planner;
 
 /// <summary>
-///     Severity / category of a planner-emitted diagnostic. Mirrors the legacy
-///     <c>IDiagnosticSink</c> Decision / Info / Warning split so existing consumers can
-///     route plan output through the same pipeline.
+///     Severity/category of a planner-emitted diagnostic. The conversion pipeline maps
+///     these buckets to its progress sink and aggregate statistics.
 /// </summary>
 public enum PlanDiagnosticKind
 {
@@ -26,7 +25,7 @@ public enum PlanDiagnosticKind
 
 /// <summary>
 ///     One observation emitted by a planner phase. The writer does not read these; the
-///     diagnostic sink consumes them post-plan.
+///     conversion pipeline reports them after planning.
 /// </summary>
 public sealed record PlanDiagnostic
 {

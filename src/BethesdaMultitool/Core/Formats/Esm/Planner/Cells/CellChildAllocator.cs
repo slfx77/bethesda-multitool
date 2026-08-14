@@ -9,8 +9,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 ///     Phase C for cells. Single deterministic pass over every new placed reference
 ///     (REFR/ACHR/ACRE not in master) and every new NAVM, allocating plugin-range
 ///     FormIDs upfront. Subsumes legacy <c>PreAllocateNewPlacedRefFormIds</c>
-///     (<c>PluginBuilder.cs:1017</c>) and Phase A NAVM allocation
-///     (<c>PluginBuilder.cs:2050-2087</c>).
+///     (in the retired legacy cell loop) and Phase A NAVM allocation
+///     (the retired legacy Phase A).
 /// </summary>
 /// <remarks>
 ///     The legacy versions ran across the pipeline in two separate pre-passes; this

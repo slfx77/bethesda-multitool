@@ -7,9 +7,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner;
 public sealed record PlanMetadata
 {
     /// <summary>
-    ///     The smallest local FormID that was <i>not</i> allocated to any
-    ///     <see cref="RecordDisposition.New" /> record. Goes into TES4 HEDR's
-    ///     <c>NextObjectId</c> field so GECK / xEdit pick up allocation from the right place.
+    ///     The smallest local FormID whose allocator slot has not been consumed. This
+    ///     includes explicit non-emitting <see cref="FormIdReservation" /> holes as well as
+    ///     live <see cref="RecordDisposition.New" /> records. Goes into TES4 HEDR's
+    ///     <c>NextObjectId</c> field so GECK / xEdit continue after the true high-water mark.
     /// </summary>
     public required uint NextObjectId { get; init; }
 
@@ -20,9 +21,9 @@ public sealed record PlanMetadata
     public string? MasterPath { get; init; }
 
     /// <summary>
-    ///     The record-type set the planner was asked to handle on this run.
-    ///     Mirror of <c>PluginBuildOptions.PlannerEnabledRecordTypes</c>. Empty during
-    ///     Tier 0 (planner runs but produces no records); grows as tiers ship.
+    ///     The registered record-type catalog used to build this plan. Production fills it
+    ///     from <c>PlannedEncoders.KnownRecordTypes</c>; synthetic plans may provide a subset
+    ///     to exercise bounded writer and reference-policy behavior.
     /// </summary>
     public required System.Collections.Immutable.ImmutableHashSet<string> PlannerCoverage { get; init; }
 }

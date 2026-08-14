@@ -9,7 +9,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Allocation;
 ///     The single FormID allocation site in the planner pipeline.
 /// </summary>
 /// <remarks>
-///     Phase C — collapses the 7 legacy allocation sites in <c>PluginBuilder</c>
+///     Phase C — collapses the 7 legacy allocation sites in <c>PluginConversionPipeline</c>
 ///     (lines 1049 / 1116 / 1831 / 1990 / 2137 / 2440 / 5155, plus the 3726–7 synthetic
 ///     DOOR+REFR rescue) into one deterministic pass. Walks <see cref="RecordDisposition.New" />
 ///     entries in <see cref="DeterministicAllocationOrder" /> and assigns each a fresh

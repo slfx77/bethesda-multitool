@@ -1,5 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers;
 
@@ -7,7 +9,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers;
 ///     Walks outgoing FormID references on a parsed <see cref="PackageRecord" />:
 ///     PLDT / PLD2 location unions (only when the FNV schema arm is a FormID),
 ///     PTDT / PTD2 target FormIDs, the CNAM combat-style reference, and per-CTDA
-///     Reference FormIDs. OnBegin / OnEnd / OnChange event actions contribute their
+///     semantic Reference FormIDs. OnBegin / OnEnd / OnChange event actions contribute their
 ///     INAM idle, TNAM topic, and ordered embedded-script SCRO references. PLDT/PLD2
 ///     unions carry the <c>PLDT</c> container signature so a dangle triggers the
 ///     planner's container-downgrade rather than a subrecord drop.
@@ -22,8 +24,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers;
 ///         treat the field as a FormID. Type 2 is an enum; type 3's FNV union arm is unused.
 ///     </para>
 ///     <para>
-///         <b>CTDA condition parameters.</b> Only the per-condition <c>Reference</c>
-///         (RunOn=Reference/LinkedRef) is yielded here. The function-index-dependent
+///         <b>CTDA condition parameters.</b> Only a per-condition <c>Reference</c> selected by
+///         the FNV game-aware policy is yielded here (RunOn=2, except functions 0x006A/0x011D).
+///         The function-index-dependent
 ///         <c>Parameter1</c>/<c>Parameter2</c> FormIDs require schema lookups handled by
 ///         the legacy <c>ConditionSanitizer</c>; subsuming that policy is a Tier 6.3b
 ///         follow-up that isn't gating Tier 6.3.
@@ -74,12 +77,15 @@ public sealed class PackageReferenceWalker : IRecordReferenceWalker
         for (var i = 0; i < pack.Conditions.Count; i++)
         {
             var condition = pack.Conditions[i];
-            if (condition.Reference != 0)
+            if (DialogueConditionReferencePolicy.TryGetSemanticReference(
+                    condition,
+                    BethesdaGame.FalloutNewVegas,
+                    out var reference))
             {
                 yield return new RawReference
                 {
                     FieldPath = FieldPath.IndexedMember("CTDA", i, "Reference"),
-                    FormId = condition.Reference,
+                    FormId = reference,
                 };
             }
         }

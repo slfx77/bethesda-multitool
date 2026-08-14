@@ -34,8 +34,8 @@ internal static class MasterScriptVariableAugmentationEncoder
     }
 
     /// <summary>
-    ///     Shared byte path for planner and legacy routing. Both consume the same immutable
-    ///     directives produced from the single DMP currently being converted.
+    ///     Byte encoder for planner-owned master-script augmentation. Both overloads consume the
+    ///     same immutable directives produced from the single DMP currently being converted.
     /// </summary>
     internal static byte[] EncodeSubrecordStream(
         ParsedMainRecord master,

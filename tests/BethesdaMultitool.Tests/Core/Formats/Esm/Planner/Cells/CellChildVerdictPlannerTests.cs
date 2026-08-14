@@ -632,15 +632,14 @@ public sealed class CellChildVerdictPlannerTests
     }
 
     [Fact]
-    public void Cell_Without_Planned_Mode_Is_Left_Untouched()
+    public void Cell_Without_Planned_Mode_Fails_Before_Verdict_Emission()
     {
-        var cells = Apply(MakeCell(
+        var exception = Assert.Throws<InvalidOperationException>(() => Apply(MakeCell(
             mode: null,
-            temporary: [NewChild("REFR", NewRefId, Ref(NewRefId, MasterStatBaseId))]));
+            temporary: [NewChild("REFR", NewRefId, Ref(NewRefId, MasterStatBaseId))])));
 
-        var plan = cells[CellId];
-        Assert.Empty(plan.RefDecisions);
-        Assert.Null(plan.Emits);
+        Assert.Contains($"0x{CellId:X8}", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("without a settled merge mode", exception.Message, StringComparison.Ordinal);
     }
 
     // ---- fixture plumbing ----------------------------------------------------------

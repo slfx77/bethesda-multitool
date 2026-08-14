@@ -2,11 +2,15 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
+using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Disposition;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies;
 using BethesdaMultitool.Core.Formats.Esm.Planner.References;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
@@ -55,6 +59,53 @@ public sealed class EsmPlannerTier0Tests
         Assert.Empty(plan.EmittedFormIds);
         Assert.Equal("test.esm", plan.Meta.MasterPath);
         Assert.Contains("WEAP", plan.Meta.PlannerCoverage);
+    }
+
+    [Fact]
+    public void Build_With_Cell_Coverage_And_Incomplete_Cell_Inputs_Fails_Early()
+    {
+        var planner = BuildPlanner();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => planner.Build(
+            [],
+            new RecordCollection(),
+            new HashSet<string> { "CELL" },
+            new HashSet<uint>(),
+            "test.esm"));
+
+        Assert.Contains("masterCellContexts", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("masterRecordsByFormId", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("cellChildAllocator", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("masterRefFormIds", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("cellVerdictInputs", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_With_Complete_Cell_Inputs_Settles_New_Cell_For_Writing()
+    {
+        var allocator = new FormIdAllocator();
+        var planner = BuildPlanner(allocator);
+        var dmp = new RecordCollection
+        {
+            Cells = [new CellRecord { FormId = 0xFF000801, EditorId = "NewInterior" }]
+        };
+        var masterIndex = MasterRecordIndex.Build([], []);
+
+        var plan = planner.Build(
+            [],
+            dmp,
+            new HashSet<string> { "CELL" },
+            new HashSet<uint>(),
+            "test.esm",
+            masterCellContexts: new Dictionary<uint, PcEsmCellContext>(),
+            masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord>(),
+            cellChildAllocator: allocator,
+            masterRefFormIds: new HashSet<uint>(),
+            cellVerdictInputs: new CellVerdictInputs { MasterIndex = masterIndex });
+
+        var cell = Assert.Single(plan.CellsByFormId.Values);
+        Assert.Equal(CellMergeMode.LoadedReplacement, cell.Mode);
+        Assert.True(cell.Emits);
     }
 
     [Fact]

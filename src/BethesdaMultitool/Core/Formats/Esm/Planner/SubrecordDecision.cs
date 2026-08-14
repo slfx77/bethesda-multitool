@@ -1,9 +1,8 @@
 namespace BethesdaMultitool.Core.Formats.Esm.Planner;
 
 /// <summary>
-///     Where one subrecord's bytes will come from during an <see cref="RecordDisposition.Override" />
-///     emit. Computed by the planner from per-type policy + per-record data, looked up by
-///     <c>SubrecordReplay</c> at write time.
+///     Reserved source classification for a future ordered override-decision contract.
+///     Current production override emission does not populate or consume these values.
 /// </summary>
 public enum SubrecordSource
 {
@@ -27,9 +26,8 @@ public enum SubrecordSource
 }
 
 /// <summary>
-///     One per-signature merge decision for an <see cref="RecordDisposition.Override" /> record.
-///     <c>SubrecordReplay</c> walks an <see cref="System.Collections.Immutable.ImmutableArray{T}" />
-///     of these in order; the resulting bytes form the override record's payload.
+///     Reserved per-signature merge decision. <c>SubrecordReplay</c> is currently an
+///     unimplemented, unused experiment rather than a production writer path.
 /// </summary>
 public sealed record SubrecordDecision
 {

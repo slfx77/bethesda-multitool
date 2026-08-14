@@ -6,9 +6,9 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 
 /// <summary>
-///     Planner-side adapter for NAVM emission. The legacy
-///     <see cref="NavMeshByteRewriter.Rewrite" /> patches DATA (cell FormID) and NVEX
-///     (target NAVM FormIDs) in the captured subrecord stream; this adapter wraps that
+///     Planner-side adapter for NAVM emission. The shared
+///     <see cref="NavMeshByteRewriter.Rewrite" /> primitive patches DATA (cell FormID) and
+///     NVEX (target NAVM FormIDs) in the captured subrecord stream; this adapter wraps that
 ///     plus the record-byte assembly. Doesn't fit
 ///     <see cref="IPlannedRecordEncoder{TModel}" /> because it needs three inputs
 ///     (the model, the target cell FormID, and the NVEX remap dictionary).

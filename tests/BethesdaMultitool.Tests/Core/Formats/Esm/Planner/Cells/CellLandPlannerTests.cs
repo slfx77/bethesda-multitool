@@ -717,7 +717,8 @@ public sealed class CellLandPlannerTests
             [],
             new HashSet<uint>(),
             new FormIdAllocator(),
-            false);
+            false,
+            masterRefFormIds: new HashSet<uint>());
 
         var plan = Assert.Single(result.CellsByFormId.Values);
         Assert.Equal(["LAND", "NAVM", "REFR"], plan.TemporaryChildren.Select(child => child.Type));

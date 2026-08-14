@@ -6,10 +6,8 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 
 /// <summary>
-///     Placed-ref base-resolution rules shared by the plan-time verdict pass
-///     (<c>CellChildVerdictPlanner</c>) and the writer's transitional fallback
-///     (<c>PlannedPlacedRefEncoder</c>). Single source of truth — extracted from the
-///     writer so the two paths cannot drift while the migration is staged.
+///     Placed-ref base-resolution rules used by the plan-time verdict pass. The planned
+///     placed-ref encoder consumes the resulting verdict and does not reclassify bases.
 /// </summary>
 public static class PlacedRefBaseRules
 {

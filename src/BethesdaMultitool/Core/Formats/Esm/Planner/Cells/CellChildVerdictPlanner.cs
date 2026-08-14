@@ -45,9 +45,9 @@ public static class CellChildVerdictPlanner
         uint CellFormId, uint ChildFormId, int TargetGroupType, bool? OverrideInitiallyDisabled);
 
     /// <summary>
-    ///     Rewrite each planned cell with its children's verdicts. Cells whose
-    ///     <see cref="CellPlan.Mode" /> is null (mode-planning didn't run) are left
-    ///     untouched — the writer's fallback owns their decisions.
+    ///     Rewrite each planned cell with its children's verdicts. A missing
+    ///     <see cref="CellPlan.Mode" /> is an incomplete plan and fails immediately;
+    ///     the writer has no fallback decision path.
     /// </summary>
     public static ImmutableDictionary<uint, CellPlan> Apply(
         ImmutableDictionary<uint, CellPlan> cells,
@@ -72,7 +72,8 @@ public static class CellChildVerdictPlanner
         {
             if (cellPlan.Mode is null)
             {
-                continue;
+                throw new InvalidOperationException(
+                    $"CELL 0x{cellFormId:X8} reached verdict planning without a settled merge mode.");
             }
 
             var verdicts = ImmutableDictionary.CreateBuilder<uint, PlacedRefDecision>();

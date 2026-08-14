@@ -11,10 +11,8 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
 
 /// <summary>
-///     Tier 6.1: the cell-section planner orchestrates catalog → disposition → child
-///     allocation → worldspace catalog, producing the cell-related EmitPlan slices.
-///     Children arrays stay empty until Tier 6.1b populates them; this test pins the
-///     orchestration shape.
+///     The cell-section planner orchestrates catalog, disposition, child allocation,
+///     merge-mode selection, and worldspace planning into the cell-related EmitPlan slices.
 /// </summary>
 public sealed class CellSectionPlannerTests
 {
@@ -30,7 +28,8 @@ public sealed class CellSectionPlannerTests
             [],
             [],
             new HashSet<uint> { 0x000ABCDE },
-            new FormIdAllocator());
+            new FormIdAllocator(),
+            masterRefFormIds: new HashSet<uint>());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         Assert.Equal(0x000ABCDEu, cellPlan.CellFormId);
@@ -53,7 +52,8 @@ public sealed class CellSectionPlannerTests
             [],
             [],
             new HashSet<uint> { 0x000ABCDE },
-            new FormIdAllocator());
+            new FormIdAllocator(),
+            masterRefFormIds: new HashSet<uint>());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         Assert.Equal(RecordDisposition.Override, cellPlan.CellRecordPlan.Disposition);
@@ -79,7 +79,8 @@ public sealed class CellSectionPlannerTests
             [],
             [],
             new HashSet<uint>(),
-            new FormIdAllocator());
+            new FormIdAllocator(),
+            masterRefFormIds: new HashSet<uint>());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         Assert.Equal(RecordDisposition.New, cellPlan.CellRecordPlan.Disposition);
@@ -103,7 +104,8 @@ public sealed class CellSectionPlannerTests
             [],
             [],
             new HashSet<uint> { 0x000ABCDE, 0x0000003C },
-            new FormIdAllocator());
+            new FormIdAllocator(),
+            masterRefFormIds: new HashSet<uint>());
 
         var wrldPlan = Assert.Single(result.WorldspacesByFormId.Values);
         Assert.Equal(0x0000003Cu, wrldPlan.WorldspaceFormId);
@@ -131,7 +133,8 @@ public sealed class CellSectionPlannerTests
             [],
             [],
             new HashSet<uint> { 0x000ABCDE },
-            new FormIdAllocator());
+            new FormIdAllocator(),
+            masterRefFormIds: new HashSet<uint>());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         var planForRef = Assert.Single(cellPlan.PersistentChildren);
@@ -161,7 +164,8 @@ public sealed class CellSectionPlannerTests
             [],
             [],
             new HashSet<uint> { 0x000ABCDE },
-            new FormIdAllocator());
+            new FormIdAllocator(),
+            masterRefFormIds: new HashSet<uint>());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         Assert.Single(cellPlan.TemporaryChildren);
@@ -186,7 +190,8 @@ public sealed class CellSectionPlannerTests
             [],
             [],
             new HashSet<uint> { 0x000ABCDE, 0x000A0001 },
-            new FormIdAllocator());
+            new FormIdAllocator(),
+            masterRefFormIds: new HashSet<uint> { 0x000A0001 });
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         var planForRef = Assert.Single(cellPlan.TemporaryChildren);
@@ -212,7 +217,8 @@ public sealed class CellSectionPlannerTests
             [],
             new HashSet<uint> { 0x000ABCDE },
             new FormIdAllocator(),
-            true);
+            true,
+            masterRefFormIds: new HashSet<uint>());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         var planForNavm = Assert.Single(cellPlan.TemporaryChildren);
@@ -242,7 +248,8 @@ public sealed class CellSectionPlannerTests
             [],
             new HashSet<uint> { 0x000ABCDE },
             new FormIdAllocator(),
-            false);
+            false,
+            masterRefFormIds: new HashSet<uint>());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         Assert.Empty(cellPlan.TemporaryChildren);
@@ -271,7 +278,8 @@ public sealed class CellSectionPlannerTests
             [],
             new HashSet<uint>(),
             new FormIdAllocator(),
-            false);
+            false,
+            masterRefFormIds: new HashSet<uint>());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         var planForNavm = Assert.Single(cellPlan.TemporaryChildren);
@@ -280,22 +288,20 @@ public sealed class CellSectionPlannerTests
     }
 
     [Fact]
-    public void Plan_Without_MasterRefFormIds_Leaves_Mode_Null()
+    public void Plan_Without_MasterRefFormIds_Fails_Before_Producing_An_Incomplete_Cell()
     {
         var dmpCell = new CellRecord { FormId = 0x000ABCDE, EditorId = "TestCell" };
 
-        var result = CellSectionPlanner.Plan(
+        var exception = Assert.Throws<ArgumentNullException>(() => CellSectionPlanner.Plan(
             new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = MakeInteriorContext(0x000ABCDE) },
             new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
             [dmpCell],
             [],
             [],
             new HashSet<uint> { 0x000ABCDE },
-            new FormIdAllocator());
+            new FormIdAllocator()));
 
-        var cellPlan = Assert.Single(result.CellsByFormId.Values);
-        Assert.Null(cellPlan.Mode);
-        Assert.False(cellPlan.DropRenderCullingMarkers);
+        Assert.Equal("masterRefFormIds", exception.ParamName);
     }
 
     [Fact]

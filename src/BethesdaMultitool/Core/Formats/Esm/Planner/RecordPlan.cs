@@ -17,9 +17,9 @@ public enum RecordDisposition
     KeepMaster,
 
     /// <summary>
-    ///     A master record exists AND a DMP capture differs from it. The writer calls the
-    ///     planned encoder + replays <see cref="RecordPlan.OverrideSubrecords" /> against
-    ///     the master subrecord stream.
+    ///     A master record exists AND a DMP capture differs from it. The writer encodes the
+    ///     captured model and merges its subrecords against the master according to the
+    ///     record type's merge policy.
     /// </summary>
     Override,
 
@@ -85,9 +85,8 @@ public sealed record RecordPlan
     public required ImmutableArray<ResolvedRef> References { get; init; }
 
     /// <summary>
-    ///     For <c>Override</c> dispositions, the per-signature merge decisions computed
-    ///     up front. <c>SubrecordReplay</c> walks these in order; it never consults any
-    ///     <c>SubrecordMergePolicy</c> at write time. Null for <c>New</c> / <c>KeepMaster</c>.
+    ///     Reserved for a future ordered override-decision contract. No production planner
+    ///     currently populates it and no production writer consumes it.
     /// </summary>
     public ImmutableArray<SubrecordDecision>? OverrideSubrecords { get; init; }
 

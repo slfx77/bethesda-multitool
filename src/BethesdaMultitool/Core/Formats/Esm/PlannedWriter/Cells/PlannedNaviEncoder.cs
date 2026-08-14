@@ -6,16 +6,15 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 
 /// <summary>
-///     Planner-side adapter for NAVI override synthesis. The legacy
+///     Testable adapter over the shared NAVI override-synthesis primitive.
 ///     <see cref="NavInfoMapBuilder.BuildNaviOverride" /> takes the master NAVI record
 ///     plus a list of new NAVM entries and splices NVMI / NVCI subrecord runs into the
 ///     master's existing layout. This adapter just maps <see cref="PlannedNavmEntry" />
-///     to the legacy <c>NewNavmEntry</c> shape and delegates.
+///     to the helper's <c>NewNavmEntry</c> shape and delegates.
 /// </summary>
 /// <remarks>
-///     Runs once at top-level after every cell finishes emitting NAVMs. Without it, the
-///     FNV runtime null-derefs at <c>FalloutNV+0x0069E09A</c> during NavMeshInfoMap
-///     iteration when any new NAVMs were emitted.
+///     This adapter exposes the base no-connectivity call for isolated parity tests. Production
+///     orchestration supplies the plan's connectivity map when it invokes the shared helper.
 /// </remarks>
 public static class PlannedNaviEncoder
 {
@@ -36,7 +35,7 @@ public static class PlannedNaviEncoder
             return null;
         }
 
-        var legacyEntries = newEntries
+        var builderEntries = newEntries
             .Select(e => new NewNavmEntry(
                 e.NavmFormId,
                 e.LocationFormId,
@@ -46,7 +45,7 @@ public static class PlannedNaviEncoder
                 e.NvvxBytes.Length > 0 ? e.NvvxBytes : null))
             .ToList();
 
-        return NavInfoMapBuilder.BuildNaviOverride(masterNavi, legacyEntries, options);
+        return NavInfoMapBuilder.BuildNaviOverride(masterNavi, builderEntries, options);
     }
 }
 

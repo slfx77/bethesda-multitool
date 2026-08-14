@@ -95,11 +95,7 @@ public sealed class Tier5bEncoderParityTests
 
         var legacyEncoded = RefrEncoder.EncodeNewPlacedReference(
             placed);
-        if (legacyEncoded.Subrecords.Count == 0)
-        {
-            Assert.Empty(plannerBytes);
-            return;
-        }
+        Assert.NotEmpty(legacyEncoded.Subrecords);
 
         var legacyRecordBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
             recordType, placed.FormId, 0u, legacyEncoded.Subrecords);

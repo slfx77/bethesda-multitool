@@ -1,13 +1,15 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers;
 
 /// <summary>
 ///     Walks outgoing FormID references on a parsed <see cref="TerminalRecord" />:
 ///     top-level SCRI/SNAM/PNAM pointers plus each menu item's display NOTE,
-///     sub-terminal, explicit CTDA Reference, and ordered embedded-script SCRO table.
+///     sub-terminal, semantic CTDA Reference, and ordered embedded-script SCRO table.
 ///     SCRV slots retain their position in the mixed table but are not FormID references.
 /// </summary>
 public sealed class TerminalReferenceWalker : IRecordReferenceWalker
@@ -73,12 +75,15 @@ public sealed class TerminalReferenceWalker : IRecordReferenceWalker
             for (var conditionIndex = 0; conditionIndex < item.Conditions.Count; conditionIndex++)
             {
                 var condition = item.Conditions[conditionIndex];
-                if (condition.Reference != 0)
+                if (DialogueConditionReferencePolicy.TryGetSemanticReference(
+                        condition,
+                        BethesdaGame.FalloutNewVegas,
+                        out var reference))
                 {
                     yield return new RawReference
                     {
                         FieldPath = $"MenuItems[{menuIndex}].CTDA[{conditionIndex}].Reference",
-                        FormId = condition.Reference,
+                        FormId = reference,
                     };
                 }
 

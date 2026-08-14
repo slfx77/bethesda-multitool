@@ -116,7 +116,7 @@ internal static class PlanCellSectionBuilder
     /// <summary>
     ///     Post-emission pass that drops NVEX entries pointing at NAVM FormIDs that aren't
     ///     in the emitted set, and patches DATA.EdgeLinkCount to match the kept entries.
-    ///     Mirrors the legacy <c>PluginBuilder.SanitizeNavmNvexInBundles</c> hook.
+    ///     Mirrors the retired cell-merge NVEX sanitation hook.
     ///     Without this the engine spams PATHFINDING errors every frame for plugin NAVMs
     ///     whose NVEX cross-links don't resolve, eventually filling the log to GB.
     /// </summary>
@@ -238,9 +238,8 @@ internal static class PlanCellSectionBuilder
             var dmpCell = cellPlan.CellRecordPlan.Model as CellRecord;
 
             // The merge mode and marker-drop decision are settled at plan time by
-            // CellSectionPlanner.PlanMergeMode. The CellDecisionFallback that re-derived them
-            // here was deleted in the 2026-08-11 retirement (Stage H1): production always
-            // supplies masterRefFormIds, so Mode was never null outside hand-built fixtures.
+            // CellSectionPlanner.PlanMergeMode. EsmPlanner now validates the complete CELL
+            // input tuple up front; this remains the final tripwire for hand-built plans.
             if (cellPlan.Mode is not { } mode)
             {
                 throw new InvalidOperationException(

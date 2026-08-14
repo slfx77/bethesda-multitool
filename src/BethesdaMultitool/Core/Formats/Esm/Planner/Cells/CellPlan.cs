@@ -10,10 +10,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 ///     LAND and NAVM in the temporary bucket per the legacy emission order).
 /// </summary>
 /// <remarks>
-///     Children arrays are empty in Tier 5b.1 (this commit ships the data model + catalog
-///     phase only). Tier 5b.2 populates them when the CellChildAllocator + walkers land.
-///     The writer in Tier 5b.4 reads this record and produces the per-cell GRUP structure
-///     legacy <c>CellGrupBuilder</c> currently produces.
+///     <c>CellSectionPlanner</c> populates the child arrays and merge mode; the subsequent
+///     verdict pass settles per-reference and cell-level emission decisions before the
+///     planned cell writer builds GRUP bytes.
 /// </remarks>
 public sealed record CellPlan
 {
@@ -29,27 +28,26 @@ public sealed record CellPlan
 
     /// <summary>
     ///     Master ESM grouping context (block / sub-block labels, interior / exterior
-    ///     classification). Required so the writer can reproduce the legacy GRUP nesting
-    ///     instead of recomputing it from grid coordinates.
+    ///     classification). Required so the writer can reproduce the source hierarchy
+    ///     rather than recomputing it from grid coordinates.
     /// </summary>
     public required PcEsmCellContext Context { get; init; }
 
     /// <summary>
-    ///     REFR / ACHR / ACRE records emitted inside the cell's Persistent Children GRUP
-    ///     (type 8). Empty during Tier 5b.1.
+    ///     REFR / ACHR / ACRE records planned inside the cell's Persistent Children GRUP
+    ///     (type 8).
     /// </summary>
     public required ImmutableArray<RecordPlan> PersistentChildren { get; init; }
 
     /// <summary>
-    ///     REFR records emitted inside the cell's Visible-When-Distant Children GRUP
-    ///     (type 10). Empty during Tier 5b.1.
+    ///     REFR records planned inside the cell's Visible-When-Distant Children GRUP
+    ///     (type 10).
     /// </summary>
     public required ImmutableArray<RecordPlan> VwdChildren { get; init; }
 
     /// <summary>
     ///     LAND + NAVM + REFR / ACHR / ACRE records emitted inside the cell's Temporary
     ///     Children GRUP (type 9). Order matters: LAND first, NAVMs next, placed refs after.
-    ///     Empty during Tier 5b.1.
     /// </summary>
     public required ImmutableArray<RecordPlan> TemporaryChildren { get; init; }
 
@@ -65,9 +63,8 @@ public sealed record CellPlan
     ///     Binary cell-merge classification (PersistentOnly vs LoadedReplacement vs Skip) that
     ///     drives per-ref preservation. Settled by <c>CellSectionPlanner.PlanMergeMode</c>.
     ///     <para>
-    ///     Still declared nullable: <c>CellSectionPlanner</c> constructs the plan in phases and
-    ///     the mode is attached after the children, so the property is briefly unset during
-    ///     construction. It is non-null on every plan the writer ever sees.
+    ///     Nullable only as a construction-state marker for hand-built/intermediate plans.
+    ///     Both verdict planning and writing reject an unset value.
     ///     </para>
     /// </summary>
     public CellMergeMode? Mode { get; init; }
@@ -81,7 +78,7 @@ public sealed record CellPlan
     /// <summary>
     ///     The planner's cell-emission verdict: true = emit this cell's bundle, false = suppress
     ///     (ITM / interior-no-new-content / navmesh-only). Settled by <c>PlanCellGates</c>;
-    ///     nullable only for the same mid-construction window as <see cref="Mode" />.
+    ///     null means the later verdict pass has not run, and the writer rejects it.
     /// </summary>
     public bool? Emits { get; init; }
 

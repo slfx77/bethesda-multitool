@@ -14,16 +14,16 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 namespace BethesdaMultitool.Core.Formats.Esm.Planner;
 
 /// <summary>
-///     Top-level coordinator that runs phases A–E and returns the immutable
-///     <see cref="EmitPlan" />. The writer consumes the plan; nothing else allocates or
-///     resolves.
+///     Top-level coordinator for cataloging, disposition, allocation, reference resolution,
+///     validation, and the cell verdict/finalization passes. It returns the immutable
+///     <see cref="EmitPlan" /> consumed by later serializers.
 /// </summary>
 public sealed class EsmPlanner
 {
     /// <summary>
-    ///     Types whose plan + emission is owned by the cell-section pipeline when CELL is
-    ///     enabled. They must be excluded from the top-level RecordCatalog to avoid
-    ///     double-allocating FormIDs for the same source record.
+    ///     Types excluded from the top-level catalog because the cell-section pipeline owns
+    ///     their planning and emission when CELL is enabled. NAVM is cell-owned too, but has
+    ///     no top-level catalog row and therefore need not appear in this exclusion set.
     /// </summary>
     private static readonly HashSet<string> CellPipelineOwnedTypes =
         new(StringComparer.Ordinal) { "CELL", "WRLD", "REFR", "ACHR", "ACRE", "PGRE", "LAND" };
@@ -49,17 +49,18 @@ public sealed class EsmPlanner
     /// <param name="dmpRecords">Semantic DMP capture.</param>
     /// <param name="enabledTypes">
     ///     The record types the planner should handle on this run. Empty produces an empty
-    ///     plan (the writer emits nothing, the legacy pipeline handles every type).
+    ///     plan and therefore no planned output; production supplies the complete
+    ///     <c>PlannedEncoders.KnownRecordTypes()</c> set.
     /// </param>
     /// <param name="masterFormIds">
-    ///     The full set of master FormIDs — used as the seed of the emit set so references
-    ///     to master records always resolve.
+    ///     The full set of master FormIDs — used as the seed of the reference-liveness set
+    ///     so references to master records always resolve.
     /// </param>
     /// <param name="masterPath">Master ESM path for plan metadata.</param>
     /// <param name="masterRefFormIds">
     ///     Master placed-ref FormIDs (the <c>MasterRecordIndex.RefToCell</c> key set). When
-    ///     supplied, the cell-section planner settles each cell's merge mode at plan time
-    ///     (<see cref="Cells.CellPlan.Mode" />); when null the writer computes it.
+    ///     CELL coverage is requested, this is required so the planner can settle each
+    ///     cell's merge mode (<see cref="Cells.CellPlan.Mode" />) before writing.
     /// </param>
     public EmitPlan Build(
         IReadOnlyList<ParsedMainRecord> masterRecords,
@@ -76,8 +77,7 @@ public sealed class EsmPlanner
         CellVerdictInputs? cellVerdictInputs = null,
         ImmutableHashSet<uint>? diagnosticKeepMasterFormIds = null,
         ImmutableDictionary<uint, ImmutableHashSet<string>>? diagnosticRetainMasterSubrecords = null,
-        IReadOnlyDictionary<uint, uint>? masterFormIdAliases = null,
-        IReadOnlyDictionary<uint, uint>? legacyPipelineAllocations = null)
+        IReadOnlyDictionary<uint, uint>? masterFormIdAliases = null)
     {
         var coverage = enabledTypes.ToImmutableHashSet(StringComparer.Ordinal);
         var keepMasterFormIds = diagnosticKeepMasterFormIds ?? ImmutableHashSet<uint>.Empty;
@@ -95,6 +95,10 @@ public sealed class EsmPlanner
             return Empty(coverage, masterPath);
         }
 
+        EsmPlannerInputValidation.ValidateCellPlanningInputs(
+            coverage, masterCellContexts, masterRecordsByFormId, cellChildAllocator,
+            masterRefFormIds, cellVerdictInputs);
+
         var masterSource = new MasterRecordSource(masterRecords);
         var dmpSource = new DmpRecordSource(dmpRecords);
         var validatedCrossPipelineMasterAliases = PlannerInputValidator.ValidateCapturedMasterAliases(
@@ -107,7 +111,7 @@ public sealed class EsmPlanner
         // source→emitted map. Including those types in the top-level RecordCatalog would
         // double-allocate, producing two different emit FormIDs for the same source and
         // crashing the AddRange merge below.
-        var catalogTypes = enabledTypes.Contains("CELL")
+        var catalogTypes = coverage.Contains("CELL")
             ? (IReadOnlySet<string>)enabledTypes
                 .Where(t => !CellPipelineOwnedTypes.Contains(t))
                 .ToHashSet(StringComparer.Ordinal)
@@ -122,13 +126,13 @@ public sealed class EsmPlanner
         PlannerInputValidator.ValidateDiagnosticDirectives(
             masterRecords, catalog, enabledTypes, keepMasterFormIds, retainMasterSubrecords);
 
-        var cellSection = enabledTypes.Contains("CELL")
+        var cellSection = coverage.Contains("CELL")
             ? RunCellSection(
-                dmpRecords, masterFormIds, masterCellContexts, masterRecordsByFormId,
-                cellChildAllocator, emitMasterCellNavmAugmentation,
-                masterRefFormIds, replaceCellTemporariesOnOverride,
-                cellVerdictInputs?.MasterIndex.RefToCell,
-                cellVerdictInputs?.MasterIndex.LandsByCell)
+                dmpRecords, masterFormIds, masterCellContexts!, masterRecordsByFormId!,
+                cellChildAllocator!, emitMasterCellNavmAugmentation,
+                masterRefFormIds!, replaceCellTemporariesOnOverride,
+                cellVerdictInputs!.MasterIndex.RefToCell,
+                cellVerdictInputs.MasterIndex.LandsByCell)
             : null;
 
         if (catalog.Count == 0 && cellSection is null)
@@ -137,8 +141,8 @@ public sealed class EsmPlanner
         }
 
         var decisions = EngineMarkerAliasPass.Apply(_disposition.Decide(catalog), out var markerAliases);
-        var sourceToEmitted = _allocation.AllocateAll(decisions)
-            .AddRange(markerAliases);
+        var topLevelAllocations = _allocation.AllocateAll(decisions);
+        var sourceToEmitted = topLevelAllocations.AddRange(markerAliases);
         foreach (var (sourceFormId, masterFormId) in validatedCrossPipelineMasterAliases
                      .Concat(validatedMasterAliases))
         {
@@ -176,31 +180,21 @@ public sealed class EsmPlanner
                 .AddRange(cs.WorldspaceSourceToEmitted);
         }
 
-        // Legacy-pipeline bridge (2026-08-05, NVULfountain class): base types with no planner
-        // extractor row (MSTT / TACT / PWAT / ...) emit through the legacy top-level loop, and
-        // their source->allocated FormIDs never reached this map — so every placed ref naming
-        // one dropped as refr.dangling-base under planner emission (6 refs in xex21, including
-        // the RadioNVNewVegasRadio station ref and the NVULfountain). Merge them so the verdict
-        // pass resolves the base like any planner-allocated one. Planner allocations win ties
-        // (merged AFTER the cell-section AddRanges: a source FormID can be dual-booked by the
-        // legacy loop and a planner cell allocator, and AddRange throws on conflicting keys).
-        if (legacyPipelineAllocations is not null)
-        {
-            foreach (var (sourceFormId, allocatedFormId) in legacyPipelineAllocations)
-            {
-                if (!sourceToEmitted.ContainsKey(sourceFormId))
-                {
-                    sourceToEmitted = sourceToEmitted.Add(sourceFormId, allocatedFormId);
-                }
-            }
-        }
-
-        var containedAllocations = (cellSection?.LandByCellSourceToEmitted.Values
-                .Concat(cellSection.AdditionalEmittedFormIds) ?? [])
-            .Concat(legacyPipelineAllocations?.Values ?? []);
+        var containedAllocations = cellSection?.LandByCellSourceToEmitted.Values
+            .Concat(cellSection.AdditionalEmittedFormIds) ?? [];
         var emittedFormIds = BuildEmittedFormIds(
             decisions, sourceToEmitted, masterFormIds, containedAllocations)
             .Union(RuntimeStateRecordPolicy.EngineFormIds);
+
+        // Allocation precedes eligibility finalization so established plugin FormID ordinals
+        // do not move. Known non-emitting New records become explicit reservations here,
+        // before any reference can mistake their slots for live identities.
+        var nonEmissionReservations = PlannedNonEmissionReservationPass.Apply(
+            decisions, topLevelAllocations, sourceToEmitted, emittedFormIds);
+        decisions = nonEmissionReservations.Decisions;
+        sourceToEmitted = nonEmissionReservations.SourceToEmitted;
+        emittedFormIds = nonEmissionReservations.EmittedFormIds;
+
         var resolvedRefsByIndex = _references.ResolveAll(decisions, emittedFormIds, sourceToEmitted);
         var scriptSanitation = ScriptReferenceSafetyPipeline.Apply(
             decisions, sourceToEmitted, emittedFormIds, resolvedRefsByIndex, _references);
@@ -233,11 +227,13 @@ public sealed class EsmPlanner
         {
             Records = ordered,
             SourceToEmittedFormId = sourceToEmitted,
+            FormIdReservations = nonEmissionReservations.Reservations,
             EmittedFormIds = emittedFormIds,
             ValidPackageFormIds = validPackageFormIds,
             ValidScriptFormIds = ScriptReferenceSafetyPlanner.BuildValidScriptFormIds(masterRecords, ordered),
             RecordIndexByEmittedFormId = indexByFormId.ToImmutable(),
             Diagnostics = diagnostics
+                .AddRange(nonEmissionReservations.Diagnostics)
                 .AddRange(scriptSanitation.Diagnostics)
                 .AddRange(packageSanitation.Diagnostics)
                 .AddRange(packageDiagnostics)
@@ -269,14 +265,13 @@ public sealed class EsmPlanner
         // Phase F: per-ref emit/drop verdicts. Runs AFTER top-level allocation because a
         // ref's base may resolve through a top-level-planner-allocated record (e.g. a
         // recovered leveled-spawn actor pointing at a planner-emitted proto NPC_).
-        if (cellVerdictInputs is { } verdictInputs
-            && masterRecordsByFormId is not null
-            && !plan.CellsByFormId.IsEmpty)
+        if (cellSection is not null && !plan.CellsByFormId.IsEmpty)
         {
+            var verdictInputs = cellVerdictInputs!;
             plan = plan with
             {
                 CellsByFormId = CellChildVerdictPlanner.Apply(
-                    plan.CellsByFormId, masterRecordsByFormId,
+                    plan.CellsByFormId, masterRecordsByFormId!,
                     sourceToEmitted, emittedFormIds, verdictInputs),
             };
             plan = PostVerdictScriptClosurePlanner.Apply(plan, masterRecords);
@@ -348,23 +343,18 @@ public sealed class EsmPlanner
         return diagnostics.ToImmutable();
     }
 
-    private static CellSectionPlanner.CellSectionResult? RunCellSection(
+    private static CellSectionPlanner.CellSectionResult RunCellSection(
         RecordCollection dmpRecords,
         IReadOnlySet<uint> masterFormIds,
-        IReadOnlyDictionary<uint, PcEsmCellContext>? masterCellContexts,
-        IReadOnlyDictionary<uint, ParsedMainRecord>? masterRecordsByFormId,
-        FormIdAllocator? cellChildAllocator,
+        IReadOnlyDictionary<uint, PcEsmCellContext> masterCellContexts,
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
+        FormIdAllocator cellChildAllocator,
         bool emitMasterCellNavmAugmentation,
-        IReadOnlySet<uint>? masterRefFormIds,
+        IReadOnlySet<uint> masterRefFormIds,
         bool replaceCellTemporariesOnOverride,
         IReadOnlyDictionary<uint, uint>? masterRefToCell,
         IReadOnlyDictionary<uint, List<uint>>? masterLandsByCell)
     {
-        if (masterCellContexts is null || masterRecordsByFormId is null || cellChildAllocator is null)
-        {
-            return null; // Cell-section planning requires the master cell index + an allocator.
-        }
-
         return CellSectionPlanner.Plan(
             masterCellContexts,
             masterRecordsByFormId,

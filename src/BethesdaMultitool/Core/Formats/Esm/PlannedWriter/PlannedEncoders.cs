@@ -23,11 +23,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 ///     pipeline currently supports. Each tier adds rows here as encoders ship.
 /// </summary>
 /// <remarks>
-///     Every type registered here is emitted by the planner on every build — the legacy
-///     emission path and its per-type opt-in were retired 2026-08-11. This factory is the
-///     single source of truth for "what the converter can emit"; a type that
-///     <c>PluginBuilder.EnumerateModelsByType</c> yields without a row here emits nothing,
-///     which <c>PlannerRoutingConsistencyTests</c> guards against.
+///     The legacy emission path and its per-type opt-in were retired 2026-08-11. This is the
+///     central encoder catalog, but not a complete reachability oracle: a production top-level
+///     type also needs a <c>DmpRecordSource</c> extractor and an
+///     <c>PluginConversionPipeline.EnumerateModelsByType</c> entry. Cell-owned types use the
+///     separate cell-section path. <c>PlannerRoutingConsistencyTests</c> guards the required
+///     agreement between those surfaces.
 /// </remarks>
 public static class PlannedEncoders
 {
@@ -49,8 +50,9 @@ public static class PlannedEncoders
         BuildAll().Select(e => e.RecordType).Distinct(StringComparer.Ordinal);
 
     /// <summary>
-    ///     One-line registration for a simple-ref encoder: New delegates to the legacy
-    ///     <c>EncodeNew(model)</c> primitive, Override emits an empty record.
+    ///     One-line registration for a simple-ref encoder: New delegates to the existing
+    ///     <c>EncodeNew(model)</c> model primitive, Override emits an empty record. This
+    ///     reuses encoder code; it does not invoke the retired legacy emission path.
     /// </summary>
     private static DelegatingPlannedEncoder<TModel> Simple<TModel>(
         string recordType, Func<TModel, EncodedRecord> encodeNew) where TModel : class =>
@@ -61,8 +63,9 @@ public static class PlannedEncoders
     /// </summary>
     public static IEnumerable<IPlannedRecordEncoder> BuildAll()
     {
-        // Tier 1 — trivial static-data encoders. No outgoing FormID resolution (or only
-        // verbatim FormID pass-through, matching legacy behavior byte-for-byte).
+        // Tier 1 — early static-data encoders. ALCH is the exception to the otherwise
+        // reference-free group: its planned wrapper consumes explicit top-level/effect
+        // reference decisions before invoking the model serializer.
         yield return new PlannedStatEncoder();
         yield return new PlannedGlobEncoder();
         yield return new PlannedGmstEncoder();
@@ -71,20 +74,24 @@ public static class PlannedEncoders
         yield return new PlannedBookEncoder();
         yield return new PlannedAlchEncoder();
 
-        // Tier 2 — simple FormID-ref encoders. Most emit FormIDs verbatim without
-        // validation; WEAP threads the plan's emit set + remap table through to
-        // its legacy EncodeNew(weap, validFormIds, remapTable) overload.
+        // Tier 2 — FormID-bearing encoders. Most still emit FormIDs verbatim; WEAP threads
+        // transitional whole-plan sets through its existing overload, while ENCH/SPEL consume
+        // explicit per-effect resolutions from RecordPlan.
         yield return new PlannedWeapEncoder();
         yield return Simple<DoorRecord>("DOOR", DoorEncoder.EncodeNew);
         yield return Simple<MiscItemRecord>("MISC", MiscEncoder.EncodeNew);
         yield return Simple<KeyRecord>("KEYM", KeymEncoder.EncodeNew);
         yield return Simple<NoteRecord>("NOTE", NoteEncoder.EncodeNew);
         yield return Simple<RecipeRecord>("RCPE", RcpeEncoder.EncodeNew);
-        yield return Simple<ConstructibleObjectRecord>("COBJ", CobjEncoder.EncodeNew);
+        // COBJ is deliberately not production-routed. Current FNV xEdit defines it as a
+        // MISC-like base object, while the retained forensic model/byte builder is a
+        // cross-generation hybrid containing Skyrim-style recipe fields. Keeping COBJ out
+        // of KnownRecordTypes makes Phase 3 warn and skip an unexpected capture instead of
+        // emitting schema-incompatible bytes into a FalloutNV.esm-based plugin.
         yield return Simple<ArmaRecord>("ARMA", ArmaEncoder.EncodeNew);
         yield return Simple<WeaponModRecord>("IMOD", ImodEncoder.EncodeNew);
-        yield return Simple<EnchantmentRecord>("ENCH", EnchEncoder.EncodeNew);
-        yield return Simple<SpellRecord>("SPEL", SpelEncoder.EncodeNew);
+        yield return new PlannedEnchEncoder();
+        yield return new PlannedSpelEncoder();
         yield return Simple<ExplosionRecord>("EXPL", ExplEncoder.EncodeNew);
         yield return Simple<BaseEffectRecord>("MGEF", MgefEncoder.EncodeNew);
         yield return Simple<ProjectileRecord>("PROJ", ProjEncoder.EncodeNew);
@@ -103,7 +110,12 @@ public static class PlannedEncoders
         yield return Simple<ReputationRecord>("REPU", RepuEncoder.EncodeNew);
         yield return Simple<VoiceTypeRecord>("VTYP", VtypEncoder.EncodeNew);
         yield return Simple<ChallengeRecord>("CHAL", ChalEncoder.EncodeNew);
-        yield return Simple<IngredientRecord>("INGR", IngrEncoder.EncodeNew);
+        // INGR is deliberately not production-routed. FNV stores Weight in a four-byte
+        // DATA subrecord, then requires a separate ENIT block and effect group. The typed
+        // model retains only identity, weight and equipment type, so it cannot reconstruct
+        // a valid new ingredient. Retail's sole row is even named
+        // DoNotCreateNewIngredientsWeArentUsingThemInFallout. Phase 3 keeps a capture visible
+        // and warns/skips it.
         yield return Simple<ImpactDataRecord>("IPCT", IpctEncoder.EncodeNew);
         yield return Simple<LandscapeTextureRecord>("LTEX", LtexEncoder.EncodeNew);
         yield return Simple<MenuIconRecord>("MICN", MicnEncoder.EncodeNew);
@@ -114,11 +126,10 @@ public static class PlannedEncoders
         yield return Simple<DebrisRecord>("DEBR", DebrEncoder.EncodeNew);
         yield return Simple<CombatStyleRecord>("CSTY", CstyEncoder.EncodeNew);
 
-        // Tier 3 — complex FormID-ref encoders. Transitional pass-through to legacy
-        // EncodeNew(model, validFormIds, remapTable); FormID resolution comes from the
-        // plan's emit set. End-to-end parity for records that reference engine-hardcoded
-        // FormIDs or master-child FormIDs (player ref, placed refs) needs additional plan
-        // plumbing — synthetic tests with no outgoing refs still pass byte-for-byte.
+        // Tier 3 — complex FormID-ref encoders. Planned wrappers reuse the existing
+        // EncodeNew(model, validFormIds, remapTable) primitives while FormID resolution
+        // comes from the plan's emit set. Reusing those primitives is not legacy routing;
+        // every disposition and allocation is already settled in EmitPlan.
         yield return new PlannedImadEncoder();
         yield return new PlannedScptEncoder();
         yield return new PlannedPerkEncoder();
@@ -133,18 +144,18 @@ public static class PlannedEncoders
         yield return new PlannedQustEncoder();
         yield return new PlannedInfoEncoder();
 
-        // Tier 4 — cross-record coordination encoders. PACK PLDT degradation still
-        // happens inside legacy EncodeNew transitionally; planner-side downgrade via
-        // ResolvedRefAction.DowngradeContainer is a Tier 4 follow-up. REFR/ACHR/ACRE
-        // (placed refs) emit under CELL Children GRUPs and ship in Tier 5.
+        // Tier 4 — cross-record coordination encoders. PACK still applies PLDT degradation
+        // inside its model encoder; planner-side downgrade via
+        // ResolvedRefAction.DowngradeContainer remains a separate refinement. REFR/ACHR/ACRE
+        // (placed refs) emit under CELL Children GRUPs through the cell-section path.
         yield return new PlannedPackEncoder();
         yield return new PlannedCpthEncoder();
         yield return new PlannedDialEncoder();
         yield return new PlannedMesgEncoder();
 
-        // Tier 5a — remaining top-level world / misc encoders. Cell-children types
-        // (REFR/ACHR/ACRE/LAND/NAVM/PGRE) ship in Tier 5b once cell-pipeline integration
-        // routes their emission through the planner.
+        // Tier 5a — remaining top-level world / misc encoders. Cell-owned types
+        // (REFR/ACHR/ACRE/PGRE/LAND/NAVM) are planned and serialized through
+        // PlanCellSectionBuilder rather than this top-level list.
         yield return Simple<WorldspaceRecord>("WRLD", WrldEncoder.EncodeNew);
         yield return Simple<LightRecord>("LIGH", LighEncoder.EncodeNew);
         yield return Simple<FurnitureRecord>("FURN", FurnEncoder.EncodeNew);
@@ -165,16 +176,15 @@ public static class PlannedEncoders
 
         // Tier 5c — the generic-record types. These have no typed model: they arrive as
         // GenericEsmRecord from RuntimeGenericReader (Fields keyed by PDB identifier) or
-        // the ESM carve path (keyed by subrecord signature), which is why their legacy
-        // encoders all take GenericEsmRecord and read through GenericRecordFields.
+        // the ESM carve path (keyed by subrecord signature), which is why their underlying
+        // model encoders take GenericEsmRecord and read through GenericRecordFields.
         // PlannedEncoderRegistry keys on RecordType rather than model CLR type, so several
         // GenericEsmRecord-backed encoders coexist here without colliding.
         //
-        // Routing them through the planner is what makes a REFR on a proto-only MSTT/TACT
-        // base resolve. Legacy allocates new top-level FormIDs during Phase 3, which runs
-        // AFTER BuildPlannerStateIfEnabled, so CellChildVerdictPlanner saw neither the
-        // source→emitted mapping nor the emitted set and dropped those refs as
-        // refr.dangling-base while their base records emitted perfectly well.
+        // Historical migration note (2026-08-06): adding these rows fixed REFRs on
+        // proto-only MSTT/TACT bases. The retired emitter had allocated their FormIDs after
+        // planning, so CellChildVerdictPlanner could not see the source→emitted mapping and
+        // dropped the refs as refr.dangling-base. Planner-all now allocates them up front.
         yield return Simple<GenericEsmRecord>("FLOR", FlorEncoder.EncodeNew);
         yield return Simple<GenericEsmRecord>("MSTT", MsttEncoder.EncodeNew);
         yield return Simple<GenericEsmRecord>("ANIO", AnioEncoder.EncodeNew);
@@ -182,9 +192,9 @@ public static class PlannedEncoders
         yield return Simple<GenericEsmRecord>("ASPC", AspcEncoder.EncodeNew);
         yield return Simple<GenericEsmRecord>("ADDN", AddnEncoder.EncodeNew);
 
-        // Tier 5d — the last ordinary top-level types still emitted by the legacy Phase-3
-        // encode path. All four families are plain model-in/bytes-out encoders, so they need
-        // nothing beyond a row here and a matching DmpRecordSource extractor row.
+        // Tier 5d — historical final migration from the retired Phase-3 per-model encoder.
+        // All four families are plain model-in/bytes-out encoders, so planner routing needs
+        // a row here plus a matching DmpRecordSource extractor row.
         // RADS/DEHY/HUNG/SLPD share one encoder and one model; PlannedEncoderRegistry keys on
         // RecordType, so four DelegatingPlannedEncoder instances over SurvivalStageRecord
         // coexist the same way the GenericEsmRecord ones above do.
@@ -196,14 +206,11 @@ public static class PlannedEncoders
         yield return Simple<SurvivalStageRecord>("HUNG", SurvivalStageEncoder.EncodeNew);
         yield return Simple<SurvivalStageRecord>("SLPD", SurvivalStageEncoder.EncodeNew);
 
-        // Tier 5b kickoff — CELL + placed-reference (REFR/ACHR/ACRE) encoders. These are
-        // registered but not yet invoked by any dispatch path: cell-children records
-        // (REFR/ACHR/ACRE) emit through CellGrupBuilder's persistent/temporary/VWD
-        // children GRUPs and CELL emits through the WRLD cell-block hierarchy. Routing
-        // those through the planner is the cell-pipeline integration that finishes Tier
-        // 5b. LAND/NAVM/NAVI are not yet ported — they lack standard IRecordEncoder
-        // paths and emit via specialized builders (LandOverrideBuilder, NavInfoMapBuilder,
-        // etc.) that need their own planner-aware abstractions.
+        // Tier 5b catalog entries retained for isolated encoder/parity use. Production does
+        // not dispatch CELL or placed refs as top-level GRUPs: PlanCellSectionBuilder emits
+        // the WRLD/CELL hierarchy and its REFR/ACHR/ACRE/PGRE children from CellPlan.
+        // LAND and NAVM are also planner-owned there, using PlannedLandEncoder and the
+        // specialized NAVM byte-rewriter rather than standard top-level encoders.
         yield return new PlannedCellEncoder();
         yield return new PlannedPlacedReferenceEncoder("REFR");
         yield return new PlannedPlacedReferenceEncoder("ACHR");

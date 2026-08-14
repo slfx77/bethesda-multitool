@@ -6,9 +6,9 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.ComplexRef;
 
 /// <summary>
-///     Planned encoder for CONT (container). Transitional pass-through to legacy
-///     <c>ContEncoder.EncodeNew(cont, validFormIds, remapTable)</c>; the legacy path
-///     validates CNTO inventory items + SCRI + sound FormIDs against the union.
+///     Planned encoder for CONT (container). Reuses the shared
+///     <c>ContEncoder.EncodeNew(cont, validFormIds, remapTable)</c> primitive, which validates
+///     CNTO inventory items, SCRI, and sound FormIDs against the plan-supplied union.
 /// </summary>
 public sealed class PlannedContEncoder : IPlannedRecordEncoder<ContainerRecord>
 {

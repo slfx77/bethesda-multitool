@@ -7,35 +7,27 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Parity;
 
 /// <summary>
-///     Guards the four independent per-type tables a record has to appear in before
-///     the planner can actually emit it. Nothing derives any of them from any
-///     other, and the failure when they disagree is silent:
+///     Guards the three independent production surfaces a top-level record must appear in
+///     before the planner can emit it. Nothing derives any of them from another:
 ///     <list type="number">
 ///         <item>
 ///             <description>
-///                 <see cref="PlannedEncoders.KnownRecordTypes" /> — what <c>all</c> expands to,
-///                 and therefore what <c>PluginBuildOptions.PlannerEnabledRecordTypes</c> routes
-///                 to the planner.
+///                 <see cref="PlannedEncoders.KnownRecordTypes" /> — the planner's complete
+///                 encoder and allocation catalog.
 ///             </description>
 ///         </item>
 ///         <item>
 ///             <description>
-///                 <see cref="PluginBuilder.EmittableTopLevelRecordTypes" /> — the Phase-3 loop
+///                 <see cref="PluginConversionPipeline.EmittableTopLevelRecordTypes" /> — the Phase-3 loop
 ///                 only iterates what <c>EnumerateModelsByType</c> yields, so a type missing here
 ///                 never reaches the planner dispatch at all.
 ///             </description>
 ///         </item>
 ///         <item>
 ///             <description>
-///                 <see cref="RecordEncoderRegistry" /> — the legacy encoder lookup runs BEFORE
-///                 the planner branch and <c>continue</c>s the whole type when it misses.
-///             </description>
-///         </item>
-///         <item>
-///             <description>
 ///                 <see cref="DmpRecordSource.SupportsType" /> — with no extractor row the catalog
 ///                 holds master-only entries, every one resolves to KeepMaster, and the planner
-///                 writes an EMPTY GRUP. This is the dangerous one: a working legacy type becomes
+///                 writes an EMPTY GRUP. This is the dangerous one: an otherwise supported type becomes
 ///                 a total content drop with zero warnings and zero stats.
 ///             </description>
 ///         </item>
@@ -56,6 +48,28 @@ public sealed class PlannerRoutingConsistencyTests
         ["DIAL"] = "DialogGrupBuilder owns DIAL/INFO emission; the plan is consumed only as preallocatedNewFormIds.",
         ["INFO"] = "DialogGrupBuilder owns DIAL/INFO emission; the plan is consumed only as preallocatedNewFormIds."
     };
+
+    [Fact]
+    public void FnvSchemaIncompatibleCobj_RemainsForensicButIsNotProductionPlanned()
+    {
+        Assert.DoesNotContain("COBJ", PlannedEncoders.KnownRecordTypes());
+
+        // Retain discovery/parser reachability so an unexpected capture is visible. Because
+        // there is no planned encoder, the production Phase-3 guard reports and skips it.
+        Assert.True(DmpRecordSource.SupportsType("COBJ"));
+        Assert.Contains("COBJ", PluginConversionPipeline.EmittableTopLevelRecordTypes);
+    }
+
+    [Fact]
+    public void IncompleteFnvIngredient_RemainsForensicButIsNotProductionPlanned()
+    {
+        Assert.DoesNotContain("INGR", PlannedEncoders.KnownRecordTypes());
+
+        // Retain ESM/DMP discovery and the Phase-3 diagnostic. The model does not carry
+        // FNV's required ENIT/effect group, so emitting a new record would be lossy.
+        Assert.True(DmpRecordSource.SupportsType("INGR"));
+        Assert.Contains("INGR", PluginConversionPipeline.EmittableTopLevelRecordTypes);
+    }
 
     [Fact]
     public void Every_Planned_Encoder_Type_Has_A_Dmp_Extractor_Row()
@@ -79,7 +93,7 @@ public sealed class PlannerRoutingConsistencyTests
     {
         var missing = PlannedEncoders.KnownRecordTypes()
             .Where(type => !TopLevelRoutingExemptions.ContainsKey(type))
-            .Where(type => !PluginBuilder.EmittableTopLevelRecordTypes.Contains(type))
+            .Where(type => !PluginConversionPipeline.EmittableTopLevelRecordTypes.Contains(type))
             .OrderBy(type => type, StringComparer.Ordinal)
             .ToList();
 
@@ -90,7 +104,7 @@ public sealed class PlannerRoutingConsistencyTests
     }
 
     [Fact]
-    public void Every_Planned_Encoder_Type_Also_Has_A_Legacy_Encoder()
+    public void Every_Planned_Encoder_Type_Retains_A_Direct_Model_Encoder()
     {
         var registry = RecordEncoderRegistry.CreateDefault();
 
@@ -102,8 +116,8 @@ public sealed class PlannerRoutingConsistencyTests
 
         Assert.True(
             missing.Count == 0,
-            "Planned encoders with no RecordEncoderRegistry entry (the legacy lookup runs first and " +
-            $"skips the type before the planner branch): {string.Join(", ", missing)}");
+            "Planned encoders with no direct RecordEncoderRegistry model primitive: " +
+            string.Join(", ", missing));
     }
 
     [Fact]

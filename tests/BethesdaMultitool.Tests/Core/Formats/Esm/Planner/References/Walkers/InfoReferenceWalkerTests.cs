@@ -63,6 +63,26 @@ public sealed class InfoReferenceWalkerTests
     }
 
     [Fact]
+    public void Conditions_Yield_Only_Semantic_Fnv_Reference()
+    {
+        var info = new DialogueRecord
+        {
+            Conditions =
+            [
+                new DialogueCondition { RunOn = 2, Reference = 0x000A0001 },
+                new DialogueCondition { RunOn = 4, Reference = 0x000A0002 },
+                new DialogueCondition { FunctionIndex = 0x011D, RunOn = 2, Reference = 0x000A0003 }
+            ]
+        };
+
+        var refs = new InfoReferenceWalker().Walk(info).ToList();
+
+        var reference = Assert.Single(refs);
+        Assert.Equal("CTDA[0].Reference", reference.FieldPath);
+        Assert.Equal(0x000A0001u, reference.FormId);
+    }
+
+    [Fact]
     public void Empty_Optional_Fields_Yield_Nothing()
     {
         var info = new DialogueRecord { FormId = 0x000ABCDE };
