@@ -3,13 +3,12 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 
 /// <summary>
-///     Encodes an <see cref="IngredientRecord" /> (INGR) as PC-format subrecord bytes.
-///     INGR is a legacy Oblivion-era ingredient form; FNV retains a single INGR record but
-///     mostly uses ALCH for consumables. fopdoc canonical INGR layout includes EDID, FULL,
-///     MODL, ETYP(equip type FormID), DATA(8B: int32 value + float weight), ENIT, EFID/EFIT
-///     effect chain. Our model only carries weight + equip type — emit those and a placeholder
-///     DATA with value=0; warn that effect-chain emission is deferred.
-///     Override path is a no-op; master ESM bytes retained verbatim.
+///     Partial diagnostic byte projection for an <see cref="IngredientRecord" /> (INGR).
+///     FNV stores equipment type as an int32 enum and Weight as a four-byte DATA float, then
+///     requires a separate eight-byte ENIT block and an effect group. The typed model does not
+///     retain ENIT or effects, so <see cref="PlannedWriter.PlannedEncoders" /> deliberately does
+///     not production-route this builder. It remains available to isolated format tests while
+///     master records are preserved verbatim.
 /// </summary>
 public sealed class IngrEncoder : IRecordEncoder
 {
@@ -38,19 +37,17 @@ public sealed class IngrEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("MODL", ingr.ModelPath));
         }
 
-        if (ingr.EquipType != 0)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ETYP", ingr.EquipType));
-        }
+        // ETYP is a required int32 enum, not a FormID. The partial model uses raw uint storage.
+        subs.Add(NewRecordSubrecords.EncodeInt32Subrecord("ETYP", unchecked((int)ingr.EquipType)));
 
-        // DATA: 8 bytes (int32 value + float weight). Model only carries weight; emit value=0.
-        var data = new byte[8];
-        SubrecordEncoder.WriteInt32(data, 0, 0);
-        SubrecordEncoder.WriteFloat(data, 4, ingr.Weight);
+        // FNV INGR DATA is exactly one float. Value and flags live in the separate ENIT block.
+        var data = new byte[4];
+        SubrecordEncoder.WriteFloat(data, 0, ingr.Weight);
         subs.Add(new EncodedSubrecord("DATA", data));
 
         warnings.Add(
-            $"New INGR 0x{ingr.FormId:X8}: ENIT/EFID/EFIT effect chain not modeled — deferred.");
+            $"New INGR 0x{ingr.FormId:X8}: partial diagnostic projection only; " +
+            "ENIT and the required effect group are not modeled, so production planning excludes INGR.");
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
