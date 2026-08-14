@@ -24,9 +24,9 @@ internal readonly record struct ShaderPermutation(
 ///         It exists because coverage kept rotting: the test named
 ///         <c>EveryRemainingEmbeddedRenderingEntryPointCompiles</c> was in fact a HAND-MAINTAINED list
 ///         of 26 tuples, so any newly added shader silently had zero compile coverage until somebody
-///         remembered to append to it. With CI not setting <c>RUN_SHADER_COMPILE_TESTS</c> at all,
-///         "zero coverage" meant a broken shader reached whoever loaded that game — appearing as a
-///         missing 3D view rather than a build failure.
+///         remembered to append to it. Before CI enabled <c>RUN_SHADER_COMPILE_TESTS</c>, "zero
+///         coverage" meant a broken shader reached whoever loaded that game — appearing as a missing
+///         3D view rather than a build failure.
 ///     </para>
 ///     <para>
 ///         Tests iterate <see cref="All" /> to compile everything, and separately assert that every

@@ -3,9 +3,8 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
 
 /// <summary>
-///     v3 Pass 4 Step 2 — interface implemented by both <c>ReferenceRenderer</c>
-///     (D3D11) and <c>ReferenceRenderer12</c> (D3D12). The placed-object NIF mesh
-///     layer toggled by D5.
+///     Backend-neutral contract for the placed-object NIF mesh layer, currently implemented by
+///     <c>ReferenceRenderer12</c>.
 /// </summary>
 internal interface IReferenceRenderer : IWorldRenderer
 {

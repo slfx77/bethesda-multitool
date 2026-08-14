@@ -2,8 +2,9 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 
 /// <summary>
 ///     Session-only preview state for one placed reference. <see cref="Authored" /> follows the
-///     REFR's own Initially Disabled flag plus its resolved XESP enable-parent chain;
-///     <see cref="On" /> and <see cref="Off" /> explicitly override that initial state.
+///     authored-disabled decision supplied by each consumer: mesh/collision paths use the REFR flag
+///     plus resolved XESP chain, while placed-light emission additionally folds in the base LIGH's
+///     Off By Default flag. <see cref="On" /> and <see cref="Off" /> override that decision.
 /// </summary>
 internal enum ReferenceEnabledOverride
 {
@@ -13,9 +14,10 @@ internal enum ReferenceEnabledOverride
 }
 
 /// <summary>
-///     Pure visibility policy shared by the main reference renderer, picking, and editor overlays.
-///     The global "show initially disabled" diagnostic affects only the authored state. An explicit
-///     per-instance override wins, while independent layer/category filters remain the caller's job.
+///     Pure visibility policy shared by the main reference renderer, placed-light emission, picking,
+///     and editor overlays. The global "show initially disabled" diagnostic affects only the authored
+///     state. An explicit per-instance override wins, while independent layer/category filters remain
+///     the caller's job.
 /// </summary>
 internal static class ReferenceEnabledStatePolicy
 {

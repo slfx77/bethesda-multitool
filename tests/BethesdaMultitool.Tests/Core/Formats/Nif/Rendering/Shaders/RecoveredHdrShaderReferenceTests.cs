@@ -293,6 +293,33 @@ public sealed class RecoveredHdrShaderReferenceTests
         VectorAssert.Equal(new Vector3(0.839f, 0.407f, 0.191f), result, 1e-5f);
     }
 
+    [Fact]
+    public void StandaloneCinematic_ClampsLdrInputBeforeApplyingRecoveredGrade()
+    {
+        var scene = new Vector3(-0.25f, 0.8f, 2f);
+        var result = StandaloneCinematic(
+            scene, 0.5f, 0.125f, 1.2f, 0.9f,
+            new Vector3(0.6f, 0.5f, 0.4f), 0.25f);
+        var gradeBeforeClamp = Vector3.Clamp(
+            Cinematic(scene, CinematicOperation.All, 0.5f, 0.125f, 1.2f, 0.9f,
+                new Vector3(0.6f, 0.5f, 0.4f), 0.25f),
+            Vector3.Zero, Vector3.One);
+
+        VectorAssert.Equal(new Vector3(0.30590123f, 0.61414397f, 0.67938682f), result, 1e-5f);
+        VectorAssert.Equal(new Vector3(0.22690596f, 0.63533899f, 1f), gradeBeforeClamp, 1e-5f);
+        Assert.NotEqual(result, gradeBeforeClamp);
+    }
+
+    [Fact]
+    public void StandaloneCinematic_NeutralGradeIsClampedScene()
+    {
+        var result = StandaloneCinematic(
+            new Vector3(-0.25f, 0.8f, 2f),
+            1f, 0.5f, 1f, 1f, Vector3.One, 0f);
+
+        VectorAssert.Equal(new Vector3(0f, 0.8f, 1f), result, 1e-6f);
+    }
+
     private static Vector3 Adapt(
         Vector3 previous,
         Vector3 current,
@@ -470,6 +497,27 @@ public sealed class RecoveredHdrShaderReferenceTests
         return contrast * (brightness * color - new Vector3(contrastPivot))
                + new Vector3(contrastPivot);
     }
+
+    private static Vector3 StandaloneCinematic(
+        Vector3 scene,
+        float saturation,
+        float contrastPivot,
+        float contrast,
+        float brightness,
+        Vector3 tint,
+        float tintAmount) =>
+        Vector3.Clamp(
+            Cinematic(
+                Vector3.Clamp(scene, Vector3.Zero, Vector3.One),
+                CinematicOperation.All,
+                saturation,
+                contrastPivot,
+                contrast,
+                brightness,
+                tint,
+                tintAmount),
+            Vector3.Zero,
+            Vector3.One);
 
     [Flags]
     private enum CinematicOperation : uint

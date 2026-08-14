@@ -3,9 +3,8 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
 
 /// <summary>
-///     v3 Pass 4 Step 2 — interface implemented by both <c>CellGridDebugRenderer</c>
-///     (D3D11) and <c>CellGridDebugRenderer12</c> (D3D12). The wireframe cell-grid
-///     overlay toggled by D1.
+///     Backend-neutral contract for the wireframe cell-grid overlay, currently implemented by
+///     <c>CellGridDebugRenderer12</c>.
 /// </summary>
 internal interface ICellGridRenderer : IWorldRenderer
 {

@@ -8,9 +8,10 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Shaders;
 
 /// <summary>
 ///     Structural guards over the shader inventory. All UNGATED and compiler-free (milliseconds), so
-///     they run in CI — which matters because CI does NOT set <c>RUN_SHADER_COMPILE_TESTS</c>, and so
-///     compiles almost no HLSL. These convert three failure modes that previously only appeared at
-///     runtime, as a silently missing 3D view, into build-time test failures.
+///     they still run when the opt-in compiler gate is disabled (for example, on developer machines
+///     without FXC). CI additionally enables the compiler-backed matrix. These guards convert three
+///     failure modes that previously only appeared at runtime, as a silently missing 3D view, into
+///     build-time test failures.
 /// </summary>
 public sealed class ShaderInventoryTests
 {

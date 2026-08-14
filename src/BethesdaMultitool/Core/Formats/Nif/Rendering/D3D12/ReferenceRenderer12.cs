@@ -123,8 +123,21 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // casters for the shadow replay. Cached with the cull survivors (see _cachedShadowOnlyCasters).
     private float _shadowCasterRingRadius;
 
+    // Outer band of the same mechanism, admitting LANDMARK-scale refs only (see the FAR RING note in
+    // TestCandidate). Derived from the cascade radii at arm time so it tracks the shadow map's real
+    // coverage instead of a second magic number.
+    private float _shadowCasterFarRingRadius;
+
+    /// <summary>Widest cascade radius whose texel density still resolves a recognisable shadow, and
+    /// therefore the outer bound of the landmark caster band. The 4-cascade ladder is
+    /// {2048, 8192, 32768, 131072}; at a 2048-px map the 32768 cascade is ~16 world units/texel
+    /// (a landmark shadow is still tens of texels) while the 131072 cascade is ~64, where a missing
+    /// off-screen caster genuinely is hard to notice — the assumption the ORIGINAL 8192 ring made one
+    /// cascade too early.</summary>
+    private const float ShadowCasterFarRingCap = 32768f;
+
     // Cascade geometry for this frame's capture (see ArmShadowCapture). Null ⇒ no per-cascade culling.
-    private (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps)? _cascadeFit;
+    private (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps, float SceneZSpan)? _cascadeFit;
 
     // Scratch for the per-batch counting sort that orders instances by smallest containing cascade.
     private readonly List<int> _cascadeBucketScratch = new(256);
@@ -134,6 +147,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     private readonly List<RenderableReference> _cachedShadowOnlyCasters = new(512);
     private float _cullCacheShadowRing;
+    private float _cullCacheShadowFarRing;
 
     /// <summary>Instance count this draw must submit for each cascade. Because the block is in cascade
     /// order these are prefixes, so a cascade draws <c>[0, Count(i))</c> — exactly what the captured
@@ -161,9 +175,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         CascadeCounts Cascades,
         bool UsesTallGrassWind);
 
-    /// <summary>Bumped whenever the opaque batches are REBUILT (a new cull/build pass ran, i.e.
-    /// the drawable content may have changed). Part of the shadow map's cache key, so streamed-in
-    /// geometry re-renders the map while a settled scene never does.</summary>
+    /// <summary>Bumped when the loaded reference population, resident drawable content
+    /// (GPU upload/eviction), or animation eligibility changes. Camera-driven cull/batch rebuilds
+    /// deliberately do not bump it. The shadow
+    /// cache combines this with <see cref="VisibilityKey" /> so non-spatial filters invalidate shadows
+    /// without treating every camera rebuild as new content.</summary>
     public int BatchContentVersion { get; private set; }
 
     /// <summary>True when this frame's draw pass captured at least one shadow-caster draw.</summary>
@@ -171,6 +187,21 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     /// <summary>Number of shadow-caster draws captured this frame (diagnostics).</summary>
     public int ShadowDrawCount => _shadowDraws.Count;
+
+    /// <summary>Exact draw-call count submitted by the most recent
+    /// <see cref="RenderShadowDepth" /> invocation, after per-cascade filtering.</summary>
+    public int LastShadowSubmittedDrawCount { get; private set; }
+
+    /// <summary>Exact instance count submitted by the most recent
+    /// <see cref="RenderShadowDepth" /> invocation, after per-cascade filtering.</summary>
+    public int LastShadowSubmittedInstanceCount { get; private set; }
+
+    /// <summary>
+    ///     True when the latest cascade replay reached an authoritative result, including the valid
+    ///     zero-draw case where no captured instance belongs to that cascade. False only when replay
+    ///     could not run (for example, ring allocation failed).
+    /// </summary>
+    public bool LastShadowReplayCompleted { get; private set; }
 
     /// <summary>True when this frame's captured shadow casters include WIND-ANIMATED leaf cards —
     /// the host then re-renders the map every frame (a cached map freezes the swaying canopy's
@@ -200,13 +231,23 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// </param>
     public void ArmShadowCapture(
         float casterRingRadius,
-        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps)? cascadeFit = null)
+        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps, float SceneZSpan)? cascadeFit = null)
     {
         _shadowDraws.Clear();
         ShadowDrawsIncludeAnimatedLeaves = false;
         ShadowDrawsIncludeAnimatedMeshes = false;
         _shadowCaptureArmed = true;
         _shadowCasterRingRadius = MathF.Max(casterRingRadius, 0f);
+        // Track the shadow map's actual coverage, capped where texel density stops resolving a
+        // shadow. With no cascade fit (capture paths) fall back to the cap itself — those are
+        // one-shot renders where streaming a few extra landmark meshes costs nothing per-frame.
+        var farRing = ShadowCasterFarRingCap;
+        if (cascadeFit is { Radii: { Length: > 0 } radii })
+        {
+            farRing = MathF.Min(radii[^1], ShadowCasterFarRingCap);
+        }
+
+        _shadowCasterFarRingRadius = MathF.Max(_shadowCasterRingRadius, farRing);
         _cascadeFit = cascadeFit;
     }
 
@@ -216,6 +257,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     {
         _shadowCaptureArmed = false;
         _shadowCasterRingRadius = 0f;
+        _shadowCasterFarRingRadius = 0f;
     }
 
     // TEMP transparency diagnostic — set FALLOUT_VIEWER_ALPHA_DEBUG=<path-substring> (e.g. "maniasm25")
@@ -485,11 +527,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     }
 
     // Placed-NIF water geometry (WaterShaderProperty triangles diverted out of the drawable submesh
-    // set at upload) accumulated as meshes resolve, deduped per REFR FormId, and handed to
-    // WaterRenderer12 each frame. Each surface is static (authored vertices × placement), so it is
-    // transformed exactly once; both collections are reset on LoadData.
-    private readonly List<NifWaterGeometry> _nifWaterPlanes = new();
-    private readonly HashSet<uint> _nifWaterPlaneSeen = new();
+    // set at upload), retained together with its owning REFR. Each surface is transformed exactly once;
+    // the registry dynamically republishes only owners that pass the renderer's non-spatial gates.
+    private readonly PlacedNifWaterRegistry _nifWaterRegistry = new();
     private readonly bool _disableReferenceFrustum =
         EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.DisableReferenceFrustum);
 
@@ -608,6 +648,18 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// </summary>
     public bool ShowImposters { get; set; }
 
+    /// <summary>
+    ///     Exact non-spatial visibility snapshot for renderer-adjacent caches. This intentionally omits
+    ///     camera/cylinder state and the host's global Meshes parent.
+    /// </summary>
+    internal ReferenceVisibilityKey VisibilityKey => ReferenceVisibilityKey.Capture(
+        _enabledOverrides,
+        _hiddenCategories,
+        ShowInitiallyDisabled,
+        ShowGrass,
+        ShowMarkers,
+        ShowImposters);
+
     // Per-category visibility filter. References whose RenderableReference.Category is in this set are
     // culled (e.g. activators hidden by the user in the 3D view; the 2D legend's hidden set for the
     // top-down overlay). Mutated only via SetHiddenCategories, which invalidates the cull cache.
@@ -649,13 +701,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     public int LastFrameDrawsTruncated { get; private set; }
 
     /// <summary>
-    ///     World-space authored water geometry detected on placed-reference NIFs (cave/pool/
-    ///     reflecting-pool water). Accumulates as those references' meshes stream in; the host hands
-    ///     this to <see cref="WaterRenderer12.SetNifWaterPlanes" /> so placed water renders with the real
-    ///     water shader instead of a flat slab. The list reference is stable across a worldspace load
-    ///     (cleared, not reallocated, in <see cref="LoadData" />).
+    ///     World-space authored water geometry detected on currently eligible placed-reference NIFs
+    ///     (cave/pool/reflecting-pool water). The host hands this to
+    ///     <see cref="WaterRenderer12.SetNifWaterPlanes" /> so placed water renders with the real water
+    ///     shader instead of a flat slab. The published list reference remains stable while its contents
+    ///     track per-reference, authored, category, grass, marker, and imposter visibility. It remains
+    ///     independent of the host's global Meshes parent because the water pass is a sibling layer.
     /// </summary>
-    public IReadOnlyList<NifWaterGeometry> NifWaterPlanes => _nifWaterPlanes;
+    public IReadOnlyList<NifWaterGeometry> NifWaterPlanes =>
+        _nifWaterRegistry.GetPublished(VisibilityKey, _enabledOverrides);
 
     private bool _streamingThrottled = true;
 
@@ -693,6 +747,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _pipelines.SetGrassShaderProfile(GrassShaderProfile.ForGame(renderCache.Game));
         _pipelines.SetInstancedGrassShaderProfile(
             GrassShaderProfile.InstancedForGame(renderCache.Game));
+        _pipelines.SetInstancedBlendGrassShaderProfile(
+            GrassShaderProfile.InstancedBlendForGame(renderCache.Game));
         if (_grassDistanceEnvelope.Enabled)
         {
             Core.Diagnostics.Logger.Instance.Info(
@@ -706,10 +762,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // are any frozen batches built from them.
         _cullCacheValid = false;
         _lastBuildValid = false;
-        // Drop the accumulated NIF water geometry so it doesn't leak across worldspace loads. Cleared
-        // (not reallocated) so the reference the host handed WaterRenderer12 stays valid.
-        _nifWaterPlanes.Clear();
-        _nifWaterPlaneSeen.Clear();
+        unchecked { BatchContentVersion++; }
+        // Drop placed-NIF water ownership so it cannot leak across worldspace loads. The registry
+        // clears its stable publication list in place for consumers that retained the reference.
+        _nifWaterRegistry.Clear();
 
         // Size the resident-mesh LRU to this worldspace's distinct-mesh working set so it holds the
         // whole set rather than thrashing (evict → re-decode → re-upload) when the count exceeds the
@@ -1368,6 +1424,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var cylinderRadius = cylinder.Radius;
         var cylinderX = cylinder.Position.X;
         var cylinderY = cylinder.Position.Y;
+        // One exact snapshot drives both the main cull and renderer-adjacent retained content.
+        var visibilityKey = VisibilityKey;
         var hasFrustum = !_disableReferenceFrustum;
         // Cull in WORLD space: the frustum must come from the absolute viewProj (apex at the camera,
         // not the origin) because every cull test below is against absolute coordinates. The
@@ -1384,6 +1442,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // loop — measured at ~540k candidates/frame against ~190k with the filter armed, i.e. the
         // ring was silently costing 2.9x the cull time it needed to.
         var shadowRing = _shadowCaptureArmed ? _shadowCasterRingRadius : 0f;
+        // Landmark-only band beyond the near ring (see the FAR RING note in TestCandidate).
+        var shadowFarRing = _shadowCaptureArmed ? _shadowCasterFarRingRadius : 0f;
 
         // === Establishment frustum (tolerant cull) ===
         // The cached survivor set must remain a SUPERSET of the exact set for every camera pose the
@@ -1407,7 +1467,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // Only forward a ring to the broadphase when it is actually filtering by frustum (a null
         // frustum admits everything already) and a ring is genuinely active — otherwise the drift
         // slack added at the call site would turn into a small always-on admit square.
-        var broadphaseRing = broadphaseFrustum is not null && shadowRing > 0f ? shadowRing : 0f;
+        // The broadphase must admit the WIDER of the two rings: a bucket rejected here never reaches
+        // TestCandidate, so a near-ring-sized broadphase would silently defeat the far ring.
+        var effectiveRing = MathF.Max(shadowRing, shadowFarRing);
+        var broadphaseRing = broadphaseFrustum is not null && effectiveRing > 0f ? effectiveRing : 0f;
 
         double cullMs = 0;
         double meshUploadMs = 0;
@@ -1459,6 +1522,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             && _cullCacheShowDisabled == ShowInitiallyDisabled
             && _cullCacheEnabledOverrideVersion == _enabledOverrides.Version
             && _cullCacheShadowRing == shadowRing
+            && _cullCacheShadowFarRing == shadowFarRing
             && (tolerant
                 ? _cullCachePose is not null
                   && _cullCachePose.Value.FovYRadians == cullCameraPose!.Value.FovYRadians
@@ -1480,6 +1544,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             : _cullCacheShowDisabled != ShowInitiallyDisabled ? CullCacheVeto.ShowDisabled
             : _cullCacheEnabledOverrideVersion != _enabledOverrides.Version ? CullCacheVeto.EnabledOverrides
             : _cullCacheShadowRing != shadowRing ? CullCacheVeto.ShadowRing
+            : _cullCacheShadowFarRing != shadowFarRing ? CullCacheVeto.ShadowRing
             : cullCacheValid ? CullCacheVeto.None
             : tolerant ? CullCacheVeto.Pose
             : _cullCacheViewProj != cullFrustumSource ? CullCacheVeto.ViewProj
@@ -1622,42 +1687,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // so it is safe to call concurrently.
             CullVerdict TestCandidate(in RenderableReference r)
             {
-                    // Authored state combines the REFR's own Initially Disabled flag with its resolved
-                    // XESP parent chain. A scene-local per-instance On/Off preview wins over both that
-                    // state and the global "show disabled" diagnostic; category/layer gates below stay
-                    // independent. Count a hidden state as culled so the HUD reflects the filter.
-                    if (!_enabledOverrides.IsVisible(r.FormId, r.IsInitiallyDisabled, ShowInitiallyDisabled))
-                    {
-                        return CullVerdict.Culled;
-                    }
-                    if (!ShowGrass && r.IsGrass)
-                    {
-                        return CullVerdict.Culled;
-                    }
-                    // Hide engine marker objects (XMarker, map/travel markers, etc.) unless toggled on.
-                    // The game strips these in play; we match that for a clean render.
-                    if (!ShowMarkers && r.IsMarker)
-                    {
-                        return CullVerdict.Culled;
-                    }
-                    // Hide imposter LOD stand-ins. Their real geometry (STAT/SCOL) lives elsewhere in
-                    // the same worldspace (placed at a different origin, not exactly co-located), so in
-                    // this full-detail render — where the whole worldspace is loaded — every imposter is
-                    // redundant and the engine would have hidden it. Toggle back via ShowImposters.
-                    if (!ShowImposters && r.IsImposter)
-                    {
-                        return CullVerdict.Culled;
-                    }
-                    // Per-category visibility (user-selected category toggles; 2D legend toggles for the
-                    // top-down overlay). The set is empty in the common case so this is one HashSet
-                    // count check per candidate.
-                    if (_hiddenCategories.Count > 0 && _hiddenCategories.Contains(r.Category))
-                    {
-                        return CullVerdict.Culled;
-                    }
+                    // Authored/per-instance, category, grass, marker, and imposter decisions share
+                    // the exact policy used by retained placed-water and shadow content. Count any
+                    // hidden state as culled so the HUD still reflects the aggregate filter.
+                    if (!visibilityKey.IsVisible(r, _enabledOverrides)) return CullVerdict.Culled;
                     // Cull bounds: once a mesh is resident, use its ACTUAL local bounding sphere (radius
-                    // around the NIF origin, scaled into world) instead of the OBND-or-256-fallback baked
-                    // at LoadData. The mesh sphere is conservative (contains all geometry) and centered at
+                    // around the NIF origin, scaled into world) instead of the OBND-or-cell-sized fallback
+                    // baked at LoadData. The mesh sphere is conservative (contains all geometry) and centered at
                     // the placement point, so large meshes (highways/buildings) with a missing/tiny OBND no
                     // longer get culled at the screen edge or when the camera is close. Falls back to the
                     // OBND sphere until the mesh first resolves (it then self-corrects on later frames).
@@ -1721,6 +1757,26 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                             // Frustum-rejected but inside the caster ring: still counts as culled for
                             // the HUD, and rides the shadow-only list.
                             return CullVerdict.ShadowOnlyCaster;
+                        }
+
+                        // FAR RING (2026-08-11). The near ring matches the MID cascade (8192), on the
+                        // old assumption that past it "the far cascades' coarse texels make a missing
+                        // off-screen caster's shadow hard to notice". Measured false: the cascades
+                        // reach 131,072 units, and at a Hoover-dam overlook a 1.7-degree yaw dropped
+                        // 126 casters (shadowDraws 1254 -> 1128) and visibly deleted a shadow the user
+                        // was looking at. Admitting every ref out to the last cascade would stream the
+                        // whole worldspace for the shadow pass, so the far band takes only
+                        // LANDMARK-SCALE geometry — the same size split A5 distance-LOD already uses
+                        // (small props are clutter whose far shadows really are sub-texel). Cheap:
+                        // one extra Chebyshev test on refs that were about to be rejected outright.
+                        var farRing = shadowFarRing;
+                        if (farRing > shadowRing && cullRadius >= SmallPropLodRadius)
+                        {
+                            var farReach = farRing + cullRadius + driftSlack;
+                            if (MathF.Abs(dx) <= farReach && MathF.Abs(dy) <= farReach)
+                            {
+                                return CullVerdict.ShadowOnlyCaster;
+                            }
                         }
 
                         rejected = true;
@@ -1849,6 +1905,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             _cullCacheShowDisabled = ShowInitiallyDisabled;
             _cullCacheEnabledOverrideVersion = _enabledOverrides.Version;
             _cullCacheShadowRing = shadowRing;
+            _cullCacheShadowFarRing = shadowFarRing;
             _cullCacheCellsVisited = cellsVisited;
             _cullCacheCandidates = candidates;
             _cullCacheCulled = culled;
@@ -1926,12 +1983,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 missingMeshes++;
                 continue;
             }
-            // Placed water geometry needs no textures — emit it as soon as the mesh resolves, once per
-            // REFR (the seen-set dedups the per-frame resolve). Transform every mesh-local authored
-            // vertex by this placement's world matrix for WaterRenderer12.
-            if (mesh.WaterPlanesLocal.Count > 0 && _nifWaterPlaneSeen.Add(r.FormId))
+            // Placed water geometry needs no textures — register it as soon as the mesh resolves, once
+            // per REFR. The owner-aware registry filters its publication whenever non-spatial reference
+            // visibility changes; global Meshes visibility remains deliberately independent.
+            if (mesh.WaterPlanesLocal.Count > 0 && !_nifWaterRegistry.ContainsOwner(r.FormId))
             {
-                AccumulateNifWaterPlanes(r.WorldMatrix, mesh.WaterPlanesLocal);
+                AccumulateNifWaterPlanes(r, mesh.WaterPlanesLocal);
             }
 
             var texturesReady = mesh.TexturesReady;
@@ -1990,10 +2047,35 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     }
                 }
 
+                // TES4 grass rides the INSTANCED path despite being alpha-BLENDED. Oblivion grass
+                // authors NiAlphaProperty 0x12ED (blend AND test) where FNV authors 0x12EC (test
+                // only) — one bit — and NifAlphaClassifier turns that bit straight into
+                // NifAlphaRenderMode.Blend with no policy layer, which pinned an entire ~3,900-blade
+                // carpet to the per-draw path: one draw call, one 256-byte ring allocation, and three
+                // whole-list re-scans (DrawBlended runs up to three times per frame and both
+                // water-partitioned calls copy every surviving ~225-byte draw) per BLADE. Batching it
+                // costs nothing structurally — blend and instancing are argument values on the same
+                // CreatePipelineState over the same root signature and input layout — it only needs
+                // the VS compiled against the instanced ABI, which is what the availability check is.
+                //
+                // The exclusions are the shapes the instanced ABI genuinely cannot express, not
+                // conservatism: a billboard needs a unique camera-facing matrix per placement, and a
+                // NiAlphaController's material alpha is sampled per draw (the per-batch InstanceDraw
+                // CB writes sub.AlphaState raw). Those keep the per-draw grass shader and stay correct.
+                var instancedGrass = r.IsGrass
+                                     && sub.AlphaRenderMode == NifAlphaRenderMode.Blend
+                                     && !sub.IsBillboard
+                                     && !sub.IsDecal
+                                     && sub.DepthWritingBlend
+                                     && sub.MaterialAlphaController is null
+                                     && sub.LiveParticles is null
+                                     && _pipelines.InstancedBlendGrassShaderAvailable;
+
                 // Billboards must take the per-draw blended path even when opaque: the instanced
                 // opaque path has no per-draw matrix, but a billboard needs a unique camera-facing
                 // world matrix per placement.
-                if (sub.AlphaRenderMode == NifAlphaRenderMode.Blend || sub.IsBillboard)
+                if ((sub.AlphaRenderMode == NifAlphaRenderMode.Blend && !instancedGrass)
+                    || sub.IsBillboard)
                 {
                     var sampledSourceWorld = ApplyPhysicsLiteSway(sub, r.FormId, r.WorldMatrix);
                     var worldCenter = Vector3.Transform(sub.LocalBoundsCenter, sampledSourceWorld);
@@ -2054,7 +2136,21 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     (false, true) => _pipelines.OpaqueBackDecalPso,
                     (false, false) => _pipelines.OpaqueBackPso
                 };
-                if (r.IsGrass && sub.AlphaTest && !sub.IsDecal)
+                if (instancedGrass)
+                {
+                    // The authored SRC_ALPHA/INV_SRC_ALPHA blend, kept verbatim — the July 2026 A2C
+                    // revert stands, and the recovered GRASS2020 distance ramp multiplies the BLENDED
+                    // output alpha, so the blend is load-bearing and is not being traded away for
+                    // batching. Always the depth-WRITING variant: every shipped TES4 grass mesh
+                    // authors a test threshold at or above the depth-write gate (which is why the
+                    // route requires DepthWritingBlend), grass genuinely is an occluder, and one
+                    // unconditional choice keeps the PSO — part of the batch key — stable across the
+                    // per-frame transparency-stream toggle that batches outlive.
+                    pso = _pipelines.GetBlendDepthWritePipeline(
+                        sub.SrcBlendMode, sub.DstBlendMode, sub.DoubleSided,
+                        decal: false, grassRoute: true, depthTestOff: false, instancedGrass: true);
+                }
+                else if (r.IsGrass && sub.AlphaTest && !sub.IsDecal)
                 {
                     // Grass cutouts take the alpha-to-coverage variants so MSAA antialiases the
                     // blade silhouettes (identical to the plain opaque PSOs when the scene is
@@ -2160,6 +2256,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         if (!reuseBatches)
         {
+            // Grass batches carry a BLENDED pipeline on the TES4 route, so they must drain after
+            // every opaque batch (see OrderGrassBatchesLast). Ordered before the cascade sort purely
+            // for readability — the two are independent, one permutes batches and the other permutes
+            // instances within a batch.
+            _opaqueBatches.OrderGrassBatchesLast();
+
             // Order each batch's instances by smallest containing cascade so the shadow replay can
             // draw a per-cascade PREFIX. Done at BUILD time, not per frame: the copy pass stays a
             // bulk memcpy, and reuse frames inherit the ordering for free.
@@ -2488,8 +2590,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     (the light viewProj + leaf-card basis at b0), the depth-only PSOs, and each draw's
     ///     captured InstanceDraw-CB / instance-SRV addresses — all frame-local ring allocations,
     ///     so it MUST run in the same host frame that captured them (see
-    ///     <see cref="ArmShadowCapture" />). Returns false (drawing nothing) when there is nothing
-    ///     to replay.
+    ///     <see cref="ArmShadowCapture" />).
+    ///     Returns true only when at least one post-cascade-filter draw was submitted. See
+    ///     <see cref="LastShadowReplayCompleted" /> to distinguish an authoritative empty cascade
+    ///     from a replay that could not run.
     /// </summary>
     /// <param name="cascadeIndex">
     ///     Which cascade is being filled. Each captured draw carries a per-cascade instance count (a
@@ -2499,7 +2603,30 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     public bool RenderShadowDepth(in SunShadowMath.LightFrustum frustum, int cascadeIndex = 0)
     {
         _shadowCaptureArmed = false;
-        if (_shadowDraws.Count == 0) return false;
+        LastShadowSubmittedDrawCount = 0;
+        LastShadowSubmittedInstanceCount = 0;
+        LastShadowReplayCompleted = false;
+        if (_shadowDraws.Count == 0)
+        {
+            LastShadowReplayCompleted = true;
+            return false;
+        }
+
+        // Avoid consuming ring space when captured batches exist but this cascade's fitted box
+        // contains none of their instances. This is an authoritative empty result, not a failure.
+        var hasCascadeInstances = false;
+        foreach (var draw in _shadowDraws)
+        {
+            if (Math.Min(draw.Cascades[cascadeIndex], draw.DrawCount) <= 0) continue;
+            hasCascadeInstances = true;
+            break;
+        }
+
+        if (!hasCascadeInstances)
+        {
+            LastShadowReplayCompleted = true;
+            return false;
+        }
 
         var cmd = _recorder.CommandList;
         if (!_ringBuffer.TryAllocate(
@@ -2563,6 +2690,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             cmd.IASetVertexBuffers(0, draw.VertexBufferView);
             cmd.IASetIndexBuffer(draw.IndexBufferView);
             cmd.DrawIndexedInstanced((uint)draw.IndexCount, (uint)cascadeInstances, 0, 0, 0);
+            LastShadowSubmittedDrawCount++;
+            LastShadowSubmittedInstanceCount += cascadeInstances;
             if (draw.UsesTallGrassWind)
             {
                 LastStats.ReferenceTallGrassShadowDraws++;
@@ -2570,7 +2699,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             }
         }
 
-        return true;
+        LastShadowReplayCompleted = true;
+        return LastShadowSubmittedDrawCount > 0;
     }
 
     public void Dispose()
@@ -2644,11 +2774,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // Applies the placement matrix to each authored water vertex. Bounds are recomputed only for
     // culling; WaterRenderer12 consumes the transformed positions + original indices, matching the
     // retail FNV WATER000 vertex path instead of expanding a flat AABB-derived quad.
-    private void AccumulateNifWaterPlanes(Matrix4x4 world, IReadOnlyList<NifWaterGeometry> localPlanes)
+    private void AccumulateNifWaterPlanes(
+        in RenderableReference owner,
+        IReadOnlyList<NifWaterGeometry> localPlanes)
     {
+        var placedPlanes = new List<NifWaterGeometry>(localPlanes.Count);
         for (var pi = 0; pi < localPlanes.Count; pi++)
         {
-            var placed = localPlanes[pi].Transform(world);
+            var placed = localPlanes[pi].Transform(owner.WorldMatrix);
             if (placed is null)
             {
                 continue;
@@ -2658,8 +2791,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // XCWT at placement time (0 → the renderer falls back to the worldspace default).
             // Without this, placed surfaces rendered with the CAMERA cell's sticky selection and
             // changed look wholesale when the camera crossed an XCWT boundary mid-flight.
-            _nifWaterPlanes.Add(placed.WithWaterFormId(ResolveNifWaterPlaneFormId(placed)));
+            placedPlanes.Add(placed.WithWaterFormId(ResolveNifWaterPlaneFormId(placed)));
         }
+
+        _nifWaterRegistry.Register(owner, placedPlanes);
     }
 
     /// <summary>The XCWT of the cell containing the placed surface's centroid, or 0 when the cell
@@ -2672,11 +2807,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         }
 
         var center = (placed.BoundsMin + placed.BoundsMax) * 0.5f;
-        var gx = (int)MathF.Floor(center.X / global::BethesdaMultitool.WorldGridConstants.CellSize);
-        var gy = (int)MathF.Floor(center.Y / global::BethesdaMultitool.WorldGridConstants.CellSize);
-        return _cells.TryGetValue((gx, gy), out var cell) && cell.WaterFormId is > 0
-            ? cell.WaterFormId.Value
-            : 0;
+        var cellSize = _spatialIndex?.CellSize ?? global::BethesdaMultitool.WorldGridConstants.CellSize;
+        return PlacedNifWaterCellResolver.Resolve(_cells, new Vector2(center.X, center.Y), cellSize);
     }
 
     private void DrawOpaqueBatches(
@@ -3099,7 +3231,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // TallGrass submeshes stay out of the sun-shadow cascades. Gated on the FNV wind
             // support axis so other games' vegetation is untouched.
             var fnvGrassNeverCasts = _tallGrassWindSupported && sub.IsTallGrass;
-            if (_shadowCaptureArmed && !sub.IsDecal && !fnvGrassNeverCasts &&
+            // TES4 grass must not START casting merely because it moved onto the batch path. It was
+            // blended per-draw before, and blended draws are never captured as casters, so any
+            // Oblivion grass shadow appearing here would be a NEW behaviour introduced by a perf
+            // change — and retail has no grass caster permutation in shaderpackage019 either.
+            // UsesGrassDistanceEnvelope is the batch-level "this is grass" marker (it is already part
+            // of the batch key, and only the grass profiles enable an envelope at all).
+            var grassNeverCasts = fnvGrassNeverCasts || batchState.UsesGrassDistanceEnvelope;
+            if (_shadowCaptureArmed && !sub.IsDecal && !grassNeverCasts &&
                 drawCount + shadowCount > 0 && drawLiveness)
             {
                 // Record this draw for the frame-end shadow replay: the ring-buffer CB just bound
@@ -4215,7 +4354,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         List<Vector4> bounds,
         List<uint> seeds,
         int[] prefix,
-        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps) fit,
+        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps, float SceneZSpan) fit,
         int cascades,
         float slack)
     {
@@ -4289,7 +4428,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         List<Matrix4x4> instances,
         List<uint> seeds,
         int[] prefix,
-        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps) fit,
+        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps, float SceneZSpan) fit,
         int cascades,
         float slack)
     {
@@ -4344,7 +4483,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// when it lies outside every one of them.</summary>
     private static int ClassifyCascade(
         Vector4 bounds,
-        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps) fit,
+        (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps, float SceneZSpan) fit,
         int cascades,
         float slack)
     {
@@ -4356,8 +4495,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // this cascade's reach by that quantum so the lag cannot truncate a caster out of the box
             // that actually draws it.
             var snap = c < fit.Snaps.Length ? fit.Snaps[c] : 0f;
+            // The up-sun reach MUST come from the same helper the pass's BuildLightFrustum call uses
+            // (WorldView3DControl.Frame.RecordSunShadowPass) — this decides what is submitted, that
+            // decides what is rasterized, and a mismatch is a silent hole in the near cascade.
+            var casterReach = SunShadowMath.CascadeCasterReach(
+                fit.SunDirection, fit.Radii[c], fit.SceneZSpan);
             if (SunShadowMath.CascadeContains(
-                    delta, fit.SunDirection, fit.Radii[c], bounds.W, slack + snap))
+                    delta, fit.SunDirection, fit.Radii[c], bounds.W, slack + snap, casterReach))
             {
                 return c;
             }

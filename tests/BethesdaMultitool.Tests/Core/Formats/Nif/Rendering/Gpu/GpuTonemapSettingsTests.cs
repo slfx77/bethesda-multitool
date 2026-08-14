@@ -15,6 +15,186 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Gpu;
 /// </summary>
 public sealed class GpuTonemapSettingsTests
 {
+    [Theory]
+    [InlineData(BethesdaGame.Fallout3, false, true, -1,
+        (int)GpuTonemapMode.CinematicFo3Fnv, false, true)]
+    [InlineData(BethesdaGame.FalloutNewVegas, false, true, -1,
+        (int)GpuTonemapMode.CinematicFo3Fnv, false, true)]
+    [InlineData(BethesdaGame.Fallout3, false, false, -1,
+        (int)GpuTonemapMode.LegacyClamp, false, true)]
+    [InlineData(BethesdaGame.FalloutNewVegas, false, true, (int)GpuTonemapMode.LegacyClamp,
+        (int)GpuTonemapMode.LegacyClamp, false, true)]
+    [InlineData(BethesdaGame.FalloutNewVegas, false, true, (int)GpuTonemapMode.GammaAces,
+        (int)GpuTonemapMode.GammaAces, false, true)]
+    [InlineData(BethesdaGame.FalloutNewVegas, false, true, (int)GpuTonemapMode.EngineFo3Fnv,
+        (int)GpuTonemapMode.EngineFo3Fnv, true, true)]
+    [InlineData(BethesdaGame.FalloutNewVegas, false, true, (int)GpuTonemapMode.CreationModern,
+        (int)GpuTonemapMode.CreationModern, false, true)]
+    [InlineData(BethesdaGame.Oblivion, false, true, -1,
+        (int)GpuTonemapMode.LegacyClamp, false, true)]
+    [InlineData(BethesdaGame.Morrowind, false, true, -1,
+        (int)GpuTonemapMode.LegacyClamp, false, true)]
+    [InlineData(BethesdaGame.Skyrim, false, true, -1,
+        (int)GpuTonemapMode.LegacyClamp, false, true)]
+    [InlineData(BethesdaGame.Fallout4, false, true, -1,
+        (int)GpuTonemapMode.LegacyClamp, false, true)]
+    [InlineData(BethesdaGame.FalloutNewVegas, true, true, -1,
+        (int)GpuTonemapMode.EngineFo3Fnv, true, false)]
+    [InlineData(BethesdaGame.FalloutNewVegas, true, true, (int)GpuTonemapMode.LegacyClamp,
+        (int)GpuTonemapMode.LegacyClamp, false, false)]
+    [InlineData(BethesdaGame.FalloutNewVegas, true, true, (int)GpuTonemapMode.GammaAces,
+        (int)GpuTonemapMode.GammaAces, false, false)]
+    [InlineData(BethesdaGame.FalloutNewVegas, true, false, (int)GpuTonemapMode.EngineFo3Fnv,
+        (int)GpuTonemapMode.LegacyClamp, false, true)]
+    public void FinalizeViewerPostProcessing_HdrToggleMatrixIsExplicitlyGameScoped(
+        BethesdaGame game,
+        bool guiHdrEnabled,
+        bool tonemapAvailable,
+        int operatorOverrideValue,
+        int expectedMode,
+        bool expectedBloom,
+        bool expectedNeutralEmissive)
+    {
+        const ulong historyKey = 0x1234_5678_9ABC_DEF0;
+        var authored = GpuTonemapSettings.EngineExteriorDefaults with
+        {
+            Mode = game == BethesdaGame.Skyrim
+                ? GpuTonemapMode.GammaAces
+                : GpuTonemapMode.EngineFo3Fnv,
+            EmissiveMult = 7f,
+            BloomEnabled = true,
+            Saturation = 0.37f,
+            ContrastAvgLum = 0.19f,
+            Contrast = 1.47f,
+            Brightness = 0.83f,
+            TintR = 0.2f,
+            TintG = 0.4f,
+            TintB = 0.6f,
+            TintAmount = 0.7f,
+        };
+
+        var operatorOverride = operatorOverrideValue < 0
+            ? null
+            : (GpuTonemapMode?)operatorOverrideValue;
+        var result = GpuTonemapSettings.FinalizeViewerPostProcessing(
+            authored, game, guiHdrEnabled, tonemapAvailable, operatorOverride,
+            guiBloomEnabled: true, historyKey);
+
+        Assert.Equal((GpuTonemapMode)expectedMode, result.Mode);
+        Assert.Equal(historyKey, result.HistoryKey);
+        // Final policy must not discard the already-resolved IMGS/IMAD grade.
+        Assert.Equal(authored.Saturation, result.Saturation);
+        Assert.Equal(authored.ContrastAvgLum, result.ContrastAvgLum);
+        Assert.Equal(authored.Contrast, result.Contrast);
+        Assert.Equal(authored.Brightness, result.Brightness);
+        Assert.Equal(authored.TintAmount, result.TintAmount);
+        Assert.Equal(expectedBloom, result.BloomEnabled);
+        Assert.Equal(expectedNeutralEmissive ? 1f : 7f, result.EmissiveMult);
+    }
+
+    [Fact]
+    public void WithoutImagespaceModifiers_NeutralizesEverySceneAndGradeConsumer()
+    {
+        var poisoned = GpuTonemapSettings.EngineExteriorDefaults with
+        {
+            EmissiveMult = 2f,
+            SunlightScale = 3f,
+            GrassScale = 4f,
+            SkyScale = 5f,
+            Saturation = 0.2f,
+            ContrastAvgLum = 0.3f,
+            Contrast = 1.4f,
+            Brightness = 1.5f,
+            TintR = 0.6f,
+            TintG = 0.7f,
+            TintB = 0.8f,
+            TintAmount = 0.9f,
+            CinematicFlags = ImageSpaceCinematicFlags.None,
+        };
+
+        var neutral = GpuTonemapSettings.WithoutImagespaceModifiers(poisoned);
+
+        Assert.Equal(1f, neutral.EmissiveMult);
+        Assert.Equal(1f, neutral.SunlightScale);
+        Assert.Equal(1f, neutral.GrassScale);
+        Assert.Equal(1f, neutral.SkyScale);
+        Assert.Equal(1f, neutral.Saturation);
+        Assert.Equal(0.5f, neutral.ContrastAvgLum);
+        Assert.Equal(1f, neutral.Contrast);
+        Assert.Equal(1f, neutral.Brightness);
+        Assert.Equal(Vector3.One, new Vector3(neutral.TintR, neutral.TintG, neutral.TintB));
+        Assert.Equal(0f, neutral.TintAmount);
+        Assert.Equal(ImageSpaceCinematicFlags.All, neutral.CinematicFlags);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("bogus", null)]
+    [InlineData("OFF", (int)GpuTonemapMode.LegacyClamp)]
+    [InlineData("aces", (int)GpuTonemapMode.GammaAces)]
+    [InlineData("engine", (int)GpuTonemapMode.EngineFo3Fnv)]
+    [InlineData("modern", (int)GpuTonemapMode.CreationModern)]
+    public void ParseTonemapModeOverride_RecognizesOnlyAdvertisedValues(string? value, int? expected)
+    {
+        var parsed = GpuTonemapSettings.ParseTonemapModeOverride(value);
+
+        Assert.Equal(expected is null ? null : (GpuTonemapMode?)expected.Value, parsed);
+    }
+
+    [Theory]
+    [InlineData(false, (int)GpuTonemapMode.EngineFo3Fnv, true, 1f, false, false, false)]
+    [InlineData(true, (int)GpuTonemapMode.LegacyClamp, true, 1f, false, false, false)]
+    [InlineData(true, (int)GpuTonemapMode.GammaAces, true, 1f, false, false, false)]
+    [InlineData(true, (int)GpuTonemapMode.EngineFo3Fnv, true, 1f, true, true, true)]
+    [InlineData(true, (int)GpuTonemapMode.EngineFo3Fnv, false, 1f, true, true, false)]
+    [InlineData(true, (int)GpuTonemapMode.EngineFo3Fnv, true, 0f, true, true, false)]
+    [InlineData(true, (int)GpuTonemapMode.CreationModern, true, 1f, false, true, false)]
+    [InlineData(true, (int)GpuTonemapMode.CinematicFo3Fnv, true, 1f, false, false, false)]
+    public void ExecutionPlan_OnlyEngineModeSchedulesClassicHdrWork(
+        bool enabled,
+        int mode,
+        bool bloomEnabled,
+        float brightScale,
+        bool expectedEngine,
+        bool expectedAdaptive,
+        bool expectedBloom)
+    {
+        var plan = GpuTonemapExecutionPlan.Create(
+            enabled, (GpuTonemapMode)mode, bloomEnabled, brightScale);
+
+        Assert.Equal(expectedEngine, plan.EngineMode);
+        Assert.Equal(expectedAdaptive, plan.AdaptiveMode);
+        Assert.Equal(expectedBloom, plan.BloomActive);
+        Assert.Equal(1, GpuTonemapModeTraits.CompositeDrawCount);
+    }
+
+    [Fact]
+    public void CinematicOnlyTraits_AreGradeWithoutHdrOrBloomSemantics()
+    {
+        var traits = GpuTonemapModeTraits.For(GpuTonemapMode.CinematicFo3Fnv, enabled: true);
+
+        Assert.False(traits.IsHdrDisplayOperator);
+        Assert.False(traits.UsesClassicReduction);
+        Assert.False(traits.UsesAdaptation);
+        Assert.False(traits.AllowsClassicBloom);
+        Assert.False(GpuTonemapModeTraits.IsBloomActive(
+            GpuTonemapMode.CinematicFo3Fnv, enabled: true, bloomEnabled: true, brightScale: 999f));
+    }
+
+    [Fact]
+    public void ModeTraits_ProfilerEffectiveStateDistinguishesHdrFromStandaloneGrade()
+    {
+        var cinematic = GpuTonemapModeTraits.For(GpuTonemapMode.CinematicFo3Fnv, enabled: true);
+        var engine = GpuTonemapModeTraits.For(GpuTonemapMode.EngineFo3Fnv, enabled: true);
+        var killed = GpuTonemapModeTraits.For(GpuTonemapMode.EngineFo3Fnv, enabled: false);
+
+        Assert.False(cinematic.IsHdrDisplayOperator);
+        Assert.True(engine.IsHdrDisplayOperator);
+        Assert.False(killed.IsHdrDisplayOperator);
+        Assert.False(killed.AllowsClassicBloom);
+    }
+
     [Fact]
     public void OblivionWeatherFactory_UsesHnamWithoutFnvCinematicGrade()
     {

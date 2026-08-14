@@ -131,6 +131,17 @@ public sealed class PlacedLightTests
         Assert.Null(PlacedLight.TryBuild(placement, light));
     }
 
+    [Fact]
+    public void TryBuild_ZeroFadeRetainsMetadataButAdvertisesNoEmission()
+    {
+        var placement = Placement(0x103, 0x203, null);
+        var light = new LightRecord { FormId = placement.BaseFormId, Radius = 64, Fade = 0f };
+
+        var result = Assert.IsType<PlacedLight>(PlacedLight.TryBuild(placement, light));
+
+        Assert.False(result.HasEmission);
+    }
+
     [Theory]
     [InlineData(0f, 100f, 1f)]
     [InlineData(50f, 100f, 0.75f)]
@@ -158,11 +169,13 @@ public sealed class PlacedLightTests
         };
         var destination = new List<PlacedLight>();
         var scratch = new List<PlacedLight>();
+        var enabledOverrides = new ReferenceEnabledOverrideStore();
 
         var clipped = PlacedLightSelector.AppendNearest(
             source,
             Vector3.Zero,
             2,
+            enabledOverrides,
             false,
             destination,
             scratch);
@@ -172,6 +185,43 @@ public sealed class PlacedLightTests
             destination,
             first => Assert.Equal(10u, first.FormId),
             second => Assert.Equal(20u, second.FormId));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Selector_PerReferenceOverrideWinsOverAuthoredAndGlobalDisabledState(
+        bool includeInitiallyDisabled)
+    {
+        const uint authoredEnabled = 0x10;
+        const uint authoredDisabled = 0x20;
+        const uint authoredSibling = 0x30;
+        var source = new[]
+        {
+            Emitter(authoredEnabled, Vector3.UnitX),
+            Emitter(authoredDisabled, Vector3.UnitY, disabled: true),
+            Emitter(authoredSibling, Vector3.UnitZ, disabled: true)
+        };
+        var enabledOverrides = new ReferenceEnabledOverrideStore();
+        enabledOverrides.Set(authoredEnabled, ReferenceEnabledOverride.Off);
+        enabledOverrides.Set(authoredDisabled, ReferenceEnabledOverride.On);
+        var destination = new List<PlacedLight>();
+
+        var clipped = PlacedLightSelector.AppendNearest(
+            source,
+            Vector3.Zero,
+            source.Length,
+            enabledOverrides,
+            includeInitiallyDisabled,
+            destination,
+            scratch: []);
+
+        Assert.Equal(0, clipped);
+        Assert.DoesNotContain(destination, static light => light.FormId == authoredEnabled);
+        Assert.Contains(destination, static light => light.FormId == authoredDisabled);
+        Assert.Equal(
+            includeInitiallyDisabled,
+            destination.Any(static light => light.FormId == authoredSibling));
     }
 
     [Fact]

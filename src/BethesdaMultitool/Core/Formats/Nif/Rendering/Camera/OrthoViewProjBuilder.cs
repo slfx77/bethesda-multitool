@@ -228,6 +228,85 @@ internal static class OrthoViewProjBuilder
     private const float MaxReliefReachCells = 16f;
 
     /// <summary>
+    ///     Extra XY reach required for geometry <paramref name="verticalRelief" /> above or below an
+    ///     orthographic view's focus plane. Holding screen Y fixed gives
+    ///     <c>-Δd·sin(el) + Δz·cos(el) = 0</c>, hence the ground-footprint displacement is
+    ///     <c>Δd = Δz·cot(el)</c>. This is not the height's projection onto camera-up
+    ///     (<c>Δz·cos(el)</c>), which measures screen-space framing rather than XY cull reach.
+    ///     <paramref name="verticalRelief" /> is one-sided: callers starting from a Z range centered
+    ///     on the focus pass half its span.
+    /// </summary>
+    public static float ReliefParallaxReach(float verticalRelief, float elevationDeg)
+    {
+        if (!(verticalRelief > 0f)) return 0f; // Includes zero, negative values, and NaN.
+        if (!float.IsFinite(verticalRelief) || !float.IsFinite(elevationDeg)) return float.MaxValue;
+
+        // The supported projection modes live in [25.66°, 90°]. A horizon-facing projection has no
+        // finite ground footprint, so saturate rather than returning a deceptively small radius.
+        if (elevationDeg <= 0f) return float.MaxValue;
+        if (elevationDeg >= 90f) return 0f;
+
+        var el = elevationDeg * (MathF.PI / 180f);
+        var cotEl = MathF.Cos(el) / MathF.Sin(el);
+        var reach = (double)verticalRelief * cotEl;
+        return !double.IsFinite(reach) || reach >= float.MaxValue
+            ? float.MaxValue
+            : (float)Math.Max(reach, 0d);
+    }
+
+    /// <summary>
+    ///     Builds the conservative XY streaming footprint for one off-center export tile. Screen-space
+    ///     tile coordinates cannot be copied directly into world XY for a tilted view: the tile center
+    ///     first has to follow its orthographic view ray back to the focus-Z plane, and its screen-height
+    ///     plus the focus-centered Z relief both widen on that plane. The eight projected corner/height
+    ///     combinations yield the exact circumscribed-circle radius; that circle also conservatively
+    ///     covers the axis-aligned square represented by <see cref="VisibilityCylinder" />.
+    /// </summary>
+    public static VisibilityCylinder BuildTileCoverCylinder(
+        Vector3 focus, float azimuthDeg, float elevationDeg,
+        float centerViewX, float centerViewY, float tileHalfWidth, float tileHalfHeight,
+        float verticalRelief, float cellSize)
+    {
+        // Avoid MathF.Cos(π/2)'s tiny residual: top-down has exactly no XY relief parallax.
+        var toEye = elevationDeg >= 90f
+            ? Vector3.UnitZ
+            : ToEyeDirection(azimuthDeg, elevationDeg);
+        var (right, up) = CameraBasis(azimuthDeg, elevationDeg);
+        var eyeZ = toEye.Z;
+        if (!(eyeZ > 1e-4f) || !float.IsFinite(eyeZ))
+        {
+            return BuildCoverCylinder(focus, float.MaxValue);
+        }
+
+        // Follow the ray through the tile's screen-space center until it reaches Z=focus.Z.
+        var centerOnViewPlane = focus + (right * centerViewX) + (up * centerViewY);
+        var center = centerOnViewPlane - (toEye * ((centerOnViewPlane.Z - focus.Z) / eyeZ));
+
+        // Project each screen basis vector and a unit Z displacement onto that same focus-Z plane.
+        var groundRight = right - (toEye * (right.Z / eyeZ));
+        var groundUp = up - (toEye * (up.Z / eyeZ));
+        var groundRelief = toEye / eyeZ;
+        var xReach = new Vector2(groundRight.X, groundRight.Y) * MathF.Max(tileHalfWidth, 0f);
+        var yReach = new Vector2(groundUp.X, groundUp.Y) * MathF.Max(tileHalfHeight, 0f);
+        var zReach = new Vector2(groundRelief.X, groundRelief.Y) * MathF.Max(verticalRelief, 0f);
+
+        var radius = 0f;
+        for (var sx = -1; sx <= 1; sx += 2)
+        {
+            for (var sy = -1; sy <= 1; sy += 2)
+            {
+                for (var sz = -1; sz <= 1; sz += 2)
+                {
+                    radius = MathF.Max(radius, (sx * xReach + sy * yReach + sz * zReach).Length());
+                }
+            }
+        }
+
+        radius += 2f * MathF.Max(cellSize, 0f);
+        return BuildCoverCylinder(center, float.IsFinite(radius) ? radius : float.MaxValue);
+    }
+
+    /// <summary>
     ///     Cull-cylinder radius covering everything an ortho frame can see, from three terms:
     ///     (1) the visible rectangle's GROUND-footprint diagonal — the vertical screen half-extent is a
     ///     view-space distance that projects onto the ground as halfHeight / sin(elevation), up to ~2×
@@ -235,7 +314,7 @@ internal static class OrthoViewProjBuilder
     ///     until its horizontal distance toward the camera reaches Δz·cot(elevation) PAST the footprint
     ///     edge (bottom screen edge: −halfH = −d·sin(el) + Δz·cos(el) ⇒ d = halfH/sin(el) + Δz·cot(el);
     ///     cot 30° ≈ 1.73), so tilted views need extra XY reach for peaks/valleys leaning in — the same
-    ///     compensation the 3D export's tile radius applies via its |zSpan| term — capped at
+    ///     compensation the 3D export applies to half its focus-centered Z span — capped at
     ///     <see cref="MaxReliefReachCells" /> cells; (3) two cells of drift slack. Top-down has no
     ///     parallax (cot clamps to 0), so the radius reduces exactly to the flat footprint formula.
     /// </summary>
@@ -249,17 +328,17 @@ internal static class OrthoViewProjBuilder
         var groundHalfH = orthoHalfHeight / sinEl;
         var footprint = MathF.Sqrt((halfW * halfW) + (groundHalfH * groundHalfH)) + (2f * cellSize);
 
-        // cos(90°) in float is a tiny negative — clamp so top-down is parallax-free by construction.
-        var cotEl = MathF.Max(MathF.Cos(el) / sinEl, 0f);
         var relief = MathF.Max(MathF.Max(reliefAboveFocus, reliefBelowFocus), 0f);
-        var reliefReach = MathF.Min(relief * cotEl, MaxReliefReachCells * cellSize);
+        var reliefReach = MathF.Min(
+            ReliefParallaxReach(relief, elevationDeg),
+            MaxReliefReachCells * cellSize);
         return footprint + reliefReach;
     }
 
     /// <summary>
     ///     Covering visibility cylinder centered on the focus with a world-space radius.
-    ///     <see cref="VisibilityCylinder" /> is an XY-circle cull (camera-orientation-independent), so a
-    ///     generous radius admits every cell that could fall inside the ortho frustum.
+    ///     <see cref="VisibilityCylinder" /> is an axis-aligned XY square (camera-orientation-independent),
+    ///     so a radius derived from a circumscribed circle conservatively admits every covered cell.
     /// </summary>
     public static VisibilityCylinder BuildCoverCylinder(Vector3 focus, float radius) =>
         new(new Vector3(focus.X, focus.Y, EyeDistance), radius);

@@ -29,6 +29,9 @@ internal readonly record struct PlacedLight(
 
     internal bool HasSpotFlag => (Flags & SpotLightFlag) != 0;
 
+    /// <summary>Whether this parsed placement can contribute a drawable emitter.</summary>
+    internal bool HasEmission => !Intensity.Equals(0f) && Radius > 0f;
+
     /// <summary>
     ///     Builds an emitter even when <paramref name="placement" /> has no ModelPath. The optional
     ///     model is handled separately by <see cref="RenderableReference.TryBuild" />.

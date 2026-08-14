@@ -9,7 +9,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 /// <summary>
 ///     v3 Phase 2a — converts a single <see cref="CellRecord" />'s heightmap into the
 ///     <see cref="GpuMeshUploader.GpuVertex" /> layout used by the rest of the GPU pipeline.
-///     Pure CPU; no D3D11 dependency so the path can be exercised by ordinary unit tests
+///     Pure CPU; no graphics-API dependency, so the path can be exercised by ordinary unit tests
 ///     on the cross-platform TFM.
 ///     <para>
 ///         Data source preference: ESM <see cref="CellRecord.Heightmap" /> first, with

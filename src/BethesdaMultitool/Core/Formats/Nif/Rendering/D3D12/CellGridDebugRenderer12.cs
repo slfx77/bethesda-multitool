@@ -36,7 +36,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 internal sealed class CellGridDebugRenderer12
     : Abstractions.ICellGridRenderer
 {
-    private const uint UniformsByteSize = 80; // float4x4 (64) + float4 color (16) — matches D3D11 layout
+    private const uint UniformsByteSize = 80; // float4x4 (64) + float4 color (16) — matches the shader cbuffer
     private const uint VertexStride = 12;     // sizeof(Vector3)
 
     private readonly GpuCommandRecorder12 _recorder;
@@ -61,12 +61,11 @@ internal sealed class CellGridDebugRenderer12
     private float _cellSize = WorldGridConstants.CellSize;
     private bool _disposed;
 
-    // World vertical extent the grid spans. The grid is drawn as full-height vertical walls between
-    // these Z planes (subdivided by horizontal rings every CellSize, so each wall face is a column of
-    // cell-sized 4096×4096 squares) so the columns reach the loaded world's floor/ceiling and read as
-    // aligned with the terrain. _zMin/_zMax are snapped to CellSize multiples in SetWorldZExtent so the
-    // horizontal lines sit at consistent world heights across the whole grid. Defaults to one cell tall
-    // around z=0 (2 levels → 24 verts/cell) until SetWorldZExtent is called from the control on load.
+    // World vertical extent spanned by the line cage. Horizontal rings every CellSize visually divide
+    // its vertical posts into cell-sized squares; there are no filled wall faces. _zMin/_zMax are
+    // snapped to CellSize multiples in SetWorldZExtent so the horizontal lines sit at consistent world
+    // heights across the whole grid. Defaults to z=0..CellSize (2 levels → 24 verts/cell) until the
+    // control supplies a finite extent for this load.
     private float _zMin;
     private float _zMax = WorldGridConstants.CellSize;
     private int _horizontalLevels = 2;     // number of horizontal square rings (z planes)
@@ -93,7 +92,7 @@ internal sealed class CellGridDebugRenderer12
             new InputElementDescription("TEXCOORD", 0, Format.R32G32B32_Float, 0, 0)
         };
 
-        // 3D-1/3D-2: the grid is now full-height vertical walls, so it must be OCCLUDED by terrain
+        // 3D-1/3D-2: the grid is now a full-height 3D line cage, so it must be OCCLUDED by terrain
         // and objects to read as part of the 3D scene (depth-disabled, it just painted over the
         // terrain — "rendered over it, not in the same space"). Depth-TEST against the scene depth
         // (terrain + opaque refs already wrote it) but never WRITE (read-only, like the navmesh
@@ -132,7 +131,9 @@ internal sealed class CellGridDebugRenderer12
             DestinationBlend = D12.Blend.InverseSourceAlpha,
             BlendOperation = D12.BlendOperation.Add,
             SourceBlendAlpha = D12.Blend.One,
-            DestinationBlendAlpha = D12.Blend.Zero,
+            // Preserve destination coverage for transparent PNG/export targets. One/Zero replaced the
+            // whole target alpha with this overlay's 0.6 even though RGB already used source-over.
+            DestinationBlendAlpha = D12.Blend.InverseSourceAlpha,
             BlendOperationAlpha = D12.BlendOperation.Add,
             RenderTargetWriteMask = D12.ColorWriteEnable.All,
         };
@@ -188,6 +189,7 @@ internal sealed class CellGridDebugRenderer12
         _cellCount = 0;
         _spatialIndex = spatialIndex;
         _cellSize = spatialIndex?.CellSize ?? WorldGridConstants.CellSize;
+        ResetWorldZExtent();
         _cells.Clear();
         _vertexScratch = [];
 
@@ -355,8 +357,8 @@ internal sealed class CellGridDebugRenderer12
         var y1 = y0 + _cellSize;
         var idx = cellIndex * _verticesPerCell;
 
-        // Horizontal square rings at each z level (z = _zMin + k*cellSize). These divide the four wall
-        // faces into cell-sized squares — a full 3D grid rather than just top/bottom edges.
+        // Horizontal square rings at each z level (z = _zMin + k*cellSize). Together with the corner
+        // posts these form a full 3D wireframe grid rather than just top/bottom edges.
         for (var k = 0; k < _horizontalLevels; k++)
         {
             var z = _zMin + k * _cellSize;
@@ -382,7 +384,7 @@ internal sealed class CellGridDebugRenderer12
     }
 
     /// <summary>
-    ///     Sets the world vertical extent (Z) the grid walls span, snapping to CellSize multiples and
+    ///     Sets the world vertical extent (Z) the line cage spans, snapping to CellSize multiples and
     ///     computing the number of horizontal ring levels (one every CellSize). Called from the control
     ///     on load with the loaded worldspace's floor/ceiling so the columns reach the bottom and top of
     ///     the world and form cell-sized squares up the walls instead of floating one cell tall at z=0.
@@ -398,6 +400,19 @@ internal sealed class CellGridDebugRenderer12
         var levels = (int)MathF.Round((_zMax - _zMin) / cell) + 1; // inclusive of both ends
         _horizontalLevels = Math.Clamp(levels, 2, MaxHorizontalLevels);
         _verticesPerCell = _horizontalLevels * 8 + 8;
+    }
+
+    /// <summary>
+    ///     Clears world-specific Z state on every load. If the new cell set has no finite placed-object
+    ///     census, the control deliberately does not call <see cref="SetWorldZExtent" /> and this
+    ///     load-local default must win instead of retaining the prior worldspace's height range.
+    /// </summary>
+    private void ResetWorldZExtent()
+    {
+        _zMin = 0f;
+        _zMax = _cellSize;
+        _horizontalLevels = 2;
+        _verticesPerCell = 24;
     }
 
     private void EnsureVertexCapacity(int requestedCells)

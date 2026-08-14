@@ -56,6 +56,28 @@ internal static class GrassShaderProfile
         return SelectInstanced(game);
     }
 
+    /// <summary>
+    ///     The INSTANCED + BLENDED axis: games whose grass is alpha-BLENDED (so it cannot join the
+    ///     cutout PSOs <see cref="InstancedForGame" /> feeds) but which still batch, via a vertex
+    ///     shader compiled with GRASS_INSTANCED. This is the same pair <see cref="ForGame" /> returns
+    ///     — deliberately, so the recovered per-game lighting has ONE implementation and the two
+    ///     routes cannot drift; only the ABI the VS is compiled against differs.
+    /// </summary>
+    internal static GameShaderPair InstancedBlendForGame(BethesdaGame game)
+    {
+        if (string.Equals(
+                EnvironmentVariables.Get(EnvironmentVariables.Viewer.PerGameGrassShader),
+                "0",
+                StringComparison.Ordinal))
+        {
+            return default;
+        }
+
+        // TES4 only. FO3/FNV grass is alpha-TESTED (0x12EC), so it already batches through the
+        // cutout PSOs and must not be handed a blended pipeline.
+        return game is BethesdaGame.Oblivion ? Select(game) : default;
+    }
+
     private static GameShaderPair SelectInstanced(BethesdaGame game) => game switch
     {
         // FO3/FNV: retail Shaders\shaderpackage019.sdp, GRASS2002.vso + GRASS2002.pso. The engine

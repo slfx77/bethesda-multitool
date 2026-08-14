@@ -9,14 +9,13 @@ using D12 = Vortice.Direct3D12;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
-///     Self-contained fullscreen tonemap pass: samples the HDR scene color
+///     Self-contained fullscreen display-composite pass: samples the float scene color
 ///     (<see cref="GpuSceneFormats.SceneColor" /> — a float target that preserves values &gt; 1) and
-///     maps it to the 8-bit display target (<see cref="GpuSceneFormats.LdrOutput" />) via an exposure
-///     multiply + ACES filmic curve (<c>tonemap.frag.hlsl</c>). This is the HDR/imagespace resolve
-///     stage: emissive glow (neon ×7, radioactive goo ×2), sun specular, and future per-game
-///     imagespace scales all live above 1 in the scene target and are rolled off here instead of being
-///     clipped flat white by an 8-bit render target — which also lifts midtones out of the old
-///     "too dark" look.
+///     maps it to the 8-bit display target (<see cref="GpuSceneFormats.LdrOutput" />). The selected
+///     operator is LegacyClamp, GammaAces, recovered classic FO3/FNV HDR, the partial Creation-era
+///     path, or FO3/FNV's standalone non-HDR cinematic grade (<c>tonemap.frag.hlsl</c>). HDR modes
+///     retain above-1 scene energy for exposure/bloom; the standalone cinematic path instead grades
+///     a clamped LDR input without adaptation or bloom.
 ///     <para>
 ///         In engine mode the pass also records the recovered bloom chain
 ///         (<c>bloom.frag.hlsl</c>): recursive DownSample16 reduction, vertical BrightPassBlur plus
@@ -253,7 +252,10 @@ internal sealed class GpuTonemapPass12 : IDisposable
     ///     should re-establish its own heap afterward if it records further work.
     /// </summary>
     /// <param name="settings">Operator + engine/cinematic parameters (see <see cref="GpuTonemapSettings" />).</param>
-    /// <param name="enabled">False → passthrough clamp (bit-identical to the legacy LDR path).</param>
+    /// <param name="enabled">
+    ///     False → passthrough clamp. Bit identity with the legacy LDR path additionally requires
+    ///     the static 8-bit scene-target kill-switch; a float MSAA target clamps after resolve.
+    /// </param>
     public unsafe void Record(
         ID3D12GraphicsCommandList cmd,
         ID3D12Resource hdrTexture,
@@ -292,8 +294,10 @@ internal sealed class GpuTonemapPass12 : IDisposable
         var readIdx = 1 - writeIdx;
         _avgWriteIndex = readIdx; // swap for the next call
 
-        var engineMode = enabled && settings.Mode == GpuTonemapMode.EngineFo3Fnv;
-        var adaptiveMode = engineMode || (enabled && settings.Mode == GpuTonemapMode.CreationModern);
+        var executionPlan = GpuTonemapExecutionPlan.Create(
+            enabled, settings.Mode, settings.BloomEnabled, settings.BrightScale);
+        var engineMode = executionPlan.EngineMode;
+        var adaptiveMode = executionPlan.AdaptiveMode;
         var historyKeyChanged = settings.HistoryKey != _lastHistoryKey;
         var adaptiveModeChanged = adaptiveMode != _lastAdaptiveMode;
         var targetResourceChanged = !ReferenceEquals(hdrTexture, _lastHistoryTarget);
@@ -325,7 +329,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
             _lastHistoryHeight = height;
             _lastHistoryFormat = hdrFormat;
         }
-        var bloomActive = engineMode && settings.BloomEnabled && settings.BrightScale > 0f;
+        var bloomActive = executionPlan.BloomActive;
         var classicPlan = engineMode
             ? ClassicHdrPassPlan.Create(width, height, bloomActive, settings.BlurPasses)
             : default;

@@ -91,12 +91,13 @@ public sealed class NifMaterialDiffusePolicyTests
     public void DiskCache_DecoderVersion_WasBumpedForMaterialDiffuse()
     {
         // The decoded-mesh disk cache serializes positionally and is consulted BEFORE decoding;
-        // without the v72 bump this fix is a silent no-op for every warm-cached mesh.
+        // without the v72 bump this fix was a silent no-op for every warm-cached mesh. The current
+        // version may advance for later payload/decoder changes, but the v72 history must remain documented.
         var source = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             "ReferenceDecodedMeshDiskCache12.cs");
 
-        Assert.Contains("internal const int DecoderVersion = 72;", source, StringComparison.Ordinal);
+        Assert.Contains("internal const int DecoderVersion = 75;", source, StringComparison.Ordinal);
         Assert.Contains("v72: untextured legacy (BsVersion < 26)", source, StringComparison.Ordinal);
         Assert.Contains("MaterialDiffuse", source, StringComparison.Ordinal);
     }

@@ -67,6 +67,27 @@ public sealed class CaptureSceneCensusTests
     }
 
     [Fact]
+    public void DisabledReferenceLayer_ContributesNothingEvenWhenRetainedStatsAreDirty()
+    {
+        var retained = CleanRefs();
+        retained.ReferenceQueuedDecodes = 7;
+        retained.ReferenceTexturePending = 11;
+        Assert.False(CaptureSceneCensus.From(retained, CleanTerrain()).IsClean);
+
+        // The capture call site maps a disabled Meshes parent to null. Verify that contract erases
+        // both pending-work and demand-set values rather than waiting on the renderer's prior frame.
+        var census = CaptureSceneCensus.From(references: null, terrain: CleanTerrain());
+
+        Assert.True(census.IsClean);
+        Assert.Equal(0, census.QueuedDecodes);
+        Assert.Equal(0, census.TexturesWithheld);
+        Assert.Equal(0, census.ReferenceInstances);
+        Assert.Equal(0, census.ReferenceDrawn);
+        Assert.Equal(0, census.ReferenceSubmeshDraws);
+        Assert.Equal(0, census.ReferenceMeshMissing);
+    }
+
+    [Fact]
     public void PermanentlyMissingMeshes_DoNotBlockCompletion_ButMovementDoes()
     {
         // Dense regions hold thousands of permanently-unresolvable meshes; a nonzero count must not

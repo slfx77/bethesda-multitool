@@ -9,11 +9,12 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 internal sealed class RenderableSubmesh
 {
     /// <summary>
-    ///     Sentinel <see cref="DiffuseTexturePath" /> marking placed water-shader geometry
-    ///     (WaterShaderProperty NIFs carry no diffuse). The D3D12 mesh cache maps it to
-    ///     <c>GpuTextureCache12.WaterSurface</c> so cave/pool water renders as translucent blue water
-    ///     rather than the opaque-white fallback. Reuses the diffuse-path string so no new field has
-    ///     to be threaded through the decode + persistent-cache pipeline.
+    ///     Sentinel <see cref="DiffuseTexturePath" /> marking geometry routed as a placed water
+    ///     surface. Most sources author <c>WaterShaderProperty</c> and no diffuse; the bounded TES3
+    ///     Vivec classifier also maps one legacy textured signature here. The D3D12 world mesh cache
+    ///     diverts the geometry to its dedicated water renderer, while standalone consumers use the
+    ///     water fallback texture. Reusing the path string carries the classification through decode
+    ///     and persistent caching, but intentionally does not preserve the TES3 source material.
     /// </summary>
     public const string WaterSurfaceTexturePath = "fallout:water-surface";
 

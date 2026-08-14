@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 
@@ -7,12 +8,15 @@ internal static class PlacedLightSelector
 {
     /// <summary>
     ///     Appends at most <paramref name="maxPerCell" /> enabled emitters, nearest to the camera.
+    ///     Per-reference On/Off previews override the emitter's authored disabled state and the global
+    ///     show-disabled diagnostic; the caller remains responsible for scene-wide lighting gates.
     ///     Returns the number of eligible lights clipped by the cap.
     /// </summary>
     internal static int AppendNearest(
         IReadOnlyList<PlacedLight> source,
         Vector3 cameraPosition,
         int maxPerCell,
+        ReferenceEnabledOverrideStore enabledOverrides,
         bool includeInitiallyDisabled,
         List<PlacedLight> destination,
         List<PlacedLight> scratch)
@@ -23,8 +27,9 @@ internal static class PlacedLightSelector
         foreach (var light in source)
         {
 #pragma warning disable S1244 // exact zero intensity means the light emits nothing; near-zero lights still render
-            if ((!includeInitiallyDisabled && light.IsInitiallyDisabled) ||
-                light.Intensity == 0f || light.Radius <= 0f)
+            if (!enabledOverrides.IsVisible(
+                    light.FormId, light.IsInitiallyDisabled, includeInitiallyDisabled) ||
+                !light.HasEmission)
 #pragma warning restore S1244
             {
                 continue;

@@ -1,9 +1,9 @@
 // Tonemap resolve pass. Samples the HDR scene color (R16G16B16A16_FLOAT, values may exceed 1 —
 // emissive glow, sun specular) and maps it to the 8-bit display range.
 //
-// Four operators (uParams0.z = mode):
-//   0 LegacyClamp — plain saturate; bit-identical to the pre-HDR 8-bit pipeline. Morrowind
-//     (pre-HDR engine) and the FALLOUT_VIEWER_HDR=0 kill-switch land here.
+// Five operators (uParams0.z = mode):
+//   0 LegacyClamp — plain saturate in this composite. Morrowind and the static
+//     FALLOUT_VIEWER_HDR=0 8-bit scene-target kill-switch land here.
 //   1 GammaAces — decode 2.2 -> exposure -> ACES filmic -> encode 1/2.2. The scene renders in
 //     gamma space (engine-faithful for these D3D9-era games; no sRGB SRVs anywhere), so the
 //     curve must run in display-linear and re-encode — running ACES directly on gamma values
@@ -21,6 +21,8 @@
 //     min/max/middle-gray), cinematic, tint and scene sunlight/sky scales are active. Tonemap-E,
 //     Skyrim White/EyeAdaptStrength, LUT grading and modern bloom topology remain neutral until
 //     their shader/resource oracles are recovered.
+//   4 CinematicFo3Fnv — standalone non-HDR FO3/FNV cinematic grade over a clamped LDR scene;
+//     no exposure, adapted-average sample, or bloom.
 //
 // mainAdapt consumes the classic recursive DownSample16 chain's 1x1 result and applies ADAPT.
 // mainAvg retains the sparse-grid average only for the default-off modern path, whose reduction
@@ -58,12 +60,22 @@ struct PSInput
     float2 vUv      : TEXCOORD0;
 };
 
+float3 ApplyClassicCinematic(float3 c)
+{
+    // Both shipped FO3/FNV cinematic shaders execute every authored term; the retained operation
+    // mask is manager metadata and is not bound/read by either pixel shader.
+    float luma = dot(c, float3(0.299, 0.587, 0.114));
+    c = lerp(luma.xxx, c, uParams1.x);
+    c = lerp(c, luma * uParams2.xyz, uParams2.w);
+    return uParams1.z * (uParams1.w * c - uParams1.y) + uParams1.y;
+}
+
 float4 main(PSInput input) : SV_Target
 {
     float4 hdr = uHdr.Sample(uSampler, input.vUv);
 
-    // OFF / legacy: passthrough (saturate reproduces the old UNORM clamp exactly) so the toggle
-    // stays a clean regression control.
+    // OFF / legacy: composite passthrough. Only the static infrastructure kill-switch also restores
+    // the old 8-bit scene target and its per-sample clamp timing.
     if (uParams0.y < 0.5 || uParams0.z < 0.5)
     {
         return float4(saturate(hdr.rgb), hdr.a);
@@ -75,6 +87,15 @@ float4 main(PSInput input) : SV_Target
         float3 lin = pow(max(hdr.rgb, 0.0), 2.2);
         lin = AcesFilmic(lin * uParams0.x);
         return float4(pow(lin, 1.0 / 2.2), hdr.a);
+    }
+
+    // ImageSpaceEffectCinematic is the FO3/FNV alternate selected when engine HDR is off. Its
+    // source is the already-clamped LDR scene, and it does not sample the HDR exposure/bloom inputs.
+    // Keep this branch before the numeric CreationModern dispatch: mode 4 would otherwise be
+    // swallowed by the >=2.5 modern range.
+    if (uParams0.z >= 3.5 && uParams0.z < 4.5)
+    {
+        return float4(saturate(ApplyClassicCinematic(saturate(hdr.rgb))), hdr.a);
     }
 
     if (uParams0.z >= 2.5)
@@ -89,11 +110,7 @@ float4 main(PSInput input) : SV_Target
             exposure = clamp(uParams4.z / max(adaptedLuma, 1e-6), lo, hi);
         }
         float3 c = max(hdr.rgb, 0.0) * exposure * uParams0.x;
-        float luma = dot(c, float3(0.299, 0.587, 0.114));
-        c = lerp(luma.xxx, c, uParams1.x);
-        c = lerp(c, luma * uParams2.xyz, uParams2.w);
-        c = uParams1.z * (uParams1.w * c - uParams1.y) + uParams1.y;
-        return float4(saturate(c), hdr.a);
+        return float4(saturate(ApplyClassicCinematic(c)), hdr.a);
     }
 
     // EngineFo3Fnv — ISHDRBLENDINSHADER[CIN] on gamma-space values.
@@ -108,17 +125,7 @@ float4 main(PSInput input) : SV_Target
     float3 bloom = uParams3.z * bloomSample.rgb;
     float3 c = (hdr.rgb * (uParams0.w / denom) + bloom * (0.5 / denom)) * uParams0.x;
 
-    // Cinematic block (ISHDRBLENDINSHADERCIN): saturation, tint, then the recovered
-    // Contrast * (Brightness * color - pivot) + pivot transform. TESImageSpace retains an
-    // operation-enable mask, but the shipped FO3/FNV composite and standalone cinematic pixel
-    // shaders do not bind/read it; all authored terms execute unconditionally here as they do there.
-    float luma = dot(c, float3(0.299, 0.587, 0.114));
-    c = lerp(luma.xxx, c, uParams1.x);
-    c = lerp(c, luma * uParams2.xyz, uParams2.w);
-
-    // ISHDRBLENDINSHADERCIN: Contrast * (Brightness * c - pivot) + pivot.
-    c = uParams1.z * (uParams1.w * c - uParams1.y) + uParams1.y;
-    return float4(saturate(c), hdr.a);
+    return float4(saturate(ApplyClassicCinematic(c)), hdr.a);
 }
 
 // ADAPT temporally blends against the PREVIOUS adapted average (t1, the other ping-pong 1x1 target),

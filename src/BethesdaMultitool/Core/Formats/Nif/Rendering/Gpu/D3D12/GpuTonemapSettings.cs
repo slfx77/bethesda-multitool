@@ -7,7 +7,11 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// <summary>How the tonemap pass maps the float scene target to the 8-bit display.</summary>
 internal enum GpuTonemapMode
 {
-    /// <summary>Plain clamp — bit-identical to the pre-HDR 8-bit pipeline (Morrowind: pre-HDR engine).</summary>
+    /// <summary>
+    ///     Plain clamp in the display composite. The static <c>FALLOUT_VIEWER_HDR=0</c> kill-switch
+    ///     additionally restores the legacy 8-bit scene target; a live GUI mode change leaves the
+    ///     float target in place.
+    /// </summary>
     LegacyClamp = 0,
 
     /// <summary>
@@ -33,6 +37,61 @@ internal enum GpuTonemapMode
     ///     active; unrecovered filmic/LUT/bloom topology is deliberately identity/disabled.
     /// </summary>
     CreationModern = 3,
+
+    /// <summary>
+    ///     FO3/FNV's non-HDR standalone cinematic effect: clamp the scene to its LDR input first,
+    ///     then apply the currently supported IMGS/IMAD saturation, tint, contrast, and brightness
+    ///     grade. It deliberately performs no exposure, adaptation, bloom, or HDR scene scaling.
+    /// </summary>
+    CinematicFo3Fnv = 4,
+}
+
+/// <summary>
+///     Pure execution traits shared by the D3D12 pass and profiler. The fullscreen composite always
+///     runs; these flags describe only the optional work recorded before it.
+/// </summary>
+internal readonly record struct GpuTonemapModeTraits(
+    bool IsHdrDisplayOperator,
+    bool UsesClassicReduction,
+    bool UsesAdaptation,
+    bool AllowsClassicBloom)
+{
+    internal const int CompositeDrawCount = 1;
+
+    internal static GpuTonemapModeTraits For(GpuTonemapMode mode, bool enabled)
+    {
+        if (!enabled) return default;
+        return mode switch
+        {
+            GpuTonemapMode.GammaAces => new(true, false, false, false),
+            GpuTonemapMode.EngineFo3Fnv => new(true, true, true, true),
+            GpuTonemapMode.CreationModern => new(true, false, true, false),
+            // The standalone cinematic effect is an LDR grade, not an HDR display operator.
+            GpuTonemapMode.CinematicFo3Fnv => new(false, false, false, false),
+            _ => default,
+        };
+    }
+
+    internal static bool IsBloomActive(
+        GpuTonemapMode mode, bool enabled, bool bloomEnabled, float brightScale) =>
+        For(mode, enabled).AllowsClassicBloom && bloomEnabled && brightScale > 0f;
+}
+
+/// <summary>Pure scheduling decision for the optional draws before the fullscreen composite.</summary>
+internal readonly record struct GpuTonemapExecutionPlan(
+    bool EngineMode,
+    bool AdaptiveMode,
+    bool BloomActive)
+{
+    internal static GpuTonemapExecutionPlan Create(
+        bool enabled, GpuTonemapMode mode, bool bloomEnabled, float brightScale)
+    {
+        var traits = GpuTonemapModeTraits.For(mode, enabled);
+        return new GpuTonemapExecutionPlan(
+            traits.UsesClassicReduction,
+            traits.UsesAdaptation,
+            traits.AllowsClassicBloom && bloomEnabled && brightScale > 0f);
+    }
 }
 
 /// <summary>
@@ -90,6 +149,100 @@ internal readonly record struct GpuTonemapSettings
     internal static float ResolveEmissiveMult(
         float familyDefault, float? authoredValue, bool hdrEnabled, bool imagespaceModifiersEnabled) =>
         !hdrEnabled || !imagespaceModifiersEnabled ? 1f : authoredValue ?? familyDefault;
+
+    /// <summary>
+    ///     Whether the GUI's HDR-off state selects the standalone classic cinematic effect. The
+    ///     explicit game check is intentional: Oblivion shares parts of the classic HDR pass but has
+    ///     no IMGS record type or standalone cinematic effect.
+    /// </summary>
+    internal static bool UsesCinematicOnly(
+        BethesdaGame game, bool guiHdrEnabled, bool tonemapAvailable) =>
+        tonemapAvailable && !guiHdrEnabled &&
+        game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas;
+
+    /// <summary>
+    ///     Applies live viewer gates after base IMGS, weather IMAD, and diagnostic overrides have
+    ///     resolved. Centralizing this final step prevents an early-return path or an HDR IMAD channel
+    ///     from leaking bloom/emissive scene scaling back into the HDR-off cinematic effect.
+    /// </summary>
+    internal static GpuTonemapSettings FinalizeViewerPostProcessing(
+        GpuTonemapSettings settings,
+        BethesdaGame game,
+        bool guiHdrEnabled,
+        bool tonemapAvailable,
+        GpuTonemapMode? operatorOverride,
+        bool guiBloomEnabled,
+        ulong historyKey)
+    {
+        if (!tonemapAvailable)
+        {
+            return settings with
+            {
+                // FALLOUT_VIEWER_HDR=0 removes the float target/tonemap infrastructure, so no
+                // display-operator override can be honored on this path.
+                Mode = GpuTonemapMode.LegacyClamp,
+                BloomEnabled = false,
+                EmissiveMult = 1f,
+                HistoryKey = historyKey,
+            };
+        }
+
+        if (!guiHdrEnabled)
+        {
+            var mode = operatorOverride ?? (UsesCinematicOnly(game, guiHdrEnabled, tonemapAvailable)
+                ? GpuTonemapMode.CinematicFo3Fnv
+                : GpuTonemapMode.LegacyClamp);
+            return settings with
+            {
+                // An explicit FALLOUT_VIEWER_TONEMAP override is a diagnostic display-pass A/B and
+                // wins over the GUI's automatic cinematic choice. The GUI engine-HDR gate still
+                // neutralizes scene-side HDR multipliers.
+                Mode = mode,
+                BloomEnabled = mode == GpuTonemapMode.EngineFo3Fnv
+                               && settings.BloomEnabled && guiBloomEnabled,
+                EmissiveMult = 1f,
+                HistoryKey = historyKey,
+            };
+        }
+
+        if (operatorOverride is { } forcedMode)
+        {
+            // Display-operator A/Bs do not change the engine-HDR scene gate. Preserve authored
+            // scene multipliers while truthfully disabling classic bloom for non-engine operators.
+            return settings with
+            {
+                Mode = forcedMode,
+                BloomEnabled = forcedMode == GpuTonemapMode.EngineFo3Fnv
+                               && settings.BloomEnabled && guiBloomEnabled,
+                HistoryKey = historyKey,
+            };
+        }
+
+        return settings with
+        {
+            BloomEnabled = settings.BloomEnabled && guiBloomEnabled,
+            HistoryKey = historyKey,
+        };
+    }
+
+    /// <summary>Returns a neutral imagespace overlay while retaining unrelated HDR parameters.</summary>
+    internal static GpuTonemapSettings WithoutImagespaceModifiers(GpuTonemapSettings settings) =>
+        settings with
+        {
+            EmissiveMult = 1f,
+            Saturation = 1f,
+            ContrastAvgLum = 0.5f,
+            Contrast = 1f,
+            Brightness = 1f,
+            TintR = 1f,
+            TintG = 1f,
+            TintB = 1f,
+            TintAmount = 0f,
+            CinematicFlags = ImageSpaceCinematicFlags.All,
+            SunlightScale = 1f,
+            GrassScale = 1f,
+            SkyScale = 1f,
+        };
 
     /// <summary>IMGS Cinematic: 0 = grayscale, 1 = full color.</summary>
     public float Saturation { get; init; }
@@ -448,9 +601,10 @@ internal readonly record struct GpuTonemapSettings
     }
 
     /// <summary>
-    ///     Lossless loader-state projection for telemetry: classic DNAM layouts store a mask while
-    ///     Creation-era CNAM/packed cinematic blocks do not. Absent source metadata retains the
-    ///     current value. The shipped classic composite shader does not consume the resolved value.
+    ///     Lossless loader-state projection for telemetry: the 148- and 152-byte classic DNAM layouts
+    ///     store a mask, while the 132-byte DNAM and Creation-era CNAM/packed cinematic layouts do not.
+    ///     Absent source metadata retains the current value. The shipped classic composite shader does
+    ///     not consume the resolved value.
     /// </summary>
     internal static ImageSpaceCinematicFlags ResolveCinematicFlags(
         ImageSpaceCinematicFlags current,
@@ -460,7 +614,7 @@ internal readonly record struct GpuTonemapSettings
     ///     Default operator per game family: FO3/FNV = their IMGS-driven engine HDR stage; Oblivion =
     ///     the same recovered HDR operator with neutral cinematic grading (its values come from WTHR HNAM),
     ///     Morrowind = legacy clamp (pre-HDR engine), everything else = gamma-corrected ACES.
-    ///     <c>FALLOUT_VIEWER_TONEMAP=off|aces|engine</c> overrides for A/Bs.
+    ///     <c>FALLOUT_VIEWER_TONEMAP=off|aces|engine|modern</c> overrides for A/Bs.
     /// </summary>
     public static GpuTonemapSettings ForGame(BethesdaGame game, bool interior = false)
     {
@@ -513,18 +667,25 @@ internal readonly record struct GpuTonemapSettings
     private static float PositiveOr(float authored, float engineDefault) =>
         authored > 0f ? authored : engineDefault;
 
+    /// <summary>Parses the diagnostic display-operator override, if one is configured.</summary>
+    internal static GpuTonemapMode? ParseTonemapModeOverride(string? value) =>
+        value?.ToLowerInvariant() switch
+        {
+            "off" => GpuTonemapMode.LegacyClamp,
+            "aces" => GpuTonemapMode.GammaAces,
+            "engine" => GpuTonemapMode.EngineFo3Fnv,
+            "modern" => GpuTonemapMode.CreationModern,
+            _ => null,
+        };
+
     /// <summary>Env overrides: mode swap for A/Bs, bloom kill-switch, + the existing exposure knob.</summary>
     public static GpuTonemapSettings ApplyOverrides(GpuTonemapSettings settings)
     {
-        var mode = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_TONEMAP");
-        settings = mode?.ToLowerInvariant() switch
+        if (ParseTonemapModeOverride(
+                Environment.GetEnvironmentVariable("FALLOUT_VIEWER_TONEMAP")) is { } mode)
         {
-            "off" => settings with { Mode = GpuTonemapMode.LegacyClamp },
-            "aces" => settings with { Mode = GpuTonemapMode.GammaAces },
-            "engine" => settings with { Mode = GpuTonemapMode.EngineFo3Fnv },
-            "modern" => settings with { Mode = GpuTonemapMode.CreationModern },
-            _ => settings,
-        };
+            settings = settings with { Mode = mode };
+        }
 
         var bloom = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_BLOOM");
         if (bloom is "0" || string.Equals(bloom, "off", StringComparison.OrdinalIgnoreCase))

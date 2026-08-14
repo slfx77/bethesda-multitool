@@ -68,11 +68,51 @@
 // collapsing at high sun, the correction must be LARGEST at noon and near-nil at low sun. If a low
 // sun changes as much as noon does, this diagnosis is wrong.
 
+// TWO ABIs, ONE TEXT. GRASS_INSTANCED compiles this program against the instanced axis (the world
+// matrix comes from the t8 StructuredBuffer indexed by SV_InstanceID, and b1 is the per-BATCH
+// InstanceDraw layout); without it, against the per-draw axis (world matrix at the head of b1).
+// The two b1 layouts are the same 256 bytes but every shared field sits 64 bytes apart because the
+// instanced struct drops uWorld — so the cbuffer really must be declared twice; there is no prefix
+// that serves both. Everything below the declarations is shared, which is the point: the recovered
+// GRASS2020 lighting has exactly one implementation and cannot drift between the two routes.
+//
+// Oblivion grass draws through the INSTANCED route by default (ReferenceRenderer12 routes IsGrass
+// submeshes there). The per-draw variant remains live for the residual cases the instanced axis
+// cannot express — a billboarded submesh, which needs a unique camera-facing matrix per placement,
+// and one carrying a NiAlphaController, whose material alpha is sampled per draw.
 cbuffer PerFrame : register(b0)
 {
     float4x4 uViewProj;
 };
 
+#ifdef GRASS_INSTANCED
+// Per-batch constants — the FULL shared InstanceDraw layout. The offsets are load-bearing
+// (uTextureState @32, uInstanceBase @64), so the whole struct is declared verbatim rather than
+// truncated, exactly as reference_grass_fnv.vert.hlsl does.
+cbuffer InstanceDraw : register(b1)
+{
+    float4 uAlphaState;   // x = test threshold, y = comparison function, z = material alpha
+    float4 uRenderState;
+    float4 uTextureState; // z bit1 = clamp U, bit2 = clamp V (sampler selection)
+    uint4  uTexIndices;   // x = diffuse
+    uint   uInstanceBase;
+    float2 uUvScroll;
+    uint   uWindMatrixValid;
+    float4 uSpecular;
+    float4 uCameraRight;
+    float4 uCameraUp;
+    float4 uWind;
+    float4 uEffectTint;
+    float4 uEffectFalloff;
+    float4 uEnvMap;
+    float4 uSoftParticle;
+    float4 uTallGrassWind;
+    float4 uSpecularLodBounds;
+    float4 uSpecularLodParams;
+};
+
+StructuredBuffer<float4x4> uInstanceWorlds : register(t8);
+#else
 // Prefix of the shared PerDraw CB (b1). Declaring only the leading fields is the established
 // practice in this shader family and is layout-safe: HLSL reads the same byte offsets.
 cbuffer PerDraw : register(b1)
@@ -83,6 +123,7 @@ cbuffer PerDraw : register(b1)
     float4 uTextureState; // z bit1 = clamp U, bit2 = clamp V (sampler selection)
     uint4  uTexIndices;   // x = diffuse
 };
+#endif
 
 // Shared Atmosphere CB (b3). Retail CTAB mapping for the three fields this VS consumes:
 // uSunDirIntensity.xyz = DiffuseDir, uSunColorLighting = DiffuseColor (w = lightingEnabled),
@@ -169,16 +210,31 @@ float3 EvaluateTes4GrassDiffuse(float3 vertexRgb, float3 placementNormal)
     return vertexRgb * ndotl * uSunColorLighting.rgb;
 }
 
+#ifdef GRASS_INSTANCED
+VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
+#else
 VSOutput main(VSInput input)
+#endif
 {
     VSOutput o;
 
-    float4 worldPos = mul(uWorld, float4(input.aPosition, 1.0));
+#ifdef GRASS_INSTANCED
+    // Unlike FO3/FNV grass, TES4 packs NOTHING into the matrix's w lanes — GrassPlacementBuilder
+    // gates ComposeFnvWorldMatrix on FalloutNewVegas/Fallout3 and gives Oblivion the plain
+    // ComposeWorldMatrix — so this is an ordinary affine transform and needs no payload rescue.
+    float4x4 world = uInstanceWorlds[uInstanceBase + instanceId];
+#else
+    float4x4 world = uWorld;
+#endif
+
+    float4 worldPos = mul(world, float4(input.aPosition, 1.0));
     o.Position = mul(uViewProj, worldPos);
     o.vWorldPos = worldPos.xyz;
     o.vTexCoord = input.aTexCoord;
 
-    float3 placementNormal = ResolveTes4GrassPlacementNormal(uWorld);
+    // The terrain normal rides in the world matrix's up axis on BOTH routes (the builder composes it
+    // there), so the recovered GRASS2020 lighting reads identically whichever ABI supplied it.
+    float3 placementNormal = ResolveTes4GrassPlacementNormal(world);
 
     if (uSunColorLighting.w < 0.5)
     {

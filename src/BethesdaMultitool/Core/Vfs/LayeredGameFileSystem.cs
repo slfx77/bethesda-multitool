@@ -52,6 +52,29 @@ public sealed class LayeredGameFileSystem : IGameFileSystem
         return null;
     }
 
+    /// <summary>
+    ///     Reads the first available candidate while preserving layer precedence: each layer is
+    ///     tried against the candidates, in caller order, before resolution moves to the next layer.
+    ///     This is distinct from calling <see cref="TryReadAllBytes(string)" /> once per candidate,
+    ///     which is path-major and can let a later archive beat an earlier layer merely because it
+    ///     contains the caller's preferred spelling.
+    /// </summary>
+    public byte[]? TryReadFirstAvailable(IReadOnlyList<string> candidatePaths)
+    {
+        foreach (var layer in _layers)
+        {
+            foreach (var path in candidatePaths)
+            {
+                if (layer.TryReadAllBytes(path) is { } bytes)
+                {
+                    return bytes;
+                }
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Enumerates the union; a path appearing in multiple layers yields only the winning copy.</summary>
     public IEnumerable<GameFileEntry> EnumerateFiles(string? prefix = null)
     {

@@ -25,6 +25,8 @@ public sealed class Fo3EmitterActiveCensusTests
 {
     private static readonly string Fo3MeshesBsa = SampleBsaLocator.ResolveFo3MeshesBsa();
 
+    private static readonly string FnvMeshesBsa = SampleBsaLocator.ResolveFnvMeshesBsa();
+
     private static readonly byte[] EmitterCtlrNeedle = Encoding.ASCII.GetBytes("NiPSysEmitterCtlr");
 
     private readonly ITestOutputHelper _output;
@@ -39,16 +41,33 @@ public sealed class Fo3EmitterActiveCensusTests
     public void Census_Fo3MeshesBsa_EmitterActiveBindings()
     {
         Assert.SkipUnless(File.Exists(Fo3MeshesBsa), "FO3 PC Final meshes BSA not present (dev-machine-only asset).");
+        RunCensus(Fo3MeshesBsa, "fo3-emitteractive-retriage.csv", "FO3");
+    }
 
+    /// <summary>
+    ///     The FNV twin. FortHowitzer (the asset that started this) lives here, so the same
+    ///     instrument that re-triaged FO3 also has to agree that its idle smoke is gated off —
+    ///     otherwise the census and the shipped renderer are measuring different things.
+    /// </summary>
+    [Fact]
+    public void Census_FnvMeshesBsa_EmitterActiveBindings()
+    {
+        Assert.SkipUnless(File.Exists(FnvMeshesBsa), "FNV PC Final meshes BSA not present (dev-machine-only asset).");
+        RunCensus(FnvMeshesBsa, "fnv-emitteractive-retriage.csv", "FNV");
+    }
+
+    private void RunCensus(string meshesBsa, string csvName, string label)
+    {
         var repoRoot = FindRepoRoot();
         Assert.SkipWhen(repoRoot is null, "Repo root (Sample + src) not found from test base directory.");
 
         var csvDir = Path.Combine(repoRoot!, "TestOutput", "fo3-parity-2026-08", "census");
         Directory.CreateDirectory(csvDir);
-        var csvPath = Path.Combine(csvDir, "fo3-emitteractive-census.csv");
+        // New file: the 2026-08-10 census stays frozen beside it as the "before" for diffing.
+        var csvPath = Path.Combine(csvDir, csvName);
 
-        using var extractor = new BsaExtractor(Fo3MeshesBsa);
-        var archive = BsaParser.Parse(Fo3MeshesBsa);
+        using var extractor = new BsaExtractor(meshesBsa);
+        var archive = BsaParser.Parse(meshesBsa);
 
         var totalNifs = 0;
         var prefiltered = 0;
@@ -58,13 +77,22 @@ public sealed class Fo3EmitterActiveCensusTests
         var totalSystems = 0;
         var noRateController = 0;
         var noBoolBinding = 0;
-        var gatedToZero = 0;
-        var activeRate = 0;
-        var zeroAuthored = 0;
+        var rendersAtShipped = 0;
+        var pulsesInvisible = 0;
+        var silentEverywhere = 0;
+        var legacyGatedToZero = 0;
+        // shipped x warm-up confusion matrix: the blast radius of moving the default snapshot.
+        var shippedYesWarmYes = 0;
+        var shippedYesWarmNo = 0;
+        var shippedNoWarmYes = 0;
+        var shippedNoWarmNo = 0;
 
         var rows = new List<string>
         {
-            "nifPath,systemIndex,capacity,boolBinding,dormantTriggeredFx,authoredRate,restRate0,restRate2_5,verdict",
+            "nifPath,systemIndex,capacity,lifeSpan,boolBinding,rateBinding,dormantTriggeredFx,"
+            + "authoredRate,restRate0,restRate2_5,legacyVerdict,timingMode,bakeWindowSeconds,"
+            + "bakedAtShipped,maxRateOverWindow,firstActiveTime,dutyFraction,bestSnapshot,"
+            + "bakedAtBest,bakedAtWarmup,verdict,silenceCause",
         };
         var gatedRows = new List<string>();
 
@@ -163,48 +191,120 @@ public sealed class Fo3EmitterActiveCensusTests
                 var restRate0 = rate.Sample(0f);
                 var restRate25 = rate.Sample(2.5f);
 
+                // THE verdict: what the shipped static viewer actually bakes. Everything else on
+                // this row is diagnostic. NifParticleSystemExtractor calls Bake(def) with default
+                // options, so this is byte-for-byte the renderer's own answer — unlike the two
+                // positive Sample() instants above, which the baker never evaluates (its window
+                // runs BACKWARDS from the snapshot).
+                var profile = ParticleActivityWindow.Profile(system);
+                var bakedAtShipped = NifParticleBaker.Bake(system).Count;
+                var bakedAtBest = NifParticleBaker.Bake(
+                    system, new ParticleBakeOptions { SnapshotTimeSeconds = profile.BestSnapshot }).Count;
+                var bakedAtWarmup = NifParticleBaker.Bake(
+                    system, new ParticleBakeOptions { SnapshotTimeSeconds = profile.BakeWindowSeconds }).Count;
+
                 string verdict;
-                // Exact-zero is the point: "gated to zero" means the rest-state sample is the
-                // literal 0f the emitter-active gate writes, not merely a small rate.
-#pragma warning disable S1244
-                if (authoredRate > 0f && restRate0 == 0f && restRate25 == 0f)
-#pragma warning restore S1244
+                if (bakedAtShipped > 0)
                 {
-                    verdict = "gated-to-zero";
-                    gatedToZero++;
+                    verdict = "renders-at-shipped";
+                    rendersAtShipped++;
                 }
-                else if (restRate0 > 0f || restRate25 > 0f)
+                else if (bakedAtBest > 0)
                 {
-                    verdict = "active-rate";
-                    activeRate++;
+                    verdict = "pulses-invisible";
+                    pulsesInvisible++;
                 }
                 else
                 {
-                    verdict = "zero-authored";
-                    zeroAuthored++;
+                    verdict = "silent-everywhere";
+                    silentEverywhere++;
                 }
+
+                // Why it is silent, when it is — so bursts (correctly silent) separate from
+                // ambient loops (a snapshot artifact) without re-reading every NIF by hand.
+                string silenceCause;
+                if (verdict == "renders-at-shipped")
+                {
+                    silenceCause = "";
+                }
+                else if (rate.DormantTriggeredFx)
+                {
+                    silenceCause = "dormant-triggered";
+                }
+                else if (rate.EmitterActiveConstant is false)
+                {
+                    silenceCause = "const-false";
+                }
+                else if (authoredRate <= 0f)
+                {
+                    silenceCause = "zero-rate";
+                }
+                else if (profile.MaxRate <= 0f)
+                {
+                    silenceCause = "all-keys-false";
+                }
+                else
+                {
+                    silenceCause = profile.Plan.Mode == ParticleSweepMode.Identity
+                        ? "identity-pinned-key0"
+                        : "phase-miss";
+                }
+
+                // Legacy verdict retained so the new CSV diffs cleanly against the frozen original.
+                string legacyVerdict;
+#pragma warning disable S1244
+                if (authoredRate > 0f && restRate0 == 0f && restRate25 == 0f)
+                {
+                    legacyVerdict = "gated-to-zero";
+                }
+                else
+                {
+                    legacyVerdict = restRate0 > 0f || restRate25 > 0f
+                        ? "active-rate"
+                        : "zero-authored";
+                }
+#pragma warning restore S1244
+                if (legacyVerdict == "gated-to-zero") legacyGatedToZero++;
 
                 var row = string.Join(",",
                     file.FullPath,
                     blockIndex.ToString(CultureInfo.InvariantCulture),
                     system.Capacity.ToString(CultureInfo.InvariantCulture),
+                    (system.Emitter?.LifeSpan ?? 0f).ToString("0.####", CultureInfo.InvariantCulture),
                     boolBinding,
+                    rate.Keys.Count > 0 ? $"keys:{rate.Keys.Count}" : "pose",
                     rate.DormantTriggeredFx ? "true" : "false",
                     authoredRate.ToString("0.####", CultureInfo.InvariantCulture),
                     restRate0.ToString("0.####", CultureInfo.InvariantCulture),
                     restRate25.ToString("0.####", CultureInfo.InvariantCulture),
-                    verdict);
+                    legacyVerdict,
+                    profile.Plan.Mode.ToString(),
+                    profile.BakeWindowSeconds.ToString("0.###", CultureInfo.InvariantCulture),
+                    bakedAtShipped.ToString(CultureInfo.InvariantCulture),
+                    profile.MaxRate.ToString("0.####", CultureInfo.InvariantCulture),
+                    profile.FirstActiveTime?.ToString("0.###", CultureInfo.InvariantCulture) ?? "",
+                    profile.DutyFraction.ToString("0.###", CultureInfo.InvariantCulture),
+                    profile.BestSnapshot.ToString("0.###", CultureInfo.InvariantCulture),
+                    bakedAtBest.ToString(CultureInfo.InvariantCulture),
+                    bakedAtWarmup.ToString(CultureInfo.InvariantCulture),
+                    verdict,
+                    silenceCause);
                 rows.Add(row);
-                if (verdict == "gated-to-zero")
+                if (verdict != "renders-at-shipped")
                 {
                     gatedRows.Add(row);
                 }
+
+                if (bakedAtShipped > 0 && bakedAtWarmup > 0) shippedYesWarmYes++;
+                else if (bakedAtShipped > 0) shippedYesWarmNo++;
+                else if (bakedAtWarmup > 0) shippedNoWarmYes++;
+                else shippedNoWarmNo++;
             }
         }
 
         File.WriteAllLines(csvPath, rows);
 
-        _output.WriteLine($"FO3 EmitterActive census -> {csvPath}");
+        _output.WriteLine($"{label} EmitterActive census -> {csvPath}");
         _output.WriteLine($"NIFs scanned:        {totalNifs}");
         _output.WriteLine($"Prefiltered (ctlr):  {prefiltered}");
         _output.WriteLine($"Parsed:              {parsed} (extract failures {extractFailures}, parse failures {parseFailures})");
@@ -212,16 +312,22 @@ public sealed class Fo3EmitterActiveCensusTests
         _output.WriteLine($"  no rate ctrl:      {noRateController}");
         _output.WriteLine($"  no bool binding:   {noBoolBinding}");
         _output.WriteLine($"  bool-bound rows:   {rows.Count - 1}");
-        _output.WriteLine($"    gated-to-zero:   {gatedToZero}");
-        _output.WriteLine($"    active-rate:     {activeRate}");
-        _output.WriteLine($"    zero-authored:   {zeroAuthored}");
+        _output.WriteLine($"    renders-at-shipped: {rendersAtShipped}  (the 2026-08-10 census called many of these gated)");
+        _output.WriteLine($"    pulses-invisible:   {pulsesInvisible}  (authored to emit, but not at snapshot 0)");
+        _output.WriteLine($"    silent-everywhere:  {silentEverywhere}");
+        _output.WriteLine($"  legacy gated-to-zero: {legacyGatedToZero} (old two-instant verdict, for diffing)");
+        _output.WriteLine("  shipped x warm-up snapshot matrix:");
+        _output.WriteLine($"    both render:        {shippedYesWarmYes}");
+        _output.WriteLine($"    shipped only:       {shippedYesWarmNo}");
+        _output.WriteLine($"    warm-up only:       {shippedNoWarmYes}  (would APPEAR if the default snapshot moved)");
+        _output.WriteLine($"    neither:            {shippedNoWarmNo}");
         foreach (var row in gatedRows)
         {
             _output.WriteLine($"GATED {row}");
         }
 
         // Census vehicle, not a gate: pass whenever the sweep actually saw particle systems.
-        Assert.True(totalSystems > 0, "FO3 census parsed no particle systems — enumeration or parsing is broken.");
+        Assert.True(totalSystems > 0, $"{label} census parsed no particle systems — enumeration or parsing is broken.");
     }
 
     private static string? FindRepoRoot()

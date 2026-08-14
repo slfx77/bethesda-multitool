@@ -122,6 +122,7 @@ internal sealed class ReferenceMeshDecoder12
             // Decoded Havok collision soup (set only on the NIF path below; SpeedTree has none).
             Vector3[]? collisionPositions = null;
             int[]? collisionTriangles = null;
+            var collisionProvenance = HavokCollisionProvenance.AbsentOrUnsupported;
 
             // Keyframe playback rig + per-shape skin inputs (set only for internally-skinned
             // animated NIFs — banners, cloth flags with tracks).
@@ -270,7 +271,11 @@ internal sealed class ReferenceMeshDecoder12
                     dropBoneAttachedShapes: true,
                     // REFR XEMI is placement state. Bake it into this variant-keyed decode so
                     // opaque instancing never shares one external-emittance color across refs.
-                    externalEmittanceColor: externalEmittanceColor);
+                    externalEmittanceColor: externalEmittanceColor,
+                    // The reference cache also owns placed-object collision. Preserve the decoded
+                    // model shell when a NIF has no render geometry so authored collision provenance
+                    // can still reach the collision LRU instead of becoming a total negative entry.
+                    preserveEmptyModel: true);
 
                 // FNV physics-lite is source-graph data, resolved while the full source graph is
                 // available. The parser is deliberately profile-gated to retail
@@ -281,13 +286,15 @@ internal sealed class ReferenceMeshDecoder12
                         FnvHavokConstraintParser.Parse(nifData, nif));
                 }
 
-                // Decode Havok (bhk*) collision geometry from the same (converted, LE) buffer/parse,
-                // off the render thread. Walk mode prefers this gapless physics mesh over the visual
-                // submeshes so the camera doesn't fall through plank gaps. Null when the NIF has none.
-                if (HavokCollisionExtractor.TryExtract(nifData, nif) is { } havok)
+                // Decode Havok from the same converted buffer while preserving an explicit layer-15
+                // authored-none verdict. Absent and unsupported Havok deliberately remain one state:
+                // both retain the established visual-mesh fallback.
+                var havok = HavokCollisionExtractor.Extract(nifData, nif);
+                collisionProvenance = havok.Provenance;
+                if (havok.Soup is { } soup)
                 {
-                    collisionPositions = havok.Positions;
-                    collisionTriangles = havok.Triangles;
+                    collisionPositions = soup.Positions;
+                    collisionTriangles = soup.Triangles;
                 }
 
                 // Keyframe playback rig: internally-skinned NIFs with animation tracks carry the
@@ -332,12 +339,6 @@ internal sealed class ReferenceMeshDecoder12
             {
                 Interlocked.Increment(ref _totalSkinnedModelPaths);
             }
-            if (!model.HasGeometry)
-            {
-                result = "empty";
-                return null;
-            }
-
             var submeshes = new List<DecodedSubmesh12>(model.Submeshes.Count);
             foreach (var sub in model.Submeshes)
             {
@@ -497,14 +498,26 @@ internal sealed class ReferenceMeshDecoder12
 
             if (submeshes.Count == 0)
             {
-                result = "empty";
-                return null;
+                // A render-empty NIF can still carry authoritative Havok. Keep only those positive
+                // collision verdicts; an absent/unsupported empty model remains the established
+                // negative decode and may use the cold-path bounds fallback.
+                if (collisionProvenance == HavokCollisionProvenance.AbsentOrUnsupported)
+                {
+                    result = "empty";
+                    return null;
+                }
+
+                result = "collision-only";
             }
 
             submeshCount = submeshes.Count;
-            result = "success";
+            if (submeshes.Count > 0)
+            {
+                result = "success";
+            }
             return new DecodedNifMesh12(
-                submeshes, collisionPositions, collisionTriangles, animation, model.ContainsParticleSource);
+                submeshes, collisionPositions, collisionTriangles, collisionProvenance, animation,
+                model.ContainsParticleSource);
         }
         finally
         {
@@ -592,8 +605,8 @@ internal sealed class ReferenceMeshDecoder12
         }
 
         return new ReferenceDecodedMeshPayload12(
-            submeshes, decoded.CollisionPositions, decoded.CollisionTriangles, decoded.Animation,
-            decoded.ContainsParticleSource);
+            submeshes, decoded.CollisionPositions, decoded.CollisionTriangles,
+            decoded.CollisionProvenance, decoded.Animation, decoded.ContainsParticleSource);
     }
 
     public static DecodedNifMesh12 FromPersistentPayload(ReferenceDecodedMeshPayload12 payload)
@@ -669,8 +682,8 @@ internal sealed class ReferenceMeshDecoder12
         }
 
         return new DecodedNifMesh12(
-            submeshes, payload.CollisionPositions, payload.CollisionTriangles, payload.Animation,
-            payload.ContainsParticleSource);
+            submeshes, payload.CollisionPositions, payload.CollisionTriangles,
+            payload.CollisionProvenance, payload.Animation, payload.ContainsParticleSource);
     }
 
     public static long EstimateDecodedMeshBytes(DecodedNifMesh12 decoded)
@@ -753,4 +766,3 @@ internal sealed class ReferenceMeshDecoder12
 
 }
 #endif
-

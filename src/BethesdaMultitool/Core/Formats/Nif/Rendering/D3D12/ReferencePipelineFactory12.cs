@@ -30,6 +30,16 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     private readonly ShaderRoutePsos _sharedRoute;
     private readonly ShaderRoutePsos _grassRoute = new();
 
+    // The INSTANCED + BLENDED grass route. Its shaders are the same per-game grass pair as
+    // _grassRoute, compiled with GRASS_INSTANCED so the VS takes its world matrix from the t8
+    // instance buffer instead of the head of b1. It exists because TES4 grass authors NiAlphaProperty
+    // 0x12ED (blend AND test) — one bit different from FNV's 0x12EC — and blend is forced with no
+    // policy layer, so the whole carpet was stuck on the per-draw path at roughly one draw, one
+    // 256-byte ring allocation and three full list re-scans per blade. Nothing about the PSO itself
+    // is new: blend and instancing are argument values on the same CreatePipelineState, over the same
+    // root signature and the same input layout.
+    private readonly ShaderRoutePsos _instancedGrassBlendRoute = new();
+
     // The INSTANCED grass route. Separate from _grassRoute because the ABIs differ: _grassRoute
     // serves blended per-draw PSOs (world matrix from the per-draw CB) while these shaders take
     // SV_InstanceID + the t8 instance buffer. Built lazily because the profile is only known once a
@@ -137,6 +147,23 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     public bool GrassShaderAvailable => _grassRoute.Active;
 
     /// <summary>
+    ///     Selects the per-game grass pair for the INSTANCED + BLENDED route, compiling its VS with
+    ///     GRASS_INSTANCED. Call once per ESM load, before any draw; FAIL-SOFT like every other route,
+    ///     so a compile failure just leaves <see cref="InstancedBlendGrassShaderAvailable" /> false and
+    ///     the renderer keeps grass on the per-draw path.
+    /// </summary>
+    public void SetInstancedBlendGrassShaderProfile(GameShaderPair profile) =>
+        _instancedGrassBlendRoute.Set(
+            profile,
+            nameof(ReferencePipelineFactory12) + " instanced blended grass route",
+            [new ShaderMacro("GRASS_INSTANCED", "1")]);
+
+    /// <summary>True when the instanced+blended grass pair compiled. The renderer MUST consult this
+    /// before routing grass to the batch path — the two paths need different vertex shaders, so
+    /// batching grass without this would draw it through a VS reading the wrong cbuffer layout.</summary>
+    public bool InstancedBlendGrassShaderAvailable => _instancedGrassBlendRoute.Active;
+
+    /// <summary>
     ///     Selects the per-game INSTANCED grass pair (the opaque cutout route FO3/FNV grass draws
     ///     through). Call once per ESM load, before any draw. Compilation is deferred to the first
     ///     grass draw and is FAIL-SOFT: on failure the shared instanced PSOs are used instead.
@@ -232,9 +259,9 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
 
     public ID3D12PipelineState GetBlendPipeline(
         byte srcBlendMode, byte dstBlendMode, bool doubleSided, bool decal = false, bool grassRoute = false,
-        bool depthTestOff = false)
+        bool depthTestOff = false, bool instancedGrass = false)
     {
-        var route = grassRoute && GrassShaderAvailable ? _grassRoute : _sharedRoute;
+        var route = SelectBlendRoute(grassRoute, instancedGrass);
         return route.GetOrCreate(
             new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal, depthTestOff),
             depthWrite: false,
@@ -251,9 +278,9 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     ///     above — which a no-depth blend (drawn after water) can't do.
     /// </summary>
     public ID3D12PipelineState GetBlendDepthWritePipeline(byte srcBlendMode, byte dstBlendMode, bool doubleSided,
-        bool decal = false, bool grassRoute = false, bool depthTestOff = false)
+        bool decal = false, bool grassRoute = false, bool depthTestOff = false, bool instancedGrass = false)
     {
-        var route = grassRoute && GrassShaderAvailable ? _grassRoute : _sharedRoute;
+        var route = SelectBlendRoute(grassRoute, instancedGrass);
         return route.GetOrCreate(
             new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal, depthTestOff),
             depthWrite: true,
@@ -261,6 +288,20 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             static (s, vs, ps) => s.self.CreateBlendPipelineState(
                 vs, ps, s.srcBlendMode, s.dstBlendMode, s.doubleSided, s.decal, depthWriteEnabled: true,
                 depthTestEnabled: !s.depthTestOff));
+    }
+
+    /// <summary>
+    ///     Picks the shader route a blended draw compiles against. The instanced arm wins over the
+    ///     per-draw grass arm because the two differ in the b1 LAYOUT the vertex shader reads, not
+    ///     merely in lighting — handing an instanced batch a per-draw grass PSO would read the world
+    ///     matrix out of AlphaState. Both fall back to the shared route when unavailable, so the
+    ///     fallback stays structural and no call site branches.
+    /// </summary>
+    private ShaderRoutePsos SelectBlendRoute(bool grassRoute, bool instancedGrass)
+    {
+        if (!grassRoute) return _sharedRoute;
+        if (instancedGrass) return InstancedBlendGrassShaderAvailable ? _instancedGrassBlendRoute : _sharedRoute;
+        return GrassShaderAvailable ? _grassRoute : _sharedRoute;
     }
 
     /// <summary>
@@ -425,6 +466,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         _disposed = true;
         _sharedRoute.DisposeAll();
         _grassRoute.DisposeAll();
+        _instancedGrassBlendRoute.DisposeAll();
         DisposeInstancedGrassPipelines();
         ShadowAlphaTestPso.Dispose();
         ShadowOpaquePso.Dispose();
@@ -482,7 +524,12 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         ///     later Set of the same pair retries the compile instead of no-oping on the equality
         ///     check.
         /// </summary>
-        public void Set(GameShaderPair profile, string consumerName)
+        /// <param name="vsMacros">
+        ///     Preprocessor defines for the VERTEX stage only — how one shader text serves two ABIs
+        ///     (see GRASS_INSTANCED in reference_grass_oblivion.vert.hlsl). The pixel stage is shared
+        ///     between the variants, so it deliberately takes none.
+        /// </param>
+        public void Set(GameShaderPair profile, string consumerName, ShaderMacro[]? vsMacros = null)
         {
             if (profile.Equals(_profile)) return;
 
@@ -493,7 +540,9 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
 
             if (!profile.Enabled) return;
 
-            var compiled = profile.TryCompile(consumerName);
+            var compiled = vsMacros is { Length: > 0 }
+                ? profile.TryCompile(consumerName, vsMacros, [])
+                : profile.TryCompile(consumerName);
             if (compiled is null)
             {
                 _profile = default;

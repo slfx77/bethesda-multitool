@@ -9,7 +9,7 @@
 // tangent/bitangent), unchanged so the slot-0 buffer is the same shared format other 3D
 // passes use.
 // Slot 1 vertex stream: per-vertex aLayerWeights (float4), built per-cell from the engine-
-// accurate per-vertex weight table and uploaded as an independent D3D11 buffer per cell.
+// accurate per-vertex weight table and uploaded as an independent GPU buffer per cell.
 
 cbuffer PerFrame : register(b0)
 {

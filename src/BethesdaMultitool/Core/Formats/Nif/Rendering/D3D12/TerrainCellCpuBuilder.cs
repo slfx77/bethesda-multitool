@@ -67,17 +67,8 @@ internal static class TerrainCellCpuBuilder
         // neighbor grids the edge clamps solid and every cell boundary renders as a hard seam.
         if (cell.LandVisualData?.VtexTextureFormIds is { Length: > 0 } vtexGrid)
         {
-            uint[]? eastV = null, northV = null, northEastV = null;
-            if (cells is not null)
-            {
-                eastV = NeighborVtexGrid(cells, key.gx + 1, key.gy);
-                northV = NeighborVtexGrid(cells, key.gx, key.gy + 1);
-                northEastV = NeighborVtexGrid(cells, key.gx + 1, key.gy + 1);
-            }
-
-            return CellTerrainTextureSet.Project(CellLayerWeightTable.BuildFromVtexGrid(
-                gridSize, vtexGrid,
-                eastVtexFormIds: eastV, northVtexFormIds: northV, northEastVtexFormIds: northEastV));
+            return CellTerrainTextureSet.Project(
+                VtexCellWeightTableBuilder.Build(gridSize, key, vtexGrid, cells));
         }
 
         var layers = cell.LandVisualData?.TextureLayers;
@@ -108,12 +99,6 @@ internal static class TerrainCellCpuBuilder
 
         return CellTerrainTextureSet.Project(table);
     }
-
-    private static uint[]? NeighborVtexGrid(
-        Dictionary<(int gx, int gy), CellRecord> cells, int gx, int gy)
-        => cells.TryGetValue((gx, gy), out var neighbor)
-            ? neighbor.LandVisualData?.VtexTextureFormIds
-            : null;
 
     private static IReadOnlyList<LandTextureLayer>? NeighborLayers(
         Dictionary<(int gx, int gy), CellRecord> cells, int gx, int gy)

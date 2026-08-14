@@ -4,8 +4,10 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 
 /// <summary>
-///     Immutable triangle geometry for a NIF <c>WaterShaderProperty</c> surface. The retail FNV
-///     <c>WATER000</c> vertex shader consumes each authored position directly through
+///     Immutable triangle geometry for a NIF surface classified onto the placed-water route. Most
+///     sources use <c>WaterShaderProperty</c>; the TES3 Vivec classifier also supplies legacy textured
+///     triangles, whose material state is not retained here. The retail FNV <c>WATER000</c> vertex
+///     shader consumes each authored position directly through
 ///     <c>ModelViewProj</c> / <c>WorldMat</c> (see
 ///     <c>tools/GhidraProject/fnv_water_vertex_disassembly.txt</c>), so placeable water must retain
 ///     the source positions and indices rather than reducing them to an axis-aligned flat quad.

@@ -110,6 +110,20 @@ public sealed class SpeedTreeLiveWindRigSeamTests
     }
 
     /// <summary>
+    ///     Projection export also re-renders on the shared renderer while streaming settles. Those
+    ///     render-only passes must not repeatedly reset the live view's integrated wind history.
+    /// </summary>
+    [Fact]
+    public void ProjectionExportPinsWindThroughTheCaptureSeam()
+    {
+        var source = SourceContract.ReadAppSource("WorldView3DControl.Export3D.cs");
+
+        Assert.Contains(
+            "_references.SetWindForCapture(WindDirection, 0f, 0f);", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("_references.SetWind(", source, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     ///     The two seams must stay separate rigs: <c>SetWindForCapture</c> touching <c>_windRig</c>
     ///     would reintroduce the same live-state corruption behind a capture-shaped name.
     /// </summary>

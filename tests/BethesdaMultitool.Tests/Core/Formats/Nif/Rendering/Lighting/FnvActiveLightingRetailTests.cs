@@ -264,10 +264,12 @@ public sealed class FnvActiveLightingRetailTests(
         var enabled = lights.Where(static light => !light.IsInitiallyDisabled).ToArray();
         var selected = new List<PlacedLight>();
         var scratch = new List<PlacedLight>();
+        var enabledOverrides = new ReferenceEnabledOverrideStore();
         var clipped = PlacedLightSelector.AppendNearest(
             lights,
             camera,
             16,
+            enabledOverrides,
             false,
             selected,
             scratch);

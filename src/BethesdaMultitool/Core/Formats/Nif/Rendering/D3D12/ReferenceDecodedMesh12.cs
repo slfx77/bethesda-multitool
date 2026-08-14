@@ -6,20 +6,20 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
-// CollisionPositions/CollisionTriangles carry the NIF's decoded Havok (bhk*) collision soup when
-// present (root-local treatRootsAsIdentity frame, same as the visual submeshes). BuildCollisionMesh
-// prefers them over the visual-mesh soup so walk mode rides the gapless physics mesh. Null when the
-// NIF has no decodable Havok collision (→ visual-mesh fallback).
+// CollisionProvenance distinguishes a decoded Havok soup, explicit layer-15 authored-none, and
+// absent/unsupported Havok. The latter alone may synthesize visual fallback collision.
 // Animation (v32+) carries the keyframe rig for animated statics (banners); the baked Vertices stay
 // REST-POSE, so a consumer that ignores it still draws the correct static mesh.
 internal sealed record DecodedNifMesh12(
     IReadOnlyList<DecodedSubmesh12> Submeshes,
     Vector3[]? CollisionPositions = null,
     int[]? CollisionTriangles = null,
+    HavokCollisionProvenance CollisionProvenance = HavokCollisionProvenance.AbsentOrUnsupported,
     NifMeshAnimation? Animation = null,
     // Persistent source provenance, deliberately distinct from IsParticleCloud: a controller-delayed
     // system can produce no baked cloud while its containing NIF still needs a source decode in live mode.

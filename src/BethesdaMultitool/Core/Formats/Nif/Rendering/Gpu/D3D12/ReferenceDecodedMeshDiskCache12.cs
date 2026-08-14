@@ -4,6 +4,7 @@ using System.Text;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
@@ -66,8 +67,14 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // v72: untextured legacy (BsVersion < 26) shapes carry MaterialDiffuse for a solid-color base
     // bind. Warm v71 entries lack the field, so authored-black planes (SewerExitGateExterior01's
     // 'black' Plane02) would keep rendering lit near-white.
+    // v73: persist Havok collision provenance. Warm v72 entries collapse an authored layer-15
+    // NONCOLLIDABLE verdict into absent/unsupported and can synthesize visual collision for it.
+    // v74: TES3 Vivec placed-water submeshes carry the water-surface sentinel. Warm v73 entries
+    // retain Tx_V_water_01 as an ordinary drawable texture and never reach WaterRenderer12.
+    // v75: FO4 refraction-flagged BGSM surfaces with a conventional diffuse survive extraction.
+    // Warm v74 NukaColaBottleFull entries contain only its glass shape and omit the ordinary lit surface.
     // (Full bump history for this constant lives in git blame.)
-    internal const int DecoderVersion = 72;
+    internal const int DecoderVersion = 75;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -192,6 +199,17 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
 
     private static void WriteMesh(BinaryWriter writer, ReferenceDecodedMeshPayload12 mesh)
     {
+        var collisionPositions = mesh.CollisionPositions ?? [];
+        var collisionTriangles = mesh.CollisionTriangles ?? [];
+        ValidateCollisionPayload(mesh.CollisionProvenance, collisionPositions, collisionTriangles);
+        if (mesh.Submeshes.Count == 0 &&
+            mesh.CollisionProvenance == HavokCollisionProvenance.AbsentOrUnsupported)
+        {
+            throw new InvalidDataException(
+                "Decoded mesh cache payload has neither render nor authored collision data.");
+        }
+        writer.Write((byte)mesh.CollisionProvenance);
+
         ValidateRange(mesh.Submeshes.Count, 0, MaxSubmeshes, nameof(mesh.Submeshes));
         writer.Write(mesh.Submeshes.Count);
         foreach (var submesh in mesh.Submeshes)
@@ -199,9 +217,8 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             WriteSubmesh(writer, submesh);
         }
 
-        // Havok collision soup (trailing, optional). Counts of 0 mean "no Havok collision" → null.
-        var collisionPositions = mesh.CollisionPositions ?? [];
-        var collisionTriangles = mesh.CollisionTriangles ?? [];
+        // Optional Havok soup. Provenance above distinguishes zero-count authored-none from
+        // absent/unsupported Havok without manufacturing empty geometry arrays.
         ValidateRange(collisionPositions.Length, 0, MaxCollisionVertices, nameof(mesh.CollisionPositions));
         ValidateRange(collisionTriangles.Length, 0, MaxCollisionIndices, nameof(mesh.CollisionTriangles));
         writer.Write(collisionPositions.Length);
@@ -287,16 +304,17 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
 
     private static ReferenceDecodedMeshPayload12 ReadMesh(BinaryReader reader)
     {
+        var collisionProvenance = (HavokCollisionProvenance)reader.ReadByte();
+        if (!Enum.IsDefined(collisionProvenance))
+        {
+            throw new InvalidDataException("Decoded mesh cache has invalid collision provenance.");
+        }
+
         var submeshCount = ReadInt32(reader, 0, MaxSubmeshes);
         var submeshes = new List<ReferenceDecodedSubmeshPayload12>(submeshCount);
         for (var i = 0; i < submeshCount; i++)
         {
             submeshes.Add(ReadSubmesh(reader));
-        }
-
-        if (submeshes.Count == 0)
-        {
-            throw new InvalidDataException("Decoded mesh cache payload has no submeshes.");
         }
 
         var collisionVertexCount = ReadInt32(reader, 0, MaxCollisionVertices);
@@ -315,11 +333,70 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             for (var i = 0; i < collisionIndexCount; i++) collisionTriangles[i] = reader.ReadInt32();
         }
 
+        ValidateCollisionPayload(
+            collisionProvenance,
+            collisionPositions ?? [],
+            collisionTriangles ?? []);
+        if (submeshes.Count == 0 &&
+            collisionProvenance == HavokCollisionProvenance.AbsentOrUnsupported)
+        {
+            throw new InvalidDataException(
+                "Decoded mesh cache payload has neither render nor authored collision data.");
+        }
+
         var animation = reader.ReadBoolean() ? ReadAnimation(reader) : null;
         var containsParticleSource = reader.ReadBoolean();
 
         return new ReferenceDecodedMeshPayload12(
-            submeshes, collisionPositions, collisionTriangles, animation, containsParticleSource);
+            submeshes, collisionPositions, collisionTriangles, collisionProvenance, animation,
+            containsParticleSource);
+    }
+
+    private static void ValidateCollisionPayload(
+        HavokCollisionProvenance provenance,
+        Vector3[] positions,
+        int[] triangles)
+    {
+        if (!Enum.IsDefined(provenance))
+        {
+            throw new InvalidDataException("Decoded mesh cache has invalid collision provenance.");
+        }
+
+        if (provenance == HavokCollisionProvenance.AuthoredMesh)
+        {
+            if (positions.Length == 0 || triangles.Length < 3 || triangles.Length % 3 != 0)
+            {
+                throw new InvalidDataException(
+                    "Authored-mesh provenance requires collision positions and complete triangles.");
+            }
+
+            foreach (var position in positions)
+            {
+                if (!float.IsFinite(position.X) || !float.IsFinite(position.Y) ||
+                    !float.IsFinite(position.Z))
+                {
+                    throw new InvalidDataException(
+                        "Authored collision positions must be finite.");
+                }
+            }
+
+            foreach (var index in triangles)
+            {
+                if ((uint)index >= (uint)positions.Length)
+                {
+                    throw new InvalidDataException(
+                        "Authored collision triangle index is outside the position array.");
+                }
+            }
+
+            return;
+        }
+
+        if (positions.Length != 0 || triangles.Length != 0)
+        {
+            throw new InvalidDataException(
+                "Collision arrays require authored-mesh provenance.");
+        }
     }
 
     private static NifMeshAnimation ReadAnimation(BinaryReader reader)
@@ -831,12 +908,13 @@ internal readonly record struct ReferenceDecodedMeshDiskCacheEntry12(
     ReferenceDecodedMeshPayload12? Mesh,
     bool IsNegative);
 
-/// <summary>A decoded reference mesh ready to cache/upload: its submeshes plus optional collision geometry
-/// and (v32+) the keyframe animation rig for animated statics.</summary>
+/// <summary>A decoded reference mesh ready to cache/upload: its submeshes, collision provenance plus
+/// optional geometry, and the keyframe animation rig for animated statics.</summary>
 internal sealed record ReferenceDecodedMeshPayload12(
     IReadOnlyList<ReferenceDecodedSubmeshPayload12> Submeshes,
     Vector3[]? CollisionPositions = null,
     int[]? CollisionTriangles = null,
+    HavokCollisionProvenance CollisionProvenance = HavokCollisionProvenance.AbsentOrUnsupported,
     NifMeshAnimation? Animation = null,
     // Source provenance (v46+), independent of whether the static bake produced a cloud submesh.
     bool ContainsParticleSource = false);

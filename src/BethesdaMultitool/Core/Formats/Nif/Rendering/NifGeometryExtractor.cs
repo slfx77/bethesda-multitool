@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
@@ -6,6 +7,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
@@ -165,7 +167,8 @@ internal static class NifGeometryExtractor
         bool collectBillboards = false,
         bool dropBoneAttachedShapes = false,
         IReadOnlyDictionary<string, string>? materialSwaps = null,
-        Vector3? externalEmittanceColor = null)
+        Vector3? externalEmittanceColor = null,
+        bool preserveEmptyModel = false)
     {
         if (nif.Blocks.Count == 0)
         {
@@ -425,6 +428,7 @@ internal static class NifGeometryExtractor
             var clampTextureV = false;
             (float, float, float, float)? effectFalloff = null;
             var softParticleFalloffDepth = 0f;
+            var hasUnsupportedRefraction = false;
             SkyObjectType? skyType = null;
             List<int>? propRefs = null;
             if (shapePropertyMap.TryGetValue(shapeIndex, out propRefs))
@@ -507,28 +511,12 @@ internal static class NifGeometryExtractor
                     }
                 }
 
-                // SLSF1_Refraction (0x8000) / SLSF1_Fire_Refraction (0x10000) on a BSLightingShaderProperty
-                // mark a screen-space heat-haze / distortion plane (e.g. the campfire's VaporTileNormal_n
-                // billboard). We don't do screen-space refraction, and such a plane ships a NORMAL map in its
-                // diffuse slot with no NiAlphaProperty — drawing it opaque produces a blue/purple "gem" that
-                // also occludes the real fire behind it. Skip it so the distorted effect shows through.
-                // The FO3/FNV BSShaderFlags use the SAME bits (15 Refraction / 16 Fire_Refraction) on
-                // BSShaderPPLightingProperty / BSShaderNoLightingProperty — e.g. TrapGasFire01's
-                // "RefractGas" dome (PPLighting, 0x82018100, no alpha property) drew as an opaque white
-                // sphere hiding the additive gas billboard behind it.
-                if (shaderMetadata is
-                    {
-                        PropertyType: "BSLightingShaderProperty" or "BSShaderPPLightingProperty"
-                        or "Lighting30ShaderProperty"
-                        or "BSShaderNoLightingProperty",
-                        ShaderFlags: { } lsRefract
-                    }
-                    && (lsRefract & 0x18000u) != 0)
-                {
-                    LogShapeDrop(data, nif, shapeIndex,
-                        "refraction plane (SLSF1_Refraction / SLSF1_Fire_Refraction)");
-                    continue;
-                }
+                // Defer this metadata flag until after external-material resolution. Most such
+                // shapes are framebuffer-distortion helpers and remain omitted, but FO4 also sets
+                // Fire_Refraction on an ordinary material-backed Nuka bottle surface.
+                hasUnsupportedRefraction = NifRefractionShapePolicy.ShouldSkipUnsupportedDistortion(
+                    nif.BsVersion,
+                    shaderMetadata);
 
                 // BSShaderFlags bit 17 = Eye_Environment_Mapping + EnvMapScale for eye specular
                 if (shaderMetadata?.ShaderFlags is uint shaderFlags &&
@@ -627,8 +615,9 @@ internal static class NifGeometryExtractor
                                    ?? (diffusePath is not null &&
                                        (diffusePath.EndsWith(".bgsm", StringComparison.OrdinalIgnoreCase) ||
                                         diffusePath.EndsWith(".bgem", StringComparison.OrdinalIgnoreCase))
-                                       ? diffusePath
-                                       : null);
+                                        ? diffusePath
+                                        : null);
+                BgsmMaterial? externalMaterial = null;
 
                 // FO4/FO76 MSWP material swap (REFR XMSP): substitute the placement's replacement
                 // material BEFORE reading render state, so alpha/two-sided/specular/gradient and the
@@ -644,6 +633,7 @@ internal static class NifGeometryExtractor
 
                 if (materialPath is not null && textureResolver?.TryGetMaterial(materialPath) is { } bgsm)
                 {
+                    externalMaterial = bgsm;
                     if (bgsm.IsEffect)
                     {
                         // Effect materials: only apply alpha state the material actually enables — the
@@ -760,6 +750,17 @@ internal static class NifGeometryExtractor
                         gradientMapPath = bgsm.GradientMap;
                         gradientMapV = bgsm.GradientMapV;
                     }
+                }
+
+                if (hasUnsupportedRefraction &&
+                    NifRefractionShapePolicy.ShouldSkipUnsupportedDistortion(
+                        nif.BsVersion,
+                        shaderMetadata,
+                        externalMaterial is { IsEffect: false } ? externalMaterial.Diffuse : null))
+                {
+                    LogShapeDrop(data, nif, shapeIndex,
+                        "unsupported refraction helper (no parsed FO4 BGSM diffuse surface)");
+                    continue;
                 }
 
                 // WaterShaderProperty: placeable water (waterp*, cave/pool/reflecting-pool water) ships
@@ -987,6 +988,15 @@ internal static class NifGeometryExtractor
                     submesh.EmissiveColor = NifBlockParsers.ReadMaterialEmissive(data, nif, propRefs);
                 }
 
+                // Morrowind predates WaterShaderProperty. Its placed Vivec surface is an ordinary
+                // legacy textured shape, so recognize only the combined retail material + animation
+                // + horizontal-geometry signature. No model/shape/material name participates: a
+                // broad "water" name heuristic would divert ordinary TES3 meshes and waterfalls.
+                if (Tes3PlacedWaterClassifier.IsWaterSurface(nif.BinaryVersion, submesh))
+                {
+                    submesh.DiffuseTexturePath = RenderableSubmesh.WaterSurfaceTexturePath;
+                }
+
                 if (skinning != null) model.WasSkinned = true;
                 model.Submeshes.Add(submesh);
                 model.ExpandBounds(submesh.Positions);
@@ -1024,7 +1034,7 @@ internal static class NifGeometryExtractor
                 alphaControllersByProperty);
         }
 
-        return model.HasGeometry ? model : null;
+        return model.HasGeometry || preserveEmptyModel ? model : null;
     }
 
     /// <summary>

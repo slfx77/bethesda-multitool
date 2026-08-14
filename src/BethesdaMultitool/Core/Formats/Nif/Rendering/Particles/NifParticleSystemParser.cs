@@ -552,8 +552,28 @@ internal static class NifParticleSystemParser
             };
         }
 
-        // NiFloatInterpolator.Value is authoritative only when no usable NiFloatData exists. Zero is a valid
-        // authored rate and must NOT fall through to the old capacity/lifespan density estimate.
+        if (dataRef >= 0)
+        {
+            // An authored NiFloatData is the whole truth for this track, and the engine ignores the
+            // pose slot whenever one is attached — so under an authored curve the pose holds stale
+            // scratch, not a rate. Failing to decode the curve means we know nothing; reading the
+            // scratch anyway is where megatongatehouse01 #518's "authored rate" of 2 995 932 came
+            // from (explosiongrenadefrag: 12 000 000). Emit no rate instead. Zero, not the
+            // capacity/lifespan density estimate: an undecodable curve must not fabricate FX, and
+            // returning null here would also discard the EmitterActive gate decoded above — which
+            // is the only thing keeping these gore/explosion emitters silent at rest.
+            return new ParticleRateControllerDefinition
+            {
+                IsActive = isActive,
+                SequenceTiming = sequenceTiming,
+                ControllerTiming = controllerTiming,
+                EmitterActiveConstant = emitterActiveConstant,
+                EmitterActiveKeys = emitterActiveKeys,
+            };
+        }
+
+        // NiFloatInterpolator.Value is authoritative only when no NiFloatData is attached at all. Zero is a
+        // valid authored rate and must NOT fall through to the old capacity/lifespan density estimate.
         var poseValue = BinaryUtils.ReadFloat(data, interpolator.DataOffset, be);
         if (!float.IsFinite(poseValue) || MathF.Abs(poseValue) >= 1e30f)
         {
@@ -600,11 +620,19 @@ internal static class NifParticleSystemParser
 
         var be = nif.IsBigEndian;
         var dataRef = BinaryUtils.ReadInt32(data, interpolator.DataOffset + 1, be);
-        if (dataRef >= 0 && dataRef < nif.Blocks.Count &&
-            nif.Blocks[dataRef].TypeName == "NiBoolData" &&
-            TryReadBoolKeys(data, nif.Blocks[dataRef], be, out var decoded))
+        if (dataRef >= 0)
         {
-            keys = decoded;
+            // Same rule as the rate track: an authored NiBoolData overrides the pose byte, so when we
+            // cannot decode the curve we know nothing about the gate. Falling through would fabricate
+            // a PERMANENT gate value out of stale scratch — and since a fabricated `false` silences an
+            // emitter outright, that failure mode is invisible in a render.
+            if (dataRef < nif.Blocks.Count &&
+                nif.Blocks[dataRef].TypeName == "NiBoolData" &&
+                TryReadBoolKeys(data, nif.Blocks[dataRef], be, out var decoded))
+            {
+                keys = decoded;
+            }
+
             return;
         }
 

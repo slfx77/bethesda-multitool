@@ -1,10 +1,10 @@
-// v3 Phase 1 placeholder vertex shader — projects cell-boundary line vertices to clip space.
-// Replaced by real terrain + REFR shaders in Phases 2–3.
+// Shared unlit overlay vertex shader for cell-grid lines, navmesh fill/edges, and selection outlines.
+// Projects caller-supplied world-space vertices and forwards the configured RGBA blend color.
 
 cbuffer Uniforms : register(b0)
 {
     float4x4 uViewProj;
-    float4 uLineColor; // rgba (alpha kept for future fade)
+    float4 uLineColor; // RGBA; alpha actively controls each overlay renderer's blend.
 };
 
 struct VSInput

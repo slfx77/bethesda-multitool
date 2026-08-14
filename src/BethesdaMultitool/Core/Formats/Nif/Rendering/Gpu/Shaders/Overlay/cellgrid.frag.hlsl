@@ -1,4 +1,4 @@
-// v3 Phase 1 placeholder pixel shader — passes through the interpolated line color.
+// Shared unlit overlay pixel shader — passes through the interpolated cell-grid/navmesh/selection color.
 
 struct PSInput
 {

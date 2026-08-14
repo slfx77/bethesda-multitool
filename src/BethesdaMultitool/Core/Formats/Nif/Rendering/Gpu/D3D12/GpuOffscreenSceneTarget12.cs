@@ -17,11 +17,12 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///     8-bit format the tonemap runs in passthrough (clamp) so the output is bit-identical to before.
 ///     <para>
 ///         Lifetime: create at the (supersampled) target size, then drive one or more recorder
-///         frames (<see cref="Bind" /> → renderer draws → <see cref="RecordReadback" /> → EndFrame),
-///         waiting on each submission fence then calling <see cref="ReadbackToBytes" /> before the
-///         next cycle. The target is REUSED across requests at the same size; every state round-trips
-///         at the end of a cycle so a subsequent <see cref="Bind" /> is valid. <see cref="Dispose" />
-///         on teardown.
+///         frames. A captured frame is <see cref="Bind" /> → renderer draws →
+///         <see cref="RecordReadback" /> → EndFrame, followed by a fence wait and
+///         <see cref="ReadbackToBytes" />. A render-only settlement frame substitutes
+///         <see cref="FinishFrameWithoutReadback" /> and needs no immediate CPU fence wait. The
+///         target is REUSED across requests at the same size; both endings restore reusable resource
+///         state so a subsequent <see cref="Bind" /> is valid. <see cref="Dispose" /> on teardown.
 ///     </para>
 /// </summary>
 internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
@@ -489,6 +490,16 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         {
             cmd.ResourceBarrierTransition(_colorTex, ResourceStates.PixelShaderResource, ResourceStates.RenderTarget);
         }
+    }
+
+    /// <summary>
+    ///     Finishes a render-only frame without resolving, tonemapping, or copying pixels to the CPU.
+    ///     Restores optional per-frame snapshot state so the next <see cref="Bind" /> starts from the
+    ///     same reusable baseline as a captured frame. Must be the last target operation before EndFrame.
+    /// </summary>
+    public void FinishFrameWithoutReadback(ID3D12GraphicsCommandList cmd)
+    {
+        RestoreWaterOpaqueSnapshot(cmd);
     }
 
     private void EnsureReadback(ID3D12Device device)

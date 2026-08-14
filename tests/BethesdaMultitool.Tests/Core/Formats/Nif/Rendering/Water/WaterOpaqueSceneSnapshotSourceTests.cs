@@ -216,7 +216,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             // must view the post-opaque copy — decided per capture from the capture's own gate.
             "TryEnsureCaptureDepthSrv(target, requireSnapshotCopy: captureStreamTransparency)",
             "_water?.SetSceneDepth(",
-            "_water.GetFnvWater001Preflight(",
+            "_water!.GetFnvWater001Preflight(",
             "TryEnsureCaptureWaterOpaqueSnapshotSrv(target)");
 
         var pass = capture[loopStart..capture.IndexOf(
@@ -225,11 +225,11 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             StringComparison.Ordinal)];
         SourceContract.AssertOrder(
             pass,
-            "_water.GetFnvWater001Preflight(",
+            "_water!.GetFnvWater001Preflight(",
             "target.TryPrepareWaterOpaqueSnapshot(cmd)",
             "_water.SetFnvWater001Snapshot(",
             "target.BindColorReadOnlyDepth(cmd)",
-            "_water.Render(viewProj, cylinder, captureRenderOrigin)",
+            "_water!.Render(viewProj, cylinder, captureRenderOrigin)",
             "target.RestoreWaterOpaqueSnapshot(cmd);");
         Assert.DoesNotContain("TryEnsureCaptureDepthSrv(", pass, StringComparison.Ordinal);
         Assert.DoesNotContain("TryEnsureCaptureWaterOpaqueSnapshotSrv(target)", pass,
@@ -384,7 +384,7 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             "var captureDepthSampled = false;",
             "target.TryPrepareWaterOpaqueSnapshot(cmd)",
             "captureDepthSampled = true;",
-            "_water.Render(viewProj, cylinder, captureRenderOrigin)",
+            "_water!.Render(viewProj, cylinder, captureRenderOrigin)",
             "// Any exception after snapshot preparation or the depth transition",
             "target.RestoreWaterOpaqueSnapshot(cmd);",
             "target.BindColorOnly(cmd);",

@@ -30,9 +30,9 @@ internal sealed class ExportFramingOverlay : IDisposable
 {
     private const uint UniformsByteSize = 96; // float4x4 (64) + float4 color (16) + float4 params (16)
 
-    // Slightly bolder than the collision cage (0.6/0.65) so the frame reads clearly over busy terrain.
-    private const float CoreHalfWidthPx = 0.9f;
-    private const float FeatherPx = 0.75f;
+    // Slightly bolder than the collision cage (0.6/0.65 DIPs) so the frame reads clearly over busy terrain.
+    private const float CoreHalfWidthDip = 0.9f;
+    private const float FeatherDip = 0.75f;
 
     private readonly GpuCommandRecorder12 _recorder;
     private readonly GpuRingBuffer12 _ringBuffer;
@@ -123,7 +123,8 @@ internal sealed class ExportFramingOverlay : IDisposable
     /// </summary>
     public void Render(
         Matrix4x4 viewProj, ReadOnlySpan<Vector3> lineVertices, Vector4 color,
-        float viewportWidth, float viewportHeight, bool ldrTarget)
+        float viewportWidth, float viewportHeight, bool ldrTarget,
+        float compositionScaleX = 1f, float compositionScaleY = 1f)
     {
         if (_disposed) return;
         var segments = lineVertices.Length / 2;
@@ -144,11 +145,13 @@ internal sealed class ExportFramingOverlay : IDisposable
         {
             return;
         }
+        var viewportDips = AnalyticOverlayLineMetrics.ViewportDips(
+            viewportWidth, viewportHeight, compositionScaleX, compositionScaleY);
         var uniforms = new FramingUniforms
         {
             ViewProj = viewProj,
             LineColor = color,
-            LineParams = new Vector4(viewportWidth, viewportHeight, CoreHalfWidthPx, FeatherPx),
+            LineParams = new Vector4(viewportDips, CoreHalfWidthDip, FeatherDip),
         };
         unsafe { *(FramingUniforms*)cbAlloc.CpuPtr = uniforms; }
 
@@ -181,7 +184,7 @@ internal sealed class ExportFramingOverlay : IDisposable
     {
         public Matrix4x4 ViewProj;
         public Vector4 LineColor;
-        public Vector4 LineParams; // x,y = viewport px; z = core half-width px; w = feather px
+        public Vector4 LineParams; // x,y = viewport DIPs; z = core half-width DIPs; w = feather DIPs
     }
 }
 #endif

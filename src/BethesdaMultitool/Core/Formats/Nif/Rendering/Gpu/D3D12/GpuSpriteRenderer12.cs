@@ -17,13 +17,13 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
 ///     v3 Pass 4 Step 3 — D3D12 port of the old <c>GpuSpriteRenderer</c>. Headless renderer
-///     producing the same <see cref="SpriteResult" /> as the D3D11 + CPU paths. Used by the
+///     producing the same <see cref="SpriteResult" /> contract as the CPU path. Used by the
 ///     CLI <c>render npc</c> / <c>export npc</c> commands and the GPU smoke tests.
 ///     <para>
-///         Mirrors the D3D11 SubmitRender/CompleteRender async split: SubmitRender records a
+///         Preserves the SubmitRender/CompleteRender async split: SubmitRender records a
 ///         one-shot command list (MSAA render + Resolve + CopyTextureRegion to a READBACK
 ///         buffer) and signals a fence; CompleteRender waits on the fence, maps the readback
-///         buffer, and copies pixels out. The fence wait replaces D3D11's implicit Map sync.
+///         buffer, and copies pixels out. An explicit fence wait synchronizes the readback.
 ///     </para>
 /// </summary>
 internal sealed unsafe class GpuSpriteRenderer12 : IDisposable

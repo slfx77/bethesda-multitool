@@ -4,9 +4,8 @@ using BethesdaMultitool.Core.Games;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
 
 /// <summary>
-///     v3 Pass 4 Step 2 — interface implemented by both <c>WaterRenderer</c>
-///     (D3D11) and <c>WaterRenderer12</c> (D3D12). The alpha-blended water-quad
-///     layer toggled by D3.
+///     Backend-neutral contract for the alpha-blended water layer, currently implemented by
+///     <c>WaterRenderer12</c>.
 /// </summary>
 internal interface IWaterRenderer : IWorldRenderer
 {

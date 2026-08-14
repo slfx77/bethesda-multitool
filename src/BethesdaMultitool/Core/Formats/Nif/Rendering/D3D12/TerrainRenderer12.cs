@@ -28,8 +28,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 ///     heightmap terrain via per-cell vertex buffers + per-quadrant draws against a shared
 ///     index buffer.
 ///     <para>
-///         Mirrors the D3D11 render-loop shape: gather visible cells via spatial index,
-///         sort closest-first, lazily build + upload per-cell vertex buffers under a per-
+///         The render loop gathers visible cells via the spatial index, sorts closest-first,
+///         lazily builds + uploads per-cell vertex buffers under a per-
 ///         frame budget, then issue 4 quadrant draws per cell with per-quadrant constants
 ///         + 7 SRVs (4 diffuse + 3 opacity) bound through the shared root signature.
 ///     </para>

@@ -74,12 +74,18 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     private readonly DedicatedWorkerThread _uploadDispatcher;
     private readonly ConcurrentQueue<CompletedUpload> _completedUploads = new();
     private readonly List<CompletedUpload> _pendingPromote = new();
+    // Alias accounting is opt-in with the JSONL profiler. Keep it off the normal hot path entirely:
+    // when tracing is disabled, nodes carry no legacy-key set and GetOrUpload performs no extra
+    // path normalization or allocations.
+    private readonly bool _aliasTraceEnabled;
+    private string _traceCacheTag = "unregistered";
     private Entry? _whitePixel;
     private Entry? _flatNormal;
     private Entry? _waterSurface;
     private readonly Dictionary<string, Entry> _syntheticEntries = new(StringComparer.OrdinalIgnoreCase);
     private int _pendingUploadCount;
     private bool _disposed;
+    private bool _traceSummaryEmitted;
 
     // Diagnostics counters — plain fields written only by the render thread (tracking-only
     // conformance; this cache is refcount-pinned and never trimmed). Snapshot readers tolerate
@@ -103,6 +109,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         _resolver = resolver;
         _deletionQueue = deletionQueue;
         _solidTextureFactory = new GpuSolidTextureFactory12(gpu, heap);
+        _aliasTraceEnabled = RendererProfilerTrace.IsEnabled;
         // Resolve DDS/DDX payloads off the render thread. Keep the default conservative because
         // DDX conversion and DDS parsing allocate enough to cause visible UI/render pauses when
         // too many complete in the same window.
@@ -137,6 +144,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     public GpuTextureCache12 RegisterWith(ResourceRegistry registry, string? instanceTag = null)
     {
         _registration?.Dispose();
+        _traceCacheTag = string.IsNullOrWhiteSpace(instanceTag) ? "default" : instanceTag;
         _registration = registry.Register(this, instanceTag);
         return this;
     }
@@ -247,6 +255,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
         if (_cache.TryGetValue(cacheKey, out var node))
         {
+            node.AliasTrace?.Observe(path);
             _hits++;
             // Resolved (payload present) but not yet resident → make sure it is queued for dispatch.
             // Still resolving (payload null) → just return the placeholder; the background resolution
@@ -272,7 +281,10 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         // textured transparently (BindlessIndex is stable).
         var entry = _solidTextureFactory.CreatePlaceholder(fallback, cacheKey);
         entry.RefCount = 1; // acquire (first reference).
-        node = new TextureUploadNode(cacheKey, entry);
+        node = new TextureUploadNode(
+            cacheKey,
+            entry,
+            _aliasTraceEnabled ? new LegacyAliasTrace(path) : null);
         _cache[cacheKey] = node;
         if (_resolveQueue.Enqueue(cacheKey))
         {
@@ -291,6 +303,15 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     /// </summary>
     internal static string NormalizeCacheKey(string path) =>
         string.IsNullOrWhiteSpace(path) ? string.Empty : NifTexturePathUtility.Normalize(path);
+
+    /// <summary>
+    ///     Reconstructs the exact key used by the GPU cache before canonicalization. The old
+    ///     dictionary compared these strings with <see cref="StringComparer.OrdinalIgnoreCase" />,
+    ///     so slash, case, and surrounding-whitespace variants were already one entry and must not
+    ///     be reported as avoided aliases.
+    /// </summary>
+    internal static string NormalizeLegacyCacheKeyForTrace(string path) =>
+        path.Replace('/', '\\').Trim();
 
     /// <summary>
     ///     Drops one reference acquired via <see cref="GetOrUpload" /> (render thread only). When the
@@ -366,6 +387,9 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        // Snapshot while every queue/stat source is still readable and before any cache entries are
+        // cleared. The trace writer outlives renderer disposal in the profiler host.
+        EmitTraceSummary();
         // Unregister first so the retired-stats record captures the cache as it was at teardown.
         _registration?.Dispose();
         _registration = null;
@@ -609,6 +633,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             {
                 ["resource"] = "texture",
                 ["phase"] = "resolve",
+                ["cacheTag"] = _traceCacheTag,
                 ["path"] = cacheKey,
                 ["found"] = payload is not null,
                 ["compressed"] = payload?.IsCompressed,
@@ -754,6 +779,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
                 {
                     ["resource"] = "texture",
                     ["phase"] = "gpu-upload",
+                    ["cacheTag"] = _traceCacheTag,
                     ["path"] = cacheKey,
                     ["format"] = payload.Format.ToString(),
                     ["width"] = payload.Width,
@@ -793,6 +819,143 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         }
     }
 
+    /// <summary>
+    ///     Emits the opt-in profiler snapshot once. Owners whose dependents release every cache entry
+    ///     during their own teardown call this immediately before that release cascade; Dispose is the
+    ///     fallback for owners that leave entries resident until cache teardown.
+    /// </summary>
+    internal void EmitTraceSummary()
+    {
+        if (_traceSummaryEmitted)
+        {
+            return;
+        }
+        _traceSummaryEmitted = true;
+
+        if (!_aliasTraceEnabled || !RendererProfilerTrace.IsEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            var aliases = BuildAliasTraceSummary(_cache.Values.Select(static node =>
+                new AliasTraceEntry(
+                    node.Path,
+                    node.Entry.IsResident,
+                    node.Entry.ByteSize,
+                    node.AliasTrace)));
+            var stats = GetStats();
+            RendererProfilerTrace.Event(
+                "resource-event",
+                BuildCacheSummaryTraceFields(
+                    _traceCacheTag,
+                    stats,
+                    PendingResolveCount,
+                    PendingUploadCount,
+                    PendingUploadDispatch,
+                    aliases));
+        }
+        catch (Exception ex)
+        {
+            Logger.Instance.Warn(
+                "GpuTextureCache12[{0}]: profiler cache-summary emission failed: {1}",
+                _traceCacheTag,
+                ex.Message);
+        }
+    }
+
+    internal static Dictionary<string, object?> BuildCacheSummaryTraceFields(
+        string cacheTag,
+        ResourceStats stats,
+        int pendingResolves,
+        int pendingUploads,
+        int pendingUploadDispatch,
+        AliasTraceSummary aliases)
+    {
+        var aliasGroups = aliases.Groups
+            .Select(static group => new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["canonicalKey"] = group.CanonicalKey,
+                ["legacyKeys"] = group.LegacyKeys,
+                ["residentPayloadBytes"] = group.ResidentPayloadBytes,
+                ["estimatedAvoidedPayloadBytes"] = group.EstimatedAvoidedPayloadBytes
+            })
+            .ToArray();
+
+        return new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["resource"] = "texture",
+            ["phase"] = "cache-summary",
+            ["cacheTag"] = cacheTag,
+            ["cacheEntries"] = stats.EntryCount,
+            ["residentEntries"] = aliases.ResidentEntries,
+            ["nonResidentEntries"] = aliases.NonResidentEntries,
+            ["residentPayloadBytes"] = stats.EstimatedBytes,
+            ["hits"] = stats.Hits,
+            ["misses"] = stats.Misses,
+            ["evictions"] = stats.Evictions,
+            ["queueDepth"] = stats.QueueDepth,
+            ["inFlight"] = stats.InFlight,
+            ["pendingResolves"] = pendingResolves,
+            ["pendingUploads"] = pendingUploads,
+            ["pendingUploadDispatch"] = pendingUploadDispatch,
+            ["residentAliasGroups"] = aliases.Groups.Count,
+            ["residentLegacyExtraKeys"] = aliases.LegacyExtraKeys,
+            ["estimatedResidentAliasPayloadBytesAvoided"] = aliases.EstimatedAliasResidentBytesAvoided,
+            ["residentAliasDetails"] = aliasGroups
+        };
+    }
+
+    /// <summary>
+    ///     Builds the teardown-only alias snapshot. Only entries resident at the snapshot contribute
+    ///     groups or bytes; evicted nodes are absent from the input and pending/failed placeholders
+    ///     are explicitly excluded. The avoided value is an estimate because <see cref="Release" />
+    ///     receives an Entry, not the original legacy spelling, so a live node cannot attribute
+    ///     partial reference releases back to individual pre-canonicalization keys.
+    /// </summary>
+    internal static AliasTraceSummary BuildAliasTraceSummary(IEnumerable<AliasTraceEntry> entries)
+    {
+        var residentEntries = 0;
+        var nonResidentEntries = 0;
+        var legacyExtraKeys = 0;
+        long estimatedAliasResidentBytesAvoided = 0;
+        var groups = new List<AliasTraceGroup>();
+
+        foreach (var entry in entries.OrderBy(static entry => entry.CanonicalKey, StringComparer.Ordinal))
+        {
+            if (!entry.IsResident)
+            {
+                nonResidentEntries++;
+                continue;
+            }
+
+            residentEntries++;
+            var legacyKeyCount = entry.AliasTrace?.LegacyKeyCount ?? 0;
+            if (legacyKeyCount <= 1)
+            {
+                continue;
+            }
+
+            var extraKeys = legacyKeyCount - 1;
+            var estimatedAvoidedBytes = entry.ResidentPayloadBytes * extraKeys;
+            legacyExtraKeys += extraKeys;
+            estimatedAliasResidentBytesAvoided += estimatedAvoidedBytes;
+            groups.Add(new AliasTraceGroup(
+                entry.CanonicalKey,
+                entry.AliasTrace!.GetSortedLegacyKeys(),
+                entry.ResidentPayloadBytes,
+                estimatedAvoidedBytes));
+        }
+
+        return new AliasTraceSummary(
+            residentEntries,
+            nonResidentEntries,
+            legacyExtraKeys,
+            estimatedAliasResidentBytesAvoided,
+            groups);
+    }
+
     private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)
     {
         var raw = EnvironmentVariables.Get(name);
@@ -806,15 +969,22 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
     private sealed class TextureUploadNode
     {
-        internal TextureUploadNode(string path, Entry entry)
+        internal TextureUploadNode(string path, Entry entry, LegacyAliasTrace? aliasTrace)
         {
             Path = path;
             Entry = entry;
+            AliasTrace = aliasTrace;
         }
 
         internal string Path { get; }
 
         internal Entry Entry { get; }
+
+        /// <summary>
+        ///     Distinct keys that the pre-canonicalization cache would have seen during this live
+        ///     node's lifetime. Null outside opt-in profiler traces; naturally discarded on eviction.
+        /// </summary>
+        internal LegacyAliasTrace? AliasTrace { get; }
 
         /// <summary>
         ///     Null while the background resolution stage is still running (or after a permanent
@@ -830,6 +1000,48 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
         internal bool Failed { get; set; }
     }
+
+    /// <summary>
+    ///     Per-live-node set of pre-canonicalization keys. The comparer deliberately matches the old
+    ///     cache dictionary, preventing slash/case/whitespace-only variants from inflating aliases.
+    ///     Like the cache dictionary and reference counts, this tracker is render-thread-owned.
+    /// </summary>
+    internal sealed class LegacyAliasTrace
+    {
+        private readonly HashSet<string> _legacyKeys = new(StringComparer.OrdinalIgnoreCase);
+
+        internal LegacyAliasTrace(string path)
+        {
+            Observe(path);
+        }
+
+        internal int LegacyKeyCount => _legacyKeys.Count;
+
+        internal bool Observe(string path) =>
+            _legacyKeys.Add(NormalizeLegacyCacheKeyForTrace(path));
+
+        internal string[] GetSortedLegacyKeys() =>
+            _legacyKeys.OrderBy(static key => key, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    internal readonly record struct AliasTraceEntry(
+        string CanonicalKey,
+        bool IsResident,
+        long ResidentPayloadBytes,
+        LegacyAliasTrace? AliasTrace);
+
+    internal readonly record struct AliasTraceGroup(
+        string CanonicalKey,
+        string[] LegacyKeys,
+        long ResidentPayloadBytes,
+        long EstimatedAvoidedPayloadBytes);
+
+    internal readonly record struct AliasTraceSummary(
+        int ResidentEntries,
+        int NonResidentEntries,
+        int LegacyExtraKeys,
+        long EstimatedAliasResidentBytesAvoided,
+        IReadOnlyList<AliasTraceGroup> Groups);
 
     /// <summary>
     ///     An uploaded texture published by the uploader thread for the render thread to promote

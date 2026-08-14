@@ -125,6 +125,12 @@ public sealed class Tes4GrassShaderTests
         // carpet with the shared shader — the same both-sites lesson the A2C work already learned.
         // Three sites since the unified transparency stream: the legacy hoisted depth-writing loop,
         // and BOTH arms of the stream's per-draw PSO choice inside DrawBlended.
+        // ⚠ Since 2026-08-13 the BULK of TES4 grass no longer reaches these lists at all — it batches
+        // through the instanced+blended route (Tes4GrassInstancingTests). These three sites now serve
+        // the residual the instanced ABI cannot express (billboarded submeshes, NiAlphaController
+        // material alpha), which is exactly why they must keep routing grass: that residual is a
+        // handful of draws sharing a carpet with thousands of batched ones, and lighting it through
+        // the shared shader would be the same half-lit carpet in miniature.
         Assert.Contains("_pipelines.GetBlendPipeline(", compact, StringComparison.Ordinal);
         Assert.Contains("_pipelines.GetBlendDepthWritePipeline(", compact, StringComparison.Ordinal);
         Assert.Equal(3, SourceContract.CountOccurrences(compact, "grassRoute:draw.IsGrass"));
@@ -138,14 +144,26 @@ public sealed class Tes4GrassShaderTests
             "ReferencePipelineFactory12.cs");
         var compact = new string(factory.Where(c => !char.IsWhiteSpace(c)).ToArray());
 
-        // The blend keys are identical between routes — only the shaders differ — so grass and the
-        // shared shaders must be DISTINCT ShaderRoutePsos instances, each owning its own PSO caches:
-        // one shared cache would hand a grass PSO to non-grass geometry (and vice versa) after the
-        // first draw. Both blend getters must pick the route the same way.
+        // The blend keys are identical between routes — only the shaders differ — so every route must
+        // be a DISTINCT ShaderRoutePsos instance owning its own PSO caches: one shared cache would
+        // hand a grass PSO to non-grass geometry (and vice versa) after the first draw. THREE routes
+        // since 2026-08-13, because the instanced grass VS reads a different b1 layout than the
+        // per-draw one and so cannot share either of the others' pipelines.
         Assert.Contains("privatesealedclassShaderRoutePsos", compact, StringComparison.Ordinal);
         Assert.Contains("readonlyShaderRoutePsos_sharedRoute;", compact, StringComparison.Ordinal);
         Assert.Contains("readonlyShaderRoutePsos_grassRoute=new();", compact, StringComparison.Ordinal);
-        Assert.Equal(2, SourceContract.CountOccurrences(compact, "?_grassRoute:_sharedRoute;"));
+        Assert.Contains("readonlyShaderRoutePsos_instancedGrassBlendRoute=new();", compact,
+            StringComparison.Ordinal);
+
+        // Both blend getters must pick the route the same way. This used to be checked by counting
+        // two IDENTICAL inline ternaries; they are now one shared selector, which enforces the same
+        // property by construction instead of by duplication — so assert that BOTH getters go
+        // through it, and that each arm still falls back to the shared route rather than throwing.
+        Assert.Equal(2, SourceContract.CountOccurrences(
+            compact, "SelectBlendRoute(grassRoute,instancedGrass);"));
+        Assert.Equal(1, SourceContract.CountOccurrences(compact, "?_grassRoute:_sharedRoute;"));
+        Assert.Equal(1, SourceContract.CountOccurrences(
+            compact, "?_instancedGrassBlendRoute:_sharedRoute;"));
 
         // Compile failure must degrade to the shared shaders, never throw: the caller's catch would
         // otherwise take down the whole reference pipeline (every placed object) over one game's

@@ -49,8 +49,16 @@ internal static class SunShadowMath
     /// <param name="radius">Half-extent of the ortho footprint (world units) — covers the
     /// visibility square around the center.</param>
     /// <param name="resolution">Shadow map dimension in texels (square).</param>
+    /// <param name="casterReach">
+    ///     How far UP-SUN of <paramref name="sceneCenter" /> the ortho box must reach to hold every
+    ///     caster whose shadow can land in the footprint — the classic CSM extended near plane, and
+    ///     the value <see cref="CascadeCasterReach" /> computes. Values below the box's own
+    ///     <see cref="CascadeDepthExtentFactor" /> depth are ignored, so the default of 0 reproduces
+    ///     the symmetric box exactly.
+    /// </param>
     public static LightFrustum BuildLightFrustum(
-        Vector3 sunDirection, Vector3 sceneCenter, Vector3 renderOrigin, float radius, int resolution)
+        Vector3 sunDirection, Vector3 sceneCenter, Vector3 renderOrigin, float radius, int resolution,
+        float casterReach = 0f)
     {
         var dir = Vector3.Normalize(sunDirection);
         var center = sceneCenter - renderOrigin;
@@ -59,9 +67,20 @@ internal static class SunShadowMath
         // (FO4's noon apex is ~86-90°, where a Z up vector degenerates in LookAt).
         var up = MathF.Abs(dir.Z) < 0.9f ? new Vector3(0f, 0f, 1f) : new Vector3(0f, 1f, 0f);
 
-        // Eye far enough back along the light that the whole scene sphere sits in front of it.
-        // View-space depth of scene geometry then spans [eyeDistance - radius, eyeDistance + radius].
-        var eyeDistance = radius * 2f;
+        // Depth extents. DOWN-sun (the far plane) only has to hold RECEIVERS, so the cascade's own
+        // 1.25*radius is right. UP-sun (the near plane) has to hold CASTERS, and a caster is always
+        // up-sun of the surface it darkens — capping that side at 1.25*radius silently clips every
+        // caster further toward the light than 2560 units in cascade 0, whose shadow then vanishes
+        // from a footprint the pixel shader still selects (user 2026-08-11, "shadows close to the
+        // camera disappear"). See CascadeCasterReach.
+        var backReach = radius * CascadeDepthExtentFactor;
+        var lightReach = MathF.Max(casterReach, backReach);
+
+        // Eye far enough back along the light that every caster sits in front of it (near > 0).
+        // The ortho projection itself is invariant to this distance — clip.z works out to
+        // (backReach + axial) / (lightReach + backReach) regardless — but the texel snap below is
+        // phase-locked to it, so it stays at 2*radius whenever the reach fits.
+        var eyeDistance = MathF.Max(radius * 2f, lightReach + (radius * 0.75f));
         var eye = center + dir * eyeDistance;
         var view = Matrix4x4.CreateLookAt(eye, center, up);
 
@@ -74,8 +93,8 @@ internal static class SunShadowMath
 
         // Reversed-Z ortho: swapping the near/far arguments of CreateOrthographic maps
         // view depth near→1, far→0 — matching the scene's GreaterEqual/clear-0 convention.
-        var near = eyeDistance - radius * 1.25f;   // slack for geometry above the center plane
-        var far = eyeDistance + radius * 1.25f;
+        var near = eyeDistance - lightReach;  // up-sun: must hold every CASTER
+        var far = eyeDistance + backReach;    // down-sun: only has to hold RECEIVERS
         var proj = Matrix4x4.CreateOrthographic(2f * radius, 2f * radius, far, near);
 
         // Constant compare bias ≈ two texels of worst-case slope, expressed in the normalized
@@ -105,8 +124,10 @@ internal static class SunShadowMath
     public const float CenterSnap = 512f;
 
     /// <summary>
-    ///     Half-extent along the light direction, as a multiple of the cascade radius. Mirrors the
-    ///     +/-1.25*radius depth range <see cref="BuildLightFrustum" /> gives its ortho box.
+    ///     DOWN-sun half-extent along the light direction, as a multiple of the cascade radius —
+    ///     the far plane <see cref="BuildLightFrustum" /> gives its ortho box. The UP-sun side is
+    ///     <see cref="CascadeCasterReach" />, which is larger: that side has to hold casters, not
+    ///     just receivers.
     /// </summary>
     public const float CascadeDepthExtentFactor = 1.25f;
 
@@ -122,9 +143,84 @@ internal static class SunShadowMath
     public const float CascadeLateralReachFactor = 1.41422f;
 
     /// <summary>
-    ///     Whether a world-space sphere can intersect the cascade of the given radius centred on the
+    ///     Ceiling on <see cref="CascadeCasterReach" />, as a multiple of the cascade radius.
+    ///     <para>
+    ///         The reach formula is exact, but its scene-Z-span input is far larger than the geometry
+    ///         that can actually shadow the near field. MEASURED at WastelandNV 2026-08-13: the span
+    ///         came back ~173,000 world units (back-solved from the logged depth bias), which gave
+    ///         cascade 0 a ~104,000-unit depth range. Every real caster then landed in the bottom 5%
+    ///         of the stored depth — precisely where a reversed-Z float buffer has its WORST
+    ///         precision — and the box admitted a long tail of casters that can never matter.
+    ///         (What stretches that span is NOT established: it is the union of DECODED MESH bounds
+    ///         over every cull survivor in a 65k-unit cylinder, not OBND, so do not blame the
+    ///         displaced-OBND records for it without measuring.)
+    ///     </para>
+    ///     <para>
+    ///         Verified on the same day that clamping 101,418 -> 16,384 at cascade 0 left occupancy
+    ///         BIT-IDENTICAL at both repro poses (14.216% / 5.403%) while lifting the used depth
+    ///         range from [0, 0.049] to [0, 0.341]: it costs no caster and buys ~7x the precision.
+    ///     </para>
+    ///     <para>
+    ///         Eight radii is chosen against the geometry, not by feel: at cascade 0 it reaches 16,384
+    ///         units up-sun, which at the repro's 33° sun elevation clears a caster ~9,000 units above
+    ///         the anchor — an order of magnitude more than any structure that can shadow the near
+    ///         field, and still 6.4x the ±1.25-radius box that caused the defect. A caster beyond it is
+    ///         either not real geometry or is better served by a coarser cascade.
+    ///     </para>
+    /// </summary>
+    public const float CascadeCasterReachRadiiCeiling = 8f;
+
+    /// <summary>
+    ///     How far UP-SUN of the cascade anchor the shadow box must reach so that every caster whose
+    ///     shadow can land inside the footprint is actually rasterized into the map.
+    ///     <para>
+    ///         This exists because the two sides of the shadow pipeline ask DIFFERENT questions and
+    ///         must not answer them with different numbers. The pixel shader
+    ///         (<c>shadow_sampling.hlsli</c>'s <c>ShadowFactor</c>) picks the smallest cascade whose
+    ///         footprint contains the RECEIVING PIXEL and returns immediately — there is no fallback
+    ///         to a coarser cascade when the finer one holds no occluder. The CPU
+    ///         (<see cref="CascadeContains" />) decides which cascades a CASTER is drawn into. So any
+    ///         caster the CPU withholds from cascade 0, while a receiving pixel still selects
+    ///         cascade 0, produces a hole that reads as "the shadow is missing" — and because the
+    ///         anchor is texel-snapped, a metre of camera movement flips casters across the boundary
+    ///         and the shadow blinks. A symmetric +/-1.25*radius box makes that inevitable: light
+    ///         travels one way, so the up-sun side needs strictly more room than the down-sun side.
+    ///     </para>
+    ///     <para>
+    ///         The bound is exact rather than a fudge factor. A caster's shadow lands at the caster's
+    ///         own LATERAL coordinate (that coordinate is invariant along the light axis), so the
+    ///         lateral test in <see cref="CascadeContains" /> already decides "can this reach the
+    ///         footprint". All this has to add is the axial room such a caster can occupy: the worst
+    ///         case is a caster at the top of the scene's Z span sitting at the lateral limit, whose
+    ///         axial offset is <c>zSpan*|dir.Z| + lateralLimit*sqrt(1 - dir.Z^2)</c>. It degenerates
+    ///         correctly at both ends — the scene's height at a zenith sun, the lateral limit at a
+    ///         horizon sun — and is never smaller than the box's own depth.
+    ///     </para>
+    /// </summary>
+    /// <param name="sunDirection">Unit direction TOWARD the light.</param>
+    /// <param name="radius">Cascade radius.</param>
+    /// <param name="sceneZSpan">World Z extent of the rendered scene (max - min), 0 when unknown.</param>
+    public static float CascadeCasterReach(Vector3 sunDirection, float radius, float sceneZSpan)
+    {
+        var dir = Vector3.Normalize(sunDirection);
+        var vertical = MathF.Abs(dir.Z);
+        var horizontal = MathF.Sqrt(MathF.Max(1f - (vertical * vertical), 0f));
+        var lateralLimit = radius * CascadeLateralReachFactor;
+        var reach = (MathF.Max(sceneZSpan, 0f) * vertical) + (lateralLimit * horizontal);
+        // Clamped ABOVE by the radii ceiling (untrustworthy Z span — see the constant) and BELOW by the
+        // box's own depth, so the default/unknown case is bit-identical to the pre-fix symmetric box.
+        reach = MathF.Min(reach, radius * CascadeCasterReachRadiiCeiling);
+        return MathF.Max(reach, radius * CascadeDepthExtentFactor);
+    }
+
+    /// <summary>
+    ///     Whether a world-space sphere can CAST INTO the cascade of the given radius centred on the
     ///     shadow anchor. Conservative: a true answer may include spheres the ortho box would clip, but
-    ///     a false answer guarantees the sphere cannot cast into that cascade.
+    ///     a false answer guarantees the sphere cannot cast into that cascade — provided
+    ///     <paramref name="casterReach" /> matches the box the frustum was actually built with.
+    ///     (Before 2026-08-13 this tested "does the sphere sit INSIDE the box", which is a different
+    ///     and strictly narrower question, and it dropped up-sun casters whose shadows landed
+    ///     squarely in the footprint.)
     ///     <para>
     ///         Because every cascade shares an anchor and a light direction and differs only in radius,
     ///         the volumes are strictly NESTED — which is what lets a caster be classified once into
@@ -136,12 +232,22 @@ internal static class SunShadowMath
     /// <param name="radius">Cascade radius.</param>
     /// <param name="sphereRadius">Radius of the caster's bounding sphere.</param>
     /// <param name="slack">Extra reach for camera/anchor drift between rebuild and use.</param>
+    /// <param name="casterReach">
+    ///     Up-sun extent of the box, from <see cref="CascadeCasterReach" />. MUST be the same value
+    ///     passed to <see cref="BuildLightFrustum" /> for this cascade: this test decides what is
+    ///     SUBMITTED and that one decides what is RASTERIZED, so a disagreement is invisible on the
+    ///     CPU and shows up only as missing shadows. Defaulting to 0 collapses to the symmetric box.
+    /// </param>
     public static bool CascadeContains(
-        Vector3 delta, Vector3 sunDirection, float radius, float sphereRadius, float slack)
+        Vector3 delta, Vector3 sunDirection, float radius, float sphereRadius, float slack,
+        float casterReach = 0f)
     {
         var reach = sphereRadius + slack;
         var axial = Vector3.Dot(delta, sunDirection);
-        if (MathF.Abs(axial) > (radius * CascadeDepthExtentFactor) + reach)
+        var backReach = radius * CascadeDepthExtentFactor;
+        // ASYMMETRIC, and deliberately so — see CascadeCasterReach. Positive axial is UP-SUN, where
+        // casters live; negative is down-sun, where only receivers do.
+        if (axial > MathF.Max(casterReach, backReach) + reach || axial < -backReach - reach)
         {
             return false;
         }
@@ -151,6 +257,18 @@ internal static class SunShadowMath
         var lateralLimit = (radius * CascadeLateralReachFactor) + reach;
         return lateralSquared <= lateralLimit * lateralLimit;
     }
+
+    /// <summary>
+    ///     A reference visibility/population change can invalidate the survivor-derived scene Z span
+    ///     during the very render whose shadow capture was armed from the previous cull. That frame's
+    ///     per-cascade instance prefixes and light frustums must not be published with different spans;
+    ///     defer once and let the next frame arm from the post-cull value.
+    /// </summary>
+    public static bool ShouldDeferForReferenceExtentChange(
+        bool referenceIdentityChanged,
+        float armedSceneZSpan,
+        float postCullSceneZSpan) =>
+        referenceIdentityChanged && !armedSceneZSpan.Equals(postCullSceneZSpan);
 
     /// <summary>Builds the cascade re-render pose key: quantized sun direction, snapped coverage
     /// center, radius, and content version — the map re-renders only when the key changes.</summary>

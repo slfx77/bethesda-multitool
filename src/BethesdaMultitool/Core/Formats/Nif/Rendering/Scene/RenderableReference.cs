@@ -328,8 +328,9 @@ internal readonly record struct RenderableReference(
         }
 
         // OBND is in mesh-local space. The conservative sphere = (centerLocal · world) for the
-        // center, and (maxExtent · scale) for the radius — over-approximates but is cheap and
-        // never under-culls.
+        // center, and (maxExtent · scale) for the radius — over-approximates but is cheap and never
+        // under-culls the AUTHORED OBND. It cannot guarantee containment of actual mesh geometry when
+        // shipped OBND data is displaced or undersized; the resident-mesh cull path corrects that later.
         var localCenter = new Vector3(
             (bounds.X1 + bounds.X2) * 0.5f,
             (bounds.Y1 + bounds.Y2) * 0.5f,

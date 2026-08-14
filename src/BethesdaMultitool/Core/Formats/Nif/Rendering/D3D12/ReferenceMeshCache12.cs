@@ -6,6 +6,7 @@ using System.Threading.Channels;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
@@ -91,11 +92,15 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // is serialized by _decodedCacheLock (decode pool threads store, render thread reads).
     // Eviction is a plain drop (no onEvicted) — decoded payloads are GC-reclaimed.
     private readonly LruCache<string, DecodedCacheValue> _decodedLru;
-    // Walk-mode collision geometry (positions + indices only), keyed by normalized model path. Built
-    // on the render thread inside UploadDecodedMesh and read on the render thread by the control's
-    // ground-snap, so it shares the LruCache single-threaded contract with _meshLru. Positions-only is
-    // a fraction of the GPU footprint, so a large byte budget keeps far more meshes warm than residency.
+    // Placed-reference collision geometry (positions + indices only), keyed by normalized model path.
+    // Built inside UploadDecodedMesh and read by walk, selection, and overlay queries on the render
+    // thread, so it shares the LruCache single-threaded contract with _meshLru. Positions-only is a
+    // fraction of the GPU footprint, so a large byte budget keeps far more meshes warm than residency.
     private readonly LruCache<string, CollisionCacheEntry> _collisionLru;
+    // Geometry stays exclusively in _collisionLru. This registry retains only a bounded
+    // plain-path -> resident variant owner and its recovery state, so an independently evicted
+    // collision entry can be rebuilt from the exact decoded variant without another GPU upload.
+    private readonly CollisionRecoveryRegistry _collisionRecovery = new();
     private readonly ReferenceDecodedMeshDiskCache12? _persistentDecodedCache;
     // Disk-persist handoff: decode workers enqueue (path, mesh) and free their slot immediately;
     // payload serialization + the atomic file write run on the single background writer below
@@ -172,23 +177,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 "ReferenceMeshLru",
                 ResourceCategory.GpuResident,
                 maxEntries: capacity,
-                onEvicted: (key, node) =>
-                {
-                    node.Mesh?.Dispose();
-                    // Any eviction invalidates frozen (reused) reference batches: their instance
-                    // lists key on CachedSubmesh12 objects whose GPU buffers just entered the
-                    // deletion queue. The renderer compares this against its build snapshot.
-                    EvictionGeneration++;
-                    if (GeometryArenaDiagnostics.AuditEnabled && node.Mesh is not null)
-                    {
-                        RendererProfilerTrace.Event("geometry-arena", new Dictionary<string, object?>
-                        {
-                            ["op"] = "evict",
-                            ["tag"] = key,
-                            ["evictionGeneration"] = EvictionGeneration,
-                        });
-                    }
-                },
+                onEvicted: OnMeshNodeEvicted,
                 comparer: StringComparer.OrdinalIgnoreCase)
             .RegisterWith(ResourceRegistry.Instance, "reference-meshes");
         _decodedLru = new LruCache<string, DecodedCacheValue>(
@@ -207,12 +196,30 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             .RegisterWith(ResourceRegistry.Instance, "reference-collision");
     }
 
+    private void OnMeshNodeEvicted(string cacheKey, Node node)
+    {
+        _collisionRecovery.RemoveOwner(node.DecodePath, cacheKey);
+        node.Mesh?.Dispose();
+        // Any eviction invalidates frozen (reused) reference batches: their instance lists key on
+        // CachedSubmesh12 objects whose GPU buffers just entered the deletion queue. The renderer
+        // compares this against its build snapshot.
+        EvictionGeneration++;
+        if (GeometryArenaDiagnostics.AuditEnabled && node.Mesh is not null)
+        {
+            RendererProfilerTrace.Event("geometry-arena", new Dictionary<string, object?>
+            {
+                ["op"] = "evict",
+                ["tag"] = cacheKey,
+                ["evictionGeneration"] = EvictionGeneration,
+            });
+        }
+    }
+
     /// <summary>
-    ///     Walk-mode ground-snap accessor: returns the cached mesh-local collision geometry for
-    ///     <paramref name="modelPath" /> when it has been decoded+uploaded at least once and not since
-    ///     evicted. Render-thread only (shares the <c>_collisionLru</c> single-threaded contract). A
-    ///     cold miss is expected for never-streamed or recently-evicted meshes; the caller falls back
-    ///     to the OBND box for that frame.
+    ///     Returns the category-resolved mesh-local collision geometry for <paramref name="modelPath" />.
+    ///     A collision-LRU miss also consults lightweight resident-node recovery state: authoritative
+    ///     no-collision remains resolved, while terminal decode failure retains OBND fallback without
+    ///     requesting another warmup. Render-thread only (same contract as <c>_collisionLru</c>).
     /// </summary>
     public CollisionMeshResolution ResolveCollisionMesh(
         string modelPath,
@@ -223,20 +230,18 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         var normalizedPath = ReferenceMeshDecoder12.NormalizeModelPath(modelPath);
         if (_collisionLru.TryGet(normalizedPath, out var entry))
         {
-            var result = WalkCollisionFallbackPolicy.IsEffectModel(normalizedPath, category)
-                ? entry.Effects
-                : entry.Ordinary;
+            var result = entry.Resolve(normalizedPath, category);
             return CollisionMeshResolution.From(result);
         }
 
-        return CollisionMeshResolution.Unresolved;
+        return _collisionRecovery.ResolveCacheMiss(normalizedPath);
     }
 
     /// <summary>
-    ///     Collision-overlay cold path. Promotes an already-queued plain-model decode to the supplied
-    ///     nearest-instance priority <em>before</em> <see cref="GetOrUpload" /> starts queued work, then
-    ///     gives one decoded mesh a chance to upload within the frame's existing byte/time budgets.
-    ///     The caller bounds how many unique paths it offers per frame.
+    ///     Collision cold/recovery path. A never-seen plain model follows <see cref="GetOrUpload" />;
+    ///     an independently evicted collision entry instead republishes from its exact resident
+    ///     variant's decoded LRU/disk/source payload without uploading its GPU mesh again. The caller
+    ///     bounds how many unique paths it offers per frame.
     /// </summary>
     public CollisionMeshResolution GetOrWarmCollisionMesh(
         string modelPath,
@@ -244,9 +249,28 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         float priority)
     {
         var resolution = ResolveCollisionMesh(modelPath, category);
-        if (resolution.IsResolved || _disposed) return resolution;
+        if (resolution.IsResolved || !resolution.ShouldOfferWarmup || _disposed) return resolution;
 
         var normalizedPath = ReferenceMeshDecoder12.NormalizeModelPath(modelPath);
+        if (TryGetCollisionOwnerNode(normalizedPath, out var ownerKey, out var ownerNode))
+        {
+            // Drain before resident/render-null early returns so a completed Task cannot pin its
+            // DecodedNifMesh12 outside the byte-bounded decoded LRU. A collision-recovery task also
+            // republishes here without touching the already-resident GPU mesh.
+            DrainCompletedDecodeTask(ownerKey, ownerNode);
+            resolution = ResolveCollisionMesh(normalizedPath, category);
+            if (resolution.IsResolved || !resolution.ShouldOfferWarmup) return resolution;
+
+            if (TryRepublishCollisionFromDecodedCache(ownerKey, ownerNode))
+            {
+                return ResolveCollisionMesh(normalizedPath, category);
+            }
+
+            QueueCollisionRecovery(ownerKey, ownerNode, priority);
+            StartQueuedDecodes();
+            return ResolveCollisionMesh(normalizedPath, category);
+        }
+
         if (_meshLru.TryPeek(normalizedPath, out var node) && node.DecodeQueued)
         {
             // GetOrUpload normally starts the queue before re-offering an existing node's latest
@@ -258,6 +282,80 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         var uploadBudget = 1;
         _ = GetOrUpload(normalizedPath, ref uploadBudget, priority);
         return ResolveCollisionMesh(normalizedPath, category);
+    }
+
+    private bool TryGetCollisionOwnerNode(
+        string normalizedPath,
+        out string ownerKey,
+        out Node ownerNode)
+    {
+        if (_collisionRecovery.TryGetOwner(normalizedPath, out ownerKey))
+        {
+            if (_meshLru.TryPeek(ownerKey, out ownerNode))
+            {
+                return true;
+            }
+
+            // Defensive stale-owner cleanup. The ordinary mesh-eviction callback removes this
+            // synchronously, but keeping lookup fail-closed protects future removal paths.
+            _collisionRecovery.RemoveOwner(normalizedPath, ownerKey);
+        }
+
+        // Pre-registry/default nodes can still exist in a warm cache. Adopt only the exact plain-key
+        // node; never guess which alternate-material variant should own collision.
+        ownerKey = normalizedPath;
+        if (_meshLru.TryPeek(ownerKey, out ownerNode))
+        {
+            _collisionRecovery.TrackUnknownOwner(normalizedPath, ownerKey);
+            return true;
+        }
+
+        ownerNode = null!;
+        return false;
+    }
+
+    private bool TryRepublishCollisionFromDecodedCache(string ownerKey, Node ownerNode)
+    {
+        if (!TryGetDecodedCache(ownerKey, out var decoded))
+        {
+            ownerNode.DecodedCacheAvailable = false;
+            return false;
+        }
+
+        ownerNode.DecodedCacheAvailable = true;
+        ownerNode.DecodedCacheMissRecorded = false;
+        ownerNode.CollisionRecoveryRequested = false;
+        if (decoded.IsNegative || decoded.Mesh is null)
+        {
+            MarkCollisionTerminalUnavailable(ownerKey, ownerNode);
+            return true;
+        }
+
+        StoreCollisionMesh(ownerKey, ownerNode, decoded.Mesh);
+        return true;
+    }
+
+    private void QueueCollisionRecovery(string ownerKey, Node ownerNode, float priority)
+    {
+        ownerNode.CollisionRecoveryRequested = true;
+        if (ownerNode.DecodeTask is not null)
+        {
+            return;
+        }
+
+        if (ownerNode.DecodeQueued)
+        {
+            _decodeQueue.Enqueue(ownerKey, priority);
+            return;
+        }
+
+        if (!_decodeQueue.Enqueue(ownerKey, priority))
+        {
+            return;
+        }
+
+        ownerNode.DecodeQueued = true;
+        FrameQueuedDecodes++;
     }
 
     public int Capacity { get; }
@@ -449,9 +547,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         var decodePath = ReferenceMeshDecoder12.NormalizeModelPath(modelPath);
         // A placement whose base carries MODS alternate textures gets its own cache entry per texture
         // variant (so a shared NIF — e.g. every billboard — renders its correct per-base textures).
-        // Archive lookups, decode, and collision key on the plain decodePath via Node.DecodePath;
-        // the in-memory LRUs and the on-disk cache both discriminate variants (the disk key folds
-        // Node.VariantKey), so a re-skinned mesh warm-loads like any other.
+        // Archive lookup uses the plain decodePath via Node.DecodePath. GPU/decoded/disk cache keys
+        // discriminate variants (the disk key folds Node.VariantKey). Collision is still plain-path
+        // keyed; that is only safe for authored Havok, because material swaps can change whether a
+        // visual submesh is admitted. The active collision backlog tracks the required variant fix.
         var cacheKey = alternateTextures is null
             ? decodePath
             : decodePath + "#" + alternateTextures.VariantKey;
@@ -573,6 +672,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
     private CachedNifMesh12? ResolveExisting(string modelPath, Node node, ref int uploadBudget)
     {
+        // Consume completed work before either resident or render-null early return. Otherwise a
+        // successful Task retains its DecodedNifMesh12 indefinitely even after _decodedLru evicts the
+        // bounded copy, and collision-only recovery accidentally depends on that unbounded retention.
+        DrainCompletedDecodeTask(modelPath, node);
         if (node.Mesh is not null)
         {
             return node.Mesh;
@@ -586,41 +689,66 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             return cachedMesh;
         }
 
+        return null;
+    }
+
+    private void DrainCompletedDecodeTask(string cacheKey, Node node)
+    {
         if (node.DecodeTask is not { IsCompleted: true } task)
         {
-            return null;
+            return;
         }
-        if (task.IsFaulted)
+
+        node.DecodeTask = null;
+        node.DecodeQueued = false;
+        if (task.IsFaulted || task.IsCanceled)
         {
             Log.Warn(
                 "ReferenceMeshCache12: decode failed for '{0}': {1}",
-                modelPath,
-                task.Exception?.GetBaseException().Message ?? "(unknown)");
-            node.ResolvedNull = true;
-            node.DecodeTask = null;
-            StoreDecodedCache(modelPath, null);
-            return null;
+                cacheKey,
+                task.Exception?.GetBaseException().Message ??
+                (task.IsCanceled ? "(cancelled)" : "(unknown)"));
+            if (node.Mesh is null)
+            {
+                node.ResolvedNull = true;
+            }
+            node.CollisionRecoveryRequested = false;
+            StoreDecodedCache(cacheKey, null);
+            MarkCollisionTerminalUnavailable(cacheKey, node);
+            return;
         }
 
         var decoded = task.Result;
-        node.DecodeTask = null;
         if (decoded is null)
         {
-            node.ResolvedNull = true;
-            StoreDecodedCache(modelPath, null);
-            return null;
+            if (node.Mesh is null)
+            {
+                node.ResolvedNull = true;
+            }
+            node.CollisionRecoveryRequested = false;
+            StoreDecodedCache(cacheKey, null);
+            MarkCollisionTerminalUnavailable(cacheKey, node);
+            return;
         }
 
-        StoreDecodedCache(modelPath, decoded);
+        StoreDecodedCache(cacheKey, decoded);
         // The decode above also persisted to disk, so if the decoded-LRU entry is later evicted the
         // node may probe the on-disk cache once more (and hit) instead of re-decoding.
+        node.DecodedCacheAvailable = true;
         node.DecodedCacheMissRecorded = false;
-        if (TryResolveFromDecodedCache(modelPath, node, ref uploadBudget, out cachedMesh))
+        if (node.CollisionRecoveryRequested)
         {
-            return cachedMesh;
+            node.CollisionRecoveryRequested = false;
+            StoreCollisionMesh(cacheKey, node, decoded);
         }
+    }
 
-        return null;
+    private void MarkCollisionTerminalUnavailable(string cacheKey, Node node)
+    {
+        _collisionRecovery.MarkTerminalUnavailable(
+            node.DecodePath,
+            cacheKey,
+            _collisionLru.ContainsKey(node.DecodePath));
     }
 
     private bool TryResolveFromDecodedCache(
@@ -657,6 +785,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         {
             FrameCpuDecodedNegativeHits++;
             node.ResolvedNull = true;
+            node.CollisionRecoveryRequested = false;
+            MarkCollisionTerminalUnavailable(modelPath, node);
             return true;
         }
 
@@ -691,17 +821,21 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         uploadBudget--;
         FrameGpuUploads++;
         _frameUploadByteBudget.Record(decoded.ByteSize);
-        // Upload + collision keying use the plain archive path (collision geometry is texture-
-        // independent, so all variants of a NIF share one collision entry keyed on DecodePath).
+        // Upload uses the plain archive path and currently overwrites one plain-path collision entry.
+        // Authored Havok is variant-independent; synthesized visual soup is not necessarily so because
+        // decoded material swaps can change AlphaBlend/IsEmissive/water admission. Until collision
+        // identity carries the variant, the last uploaded variant wins (tracked in the active backlog).
         var uploadStarted = Stopwatch.GetTimestamp();
-        mesh = UploadDecodedMesh(node.DecodePath, decoded.Mesh);
+        mesh = UploadDecodedMesh(modelPath, node, decoded.Mesh);
         var uploadMs = Stopwatch.GetElapsedTime(uploadStarted).TotalMilliseconds;
         _frameUploadMsConsumed += uploadMs;
         RecordUploadThroughput(decoded.ByteSize, uploadMs);
         if (mesh is null)
         {
+            // UploadDecodedMesh installs collision before returning null for a render-empty payload.
+            // Keep that positive decoded payload in the CPU/disk caches; replacing it with a total
+            // negative would discard the provenance after collision-LRU eviction or next launch.
             node.ResolvedNull = true;
-            StoreDecodedCache(modelPath, null);
             return true;
         }
 
@@ -768,9 +902,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             // TryPeek, not TryGet: validating a de-queued decode key must not MRU-bump the node
             // (nobody asked for it this frame) or perturb the registry hit/miss counters.
             if (!_meshLru.TryPeek(modelPath, out var node) ||
-                node.ResolvedNull ||
-                node.Mesh is not null ||
                 node.DecodeTask is not null ||
+                (!node.CollisionRecoveryRequested && (node.ResolvedNull || node.Mesh is not null)) ||
                 TryGetDecodedCache(modelPath, out _))
             {
                 if (node is not null)
@@ -959,8 +1092,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
     }
 
-    private CachedNifMesh12? UploadDecodedMesh(string modelPath, DecodedNifMesh12 decoded)
+    private CachedNifMesh12? UploadDecodedMesh(string cacheKey, Node node, DecodedNifMesh12 decoded)
     {
+        var modelPath = node.DecodePath;
         var started = RendererProfilerTrace.IsEnabled ? Stopwatch.GetTimestamp() : 0;
         var success = false;
         var totalVertexCount = 0;
@@ -977,7 +1111,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         // GPU. This must precede the empty-render-payload return: collision-only Havok NIFs still need
         // their authored soup, while a decoded model with neither render nor collision geometry needs
         // an authoritative resolved-null entry so cold warmup does not retry it forever.
-        StoreCollisionMesh(modelPath, decoded);
+        StoreCollisionMesh(cacheKey, node, decoded);
         if (totalVertexCount == 0 || totalIndexCount == 0) return null;
 
         var vertices = new GpuMeshUploader.GpuVertex[totalVertexCount];
@@ -1065,20 +1199,19 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
         var submeshes = new List<CachedSubmesh12>(decoded.Submeshes.Count);
         var softParticleSources = new HashSet<NifSoftParticleSource>();
-        // Authored positions + triangle indices of WaterShaderProperty submeshes (caves/pools/
-        // reflecting pools), captured so the dedicated water renderer can transform and draw their
-        // real geometry. FNV WATER000 consumes source positions directly; reducing them to an AABB
-        // changed rotated, sloped, and circular water surfaces.
+        // Authored positions + triangle indices of submeshes classified as placed water (normally
+        // WaterShaderProperty caves/pools; also the bounded TES3 Vivec legacy signature), captured so
+        // the dedicated renderer can transform and draw their real geometry. FNV WATER000 consumes
+        // source positions directly; reducing them to an AABB changed rotated/sloped/circular surfaces.
         List<NifWaterGeometry>? waterPlanesLocal = null;
         var vertexStride = (uint)System.Runtime.InteropServices.Marshal.SizeOf<GpuMeshUploader.GpuVertex>();
         for (var i = 0; i < decoded.Submeshes.Count; i++)
         {
             var sub = decoded.Submeshes[i];
-            // Placed water-shader geometry (WaterShaderProperty NIFs — caves/pools/reflecting pools)
-            // is NOT drawn as a reference slab. Divert it: retain the authored triangle geometry so
-            // WaterRenderer12 can render it with the real Fresnel/ripple/depth-fade water shader, and
-            // skip building a drawable submesh — that omission gates off the old flat translucent-tile
-            // fallback (the submesh never becomes a reference draw → no double-draw).
+            // Placed water geometry is NOT drawn as a reference slab. Divert it: retain the authored
+            // triangles for WaterRenderer12 and skip the drawable submesh, preventing a double draw.
+            // For the TES3 legacy signature this deliberately substitutes the shared Morrowind water
+            // material; source texture/UV/alpha state is not represented by NifWaterGeometry today.
             if (string.Equals(sub.DiffuseTexturePath, RenderableSubmesh.WaterSurfaceTexturePath, StringComparison.Ordinal))
             {
                 AppendWaterGeometry(sub.Vertices, sub.Indices, ref waterPlanesLocal);
@@ -1393,38 +1526,37 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     }
 
     /// <summary>
-    ///     Builds walk-mode collision geometry from the solid submeshes and stores it under the
-    ///     normalized model path. Render-thread only (called from <see cref="UploadDecodedMesh" />).
+    ///     Builds the source-separated collision entry and stores it under the normalized model path.
+    ///     Render-thread only; called both before a normal GPU upload and by collision-only recovery.
     /// </summary>
-    private void StoreCollisionMesh(string modelPath, DecodedNifMesh12 decoded)
+    private void StoreCollisionMesh(string cacheKey, Node node, DecodedNifMesh12 decoded)
     {
-        var normalizedPath = ReferenceMeshDecoder12.NormalizeModelPath(modelPath);
-        var effects = BuildCollisionMesh(normalizedPath, PlacedObjectCategory.Effects, decoded);
-        var ordinary = effects.Source == CollisionMeshSource.AuthoredHavok
-            ? effects
-            : BuildCollisionMesh(normalizedPath, PlacedObjectCategory.Unknown, decoded);
+        var normalizedPath = node.DecodePath;
+        var entry = BuildCollisionCacheEntry(normalizedPath, decoded);
 
         // Resolved-null results live in this same byte-bounded LRU. They are authoritative negative
         // cache entries, not an unbounded side set, and prevent permanent-null models from stealing
         // the walk/overlay cold-warmup budget every frame.
-        _collisionLru.Set(normalizedPath, new CollisionCacheEntry(ordinary, effects));
+        _collisionLru.Set(normalizedPath, entry);
+        // Preserve the exact variant that produced the plain-path entry. If collision geometry is
+        // evicted while this mesh node remains resident, recovery reuses this key's bounded decoded
+        // LRU/disk/source payload and republishes without a second GPU upload.
+        _collisionRecovery.Publish(normalizedPath, cacheKey, entry);
     }
 
     /// <summary>
-    ///     Merges the decoded mesh's <b>solid</b> submeshes into one mesh-local triangle soup. Skips
-    ///     alpha-blended (glass/effect/force-field), emissive (glow cards), and water-shader submeshes
-    ///     so the camera snaps onto real surfaces only — never a translucent FX plane. Mesh-local space
-    ///     matches <c>RenderableReference.WorldMatrix</c> (both come from the <c>treatRootsAsIdentity</c>
-    ///     decode). Returns <c>null</c> when nothing solid remains.
+    ///     Builds authored Havok and visual-fallback sources without guessing a placement category.
+    ///     The fallback merges solid submeshes while skipping alpha-blended (glass/effect/force-field),
+    ///     emissive (glow cards), and geometry classified onto the placed-water route. Mesh-local space matches
+    ///     <c>RenderableReference.WorldMatrix</c> (both use the <c>treatRootsAsIdentity</c> decode).
     /// </summary>
-    private static CollisionBuildResult BuildCollisionMesh(
-        string modelPath,
-        PlacedObjectCategory category,
+    private static CollisionCacheEntry BuildCollisionCacheEntry(
+        string normalizedModelPath,
         DecodedNifMesh12 decoded)
     {
-        return CollisionMeshBuilder.Build(
-            modelPath,
-            category,
+        return CollisionCacheEntry.Create(
+            normalizedModelPath,
+            decoded.CollisionProvenance,
             decoded.CollisionPositions,
             decoded.CollisionTriangles,
             BuildVisualFallback);
@@ -1543,17 +1675,6 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         return Math.Clamp(value, min, max);
     }
 
-    private readonly record struct CollisionCacheEntry(
-        CollisionBuildResult Ordinary,
-        CollisionBuildResult Effects)
-    {
-        // Even resolved-null entries carry dictionary/list/key overhead. Charging a non-zero floor
-        // keeps the negative cache genuinely bounded by CollisionMeshCacheByteBudget.
-        public long ByteSize => Math.Max(
-            128L,
-            (Ordinary.Mesh ?? Effects.Mesh)?.ByteSize ?? 0L);
-    }
-
     private sealed class Node(
         CachedNifMesh12? Mesh,
         Task<DecodedNifMesh12?>? DecodeTask,
@@ -1562,12 +1683,18 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         public CachedNifMesh12? Mesh { get; set; } = Mesh;
         public Task<DecodedNifMesh12?>? DecodeTask { get; set; } = DecodeTask;
         public bool ResolvedNull { get; set; } = ResolvedNull;
+        /// <summary>
+        ///     A collision-LRU miss requested an exact-variant disk/source refresh. This may coexist
+        ///     with a resident GPU mesh or render-null node; completion republishes collision only.
+        /// </summary>
+        public bool CollisionRecoveryRequested { get; set; }
         public bool DecodeQueued { get; set; }
         public bool DecodedCacheAvailable { get; set; }
         public bool DecodedCacheMissRecorded { get; set; }
 
-        /// <summary>Plain normalized archive path (no '#variant' suffix) — used for decode, on-disk
-        /// cache metadata, and collision keying, all of which are texture-variant-independent.</summary>
+        /// <summary>Plain normalized archive path (no '#variant' suffix), used for archive decode and
+        /// on-disk metadata. Collision also keys on this today, but visual-fallback material admission
+        /// can be variant-dependent; see the active collision backlog.</summary>
         public string DecodePath { get; init; } = "";
 
         /// <summary>MODS alternate-texture overrides (shape name → texture paths) to bake into the

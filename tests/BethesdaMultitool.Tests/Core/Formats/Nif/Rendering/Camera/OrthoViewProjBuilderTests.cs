@@ -270,6 +270,67 @@ public sealed class OrthoViewProjBuilderTests
     }
 
     [Fact]
+    public void ReliefParallaxReach_TopDown_IsExactlyZero()
+    {
+        Assert.Equal(0f, OrthoViewProjBuilder.ReliefParallaxReach(30_000f, 90f));
+    }
+
+    [Theory]
+    [InlineData(30f, 1.7320508f)]
+    [InlineData(45f, 1f)]
+    [InlineData(60f, 0.5773503f)]
+    public void ReliefParallaxReach_TiltedView_FollowsCotangent(float elevationDeg, float expectedMultiplier)
+    {
+        const float oneSidedRelief = 1000f;
+
+        var reach = OrthoViewProjBuilder.ReliefParallaxReach(oneSidedRelief, elevationDeg);
+
+        Assert.Equal(oneSidedRelief * expectedMultiplier, reach, 2);
+    }
+
+    [Fact]
+    public void ReliefParallaxReach_InvalidInputs_DoNotInventAReach()
+    {
+        Assert.Equal(float.MaxValue, OrthoViewProjBuilder.ReliefParallaxReach(1000f, 0f));
+        Assert.Equal(float.MaxValue, OrthoViewProjBuilder.ReliefParallaxReach(1000f, float.NaN));
+        Assert.Equal(0f, OrthoViewProjBuilder.ReliefParallaxReach(float.NaN, 30f));
+        Assert.Equal(float.MaxValue, OrthoViewProjBuilder.ReliefParallaxReach(float.PositiveInfinity, 30f));
+        Assert.Equal(0f, OrthoViewProjBuilder.ReliefParallaxReach(-1000f, 30f));
+    }
+
+    [Fact]
+    public void BuildTileCoverCylinder_TiltedOuterRow_ReSeatsCenterAndProjectsHeight()
+    {
+        const float az = 0f, el = 30f, cy = 6000f, halfW = 1000f, halfH = 1200f, relief = 8000f;
+        var cylinder = OrthoViewProjBuilder.BuildTileCoverCylinder(
+            Vector3.Zero, az, el, 0f, cy, halfW, halfH, relief, CellSize);
+        var sinEl = MathF.Sin(el * (MathF.PI / 180f));
+        var cotEl = MathF.Cos(el * (MathF.PI / 180f)) / sinEl;
+        var expectedDepth = halfH / sinEl + relief * cotEl;
+
+        // At azimuth 0 the camera is north (+Y), and positive screen Y re-seats south of the focus.
+        Assert.Equal(0f, cylinder.Position.X, 2);
+        Assert.Equal(-cy / sinEl, cylinder.Position.Y, 1);
+        Assert.Equal(MathF.Sqrt(halfW * halfW + expectedDepth * expectedDepth) + 2f * CellSize,
+            cylinder.Radius, 1);
+    }
+
+    [Fact]
+    public void BuildTileCoverCylinder_TopDown_PreservesViewPlaneGeometry()
+    {
+        const float cx = 3000f, cy = -5000f, halfW = 1000f, halfH = 2000f;
+        var cylinder = OrthoViewProjBuilder.BuildTileCoverCylinder(
+            Vector3.Zero, 0f, 90f, cx, cy, halfW, halfH, 1_000_000f, CellSize);
+        var (right, up) = OrthoViewProjBuilder.CameraBasis(0f, 90f);
+        var expectedCenter = right * cx + up * cy;
+
+        Assert.Equal(expectedCenter.X, cylinder.Position.X, 2);
+        Assert.Equal(expectedCenter.Y, cylinder.Position.Y, 2);
+        Assert.Equal(MathF.Sqrt(halfW * halfW + halfH * halfH) + 2f * CellSize,
+            cylinder.Radius, 1);
+    }
+
+    [Fact]
     public void CoverRadius_TiltedRelief_CoversOnScreenPeak()
     {
         // THE regression: a peak Δz above the focus plane stays on screen while its

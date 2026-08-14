@@ -22,11 +22,78 @@ internal sealed class OpaqueBatchRegistry12
     private readonly Dictionary<OpaqueBatchKey, OpaqueBatchState> _batches = new();
     private readonly List<OpaqueBatchState> _activeBatches = new(256);
     private readonly List<OpaqueBatchKey> _staleKeys = new(64);
+    private readonly List<OpaqueBatchState> _partitionScratch = new(32);
     private int _frameId;
 
     /// <summary>The batches touched in the current frame, in first-touch order — what the
     /// renderer iterates to record the instanced opaque draws.</summary>
     public IReadOnlyList<OpaqueBatchState> ActiveBatches => _activeBatches;
+
+    /// <summary>
+    ///     Stable-partitions the active set so grass batches are issued LAST within the instanced
+    ///     pass, for two independent reasons.
+    ///     <para>
+    ///         CORRECTNESS: TES4 grass batches carry an alpha-BLENDED, depth-WRITING pipeline. A blade
+    ///         drawn before an opaque reference standing behind it would blend its soft edge texels
+    ///         against the terrain, write depth, and then depth-reject that reference — leaving a
+    ///         one-texel fringe of terrain colour where the object should show through. Draining grass
+    ///         after every opaque batch removes the whole class, and restores the relative order grass
+    ///         had when it was a per-draw depth-writing blend.
+    ///     </para>
+    ///     <para>
+    ///         PERFORMANCE: it also lets every grass pixel be early-Z rejected against the full opaque
+    ///         depth buffer, which is the cheap half of moving grass onto this path at all.
+    ///     </para>
+    ///     Grass identity is <see cref="OpaqueBatchState.UsesGrassDistanceEnvelope" /> — already part
+    ///     of the batch key, and set only by the per-game grass profiles. FO3/FNV cutout grass is
+    ///     swept along, which is harmless (an opaque cutout is order-independent) and gains the same
+    ///     early-Z benefit. Called once per BUILD, not per frame; reuse frames inherit the order.
+    /// </summary>
+    public void OrderGrassBatchesLast()
+    {
+        var count = _activeBatches.Count;
+        if (count < 2) return;
+
+        var firstGrass = -1;
+        for (var i = 0; i < count; i++)
+        {
+            if (_activeBatches[i].UsesGrassDistanceEnvelope)
+            {
+                firstGrass = i;
+                break;
+            }
+        }
+
+        // Already partitioned (the common case, including "no grass at all") — touch nothing.
+        if (firstGrass < 0) return;
+        var anyOpaqueAfter = false;
+        for (var i = firstGrass + 1; i < count; i++)
+        {
+            if (!_activeBatches[i].UsesGrassDistanceEnvelope)
+            {
+                anyOpaqueAfter = true;
+                break;
+            }
+        }
+
+        if (!anyOpaqueAfter) return;
+
+        // Stable two-pass compaction: opaque batches keep their first-touch order, then grass does.
+        _partitionScratch.Clear();
+        for (var i = firstGrass; i < count; i++)
+        {
+            if (_activeBatches[i].UsesGrassDistanceEnvelope) _partitionScratch.Add(_activeBatches[i]);
+        }
+
+        var write = firstGrass;
+        for (var i = firstGrass; i < count; i++)
+        {
+            if (!_activeBatches[i].UsesGrassDistanceEnvelope) _activeBatches[write++] = _activeBatches[i];
+        }
+
+        foreach (var grass in _partitionScratch) _activeBatches[write++] = grass;
+        _partitionScratch.Clear();
+    }
 
     /// <summary>
     ///     Starts a new frame: advances the frame id, clears each active batch's per-frame

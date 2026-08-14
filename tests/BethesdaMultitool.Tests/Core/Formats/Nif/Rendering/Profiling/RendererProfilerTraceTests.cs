@@ -1,6 +1,8 @@
 using System.Numerics;
 using System.Text.Json;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using BethesdaMultitool.Core.Games;
 using BethesdaRendererProfiler;
@@ -53,6 +55,75 @@ public sealed class RendererProfilerTraceTests
         RendererProfilerTrace.Event("startup");
 
         Assert.False(RendererProfilerTrace.IsEnabled);
+    }
+
+    [Fact]
+    public void TextureCacheSummary_EmitsTaggedResidentAliasSchema()
+    {
+        var aliases = new GpuTextureCache12.LegacyAliasTrace(
+            @"SetDressing\NewsStand\NewStand01_n.dds");
+        aliases.Observe(@"textures\SetDressing\NewsStand\NewStand01_n.dds");
+        var aliasSummary = GpuTextureCache12.BuildAliasTraceSummary(
+        [
+            new GpuTextureCache12.AliasTraceEntry(
+                @"textures\setdressing\newsstand\newstand01_n.dds",
+                IsResident: true,
+                ResidentPayloadBytes: 4_096,
+                AliasTrace: aliases)
+        ]);
+        var fields = GpuTextureCache12.BuildCacheSummaryTraceFields(
+            "reference",
+            new ResourceStats
+            {
+                EstimatedBytes = 4_096,
+                EntryCount = 1,
+                Hits = 7,
+                Misses = 2,
+                Evictions = 1,
+                QueueDepth = 3,
+                InFlight = 4
+            },
+            pendingResolves: 5,
+            pendingUploads: 6,
+            pendingUploadDispatch: 3,
+            aliases: aliasSummary);
+
+        using var writer = new StringWriter();
+        try
+        {
+            RendererProfilerTrace.SetWriterForTesting(writer);
+            RendererProfilerTrace.Event("resource-event", fields);
+
+            using var document = JsonDocument.Parse(writer.ToString());
+            var root = document.RootElement;
+            Assert.Equal("resource-event", root.GetProperty("event").GetString());
+            Assert.Equal("texture", root.GetProperty("resource").GetString());
+            Assert.Equal("cache-summary", root.GetProperty("phase").GetString());
+            Assert.Equal("reference", root.GetProperty("cacheTag").GetString());
+            Assert.Equal(1L, root.GetProperty("cacheEntries").GetInt64());
+            Assert.Equal(1, root.GetProperty("residentEntries").GetInt32());
+            Assert.Equal(0, root.GetProperty("nonResidentEntries").GetInt32());
+            Assert.Equal(4_096L, root.GetProperty("residentPayloadBytes").GetInt64());
+            Assert.Equal(5, root.GetProperty("pendingResolves").GetInt32());
+            Assert.Equal(6, root.GetProperty("pendingUploads").GetInt32());
+            Assert.Equal(3, root.GetProperty("pendingUploadDispatch").GetInt32());
+            Assert.Equal(1, root.GetProperty("residentAliasGroups").GetInt32());
+            Assert.Equal(1, root.GetProperty("residentLegacyExtraKeys").GetInt32());
+            Assert.Equal(
+                4_096L,
+                root.GetProperty("estimatedResidentAliasPayloadBytesAvoided").GetInt64());
+
+            var detail = Assert.Single(
+                root.GetProperty("residentAliasDetails").EnumerateArray().ToArray());
+            Assert.Equal(
+                @"textures\setdressing\newsstand\newstand01_n.dds",
+                detail.GetProperty("canonicalKey").GetString());
+            Assert.Equal(2, detail.GetProperty("legacyKeys").GetArrayLength());
+        }
+        finally
+        {
+            RendererProfilerTrace.ResetForTesting();
+        }
     }
 
     [Fact]

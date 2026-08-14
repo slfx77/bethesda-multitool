@@ -150,9 +150,10 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
             DepthBiasClamp = 0f,
             SlopeScaledDepthBias = 0f,
             // Fixed-function line AA is what aliased incorrectly on HDR monitors: its alpha-coverage
-            // gradient is distorted by DWM's SDR->HDR mapping of the SDR backbuffer. Under MSAA the
-            // edge is antialiased by multisample coverage (resolved before present), which is robust
-            // to the display curve; only fall back to fixed-function line AA when MSAA is unavailable.
+            // gradient is distorted by DWM's SDR->HDR mapping of the SDR backbuffer. The HDR-scene PSO
+            // can use MSAA coverage, but the live post-tonemap LDR PSO is deliberately single-sample,
+            // so its wireframe edge always takes this driver-dependent path. Replacing that needs the
+            // shader-expanded geometry tracked in the active viewer-UI backlog.
             AntialiasedLineEnable = !msaa && fillMode == D12.FillMode.Wireframe,
         };
 

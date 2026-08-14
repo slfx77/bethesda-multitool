@@ -145,9 +145,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     private readonly Dictionary<(int gx, int gy), float> _waterHeightByGrid = new();
     private readonly List<global::BethesdaMultitool.WorldWaterCell> _irregularWaterCells = new();
     // Placed-NIF water geometry (cave/pool/reflecting-pool water embedded in REFR meshes). Owned by
-    // ReferenceRenderer12 (which accumulates them as those references' meshes stream in) and handed
-    // here once per frame via SetNifWaterPlanes; culled into _visibleNifScratch each Render and drawn
-    // with the same shader/appearance as cell water.
+    // ReferenceRenderer12 (which retains ownership while their meshes stream in) and handed here once
+    // per frame via SetNifWaterPlanes. Its stable publication dynamically removes hidden owners; this
+    // renderer culls the remaining surfaces into _visibleNifScratch and draws them like cell water.
     private IReadOnlyList<NifWaterGeometry> _nifWaterPlanes = Array.Empty<NifWaterGeometry>();
     private readonly List<NifWaterGeometry> _visibleNifScratch = new();
     private readonly List<FnvNifWaterDrawBatch> _fnvNifDrawBatches = new();
@@ -932,9 +932,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
 
     /// <summary>
     ///     Supplies world-space authored water geometry detected on placed-reference NIFs (cave/pool water).
-    ///     The list is owned by <see cref="ReferenceRenderer12" /> and grows as those references'
-    ///     meshes stream in; this renderer reads it each frame and draws the visible surfaces with the
-    ///     same shader as cell water. Cheap reference assignment — call once per frame before Render.
+    ///     The stable list is owned by <see cref="ReferenceRenderer12" /> and updates as meshes stream
+    ///     in or their owning references change visibility; this renderer reads it each frame and draws
+    ///     the visible surfaces with the same shader as cell water. Cheap reference assignment — call
+    ///     once per frame before Render.
     /// </summary>
     public void SetNifWaterPlanes(IReadOnlyList<NifWaterGeometry> planes) => _nifWaterPlanes = planes;
 

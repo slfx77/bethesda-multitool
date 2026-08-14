@@ -23,6 +23,26 @@ public sealed class RenderingShaderCompilationTests
         Compile("shadow.frag.hlsl", "main", "ps_5_1", []);
     }
 
+    /// <summary>
+    ///     TES4 grass ships BOTH ABIs from one shader text: GRASS_INSTANCED reads the world matrix
+    ///     from the t8 instance buffer (the batched route the renderer uses by default), and the
+    ///     undefined variant reads it from the head of b1 (the per-draw route kept for billboarded or
+    ///     alpha-controller submeshes). Compiling only one would let the other rot silently, and the
+    ///     failure mode is not a crash — it is a vertex shader reading a world matrix out of
+    ///     AlphaState, i.e. grass in the wrong place.
+    /// </summary>
+    [Fact]
+    public void Tes4GrassCompilesOnBothTheInstancedAndPerDrawAbis()
+    {
+        Compile("reference_grass_oblivion.vert.hlsl", "main", "vs_5_1", []);
+        Compile(
+            "reference_grass_oblivion.vert.hlsl",
+            "main",
+            "vs_5_1",
+            [new ShaderMacro("GRASS_INSTANCED", "1")]);
+        Compile("reference_grass_oblivion.frag.hlsl", "main", "ps_5_1", []);
+    }
+
     [Fact]
     public void FnvActiveAdtBaseSls2000SharedReferenceRoutesCompile()
     {

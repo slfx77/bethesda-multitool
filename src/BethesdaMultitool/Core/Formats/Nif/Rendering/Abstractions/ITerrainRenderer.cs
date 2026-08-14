@@ -4,9 +4,8 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
 
 /// <summary>
-///     v3 Pass 4 Step 2 — interface implemented by both <c>TerrainRenderer</c>
-///     (D3D11) and <c>TerrainRenderer12</c> (D3D12). The textured heightmap layer
-///     toggled by D2; the VCLR-only debug overlay toggled by D4.
+///     Backend-neutral contract for the textured heightmap layer and its VCLR debug mode, currently
+///     implemented by <c>TerrainRenderer12</c>.
 /// </summary>
 internal interface ITerrainRenderer : IWorldRenderer
 {

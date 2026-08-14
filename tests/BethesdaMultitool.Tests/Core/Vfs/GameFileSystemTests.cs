@@ -149,6 +149,47 @@ public sealed class GameFileSystemTests : IDisposable
         Assert.EndsWith("aaa.bsa", shared[0].Source, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void TryReadFirstAvailable_PreservesLayerPriorityAndStopsAtFirstMatchingArchive()
+    {
+        const string preferredPath = "strings\\mymod_English.strings";
+        const string fallbackPath = "strings\\mymod_en.strings";
+        var fallbackPayload = PayloadFor(401);
+        var preferredPayload = PayloadFor(402);
+
+        WriteBsa("aaa.bsa", [("strings\\unrelated.strings", PayloadFor(400))]);
+        WriteBsa("bbb.bsa", [(fallbackPath, fallbackPayload)]);
+        WriteBsa("zzz.bsa", [(preferredPath, preferredPayload)]);
+        var registry = new ArchiveHandleRegistry();
+
+        using var layered = GameFileSystem.OpenDataFolder(_root, false, registry: registry);
+        var bytes = layered.TryReadFirstAvailable([preferredPath, fallbackPath]);
+
+        // Layer precedence beats spelling preference: bbb's fallback wins over zzz's preferred
+        // spelling, and the later zzz layer is never opened or indexed.
+        Assert.Equal(fallbackPayload, bytes);
+        Assert.Equal(2, registry.OpenHandleCount);
+    }
+
+    [Fact]
+    public void TryReadFirstAvailable_LooseFallbackSpellingShadowsArchivePreferredSpelling()
+    {
+        const string preferredPath = "strings\\mymod_English.strings";
+        const string fallbackPath = "strings\\mymod_en.strings";
+        var loosePayload = PayloadFor(410);
+
+        WriteBsa("strings.bsa", [(preferredPath, PayloadFor(411))]);
+        Directory.CreateDirectory(Path.Combine(_root, "strings"));
+        File.WriteAllBytes(Path.Combine(_root, "strings", "mymod_en.strings"), loosePayload);
+        var registry = new ArchiveHandleRegistry();
+
+        using var layered = GameFileSystem.OpenDataFolder(_root, registry: registry);
+        var bytes = layered.TryReadFirstAvailable([preferredPath, fallbackPath]);
+
+        Assert.Equal(loosePayload, bytes);
+        Assert.Equal(0, registry.OpenHandleCount);
+    }
+
     /// <summary>
     ///     The multithreaded-read guarantee: many workers reading many different (and identical)
     ///     files from ONE shared filesystem, compressed and uncompressed, byte-exact with no

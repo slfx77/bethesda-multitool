@@ -66,9 +66,21 @@ bool PassAlphaTest(float alpha, float threshold, float functionId)
     return false;                              // NEVER / invalid
 }
 
+// The packed material state is an INTEGER bitfield carried in a float lane, so it must be decoded
+// with round() — a bare (uint) cast TRUNCATES, and a value that lands a hair under its integer
+// (6.0 arriving as 5.9999995) then decodes as 5, shifting the addressing bits and selecting the
+// WRONG sampler. Wrap instead of clamp lets a blade card's deliberately overshooting corner UVs
+// pull the opposite edge of the atlas island in, which reads as a floating triangle above the
+// blade — user 2026-08-11, "the corners aren't properly clipped and wrap the texture to the top of
+// the square". FNV hit this and fixed it with the same round(); this is that fix ported.
+uint MaterialTextureFlags(float packedState)
+{
+    return (uint)round(packedState);
+}
+
 float4 SampleGrassDiffuse(uint slot, float2 uv, float packedState)
 {
-    uint addressing = (((uint)packedState) >> 1u) & 3u;
+    uint addressing = (MaterialTextureFlags(packedState) >> 1u) & 3u;
     if (addressing == 1u)
         return textures[NonUniformResourceIndex(slot)].Sample(sClampUWrapV, uv);
     if (addressing == 2u)

@@ -1,5 +1,7 @@
+using System.Buffers.Binary;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -97,10 +99,11 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         // v68: the ENGINE z-write rule bits (EngineZWriteOff + DepthTestOff) joined the payload.
         // v69: triggered-FX rest-state resolve changed particle bake output (dormant emitters).
         // v71: EmitterActive bool bindings gate baked birth rates (NVNellisArtillery idle smoke).
-        // v72: NiMaterialProperty diffuse joined the payload (untextured legacy shapes, OB-1).
+        // v73: Havok provenance joined the payload; a default payload remains fallback-eligible.
         Assert.True(loaded.EngineZWriteOff);
         Assert.True(loaded.DepthTestOff);
-        Assert.Equal(72, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+        Assert.Equal(HavokCollisionProvenance.AbsentOrUnsupported, mesh.CollisionProvenance);
+        Assert.Equal(75, ReferenceDecodedMeshDiskCache12.DecoderVersion);
     }
 
     [Fact]
@@ -170,6 +173,223 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
     }
 
     [Fact]
+    public void StoreAndTryLoad_RoundTripsAuthoredNoncollidableWithoutCollisionArrays()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        var payload = CreatePayload() with
+        {
+            CollisionProvenance = HavokCollisionProvenance.AuthoredNoncollidable
+        };
+
+        cache.Store(metadata, null, payload);
+
+        Assert.True(cache.TryLoad(metadata, null, out var entry));
+        var loaded = Assert.IsType<ReferenceDecodedMeshPayload12>(entry.Mesh);
+        Assert.Equal(HavokCollisionProvenance.AuthoredNoncollidable, loaded.CollisionProvenance);
+        Assert.Null(loaded.CollisionPositions);
+        Assert.Null(loaded.CollisionTriangles);
+    }
+
+    [Fact]
+    public void StoreAndTryLoad_RoundTripsAuthoredMeshProvenanceAndSoup()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        Vector3[] positions = [Vector3.Zero, Vector3.UnitX, Vector3.UnitY];
+        int[] triangles = [0, 1, 2];
+        var payload = CreatePayload() with
+        {
+            CollisionProvenance = HavokCollisionProvenance.AuthoredMesh,
+            CollisionPositions = positions,
+            CollisionTriangles = triangles
+        };
+
+        cache.Store(metadata, null, payload);
+
+        Assert.True(cache.TryLoad(metadata, null, out var entry));
+        var loaded = Assert.IsType<ReferenceDecodedMeshPayload12>(entry.Mesh);
+        Assert.Equal(HavokCollisionProvenance.AuthoredMesh, loaded.CollisionProvenance);
+        Assert.Equal(positions, loaded.CollisionPositions);
+        Assert.Equal(triangles, loaded.CollisionTriangles);
+    }
+
+    [Fact]
+    public void StoreAndTryLoad_RoundTripsCollisionOnlyAuthoredNoncollidablePayload()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        var payload = CreatePayload() with
+        {
+            Submeshes = [],
+            CollisionProvenance = HavokCollisionProvenance.AuthoredNoncollidable
+        };
+
+        cache.Store(metadata, null, payload);
+
+        Assert.True(cache.TryLoad(metadata, null, out var entry));
+        Assert.False(entry.IsNegative);
+        var loaded = Assert.IsType<ReferenceDecodedMeshPayload12>(entry.Mesh);
+        Assert.Empty(loaded.Submeshes);
+        Assert.Equal(HavokCollisionProvenance.AuthoredNoncollidable, loaded.CollisionProvenance);
+        Assert.Null(loaded.CollisionPositions);
+        Assert.Null(loaded.CollisionTriangles);
+    }
+
+    [Fact]
+    public void StoreAndTryLoad_RoundTripsCollisionOnlyAuthoredMeshPayload()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        Vector3[] positions = [Vector3.Zero, Vector3.UnitX, Vector3.UnitY];
+        int[] triangles = [0, 1, 2];
+        var payload = CreatePayload() with
+        {
+            Submeshes = [],
+            CollisionProvenance = HavokCollisionProvenance.AuthoredMesh,
+            CollisionPositions = positions,
+            CollisionTriangles = triangles
+        };
+
+        cache.Store(metadata, null, payload);
+
+        Assert.True(cache.TryLoad(metadata, null, out var entry));
+        Assert.False(entry.IsNegative);
+        var loaded = Assert.IsType<ReferenceDecodedMeshPayload12>(entry.Mesh);
+        Assert.Empty(loaded.Submeshes);
+        Assert.Equal(HavokCollisionProvenance.AuthoredMesh, loaded.CollisionProvenance);
+        Assert.Equal(positions, loaded.CollisionPositions);
+        Assert.Equal(triangles, loaded.CollisionTriangles);
+    }
+
+    [Fact]
+    public void Store_EmptyRenderWithAbsentCollisionDoesNotPublishPositiveFile()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+
+        cache.Store(metadata, null, CreatePayload() with { Submeshes = [] });
+
+        Assert.False(File.Exists(cache.GetCachePath(metadata)));
+    }
+
+    [Fact]
+    public void Store_InvalidAuthoredCollisionPayloadsDoNotPublishFile()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        ReferenceDecodedMeshPayload12[] invalidPayloads =
+        [
+            CreatePayload() with
+            {
+                CollisionProvenance = HavokCollisionProvenance.AuthoredMesh,
+                CollisionPositions = [new Vector3(float.NaN, 0f, 0f), Vector3.UnitX, Vector3.UnitY],
+                CollisionTriangles = [0, 1, 2]
+            },
+            CreatePayload() with
+            {
+                CollisionProvenance = HavokCollisionProvenance.AuthoredMesh,
+                CollisionPositions = [Vector3.Zero, Vector3.UnitX, Vector3.UnitY],
+                CollisionTriangles = [0, 1, 3]
+            },
+            CreatePayload() with
+            {
+                CollisionProvenance = HavokCollisionProvenance.AuthoredMesh,
+                CollisionPositions = [Vector3.Zero, Vector3.UnitX, Vector3.UnitY],
+                CollisionTriangles = [0, 1, 2, 0]
+            }
+        ];
+
+        foreach (var payload in invalidPayloads)
+        {
+            cache.Store(metadata, null, payload);
+            Assert.False(File.Exists(cache.GetCachePath(metadata)));
+        }
+    }
+
+    [Theory]
+    [InlineData(73)] // v74 TES3 placed-water classification invalidated this predecessor.
+    [InlineData(74)] // v75 FO4 refraction-shape retention invalidated this predecessor.
+    public void TryLoad_PredecessorEntryReturnsMissAndDeletesFile(int staleDecoderVersion)
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        cache.Store(metadata, null, CreatePayload());
+        var path = cache.GetCachePath(metadata);
+        var bytes = File.ReadAllBytes(path);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            bytes.AsSpan(12, sizeof(int)),
+            staleDecoderVersion);
+        File.WriteAllBytes(path, bytes);
+
+        Assert.False(cache.TryLoad(metadata, null, out _));
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
+    public void TryLoad_InvalidCollisionProvenanceReturnsMissAndDeletesFile()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        cache.Store(metadata, null, CreatePayload());
+        var path = cache.GetCachePath(metadata);
+        var bytes = File.ReadAllBytes(path);
+        var provenanceOffset = FindPayloadOffset(bytes);
+        bytes[provenanceOffset] = byte.MaxValue;
+        File.WriteAllBytes(path, bytes);
+
+        Assert.False(cache.TryLoad(metadata, null, out _));
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
+    public void TryLoad_AuthoredNoneWithCollisionArraysReturnsMissAndDeletesFile()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        var payload = CreatePayload() with
+        {
+            CollisionProvenance = HavokCollisionProvenance.AuthoredMesh,
+            CollisionPositions = [Vector3.Zero, Vector3.UnitX, Vector3.UnitY],
+            CollisionTriangles = [0, 1, 2]
+        };
+        cache.Store(metadata, null, payload);
+        var path = cache.GetCachePath(metadata);
+        var bytes = File.ReadAllBytes(path);
+        bytes[FindPayloadOffset(bytes)] = (byte)HavokCollisionProvenance.AuthoredNoncollidable;
+        File.WriteAllBytes(path, bytes);
+
+        Assert.False(cache.TryLoad(metadata, null, out _));
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
+    public void Store_AbsentProvenanceWithCollisionArraysDoesNotPublishFile()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        var payload = CreatePayload() with
+        {
+            CollisionPositions = [Vector3.Zero, Vector3.UnitX, Vector3.UnitY],
+            CollisionTriangles = [0, 1, 2]
+        };
+
+        cache.Store(metadata, null, payload);
+
+        Assert.False(File.Exists(cache.GetCachePath(metadata)));
+    }
+
+    [Fact]
     public void TryLoad_InvalidatesWhenSourceMetadataChanges()
     {
         using var tempDir = new TempDirectory();
@@ -213,6 +433,19 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
             fileRawSize,
             fileRawSize,
             found ? 2048U : null);
+    }
+
+    private static int FindPayloadOffset(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var reader = new BinaryReader(stream);
+        _ = reader.ReadBytes(8); // magic
+        _ = reader.ReadInt32(); // container version
+        _ = reader.ReadInt32(); // decoder version
+        var keyLength = reader.ReadInt32();
+        _ = reader.ReadBytes(keyLength);
+        Assert.False(reader.ReadBoolean()); // positive entry
+        return checked((int)stream.Position);
     }
 
     private static ReferenceDecodedMeshPayload12 CreatePayload()

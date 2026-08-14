@@ -36,6 +36,122 @@ public sealed class NifTextureResolverTests
     }
 
     [Fact]
+    public void GpuTextureCacheAliasTrace_MatchesTheOldCaseInsensitiveKeyExactly()
+    {
+        const string archiveRelative = @"SetDressing\NewsStand\NewStand01_n.dds";
+        var aliases = new GpuTextureCache12.LegacyAliasTrace(archiveRelative);
+
+        Assert.Equal(
+            archiveRelative,
+            GpuTextureCache12.NormalizeLegacyCacheKeyForTrace(
+                @"  SetDressing/NewsStand/NewStand01_n.dds  "));
+        Assert.False(aliases.Observe(@"setdressing/newsstand/newstand01_N.DDS"));
+        Assert.False(aliases.Observe(@"  SETDRESSING\NEWSSTAND\NEWSTAND01_n.dds "));
+
+        var spellingOnlySummary = GpuTextureCache12.BuildAliasTraceSummary(
+        [
+            new GpuTextureCache12.AliasTraceEntry(
+                GpuTextureCache12.NormalizeCacheKey(archiveRelative),
+                IsResident: true,
+                ResidentPayloadBytes: 4_096,
+                AliasTrace: aliases)
+        ]);
+        Assert.Empty(spellingOnlySummary.Groups);
+        Assert.Equal(0, spellingOnlySummary.LegacyExtraKeys);
+
+        Assert.True(aliases.Observe(@"textures\SetDressing\NewsStand\NewStand01_n.dds"));
+        Assert.Equal(2, aliases.LegacyKeyCount);
+    }
+
+    [Fact]
+    public void GpuTextureCacheAliasTrace_CountsOnlyCurrentResidentNodes()
+    {
+        const string residentKey = @"textures\setdressing\newsstand\newstand01_n.dds";
+        var residentAliases = new GpuTextureCache12.LegacyAliasTrace(
+            @"SetDressing\NewsStand\NewStand01_n.dds");
+        residentAliases.Observe(@"textures\SetDressing\NewsStand\NewStand01_n.dds");
+
+        const string pendingKey = @"textures\architecture\pending_d.dds";
+        var pendingAliases = new GpuTextureCache12.LegacyAliasTrace(
+            @"Architecture\Pending_d.dds");
+        pendingAliases.Observe(@"textures\Architecture\Pending_d.dds");
+
+        var summary = GpuTextureCache12.BuildAliasTraceSummary(
+        [
+            new GpuTextureCache12.AliasTraceEntry(
+                residentKey,
+                IsResident: true,
+                ResidentPayloadBytes: 4_096,
+                AliasTrace: residentAliases),
+            new GpuTextureCache12.AliasTraceEntry(
+                pendingKey,
+                IsResident: false,
+                ResidentPayloadBytes: 8_192,
+                AliasTrace: pendingAliases),
+            new GpuTextureCache12.AliasTraceEntry(
+                @"textures\architecture\single_d.dds",
+                IsResident: true,
+                ResidentPayloadBytes: 2_048,
+                AliasTrace: new GpuTextureCache12.LegacyAliasTrace(
+                    @"textures\Architecture\Single_d.dds"))
+        ]);
+
+        Assert.Equal(2, summary.ResidentEntries);
+        Assert.Equal(1, summary.NonResidentEntries);
+        Assert.Equal(1, summary.LegacyExtraKeys);
+        Assert.Equal(4_096L, summary.EstimatedAliasResidentBytesAvoided);
+        var group = Assert.Single(summary.Groups);
+        Assert.Equal(residentKey, group.CanonicalKey);
+        Assert.Equal(4_096L, group.ResidentPayloadBytes);
+        Assert.Equal(4_096L, group.EstimatedAvoidedPayloadBytes);
+        Assert.Equal(2, group.LegacyKeys.Length);
+    }
+
+    [Fact]
+    public void GpuTextureCacheAliasTrace_DoesNotCarryAnEvictedNodesHistoryIntoItsReplacement()
+    {
+        const string canonicalKey = @"textures\setdressing\newsstand\newstand01_n.dds";
+        var evictedLifetime = new GpuTextureCache12.LegacyAliasTrace(
+            @"SetDressing\NewsStand\NewStand01_n.dds");
+        evictedLifetime.Observe(@"textures\SetDressing\NewsStand\NewStand01_n.dds");
+
+        // A replacement TextureUploadNode owns a fresh trace just as production does after the old
+        // node is removed from _cache. The retired lifetime is intentionally not part of the live
+        // teardown snapshot.
+        var replacementLifetime = new GpuTextureCache12.LegacyAliasTrace(
+            @"textures\SetDressing\NewsStand\NewStand01_n.dds");
+        var summary = GpuTextureCache12.BuildAliasTraceSummary(
+        [
+            new GpuTextureCache12.AliasTraceEntry(
+                canonicalKey,
+                IsResident: true,
+                ResidentPayloadBytes: 4_096,
+                AliasTrace: replacementLifetime)
+        ]);
+
+        Assert.Empty(summary.Groups);
+        Assert.Equal(0, summary.LegacyExtraKeys);
+        Assert.Equal(0L, summary.EstimatedAliasResidentBytesAvoided);
+    }
+
+    [Fact]
+    public void GpuTextureCacheAliasTrace_TraceDisabledNodeNeedsNoTracker()
+    {
+        var summary = GpuTextureCache12.BuildAliasTraceSummary(
+        [
+            new GpuTextureCache12.AliasTraceEntry(
+                @"textures\architecture\single_d.dds",
+                IsResident: true,
+                ResidentPayloadBytes: 2_048,
+                AliasTrace: null)
+        ]);
+
+        Assert.Equal(1, summary.ResidentEntries);
+        Assert.Empty(summary.Groups);
+        Assert.Equal(0L, summary.EstimatedAliasResidentBytesAvoided);
+    }
+
+    [Fact]
     public void TexturePathUtility_StripsLeadingDataPrefix()
     {
         // Vanilla FNV's WATR DefaultWater (FormID 0x00000018) stores its NNAM as
