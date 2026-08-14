@@ -1,5 +1,5 @@
 using System.CommandLine;
-using BethesdaMultitool.Core.Formats.Esm.Script;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Dialogue;
@@ -149,7 +149,7 @@ internal static class DialogueUnattributedCommand
 
             foreach (var fc in functionCounts)
             {
-                var name = ScriptFunctionTable.GetName((ushort)(0x1000 + fc.FunctionIndex));
+                var name = ConditionFunctionTable.For(result.Game).GetName(fc.FunctionIndex);
                 funcTable.AddRow(Markup.Escape(name), $"0x{fc.FunctionIndex:X3}", $"{fc.Count:N0}");
             }
 

@@ -64,7 +64,7 @@ public static class RenderCommand
         var sizeOption = new Option<int?>("--size")
             { Description = "Force all sprites to this size (longest edge), regardless of model scale" };
         var gpuOption = new Option<bool>("--gpu")
-            { Description = "Force GPU rendering (Vulkan/D3D11)", DefaultValueFactory = _ => false };
+            { Description = "Force GPU rendering (D3D12)", DefaultValueFactory = _ => false };
         var cpuOption = new Option<bool>("--cpu")
             { Description = "Force CPU software rendering", DefaultValueFactory = _ => false };
 

@@ -259,13 +259,13 @@ internal static class DmpFormTypeCensusCommand
         // "Has an encoder" is NOT the same as "is emitted", and using the registry alone as the
         // oracle produces errors in both directions: it over-reports (GRAS/IMGS/PWAT/TREE were
         // all registered but unreachable) and under-reports (LAND and NAVM are emitted with no
-        // registry entry, via the cell-child-static and byte-rewriter paths). The reachability
-        // gate is PluginBuilder's yield set; emission additionally needs a registry entry, and
-        // new (non-override) records need a dispatcher row.
+        // registry entry, via the cell-child-static and byte-rewriter paths). Production
+        // top-level emission requires both the Phase-3 yield and planned-encoder catalogs.
+        // The direct registry and dispatcher columns remain diagnostic metadata only.
         var encoders = RecordEncoderRegistry.CreateDefault().SupportedRecordTypes
             .ToHashSet(StringComparer.Ordinal);
         var planners = PlannedEncoders.KnownRecordTypes().ToHashSet(StringComparer.Ordinal);
-        var reachable = PluginBuilder.EmittableTopLevelRecordTypes;
+        var reachable = PluginConversionPipeline.EmittableTopLevelRecordTypes;
         var dispatchable = NewTopLevelRecordEncoderDispatcher.GetSupportedRecordTypes()
             .ToHashSet(StringComparer.Ordinal);
 
@@ -285,25 +285,6 @@ internal static class DmpFormTypeCensusCommand
             ["INFO"] = "DialogGrupBuilder"
         };
 
-        string EmissionStatus(string sig)
-        {
-            if (nonTopLevelEmission.TryGetValue(sig, out var path))
-            {
-                return path;
-            }
-
-            if (!reachable.Contains(sig))
-            {
-                return encoders.Contains(sig) ? "UNREACHABLE (encoder exists, never yielded)" : "none";
-            }
-
-            if (!encoders.Contains(sig))
-            {
-                return "yielded but NO ENCODER";
-            }
-
-            return dispatchable.Contains(sig) ? "emitted" : "overrides only (no dispatcher row)";
-        }
         var dumpsWithData = entries.Count(e => e.HasRuntimeFormData);
 
         // Key on the union of both evidence channels. A type can be recoverable purely as
@@ -348,7 +329,7 @@ internal static class DmpFormTypeCensusCommand
                 counts.Count > 0 ? counts.Min().ToString() : "0",
                 counts.Count > 0 ? counts.Max().ToString() : "0",
                 hasFt ? RuntimeBuildOffsets.GetStructSize(ft).ToString() : "",
-                Csv(EmissionStatus(sig)),
+                Csv(ClassifyEmissionStatus(sig, encoders, planners, reachable, nonTopLevelEmission)),
                 encoders.Contains(sig) ? "yes" : "NO",
                 reachable.Contains(sig) || nonTopLevelEmission.ContainsKey(sig) ? "yes" : "NO",
                 dispatchable.Contains(sig) ? "yes" : "NO",
@@ -372,6 +353,30 @@ internal static class DmpFormTypeCensusCommand
             await File.WriteAllTextAsync(path, content.ToString(), cancellationToken);
             AnsiConsole.MarkupLine($"[green]Wrote:[/] {Markup.Escape(path)}");
         }
+    }
+
+    internal static string ClassifyEmissionStatus(
+        string signature,
+        IReadOnlySet<string> directEncoders,
+        IReadOnlySet<string> plannedEncoders,
+        IReadOnlySet<string> reachableTopLevelTypes,
+        IReadOnlyDictionary<string, string> nonTopLevelEmission)
+    {
+        if (nonTopLevelEmission.TryGetValue(signature, out var path))
+        {
+            return path;
+        }
+
+        if (!reachableTopLevelTypes.Contains(signature))
+        {
+            return directEncoders.Contains(signature)
+                ? "UNREACHABLE (direct encoder exists, never yielded)"
+                : "none";
+        }
+
+        return plannedEncoders.Contains(signature)
+            ? "emitted"
+            : "yielded but NOT PLANNED";
     }
 
     private static string Csv(string? value)

@@ -320,13 +320,13 @@ public static class DmpToEsmCommand
         var pcEsmFileSize = new FileInfo(pcEsmPath).Length;
 
         // Keep shared archive handles warm across the whole conversion: the asset-rename phase
-        // (inside PluginBuilder) and the pack phase index the same Data folders back-to-back, and
+        // (inside PluginConversionPipeline) and the pack phase index the same Data folders back-to-back, and
         // without this scope the registry's dispose-at-zero would re-parse every archive between
         // them. Handles release when the command finishes.
         using var warmArchives = Core.Vfs.ArchiveHandleRegistry.Shared.KeepWarm();
 
         // v22 asset-rename: when any secondary data folder is supplied, also feed the
-        // PluginBuilder so it can rewrite record paths in-place to match unified asset
+        // PluginConversionPipeline so it can rewrite record paths in-place to match unified asset
         // names that survived in the indexed Data folders under different filenames.
         // Baseline = the directory containing the master ESM (the user's FNV PC Data\).
         var baselineDataFolder = Path.GetDirectoryName(pcEsmPath);

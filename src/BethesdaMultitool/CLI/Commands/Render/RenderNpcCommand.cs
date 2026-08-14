@@ -130,7 +130,7 @@ public static class RenderNpcCommand
         };
         var gpuOption = new Option<bool>("--gpu")
         {
-            Description = "Force GPU rendering (Vulkan/D3D11)"
+            Description = "Force GPU rendering (D3D12)"
         };
         var cpuOption = new Option<bool>("--cpu")
         {
