@@ -55,11 +55,15 @@ public sealed class LocalizedStringTables
 
         var baseName = Path.GetFileNameWithoutExtension(esmPath);
 
-        // One lazy Data-folder mount serves all (up to 6) table lookups with the exact precedence
+        // One lazy Data-folder mount serves all table lookups with the exact precedence
         // the hand-rolled loose→BSA→BA2 chain implemented: loose Data\Strings first (zero archive
         // opens on a hit), then *.bsa alphabetical, then *.ba2, first hit wins, per-source failures
-        // falling through. Lazy layers keep the early-exit (archives past the hit never open) and
-        // the shared registry lets back-to-back plugin loads reuse the parses.
+        // falling through. Alternate language suffixes are resolved within each layer, so a later
+        // archive's preferred spelling cannot beat an earlier layer's fallback spelling. Lazy
+        // layers keep each table lookup's early-exit (archives past its first suffix hit are not
+        // touched by that lookup), and
+        // one mounted folder reuses each opened layer across its table lookups. Disposing this mount
+        // releases its leases; cross-plugin reuse requires a deliberately bounded warm/cache scope.
         using var dataFolder = GameFileSystem.OpenDataFolder(dir, registry: ArchiveHandleRegistry.Shared);
         var strings = LoadTable(dataFolder, baseName, language, "STRINGS", lengthPrefixed: false);
         var dlStrings = LoadTable(dataFolder, baseName, language, "DLSTRINGS", lengthPrefixed: true);
@@ -146,18 +150,16 @@ public sealed class LocalizedStringTables
     private static Dictionary<uint, string> LoadTable(
         LayeredGameFileSystem dataFolder, string baseName, string language, string extension, bool lengthPrefixed)
     {
-        // Try the full language name first (Skyrim convention), then the 2-letter code (FO4/FO76).
-        // File/archive lookups are case-insensitive, so casing of baseName/extension doesn't matter.
-        foreach (var languageToken in LanguageTokens(language))
-        {
-            var bytes = dataFolder.TryReadAllBytes($"Strings\\{baseName}_{languageToken}.{extension}");
-            if (bytes != null)
-            {
-                return ParseTable(bytes, lengthPrefixed);
-            }
-        }
-
-        return new Dictionary<uint, string>();
+        // Within each loose/archive layer, prefer the full Skyrim language name and then the
+        // FO4/FO76 two-letter code. Evaluating the pair layer-by-layer preserves source precedence
+        // and avoids opening every archive for a guaranteed full-name miss before trying the code.
+        var candidatePaths = LanguageTokens(language)
+            .Select(token => $"Strings\\{baseName}_{token}.{extension}")
+            .ToArray();
+        var bytes = dataFolder.TryReadFirstAvailable(candidatePaths);
+        return bytes == null
+            ? new Dictionary<uint, string>()
+            : ParseTable(bytes, lengthPrefixed);
     }
 
     private static IEnumerable<string> LanguageTokens(string language)

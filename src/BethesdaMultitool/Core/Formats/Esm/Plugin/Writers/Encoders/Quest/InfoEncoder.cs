@@ -25,7 +25,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 ///     CTDA (28 bytes) per PDB CONDITION_ITEM_DATA:
 ///     uint8 Type(0) + pad(1..3) + float ComparisonValue(4) + uint16 FunctionIndex(8) +
 ///     pad(10..11) + FormID Parameter1(12) + uint32 Parameter2(16) + uint32 RunOn(20) +
-///     FormID Reference(24).
+///     uint32 Reference storage(24), a FormID only when the game-aware semantic policy selects it.
 /// </summary>
 public sealed class InfoEncoder : IRecordEncoder
 {
@@ -305,12 +305,12 @@ public sealed class InfoEncoder : IRecordEncoder
         foreach (var condition in info.Conditions)
         {
             subs.Add(new EncodedSubrecord("CTDA", BuildCtdaSubrecord(condition)));
-            if (!string.IsNullOrEmpty(condition.Parameter1String))
+            if (condition.Parameter1String is not null)
             {
                 subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS1", condition.Parameter1String));
             }
 
-            if (!string.IsNullOrEmpty(condition.Parameter2String))
+            if (condition.Parameter2String is not null)
             {
                 subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS2", condition.Parameter2String));
             }

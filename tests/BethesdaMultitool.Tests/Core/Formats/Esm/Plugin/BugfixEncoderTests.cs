@@ -393,7 +393,7 @@ public class BugfixEncoderTests
     ///     A new NPC_ is renderable when it either inherits traits from a resolvable
     ///     template (TPLT present AND the ACBS Use-Traits template flag set) or carries a
     ///     complete captured FaceGen set of its own. This mirrored a legacy render-safety
-    ///     gate in <c>PluginBuilder</c>, which was deleted with the legacy emission path
+    ///     gate in <c>PluginConversionPipeline</c>, which was deleted with the legacy emission path
     ///     (retirement Stage E) — the rule lives on here because it is what the four
     ///     <c>NpcEncoder.EncodeNew</c> cases above are really asserting about the encoder.
     /// </summary>
@@ -654,7 +654,7 @@ public class BugfixEncoderTests
 
         var encoded = ScptEncoder.EncodeNew(script);
 
-        // No subrecords → PluginBuilder will skip the record entirely.
+        // No subrecords → PluginConversionPipeline will skip the record entirely.
         Assert.Empty(encoded.Subrecords);
         Assert.Contains(encoded.Warnings, w => w.Contains("stub"));
     }

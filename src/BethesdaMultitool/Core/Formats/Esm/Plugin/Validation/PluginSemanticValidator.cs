@@ -53,7 +53,8 @@ public static class PluginSemanticValidator
         var pluginFormIds = new HashSet<uint>(pluginFormIdsByType.Values.SelectMany(static ids => ids));
         var duplicateScriptEditorIds = FindDuplicateEffectiveScriptEditorIds(
             records, masterScriptFormIdsByEditorId);
-        var unknownConditionFunctions = FindUnknownConditionFunctions(records);
+        var conditionFunctionsAbsentFromFnvCallbackTable =
+            FindConditionFunctionsAbsentFromFnvCallbackTable(records);
 
         // Offset-sorted event stream of GRUP headers + records, just like
         // PcEsmCellContextIndex uses to reconstruct the parent-GRUP stack.
@@ -324,21 +325,21 @@ public static class PluginSemanticValidator
             }
         }
 
-        if (unknownConditionFunctions.Count > 0)
+        if (conditionFunctionsAbsentFromFnvCallbackTable.Count > 0)
         {
-            errors += unknownConditionFunctions.Count;
+            errors += conditionFunctionsAbsentFromFnvCallbackTable.Count;
             report.AppendLine(
-                $"ERROR: {unknownConditionFunctions.Count:N0} CTDA/CTDT subrecord(s) use a function " +
-                "absent from the retail FNV command table:");
-            foreach (var unknown in unknownConditionFunctions.Take(MaxDuplicateExamples))
+                $"ERROR: {conditionFunctionsAbsentFromFnvCallbackTable.Count:N0} CTDA/CTDT subrecord(s) use a function " +
+                "absent from the exact retail FNV condition-callback table:");
+            foreach (var unknown in conditionFunctionsAbsentFromFnvCallbackTable.Take(MaxDuplicateExamples))
             {
                 report.AppendLine($"  {unknown}");
             }
 
-            if (unknownConditionFunctions.Count > MaxDuplicateExamples)
+            if (conditionFunctionsAbsentFromFnvCallbackTable.Count > MaxDuplicateExamples)
             {
                 report.AppendLine(
-                    $"  …and {unknownConditionFunctions.Count - MaxDuplicateExamples:N0} more.");
+                    $"  …and {conditionFunctionsAbsentFromFnvCallbackTable.Count - MaxDuplicateExamples:N0} more.");
             }
         }
 
@@ -518,7 +519,7 @@ public static class PluginSemanticValidator
         }
     }
 
-    private static List<string> FindUnknownConditionFunctions(
+    private static List<string> FindConditionFunctionsAbsentFromFnvCallbackTable(
         IReadOnlyList<ParsedMainRecord> records)
     {
         var findings = new List<string>();

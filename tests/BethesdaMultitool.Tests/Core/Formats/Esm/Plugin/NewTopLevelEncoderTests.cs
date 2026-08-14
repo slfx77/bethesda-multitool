@@ -357,6 +357,29 @@ public class NewTopLevelEncoderTests
     }
 
     [Fact]
+    public void InfoEncoder_EncodeNew_PreservesPresentEmptyCisString()
+    {
+        var info = new DialogueRecord
+        {
+            FormId = 0x600,
+            Conditions =
+            [
+                new DialogueCondition
+                {
+                    Type = 0x20,
+                    FunctionIndex = 660,
+                    Parameter2String = string.Empty
+                }
+            ]
+        };
+
+        var encoded = InfoEncoder.EncodeNew(info);
+
+        var cis2 = Assert.Single(encoded.Subrecords, subrecord => subrecord.Signature == "CIS2");
+        Assert.Equal([0], cis2.Bytes);
+    }
+
+    [Fact]
     public void InfoEncoder_EncodeNew_OmitsCis1Cis2WhenStringsNull()
     {
         var info = new DialogueRecord

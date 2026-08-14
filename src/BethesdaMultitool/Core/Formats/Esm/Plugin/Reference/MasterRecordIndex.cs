@@ -215,6 +215,7 @@ public sealed record MasterRecordIndex
         return locations;
     }
 
+    /// <summary>Projects carry-forward child locations into the legacy placed-reference cell index.</summary>
     /// <remarks>
     ///     PGRE is deliberately NOT in this projection. RefToCell widens
     ///     <c>masterRefFormIds</c>, which feeds per-cell merge-mode decisions; adding PGRE here

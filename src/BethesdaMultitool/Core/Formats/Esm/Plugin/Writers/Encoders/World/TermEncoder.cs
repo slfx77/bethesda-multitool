@@ -105,15 +105,14 @@ public sealed class TermEncoder : IRecordEncoder
         for (var i = 0; i < term.MenuItems.Count; i++)
         {
             var item = term.MenuItems[i];
-            var unknownCondition = item.Conditions.FirstOrDefault(static condition =>
+            var unsupportedCondition = item.Conditions.FirstOrDefault(static condition =>
                 !PerkConditionParameterResolver.IsKnownConditionFunction(condition.FunctionIndex));
-            if (unknownCondition is not null)
+            if (unsupportedCondition is not null)
             {
                 warnings.Add(
                     $"TERM 0x{term.FormId:X8} menu[{i}] '{item.Text ?? "(empty)"}' suppressed: " +
-                    $"CTDA function 0x{unknownCondition.FunctionIndex:X4} is absent from the retail " +
-                    "FNV command table. The whole menu item is atomic; malformed conditions are " +
-                    "never emitted or widened.");
+                    $"CTDA function 0x{unsupportedCondition.FunctionIndex:X4} is absent from the exact " +
+                    "retail FNV condition-callback table. The whole menu item is suppressed atomically.");
                 continue;
             }
 
@@ -245,12 +244,12 @@ public sealed class TermEncoder : IRecordEncoder
         foreach (var condition in item.Conditions)
         {
             subs.Add(new EncodedSubrecord("CTDA", InfoEncoder.BuildCtdaSubrecord(condition)));
-            if (!string.IsNullOrEmpty(condition.Parameter1String))
+            if (condition.Parameter1String is not null)
             {
                 subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS1", condition.Parameter1String));
             }
 
-            if (!string.IsNullOrEmpty(condition.Parameter2String))
+            if (condition.Parameter2String is not null)
             {
                 subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS2", condition.Parameter2String));
             }

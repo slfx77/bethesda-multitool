@@ -7,7 +7,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 /// <summary>
 ///     Encodes a <see cref="LeveledListRecord" /> as PC-format subrecord bytes.
 ///     One encoder handles all three record signatures (LVLI/LVLN/LVLC) — the on-disk
-///     wire format is identical; only the record-level signature differs. The PluginBuilder
+///     wire format is identical; only the record-level signature differs. The PluginConversionPipeline
 ///     switch routes all three signatures to this encoder.
 ///     fopdoc canonical order: EDID, LVLD?(1B ChanceNone), LVLF?(1B flags), LVLG?(FormID glob),
 ///     LVLO* (12B entry: uint16 Level + pad(2) + FormID + uint16 Count + pad(2)).

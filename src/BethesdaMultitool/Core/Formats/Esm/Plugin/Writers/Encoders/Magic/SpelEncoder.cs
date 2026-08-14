@@ -4,10 +4,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 
 /// <summary>
 ///     Encodes a <see cref="SpellRecord" /> (SPEL) as PC-format subrecord bytes.
-///     fopdoc canonical order: EDID, FULL?, SPIT(16B), (EFID + EFIT)*.
+///     FNV xEdit order: EDID, FULL?, SPIT(16B), (EFID + EFIT + CTDA*)*.
 ///     SPIT layout (16B): uint32 Type(0) + uint32 Cost(4) + uint32 Level(8) +
 ///     uint8 Flags(12) + pad(3).
-///     EFID/EFIT pairs reuse the shared <see cref="EnchEncoder.BuildEfitSubrecord" /> helper.
+///     FNV xEdit labels Cost and Level unused; the model preserves and re-emits their words.
 /// </summary>
 public sealed class SpelEncoder : IRecordEncoder
 {
@@ -41,11 +41,7 @@ public sealed class SpelEncoder : IRecordEncoder
 
         subs.Add(SchemaModelSerializer.SerializeSubrecord("SPIT", "SPEL", 16, spel, SpitExtractors));
 
-        foreach (var effect in spel.Effects)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("EFID", effect.EffectFormId));
-            subs.Add(new EncodedSubrecord("EFIT", EnchEncoder.BuildEfitSubrecord(effect)));
-        }
+        EnchEncoder.AppendEffectSubrecords(subs, spel.Effects);
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }

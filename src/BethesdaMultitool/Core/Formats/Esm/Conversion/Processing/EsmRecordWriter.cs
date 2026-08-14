@@ -158,11 +158,13 @@ public sealed class EsmRecordWriter(byte[] input, EsmConversionStats stats)
         var endOffset = offset + dataSize;
         var currentOffset = offset;
         var pendingExtendedSize = 0;
+        var insidePerkEntry = false;
 
         while (currentOffset + 6 <= endOffset)
         {
             currentOffset =
-                ConvertSubrecordToWriter(currentOffset, endOffset, recordType, writer, ref pendingExtendedSize);
+                ConvertSubrecordToWriter(currentOffset, endOffset, recordType, writer, ref pendingExtendedSize,
+                    ref insidePerkEntry);
         }
 
         // Write any remaining bytes
@@ -173,7 +175,7 @@ public sealed class EsmRecordWriter(byte[] input, EsmConversionStats stats)
     }
 
     private int ConvertSubrecordToWriter(int offset, int recordEndOffset, string recordType, BinaryWriter writer,
-        ref int pendingExtendedSize)
+        ref int pendingExtendedSize, ref bool insidePerkEntry)
     {
         if (offset < 0 || offset >= _input.Length || recordEndOffset < offset)
         {
@@ -241,7 +243,24 @@ public sealed class EsmRecordWriter(byte[] input, EsmConversionStats stats)
 
         // Convert data first so we can write an accurate size header.
         var data = _input.AsSpan(dataOffset, dataSize);
-        var convertedData = EsmSubrecordConverter.ConvertSubrecordData(signature, data, recordType);
+        var perkDataScope = PerkDataScope.Unspecified;
+        if (recordType == "PERK")
+        {
+            perkDataScope = insidePerkEntry ? PerkDataScope.Entry : PerkDataScope.TopLevel;
+        }
+        var convertedData = EsmSubrecordConverter.ConvertSubrecordData(signature, data, recordType, perkDataScope);
+
+        if (recordType == "PERK")
+        {
+            if (signature == "PRKE")
+            {
+                insidePerkEntry = true;
+            }
+            else if (signature == "PRKF")
+            {
+                insidePerkEntry = false;
+            }
+        }
 
         // Write subrecord header in little-endian.
         // If this subrecord used XXXX extended sizing (dataSizeHeader == 0), preserve the 0 header.

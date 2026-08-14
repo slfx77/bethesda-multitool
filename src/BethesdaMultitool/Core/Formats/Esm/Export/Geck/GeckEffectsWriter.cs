@@ -96,14 +96,16 @@ internal static class GeckEffectsWriter
                         fields.Add(new ReportField("Data", ReportValue.String(entry.EffectData)));
                     }
 
-                    if (entry.ConditionTabCount.HasValue)
+                    if (entry.PerkConditionTabCount.HasValue)
                     {
-                        fields.Add(new ReportField("Condition Tabs", ReportValue.Int(entry.ConditionTabCount.Value)));
+                        fields.Add(new ReportField("Condition Tabs",
+                            ReportValue.Int(entry.PerkConditionTabCount.Value)));
                     }
 
-                    if (entry.Conditions.Count > 0)
+                    var conditionCount = entry.ConditionGroups.Sum(group => group.Conditions.Count);
+                    if (conditionCount > 0)
                     {
-                        fields.Add(new ReportField("Conditions", ReportValue.Int(entry.Conditions.Count)));
+                        fields.Add(new ReportField("Conditions", ReportValue.Int(conditionCount)));
                     }
 
                     var abilityStr = entry.AbilityFormId.HasValue

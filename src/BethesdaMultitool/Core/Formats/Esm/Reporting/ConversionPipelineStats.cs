@@ -139,7 +139,7 @@ public sealed class ConversionPipelineStats
 
 /// <summary>
 ///     SCOL-specific census: parsed/in-master/new-emitted counts plus per-part-drop
-///     and override-delta diagnostics. Populated by PluginBuilder during a conversion run.
+///     and override-delta diagnostics. Populated by PluginConversionPipeline during a conversion run.
 /// </summary>
 public sealed class ScolCensusStats
 {

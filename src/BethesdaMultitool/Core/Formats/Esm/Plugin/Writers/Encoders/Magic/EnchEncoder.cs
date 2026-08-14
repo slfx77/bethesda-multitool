@@ -1,13 +1,14 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Magic;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 
 /// <summary>
 ///     Encodes an <see cref="EnchantmentRecord" /> (ENCH) as PC-format subrecord bytes.
-///     fopdoc canonical order: EDID, FULL?, ENIT(16B), (EFID + EFIT)*.
-///     ENIT layout (16B): uint32 Type(0) + uint32 ChargeAmount(4) + uint32 EnchantCost(8) +
-///     uint8 Flags(12) + pad(3).
+///     FNV xEdit order: EDID, FULL?, ENIT(16B), (EFID + EFIT + CTDA*)*.
+///     ENIT bytes 4..11 are labeled unused by FNV xEdit; the historical model fields retain
+///     and re-emit those words rather than silently discarding captured bytes.
 ///     EFID is the 4-byte base-effect FormID; EFIT is the 20-byte effect-item block.
 /// </summary>
 public sealed class EnchEncoder : IRecordEncoder
@@ -51,11 +52,7 @@ public sealed class EnchEncoder : IRecordEncoder
 
         subs.Add(SchemaModelSerializer.SerializeSubrecord("ENIT", "ENCH", 16, ench, EnitExtractors));
 
-        foreach (var effect in ench.Effects)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("EFID", effect.EffectFormId));
-            subs.Add(new EncodedSubrecord("EFIT", BuildEfitSubrecord(effect)));
-        }
+        AppendEffectSubrecords(subs, ench.Effects);
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
     }
@@ -66,5 +63,25 @@ public sealed class EnchEncoder : IRecordEncoder
     internal static byte[] BuildEfitSubrecord(EnchantmentEffect effect)
     {
         return SchemaModelSerializer.Serialize("EFIT", "", 20, effect, EfitExtractors);
+    }
+
+    /// <summary>
+    ///     Appends FNV effect groups in physical order. FNV CTDAs are 28 bytes and have no
+    ///     CIS1/CIS2 siblings or Parameter3 tail, so those modern-only fields are intentionally
+    ///     outside this target writer contract.
+    /// </summary>
+    internal static void AppendEffectSubrecords(
+        List<EncodedSubrecord> subrecords,
+        IReadOnlyList<EnchantmentEffect> effects)
+    {
+        foreach (var effect in effects)
+        {
+            subrecords.Add(NewRecordSubrecords.EncodeFormIdSubrecord("EFID", effect.EffectFormId));
+            subrecords.Add(new EncodedSubrecord("EFIT", BuildEfitSubrecord(effect)));
+            foreach (var condition in effect.Conditions)
+            {
+                subrecords.Add(new EncodedSubrecord("CTDA", InfoEncoder.BuildCtdaSubrecord(condition)));
+            }
+        }
     }
 }

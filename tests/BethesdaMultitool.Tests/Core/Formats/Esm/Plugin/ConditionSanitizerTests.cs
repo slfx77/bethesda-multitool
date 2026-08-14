@@ -219,6 +219,117 @@ public class ConditionSanitizerTests
         Assert.Equal(0, dropped);
     }
 
+    [Theory]
+    [InlineData(4u, 0x000E)]
+    [InlineData(5u, 0x000E)]
+    [InlineData(2u, 0x006A)]
+    [InlineData(2u, 0x011D)]
+    public void Filter_preserves_ignored_reference_storage_without_remap_or_drop(
+        uint runOn,
+        int functionIndex)
+    {
+        const uint rawStorage = 0x0100DEAD;
+        const uint emittedFormId = 0x01000123;
+        var remapped = 0;
+        var dropped = 0;
+
+        var result = ConditionSanitizer.Filter(
+            [new DialogueCondition
+            {
+                FunctionIndex = (ushort)functionIndex,
+                RunOn = runOn,
+                Reference = rawStorage
+            }],
+            [emittedFormId],
+            new Dictionary<uint, uint> { [rawStorage] = emittedFormId },
+            ref remapped,
+            ref dropped);
+
+        var condition = Assert.Single(result);
+        Assert.Equal(rawStorage, condition.Reference);
+        Assert.Equal(0, remapped);
+        Assert.Equal(0, dropped);
+    }
+
+    [Fact]
+    public void Filter_remaps_UseGlobalComparison_and_preserves_raw_union_bits()
+    {
+        const uint sourceGlobal = 0x0100DEAD;
+        const uint emittedGlobal = 0x01000123;
+        var conds = new List<DialogueCondition>
+        {
+            new()
+            {
+                Type = 0x04,
+                FunctionIndex = GetActorValue,
+                ComparisonValue = BitConverter.UInt32BitsToSingle(sourceGlobal)
+            }
+        };
+        // Source is also in the validity set: remap-first is required because the emitted CTDA
+        // must reference the allocated destination identity, not the stale source identity.
+        var validFormIds = new HashSet<uint> { sourceGlobal, emittedGlobal };
+        var remap = new Dictionary<uint, uint> { [sourceGlobal] = emittedGlobal };
+        var remapped = 0;
+        var dropped = 0;
+
+        var result = ConditionSanitizer.Filter(
+            conds, validFormIds, remap, ref remapped, ref dropped);
+
+        var condition = Assert.Single(result);
+        Assert.Equal(emittedGlobal, condition.ComparisonGlobalFormId);
+        Assert.Equal(emittedGlobal, BitConverter.SingleToUInt32Bits(condition.ComparisonValue));
+        Assert.Equal(1, remapped);
+        Assert.Equal(0, dropped);
+    }
+
+    [Fact]
+    public void Filter_drops_condition_when_UseGlobalComparison_is_dangling()
+    {
+        const uint danglingGlobal = 0x0100DEAD;
+        var conds = new List<DialogueCondition>
+        {
+            new()
+            {
+                Type = 0x04,
+                FunctionIndex = GetActorValue,
+                ComparisonValue = BitConverter.UInt32BitsToSingle(danglingGlobal)
+            }
+        };
+        var remapped = 0;
+        var dropped = 0;
+
+        var result = ConditionSanitizer.Filter(
+            conds, [], null, ref remapped, ref dropped);
+
+        Assert.Empty(result);
+        Assert.Equal(0, remapped);
+        Assert.Equal(1, dropped);
+    }
+
+    [Fact]
+    public void Filter_does_not_treat_numeric_comparison_bits_as_a_FormID()
+    {
+        var conds = new List<DialogueCondition>
+        {
+            new()
+            {
+                Type = 0,
+                FunctionIndex = GetActorValue,
+                ComparisonValue = BitConverter.UInt32BitsToSingle(0x0100DEAD)
+            }
+        };
+        var remapped = 0;
+        var dropped = 0;
+
+        var result = ConditionSanitizer.Filter(
+            conds, [], null, ref remapped, ref dropped);
+
+        var condition = Assert.Single(result);
+        Assert.Equal(0x0100DEADu, BitConverter.SingleToUInt32Bits(condition.ComparisonValue));
+        Assert.Equal(0, remapped);
+        Assert.Equal(0, dropped);
+    }
+
     [Fact]
     public void Filter_skips_Param1_validation_when_CIS1_string_is_set()
     {
@@ -301,5 +412,11 @@ public class ConditionSanitizerTests
         Assert.False(PerkConditionParameterResolver.IsFormParameter(HasPerk, 1)); // Int
         Assert.False(PerkConditionParameterResolver.IsFormParameter(0xFFFE, 0)); // Unknown function
         Assert.False(PerkConditionParameterResolver.IsFormParameter(GetIsID, 1)); // Out-of-range param
+        Assert.True(PerkConditionParameterResolver.IsKnownConditionFunction(0x0001));
+        Assert.False(PerkConditionParameterResolver.IsKnownConditionFunction(0x0002));
+        Assert.False(PerkConditionParameterResolver.IsKnownConditionFunction(0x1000));
+        Assert.False(PerkConditionParameterResolver.IsKnownConditionFunction(5000));
+        Assert.Equal("UnknownCondition_0x1000",
+            PerkConditionParameterResolver.ResolveScriptFunctionName(0x1000));
     }
 }

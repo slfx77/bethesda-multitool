@@ -265,7 +265,7 @@ public class QuestVariableConditionSanitizerTests
         Assert.Empty(result.ScriptVariableAugmentations);
         Assert.Empty(result.Diagnostics);
 
-        PluginBuilder.EnsureScriptVariableAugmentationsCanBeEmitted(
+        PluginConversionPipeline.EnsureScriptVariableAugmentationsCanBeEmitted(
             result.ScriptVariableAugmentations,
             new HashSet<string>(["DIAL", "SCPT"], StringComparer.Ordinal));
     }
@@ -289,7 +289,7 @@ public class QuestVariableConditionSanitizerTests
         Assert.Empty(result.ScriptVariableAugmentations);
         Assert.Empty(result.Diagnostics);
 
-        PluginBuilder.EnsureScriptVariableAugmentationsCanBeEmitted(
+        PluginConversionPipeline.EnsureScriptVariableAugmentationsCanBeEmitted(
             result.ScriptVariableAugmentations,
             new HashSet<string>(["PACK", "SCPT"], StringComparer.Ordinal));
     }
@@ -343,7 +343,7 @@ public class QuestVariableConditionSanitizerTests
             new ScriptVariableInfo(41, "ZInfoState", 1),
             Assert.Single(result.ScriptVariableAugmentations).Variable);
         Assert.Throws<InvalidOperationException>(() =>
-            PluginBuilder.EnsureScriptVariableAugmentationsCanBeEmitted(
+            PluginConversionPipeline.EnsureScriptVariableAugmentationsCanBeEmitted(
                 result.ScriptVariableAugmentations,
                 new HashSet<string>(["PACK", "SCPT"], StringComparer.Ordinal)));
     }

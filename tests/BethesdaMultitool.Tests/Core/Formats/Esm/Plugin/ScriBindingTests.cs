@@ -4,7 +4,7 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 
 /// <summary>
-///     v22: <see cref="PluginBuilder.IsValidScriTarget" /> determines whether an SCRI
+///     v22: <see cref="PluginConversionPipeline.IsValidScriTarget" /> determines whether an SCRI
 ///     subrecord's target FormID is allowed to reach the output ESP. The pre-v22 predicate
 ///     only checked master ESM FormIDs, which meant reintroduced prototype NPCs pointing at
 ///     reintroduced prototype scripts had their SCRI dropped (the new SCPT FormID isn't in
@@ -16,21 +16,21 @@ public class ScriBindingTests
     [Fact]
     public void IsValidScriTarget_ZeroSentinel_AlwaysAllowed()
     {
-        Assert.True(PluginBuilder.IsValidScriTarget(0u, null, null));
-        Assert.True(PluginBuilder.IsValidScriTarget(0u, new HashSet<uint>(), new HashSet<uint>()));
+        Assert.True(PluginConversionPipeline.IsValidScriTarget(0u, null, null));
+        Assert.True(PluginConversionPipeline.IsValidScriTarget(0u, new HashSet<uint>(), new HashSet<uint>()));
     }
 
     [Fact]
     public void IsValidScriTarget_AllOnesSentinel_AlwaysAllowed()
     {
-        Assert.True(PluginBuilder.IsValidScriTarget(0xFFFFFFFFu, null, null));
+        Assert.True(PluginConversionPipeline.IsValidScriTarget(0xFFFFFFFFu, null, null));
     }
 
     [Fact]
     public void IsValidScriTarget_MasterFormId_Allowed()
     {
         var masterFormIds = new HashSet<uint> { 0x00012345 };
-        Assert.True(PluginBuilder.IsValidScriTarget(0x00012345, masterFormIds, null));
+        Assert.True(PluginConversionPipeline.IsValidScriTarget(0x00012345, masterFormIds, null));
     }
 
     [Fact]
@@ -39,7 +39,7 @@ public class ScriBindingTests
         // This is the v22 fix: a prototype-only SCPT being freshly emitted in the same
         // Build run is a valid SCRI target even though it's not in the master ESM.
         var emittedNew = new HashSet<uint> { 0x0F123456 };
-        Assert.True(PluginBuilder.IsValidScriTarget(0x0F123456, null, emittedNew));
+        Assert.True(PluginConversionPipeline.IsValidScriTarget(0x0F123456, null, emittedNew));
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public class ScriBindingTests
         // gets dropped by ValidateScriRefs so the runtime doesn't null-deref on bind.
         var masterFormIds = new HashSet<uint> { 0x00012345 };
         var emittedNew = new HashSet<uint> { 0x0F123456 };
-        Assert.False(PluginBuilder.IsValidScriTarget(0xDEADBEEF, masterFormIds, emittedNew));
+        Assert.False(PluginConversionPipeline.IsValidScriTarget(0xDEADBEEF, masterFormIds, emittedNew));
     }
 
     [Fact]
@@ -57,8 +57,8 @@ public class ScriBindingTests
     {
         // Defensive: when neither set is populated (e.g. ValidateScriRefs called before
         // Build initialized the FormID sets), only sentinel FormIDs pass.
-        Assert.True(PluginBuilder.IsValidScriTarget(0u, null, null));
-        Assert.True(PluginBuilder.IsValidScriTarget(0xFFFFFFFFu, null, null));
-        Assert.False(PluginBuilder.IsValidScriTarget(0x00012345, null, null));
+        Assert.True(PluginConversionPipeline.IsValidScriTarget(0u, null, null));
+        Assert.True(PluginConversionPipeline.IsValidScriTarget(0xFFFFFFFFu, null, null));
+        Assert.False(PluginConversionPipeline.IsValidScriTarget(0x00012345, null, null));
     }
 }

@@ -5,7 +5,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 ///     the runtime→emitted alias table FIRST, fall back to the validity check, otherwise
 ///     return null so the caller can skip the subrecord entirely.
 ///     <para>
-///     The remap-first ordering matters because <c>_emittedNewFormIds</c> in PluginBuilder
+///     The remap-first ordering matters because <c>_emittedNewFormIds</c> in PluginConversionPipeline
 ///     tracks BOTH source and allocated FormIDs. A source FormID looks "valid" but its
 ///     bytes won't resolve when the engine reads the emitted record under a different
 ///     allocated FormID — so a remap when one exists is always preferred over a verbatim

@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
+using BethesdaMultitool.Core.Formats.Esm.Export.Report;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
@@ -106,6 +107,45 @@ public sealed class GeckDialogueTreeReportTests
 
         Assert.Equal(1, CountOccurrences(report, "Response 0 of SharedTopic"));
         Assert.Equal(1, CountOccurrences(report, "(see above)"));
+    }
+
+    [Fact]
+    public void ReportUsesFnvAnimationBodySelectorPolicyIncludingZeroIdle()
+    {
+        var dialogue = new DialogueRecord
+        {
+            Conditions =
+            {
+                new DialogueCondition
+                {
+                    FunctionIndex = 0x006A,
+                    RunOn = 0
+                }
+            }
+        };
+
+        var report = GeckDialogueWriter.BuildDialogueReport(dialogue, FormIdResolver.Empty);
+        var conditions = Assert.Single(report.Sections, section => section.Name == "Conditions");
+        var field = Assert.Single(conditions.Fields);
+        var text = Assert.IsType<ReportValue.StringVal>(field.Value).Raw;
+
+        Assert.Contains("Run On: Idle", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReportDoesNotTreatRawIndexAtOpcodeBaseAsScriptOpcode()
+    {
+        var dialogue = new DialogueRecord
+        {
+            Conditions = { new DialogueCondition { FunctionIndex = 0x1000 } }
+        };
+
+        var report = GeckDialogueWriter.BuildDialogueReport(dialogue, FormIdResolver.Empty);
+        var conditions = Assert.Single(report.Sections, section => section.Name == "Conditions");
+        var text = Assert.IsType<ReportValue.StringVal>(Assert.Single(conditions.Fields).Value).Raw;
+
+        Assert.StartsWith("Func4096", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetWantBlocking", text, StringComparison.Ordinal);
     }
 
     private static int CountOccurrences(string haystack, string needle)

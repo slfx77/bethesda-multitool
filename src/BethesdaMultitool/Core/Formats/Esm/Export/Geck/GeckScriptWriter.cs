@@ -236,8 +236,8 @@ internal static class GeckScriptWriter
     {
         return formId switch
         {
-            0x00000007 => "PlayerRef (0x00000007)",
-            0x00000014 => "Player (0x00000014)",
+            0x00000007 => "Player (0x00000007)",
+            0x00000014 => "PlayerRef (0x00000014)",
             _ => resolver.FormatFull(formId)
         };
     }

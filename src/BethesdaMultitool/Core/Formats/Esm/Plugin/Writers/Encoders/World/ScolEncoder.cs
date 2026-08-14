@@ -17,13 +17,14 @@ public sealed class ScolEncoder : IRecordEncoder
     ///     Encode a new SCOL record from scratch. Parts whose <see cref="StaticCollectionPart.OnamFormId" />
     ///     is unreachable in the output (neither in the master ESM nor among newly-emitted STATs)
     ///     are dropped with a warning; if zero parts survive validation, returns an empty
-    ///     subrecord list so the PluginBuilder short-circuit drops the record entirely rather
-    ///     than emitting a bare EDID stub.
+    ///     subrecord list. Production planning reserves and skips that known-empty New SCOL;
+    ///     the writer treats any remaining New-empty result as a planner-contract failure.
     /// </summary>
     internal static EncodedRecord EncodeNew(
         StaticCollectionRecord scol,
         IReadOnlySet<uint> masterFormIds,
-        IReadOnlySet<uint> emittedNewStats)
+        IReadOnlySet<uint> emittedNewStats,
+        IReadOnlyDictionary<uint, uint>? sourceToEmitted = null)
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
@@ -53,9 +54,7 @@ public sealed class ScolEncoder : IRecordEncoder
         var validParts = 0;
         foreach (var part in scol.Parts)
         {
-            if (part.OnamFormId == 0
-                || (!masterFormIds.Contains(part.OnamFormId)
-                    && !emittedNewStats.Contains(part.OnamFormId)))
+            if (!IsPartReachable(part, masterFormIds, emittedNewStats, sourceToEmitted))
             {
                 warnings.Add(
                     $"SCOL 0x{scol.FormId:X8} part ONAM 0x{part.OnamFormId:X8} unreachable " +
@@ -85,11 +84,46 @@ public sealed class ScolEncoder : IRecordEncoder
 
             warnings.Add(
                 $"SCOL 0x{scol.FormId:X8} \"{scol.EditorId ?? "<no EDID>"}\" had no reachable parts " +
-                "and no baked model — dropping record (PluginBuilder short-circuits empty subrecord lists).");
+                "and no baked model — record requires planner-owned non-emission.");
             return new EncodedRecord { Subrecords = [], Warnings = warnings };
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+    }
+
+    /// <summary>
+    ///     True when a new SCOL can produce a load-bearing record with the supplied final
+    ///     liveness sets. A baked model is sufficient without parts; otherwise at least one
+    ///     ONAM target must be reachable. The planner uses this before reference resolution
+    ///     so a known-empty SCOL becomes an explicit reservation instead of a late decline.
+    /// </summary>
+    internal static bool CanEmitNew(
+        StaticCollectionRecord scol,
+        IReadOnlySet<uint> masterFormIds,
+        IReadOnlySet<uint> emittedNewStats,
+        IReadOnlyDictionary<uint, uint>? sourceToEmitted = null)
+    {
+        return !string.IsNullOrEmpty(scol.ModelPath)
+               || scol.Parts.Any(part =>
+                   IsPartReachable(part, masterFormIds, emittedNewStats, sourceToEmitted));
+    }
+
+    private static bool IsPartReachable(
+        StaticCollectionPart part,
+        IReadOnlySet<uint> masterFormIds,
+        IReadOnlySet<uint> emittedNewStats,
+        IReadOnlyDictionary<uint, uint>? sourceToEmitted)
+    {
+        if (part.OnamFormId == 0)
+        {
+            return false;
+        }
+
+        var target = sourceToEmitted is not null
+                     && sourceToEmitted.TryGetValue(part.OnamFormId, out var emitted)
+            ? emitted
+            : part.OnamFormId;
+        return masterFormIds.Contains(target) || emittedNewStats.Contains(target);
     }
 
     private static EncodedSubrecord EncodePlacementData(List<StaticCollectionPlacement> placements)

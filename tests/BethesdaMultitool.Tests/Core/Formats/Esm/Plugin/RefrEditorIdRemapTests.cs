@@ -6,8 +6,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 /// <summary>
 ///     Tests for the EditorID-stem rename-rescue predicate. Exercises the static
 ///     <see
-///         cref="PluginBuilder.TryFindMasterBaseByEditorIdStem(System.Collections.Generic.Dictionary{string, System.Collections.Generic.Dictionary{string, System.Collections.Generic.List{uint}}}, string, string, out bool, out System.Collections.Generic.List{uint})" />
-///     overload directly so we don't need to spin up a full PluginBuilder run.
+///         cref="PluginConversionPipeline.TryFindMasterBaseByEditorIdStem(System.Collections.Generic.Dictionary{string, System.Collections.Generic.Dictionary{string, System.Collections.Generic.List{uint}}}, string, string, out bool, out System.Collections.Generic.List{uint})" />
+///     overload directly so we don't need to spin up a full PluginConversionPipeline run.
 /// </summary>
 public class RefrEditorIdRemapTests
 {
@@ -22,7 +22,7 @@ public class RefrEditorIdRemapTests
             }
         };
 
-        var result = PluginBuilder.TryFindMasterBaseByEditorIdStem(
+        var result = PluginConversionPipeline.TryFindMasterBaseByEditorIdStem(
             lookup, "SCOLParkingLotChunk03", "SCOL", out var ambiguous, out var candidates);
 
         Assert.Equal(0xCAFEBABEu, result);
@@ -41,7 +41,7 @@ public class RefrEditorIdRemapTests
             }
         };
 
-        var result = PluginBuilder.TryFindMasterBaseByEditorIdStem(
+        var result = PluginConversionPipeline.TryFindMasterBaseByEditorIdStem(
             lookup, "SCOLParkingLotChunk03", "SCOL", out var ambiguous, out var candidates);
 
         Assert.Null(result);
@@ -61,7 +61,7 @@ public class RefrEditorIdRemapTests
             }
         };
 
-        var result = PluginBuilder.TryFindMasterBaseByEditorIdStem(
+        var result = PluginConversionPipeline.TryFindMasterBaseByEditorIdStem(
             lookup, "MyRandomThing03", "SCOL", out var ambiguous, out _);
 
         Assert.Null(result);
@@ -81,7 +81,7 @@ public class RefrEditorIdRemapTests
             }
         };
 
-        var result = PluginBuilder.TryFindMasterBaseByEditorIdStem(
+        var result = PluginConversionPipeline.TryFindMasterBaseByEditorIdStem(
             lookup, "SCOLParkingLotChunk03", "SCOL", out var ambiguous, out _);
 
         Assert.Null(result);
@@ -101,7 +101,7 @@ public class RefrEditorIdRemapTests
             }
         };
 
-        var result = PluginBuilder.TryFindMasterBaseByEditorIdStem(
+        var result = PluginConversionPipeline.TryFindMasterBaseByEditorIdStem(
             lookup, "MyStem03", "CELL", out var ambiguous, out _);
 
         Assert.Null(result);
@@ -119,7 +119,7 @@ public class RefrEditorIdRemapTests
             ["SCOL"] = new(StringComparer.Ordinal) { ["foo"] = [0x123u] }
         };
 
-        var result = PluginBuilder.TryFindMasterBaseByEditorIdStem(
+        var result = PluginConversionPipeline.TryFindMasterBaseByEditorIdStem(
             lookup, editorId, "SCOL", out var ambiguous, out _);
 
         Assert.Null(result);
@@ -137,7 +137,7 @@ public class RefrEditorIdRemapTests
             }
         };
 
-        var result = PluginBuilder.TryFindMasterBaseByEditorIdStem(
+        var result = PluginConversionPipeline.TryFindMasterBaseByEditorIdStem(
             lookup, "MonorailPlatform_NV", "STAT", out _, out _);
 
         Assert.Equal(0xAAAAu, result);

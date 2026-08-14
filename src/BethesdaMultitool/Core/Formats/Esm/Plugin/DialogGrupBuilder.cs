@@ -35,7 +35,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin;
 ///     at master DIALs are nested under reconstructed override DIAL anchors. INFOs with a dangling
 ///     or zero TPIC are dropped because the runtime null-derefs on dialog-tree walks.
 ///     Cross-record FormID references on each INFO (QSTI, ANAM, PNAM, NAME, TCLT, TCLF, TCFU,
-///     CTDA.Reference) are validated against the master-FormIDs ∪ emitted-new-FormIDs set;
+///     semantic CTDA.Reference slots) are validated against the master-FormIDs ∪ emitted-new-FormIDs set;
 ///     unresolvable references are dropped to prevent runtime null-derefs and the engine's
 ///     "fallback global broadcast" behavior (which manifested as every NPC playing the
 ///     crucified idle animation every few seconds).
@@ -1532,7 +1532,7 @@ internal static class DialogGrupBuilder
             return null;
         }
 
-        // New NPCs: source-FormID-keyed lookup populated by PluginBuilder from the encoded
+        // New NPCs: source-FormID-keyed lookup populated by PluginConversionPipeline from the encoded
         // NPC records.
         if (npcVoiceTypeByNpcFormId is not null
             && npcVoiceTypeByNpcFormId.TryGetValue(speakerFid, out var newVtFid)

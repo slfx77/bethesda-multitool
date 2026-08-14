@@ -175,16 +175,23 @@ public class QustPerkCtdaSanitizerTests
     [Fact]
     public void PerkEncodeNew_drops_PRKC_block_when_all_entry_conditions_dropped()
     {
-        // When every CTDA in an entry chain is dropped, PRKC must NOT be emitted (an empty
-        // tab-count would mislead the engine about the chain shape).
+        // When every CTDA in an entry condition group is dropped, its PRKC selector must not
+        // survive as an empty group.
         var perk = MakePerk(entries: new List<PerkEntry>
         {
             new()
             {
                 Type = 2, EntryPoint = 0, FunctionType = 0, EffectValue = 1f,
-                Conditions = new List<PerkCondition>
+                ConditionGroups =
                 {
-                    new() { FunctionIndex = HasPerk, Parameter1 = 0x000DEAD1u }
+                    new()
+                    {
+                        RunOn = 0,
+                        Conditions =
+                        {
+                            new() { FunctionIndex = HasPerk, Parameter1 = 0x000DEAD1u }
+                        }
+                    }
                 }
             }
         });
@@ -206,10 +213,17 @@ public class QustPerkCtdaSanitizerTests
             new()
             {
                 Type = 2, EntryPoint = 0, FunctionType = 0, EffectValue = 1f,
-                Conditions = new List<PerkCondition>
+                ConditionGroups =
                 {
-                    new() { FunctionIndex = HasPerk, Parameter1 = 0x000DEAD1u },
-                    new() { FunctionIndex = GetActorValue, Parameter1 = 5u, ComparisonValue = 50f }
+                    new()
+                    {
+                        RunOn = 0,
+                        Conditions =
+                        {
+                            new() { FunctionIndex = HasPerk, Parameter1 = 0x000DEAD1u },
+                            new() { FunctionIndex = GetActorValue, Parameter1 = 5u, ComparisonValue = 50f }
+                        }
+                    }
                 }
             }
         });

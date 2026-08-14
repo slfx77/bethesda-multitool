@@ -15,7 +15,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 ///     top-level writer skips encoder-declined overrides. Counting at each write site
 ///     therefore drifts from the file — the defect that left the TES4 HEDR record count
 ///     35% low and made <see cref="Validation.PluginRoundTripValidator" /> warn on every
-///     planner-routed run. The assembled byte stream is the only source that cannot lie.
+///     affected conversion. The assembled byte stream is the only source that cannot lie.
 ///     </para>
 /// </summary>
 internal readonly record struct PluginEmissionCensus

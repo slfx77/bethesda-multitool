@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin;
 
@@ -53,7 +54,7 @@ internal static class DialogueSpeakerBinding
 
     public static bool IsPositiveSubjectGetIsId(ReadOnlySpan<byte> ctda)
     {
-        if (ctda.Length < 16
+        if (!ConditionSubrecordDecoder.IsSupportedBodyLength(ctda.Length)
             || BinaryPrimitives.ReadUInt16LittleEndian(ctda[8..]) != GetIsIdFunctionIndex
             || BinaryPrimitives.ReadUInt32LittleEndian(ctda[12..]) == 0)
         {

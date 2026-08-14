@@ -8,8 +8,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
 /// <summary>
 ///     Stateless analysis helpers over placed references (REFR/ACHR/ACRE) shared by the
-///     planner, planned writer, and legacy pipeline: master placement reads, map-marker
-///     divergence checks, structural-marker detection, and DMP capture coverage.
+///     planner and planned writer: master placement reads, map-marker divergence checks,
+///     structural-marker detection, and DMP capture coverage.
 /// </summary>
 internal static class PlacedReferenceAnalysis
 {

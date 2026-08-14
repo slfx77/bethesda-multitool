@@ -803,9 +803,9 @@ public class WorldObjectEncoderTests
                     ResultScript = 0x1,
                     Conditions =
                     [
-                        new DialogueCondition { Type = 0x20, FunctionIndex = 1 },
-                        new DialogueCondition { Type = 0x21, FunctionIndex = 2 }, // OR-bit set
-                        new DialogueCondition { Type = 0x40, FunctionIndex = 3 } // !=
+                        new DialogueCondition { Type = 0x20, FunctionIndex = 0x0001 },
+                        new DialogueCondition { Type = 0x21, FunctionIndex = 0x0005 }, // OR-bit set
+                        new DialogueCondition { Type = 0x40, FunctionIndex = 0x0006 } // !=
                     ]
                 }
             ]
@@ -821,9 +821,9 @@ public class WorldObjectEncoderTests
         }
 
         // FunctionIndex (offset 8, uint16 LE) preserves order.
-        Assert.Equal(1, BinaryPrimitives.ReadUInt16LittleEndian(ctdas[0].Bytes.AsSpan(8, 2)));
-        Assert.Equal(2, BinaryPrimitives.ReadUInt16LittleEndian(ctdas[1].Bytes.AsSpan(8, 2)));
-        Assert.Equal(3, BinaryPrimitives.ReadUInt16LittleEndian(ctdas[2].Bytes.AsSpan(8, 2)));
+        Assert.Equal(0x0001, BinaryPrimitives.ReadUInt16LittleEndian(ctdas[0].Bytes.AsSpan(8, 2)));
+        Assert.Equal(0x0005, BinaryPrimitives.ReadUInt16LittleEndian(ctdas[1].Bytes.AsSpan(8, 2)));
+        Assert.Equal(0x0006, BinaryPrimitives.ReadUInt16LittleEndian(ctdas[2].Bytes.AsSpan(8, 2)));
     }
 
     [Fact]
@@ -845,7 +845,10 @@ public class WorldObjectEncoderTests
                         {
                             Type = 0x35,
                             ComparisonValue = 3.5f,
-                            FunctionIndex = 250,
+                            // GetFactionRankDifference: an exact retail FNV condition callback with
+                            // two FormID-backed parameter slots. The old arbitrary 250 fixture is a
+                            // script-only command and is correctly rejected by TermEncoder.
+                            FunctionIndex = 0x003C,
                             Parameter1 = 0xABCDEFu,
                             Parameter2 = 0x12345678u,
                             RunOn = 4, // Linked Reference
@@ -861,7 +864,7 @@ public class WorldObjectEncoderTests
 
         Assert.Equal(0x35, ctda.Bytes[0]);
         Assert.Equal(3.5f, BinaryPrimitives.ReadSingleLittleEndian(ctda.Bytes.AsSpan(4, 4)));
-        Assert.Equal(250, BinaryPrimitives.ReadUInt16LittleEndian(ctda.Bytes.AsSpan(8, 2)));
+        Assert.Equal(0x003C, BinaryPrimitives.ReadUInt16LittleEndian(ctda.Bytes.AsSpan(8, 2)));
         Assert.Equal(0xABCDEFu, BinaryPrimitives.ReadUInt32LittleEndian(ctda.Bytes.AsSpan(12, 4)));
         Assert.Equal(0x12345678u, BinaryPrimitives.ReadUInt32LittleEndian(ctda.Bytes.AsSpan(16, 4)));
         Assert.Equal(4u, BinaryPrimitives.ReadUInt32LittleEndian(ctda.Bytes.AsSpan(20, 4)));

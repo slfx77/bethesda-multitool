@@ -30,18 +30,18 @@ public sealed class IdleEncoder : IRecordEncoder
 
     /// <summary>
     ///     A CTDA whose runtime evaluation is always <c>false</c>:
-    ///     <c>GetIsID(FormID 0) == 1</c>. GetIsID returns 1 when the subject's FormID matches
-    ///     the parameter — since no actor has FormID 0, the function always returns 0, and
-    ///     <c>0 == 1</c> is always false. Used to neutralize new IDLE records whose original
-    ///     CTDAs we couldn't model.
+    ///     <c>GetIsID(Player base) == 2</c>. GetIsID is boolean, so its result can only be
+    ///     0 or 1. A zero FormID is deliberately avoided because unresolved condition
+    ///     FormIDs can fall back to the player in the FNV runtime. Used to neutralize new
+    ///     IDLE records whose original CTDAs we couldn't model.
     ///     Byte layout (28 bytes, FNV PDB CTDA_DATA):
     ///     <list type="bullet">
     ///         <item><c>[0]</c> Type byte = 0x00 (operator <c>==</c>, no OR flag, no swap)</item>
     ///         <item><c>[1..3]</c> padding</item>
-    ///         <item><c>[4..7]</c> ComparisonValue = 1.0f LE</item>
+    ///         <item><c>[4..7]</c> ComparisonValue = 2.0f LE</item>
     ///         <item><c>[8..9]</c> FunctionIndex = 0x0048 (GetIsID) LE</item>
     ///         <item><c>[10..11]</c> padding</item>
-    ///         <item><c>[12..15]</c> Parameter1 = 0 (FormID 0)</item>
+    ///         <item><c>[12..15]</c> Parameter1 = 0x00000007 (Player base actor)</item>
     ///         <item><c>[16..19]</c> Parameter2 = 0</item>
     ///         <item><c>[20..23]</c> RunOn = 0 (Subject)</item>
     ///         <item><c>[24..27]</c> Reference = 0</item>
@@ -50,9 +50,9 @@ public sealed class IdleEncoder : IRecordEncoder
     private static readonly byte[] NeverFireCtdaBytes =
     {
         0x00, 0x00, 0x00, 0x00,             // Type + padding
-        0x00, 0x00, 0x80, 0x3F,             // ComparisonValue 1.0f LE
+        0x00, 0x00, 0x00, 0x40,             // ComparisonValue 2.0f LE
         0x48, 0x00, 0x00, 0x00,             // FunctionIndex 0x0048 + padding
-        0x00, 0x00, 0x00, 0x00,             // Parameter1 (FormID 0)
+        0x07, 0x00, 0x00, 0x00,             // Parameter1 (Player base actor)
         0x00, 0x00, 0x00, 0x00,             // Parameter2
         0x00, 0x00, 0x00, 0x00,             // RunOn (Subject)
         0x00, 0x00, 0x00, 0x00              // Reference (FormID 0)
@@ -107,7 +107,7 @@ public sealed class IdleEncoder : IRecordEncoder
         if (idle.Conditions.Count > 0)
         {
             // When validFormIds isn't supplied (legacy call sites + tests), skip sanitization
-            // and emit conditions verbatim. The PluginBuilder dispatcher always passes it for
+            // and emit conditions verbatim. The PluginConversionPipeline dispatcher always passes it for
             // the real new-record path so production output is always validated.
             IReadOnlyList<Models.Records.Quest.DialogueCondition> emitConds;
             if (validFormIds is null)
@@ -143,7 +143,7 @@ public sealed class IdleEncoder : IRecordEncoder
             warnings.Add(
                 $"New IDLE 0x{idle.FormId:X8} had no captured CTDAs (source captured " +
                 $"{idle.ConditionCount} CTDA(s) in count) — emitting a never-fire CTDA " +
-                "(GetIsID 0 == 1) so the idle is inert instead of universally eligible (the " +
+                "(GetIsID Player base == 2) so the idle is inert instead of universally eligible (the " +
                 "default state that caused proto crucifix idles to play for every standing NPC).");
         }
 

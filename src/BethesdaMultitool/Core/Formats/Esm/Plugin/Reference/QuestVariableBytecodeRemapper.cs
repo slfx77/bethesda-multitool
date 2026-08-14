@@ -50,8 +50,8 @@ internal static class QuestVariableBytecodeRemapper
     }
 
     /// <summary>
-    ///     Finds direct quest-local writes whose owning record is both planner-routed and
-    ///     otherwise emission-eligible. This is deliberately analysis-only: the caller
+    ///     Finds direct quest-local writes whose owning record is otherwise eligible for the
+    ///     planner-owned emission pipeline. This is deliberately analysis-only: the caller
     ///     gates unsupported fresh locals before <see cref="Apply" /> mutates any SCDA.
     ///     INFO result scripts are handled separately by <see cref="DialogueProducerLedger" />
     ///     because their nested dialogue section is reconstructed outside EmitPlan.

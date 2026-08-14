@@ -123,11 +123,16 @@ public sealed class CellEncoder : IRecordEncoder
         }
 
         // XCLL — direct cell lighting. Existing master cells inherit their original XCLL
-        // because PluginBuilder emits the master CELL anchor verbatim; this matters for
+        // because PluginConversionPipeline emits the master CELL anchor verbatim; this matters for
         // new DMP-only cells where no master CELL exists to supply ambient/fog lighting.
         if (cell.LightingData is not null)
         {
-            var schema = SubrecordSchemaRegistry.GetSchema("XCLL", "CELL", 40);
+            // Pick the layout the parsed dictionary actually carries: TES4 XCLL is 36 bytes and has
+            // no FogPow, FO3/FNV+ is 40 and does. Serializing a 36-byte TES4 dictionary against the
+            // 40-byte schema would fabricate a FogPow field. (The DMP->ESP converter only targets
+            // FO3/FNV, so 40 stays the normal path; this keeps a TES4 round-trip honest.)
+            var xcllLength = cell.LightingData.ContainsKey("FogPow") ? 40 : 36;
+            var schema = SubrecordSchemaRegistry.GetSchema("XCLL", "CELL", xcllLength);
             if (schema is not null)
             {
                 subs.Add(new EncodedSubrecord("XCLL",

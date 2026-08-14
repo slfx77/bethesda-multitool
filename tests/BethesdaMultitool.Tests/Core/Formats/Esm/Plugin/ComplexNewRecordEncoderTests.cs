@@ -22,10 +22,11 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 
 /// <summary>
 ///     Tests for the complex new-record encoders: WEAP, ARMO, FACT, NPC_, ARMA, RCPE,
-///     RCCT, COBJ, QUST (top-level + per-stage + per-target CTDA + CIS1/CIS2), plus the
+///     RCCT, the quarantined synthetic COBJ hybrid, QUST (top-level + per-stage + per-target CTDA + CIS1/CIS2), plus the
 ///     medium-complexity batch (CREA, CLAS, SOUN, TXST, LTEX, CHAL, BPTD, ENCH, SPEL,
 ///     PERK) and the large encoders (MGEF, WRLD, RACE). Verifies subrecord byte layouts
-///     against PDB schemas, optional-field emission, and canonical fopdoc ordering.
+///     against their stated schemas/contracts and optional-field ordering. COBJ is byte-builder
+///     regression coverage only: no supported game uses that hybrid layout in production.
 /// </summary>
 public class ComplexNewRecordEncoderTests
 {
@@ -522,7 +523,7 @@ public class ComplexNewRecordEncoderTests
     }
 
     // ====================================================================================
-    // RCCT, COBJ — new-record encoders; ARMA texture-hash/icon/DNAM extensions;
+    // RCCT plus the quarantined synthetic COBJ hybrid; ARMA texture-hash/icon/DNAM extensions;
     // QUST top-level CTDA + CIS1/CIS2 emission
     // ====================================================================================
 
@@ -569,11 +570,11 @@ public class ComplexNewRecordEncoderTests
     }
 
     // ====================================================================================
-    // CobjEncoder
+    // CobjEncoder — retained hybrid byte-builder regression coverage, not an FNV schema oracle
     // ====================================================================================
 
     [Fact]
-    public void CobjEncoder_EncodeNew_CanonicalSubrecordOrderWithAllFields()
+    public void CobjEncoder_EncodeNew_PreservesHistoricalHybridSubrecordOrder()
     {
         var cobj = new ConstructibleObjectRecord
         {
@@ -1526,14 +1527,23 @@ public class ComplexNewRecordEncoderTests
                     Area = 5,
                     Duration = 3,
                     Type = 2, // Target
-                    ActorValue = -1
+                    ActorValue = -1,
+                    Conditions =
+                    [
+                        new DialogueCondition
+                        {
+                            ComparisonValue = 1.0f,
+                            FunctionIndex = 0x0048,
+                            Parameter1 = 0x00000007,
+                        },
+                    ],
                 }
             ]
         };
 
         var encoded = EnchEncoder.EncodeNew(ench);
         var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
-        Assert.Equal(["EDID", "FULL", "ENIT", "EFID", "EFIT"], sigs);
+        Assert.Equal(["EDID", "FULL", "ENIT", "EFID", "EFIT", "CTDA"], sigs);
 
         var enit = Assert.Single(encoded.Subrecords, s => s.Signature == "ENIT").Bytes;
         Assert.Equal(16, enit.Length);
@@ -1546,6 +1556,11 @@ public class ComplexNewRecordEncoderTests
         Assert.Equal(20, efit.Length);
         Assert.Equal(10.0f, BinaryPrimitives.ReadSingleLittleEndian(efit.AsSpan(0, 4)));
         Assert.Equal(-1, BinaryPrimitives.ReadInt32LittleEndian(efit.AsSpan(16, 4)));
+
+        var ctda = Assert.Single(encoded.Subrecords, s => s.Signature == "CTDA").Bytes;
+        Assert.Equal(28, ctda.Length);
+        Assert.Equal((ushort)0x0048, BinaryPrimitives.ReadUInt16LittleEndian(ctda.AsSpan(8, 2)));
+        Assert.Equal(0x00000007u, BinaryPrimitives.ReadUInt32LittleEndian(ctda.AsSpan(12, 4)));
     }
 
     // ====================================================================================
@@ -1566,13 +1581,22 @@ public class ComplexNewRecordEncoderTests
             Flags = 0x02,
             Effects =
             [
-                new EnchantmentEffect { EffectFormId = 0x222u, Magnitude = 50.0f, Type = 0 }
+                new EnchantmentEffect
+                {
+                    EffectFormId = 0x222u,
+                    Magnitude = 50.0f,
+                    Type = 0,
+                    Conditions =
+                    [
+                        new DialogueCondition { FunctionIndex = 0x000E, Parameter1 = 5 },
+                    ],
+                }
             ]
         };
 
         var encoded = SpelEncoder.EncodeNew(spel);
         var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
-        Assert.Equal(["EDID", "FULL", "SPIT", "EFID", "EFIT"], sigs);
+        Assert.Equal(["EDID", "FULL", "SPIT", "EFID", "EFIT", "CTDA"], sigs);
 
         var spit = Assert.Single(encoded.Subrecords, s => s.Signature == "SPIT").Bytes;
         Assert.Equal(16, spit.Length);
@@ -1580,11 +1604,52 @@ public class ComplexNewRecordEncoderTests
         Assert.Equal(50u, BinaryPrimitives.ReadUInt32LittleEndian(spit.AsSpan(4, 4)));
         Assert.Equal(10u, BinaryPrimitives.ReadUInt32LittleEndian(spit.AsSpan(8, 4)));
         Assert.Equal((byte)0x02, spit[12]);
+        Assert.Equal(28, Assert.Single(encoded.Subrecords, s => s.Signature == "CTDA").Bytes.Length);
     }
 
     // ====================================================================================
     // PerkEncoder
     // ====================================================================================
+
+    [Fact]
+    public void PerkEncoder_EncodeNew_DefaultModelEmitsPresentZeroHiddenByte()
+    {
+        var encoded = PerkEncoder.EncodeNew(new PerkRecord
+        {
+            EditorId = "DefaultHiddenShape",
+            Trait = 1,
+            MinLevel = 2,
+            Ranks = 3,
+            Playable = 4,
+        });
+
+        var data = Assert.Single(encoded.Subrecords, subrecord => subrecord.Signature == "DATA").Bytes;
+        Assert.Equal(new byte[] { 1, 2, 3, 4, 0 }, data);
+    }
+
+    [Theory]
+    [InlineData(null, 4)]
+    [InlineData(0xFF, 5)]
+    public void PerkEncoder_EncodeNew_PreservesHiddenPresenceAndValue(int? hidden, int expectedLength)
+    {
+        var encoded = PerkEncoder.EncodeNew(new PerkRecord
+        {
+            EditorId = "ExplicitHiddenShape",
+            Trait = 1,
+            MinLevel = 2,
+            Ranks = 3,
+            Playable = 4,
+            Hidden = hidden.HasValue ? (byte?)hidden.Value : null,
+        });
+
+        var data = Assert.Single(encoded.Subrecords, subrecord => subrecord.Signature == "DATA").Bytes;
+        Assert.Equal(expectedLength, data.Length);
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, data[..4]);
+        if (hidden.HasValue)
+        {
+            Assert.Equal((byte)hidden.Value, data[4]);
+        }
+    }
 
     [Fact]
     public void PerkEncoder_EncodeNew_Data5BytesAndCtdaConditions()
@@ -1626,9 +1691,54 @@ public class ComplexNewRecordEncoderTests
 
         var ctda = Assert.Single(encoded.Subrecords, s => s.Signature == "CTDA").Bytes;
         Assert.Equal(28, ctda.Length);
-        Assert.Equal(3, ctda[0]); // ComparisonOperator
+        Assert.Equal(0x60, ctda[0]); // Greater-than-or-equal operator in Type bits 5–7
         Assert.Equal(50.0f, BinaryPrimitives.ReadSingleLittleEndian(ctda.AsSpan(4, 4)));
         Assert.Equal((ushort)0x0E, BinaryPrimitives.ReadUInt16LittleEndian(ctda.AsSpan(8, 2)));
+    }
+
+    [Theory]
+    [InlineData(0, 0x00)]
+    [InlineData(1, 0x20)]
+    [InlineData(2, 0x40)]
+    [InlineData(3, 0x60)]
+    [InlineData(4, 0x80)]
+    [InlineData(5, 0xA0)]
+    public void PerkEncoder_EncodeNew_PacksComparisonOperatorIntoTypeHighBits(
+        byte comparisonOperator,
+        byte expectedType)
+    {
+        var perk = new PerkRecord
+        {
+            EditorId = "PerkOperatorTest",
+            Conditions =
+            [
+                new PerkCondition
+                {
+                    FunctionIndex = 0x000E,
+                    ComparisonOperator = comparisonOperator,
+                },
+            ],
+        };
+
+        var encoded = PerkEncoder.EncodeNew(perk);
+        var ctda = Assert.Single(encoded.Subrecords, s => s.Signature == "CTDA").Bytes;
+
+        Assert.Equal(expectedType, ctda[0]);
+        Assert.Equal(0, ctda[0] & 0x1F);
+    }
+
+    [Theory]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    public void PerkEncoder_EncodeNew_RejectsUndefinedComparisonOperators(byte comparisonOperator)
+    {
+        var perk = new PerkRecord
+        {
+            Conditions = [new PerkCondition { ComparisonOperator = comparisonOperator }],
+        };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => PerkEncoder.EncodeNew(perk));
     }
 
     [Fact]
@@ -1652,6 +1762,54 @@ public class ComplexNewRecordEncoderTests
         Assert.True(sigs.IndexOf("PRKE") < sigs.IndexOf("PRKF"));
         // No "deferred" warning should be emitted now that entries are written.
         Assert.DoesNotContain(encoded.Warnings, w => w.Contains("deferred"));
+    }
+
+    [Fact]
+    public void PerkEncoder_EncodeNew_DerivesMissingConditionTabCountFromGroups()
+    {
+        var perk = new PerkRecord
+        {
+            EditorId = "DerivedConditionTabs",
+            Entries =
+            [
+                new PerkEntry
+                {
+                    Type = 2,
+                    EntryPoint = 3,
+                    ConditionGroups =
+                    [
+                        new PerkConditionGroup { RunOn = 0 },
+                        new PerkConditionGroup { RunOn = 1 },
+                    ],
+                },
+            ],
+        };
+
+        var encoded = PerkEncoder.EncodeNew(perk);
+        var entryData = encoded.Subrecords.Last(subrecord => subrecord.Signature == "DATA").Bytes;
+
+        Assert.Equal(2, entryData[2]);
+    }
+
+    [Fact]
+    public void PerkEncoder_EncodeNew_RejectsDerivedConditionTabCountAboveByteRange()
+    {
+        var perk = new PerkRecord
+        {
+            EditorId = "TooManyConditionTabs",
+            Entries =
+            [
+                new PerkEntry
+                {
+                    Type = 2,
+                    ConditionGroups = Enumerable.Range(0, byte.MaxValue + 1)
+                        .Select(_ => new PerkConditionGroup())
+                        .ToList(),
+                },
+            ],
+        };
+
+        Assert.Throws<InvalidOperationException>(() => PerkEncoder.EncodeNew(perk));
     }
 
     [Fact]

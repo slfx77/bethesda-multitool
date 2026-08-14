@@ -219,8 +219,11 @@ public sealed class TerminalEmbeddedScriptRoundTripTests
             "whole menu item is atomic", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public void EncodeThenParse_DropsMenuItemWithUnknownConditionFunctionAndPreservesSibling()
+    [Theory]
+    [InlineData(0x0002)] // AddItem is a real script command with no condition callback.
+    [InlineData(0x5102)] // Corrupt high raw index.
+    public void EncodeThenParse_DropsMenuItemAbsentFromFnvCallbackTableAndPreservesSibling(
+        ushort functionIndex)
     {
         var terminal = new TerminalRecord
         {
@@ -235,7 +238,7 @@ public sealed class TerminalEmbeddedScriptRoundTripTests
                     [
                         new DialogueCondition
                         {
-                            FunctionIndex = 0x5102
+                            FunctionIndex = functionIndex
                         }
                     ]
                 },
@@ -253,8 +256,9 @@ public sealed class TerminalEmbeddedScriptRoundTripTests
         Assert.Equal("Safe sibling", item.Text);
         Assert.DoesNotContain(encoded.Subrecords, static subrecord => subrecord.Signature == "CTDA");
         Assert.Contains(encoded.Warnings, warning =>
-            warning.Contains("0x5102", StringComparison.Ordinal)
-            && warning.Contains("absent from the retail FNV command table", StringComparison.Ordinal));
+            warning.Contains($"0x{functionIndex:X4}", StringComparison.Ordinal)
+            && warning.Contains("absent from the exact retail FNV condition-callback table",
+                StringComparison.Ordinal));
     }
 
     private static TerminalRecord CreateTerminal()

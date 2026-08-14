@@ -55,8 +55,10 @@ public sealed class RecordEncoderRegistry
     }
 
     /// <summary>
-    ///     Builds the full encoder registry. Every record type with a runtime reader has an
-    ///     encoder so its records can be emitted to the output ESP.
+    ///     Builds the direct model-encoder registry retained for override primitives,
+    ///     diagnostics, and isolated format tests. Production top-level reachability is owned
+    ///     by <c>PlannedEncoders</c> plus the DMP catalog and Phase-3 yield set; a row here alone
+    ///     does not mean a captured record can be emitted.
     ///     Encoders either emit overrides (re-emit a subrecord with new model data and let
     ///     the merge engine retain unmapped subrecords verbatim from the master ESM) or full
     ///     new records (build the entire subrecord stream from scratch via <c>EncodeNew</c>).

@@ -9,7 +9,7 @@ internal static class RuntimeStateRecordPolicy
     private static readonly HashSet<uint> FormIds =
     [
         0x00000007, // Player NPC
-        0x00000014, // PlayerRef ACHR (player's placed-actor instance)
+        0x00000014, // PlayerRef (engine-created player reference; no master record)
         0x00000035, // GameYear GLOB
         0x00000036, // GameMonth GLOB
         0x00000037, // GameDay GLOB
@@ -26,9 +26,10 @@ internal static class RuntimeStateRecordPolicy
     }
 
     /// <summary>
-    ///     The set of engine-hardcoded FormIDs that aren't stored as records in any ESM but
-    ///     that scripts and conditions are allowed to reference. Used by validators that
-    ///     would otherwise null these out (e.g. SCRO refs to PlayerRef).
+    ///     The protected engine-owned identities that scripts and conditions may reference.
+    ///     Some are master-backed records (for example Player and the clock globals), while
+    ///     others such as PlayerRef are created by the engine. Validators use this set so
+    ///     neither kind is mistaken for a dangling reference.
     /// </summary>
     public static IReadOnlySet<uint> EngineFormIds => FormIds;
 }

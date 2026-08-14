@@ -251,12 +251,12 @@ public sealed class QustEncoder : IRecordEncoder
         foreach (var condition in emitConds)
         {
             subs.Add(new EncodedSubrecord("CTDA", InfoEncoder.BuildCtdaSubrecord(condition)));
-            if (!string.IsNullOrEmpty(condition.Parameter1String))
+            if (condition.Parameter1String is not null)
             {
                 subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS1", condition.Parameter1String));
             }
 
-            if (!string.IsNullOrEmpty(condition.Parameter2String))
+            if (condition.Parameter2String is not null)
             {
                 subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS2", condition.Parameter2String));
             }

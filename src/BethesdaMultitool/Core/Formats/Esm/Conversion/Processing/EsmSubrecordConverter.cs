@@ -4,6 +4,24 @@ using static BethesdaMultitool.Core.Formats.Esm.Conversion.EsmEndianHelpers;
 namespace BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 
 /// <summary>
+///     Structural scope for the ambiguous four-byte PERK DATA payload.
+/// </summary>
+internal enum PerkDataScope
+{
+    /// <summary>
+    ///     No record-chain scope is available. For backward compatibility, four-byte PERK DATA
+    ///     is treated as an ability-entry FormID and endian-swapped.
+    /// </summary>
+    Unspecified,
+
+    /// <summary>The top-level four UInt8 fields on the PERK record.</summary>
+    TopLevel,
+
+    /// <summary>A type-specific DATA payload between PRKE and PRKF.</summary>
+    Entry
+}
+
+/// <summary>
 ///     Converts subrecord data based on type and parent record.
 ///     Handles endian conversion for all known subrecord formats.
 ///     Uses schema-driven conversion.
@@ -11,10 +29,26 @@ namespace BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 internal static class EsmSubrecordConverter
 {
     /// <summary>
-    ///     Converts subrecord data based on type.
+    ///     Converts subrecord data based on type. Callers processing a complete PERK record
+    ///     should pass the record-chain-derived <paramref name="perkDataScope" />. The default
+    ///     preserves the historical stateless behavior: ambiguous PERK DATA(4) is assumed to be
+    ///     an ability-entry FormID and is endian-swapped.
     /// </summary>
-    public static byte[] ConvertSubrecordData(string signature, ReadOnlySpan<byte> data, string recordType)
+    public static byte[] ConvertSubrecordData(
+        string signature,
+        ReadOnlySpan<byte> data,
+        string recordType,
+        PerkDataScope perkDataScope = PerkDataScope.Unspecified)
     {
+        // DATA(4) has two unrelated PERK layouts. Outside a PRKE..PRKF entry chain it is four
+        // independent UInt8 fields and must be copied byte-for-byte. Within an entry it is an
+        // ability FormID and follows the existing schema conversion.
+        if (recordType == "PERK" && signature == "DATA" && data.Length == 4 &&
+            perkDataScope == PerkDataScope.TopLevel)
+        {
+            return data.ToArray();
+        }
+
         var schemaResult = SubrecordSchemaProcessor.ConvertWithSchema(signature, data, recordType);
         return schemaResult ?? throw new NotSupportedException(
             $"No schema for subrecord '{signature}' ({data.Length} bytes) in record type '{recordType}'.");

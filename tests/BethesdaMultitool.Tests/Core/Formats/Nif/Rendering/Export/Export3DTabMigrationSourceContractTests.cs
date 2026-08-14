@@ -64,6 +64,88 @@ public sealed class Export3DTabMigrationSourceContractTests
     }
 
     [Fact]
+    public void ExportPanelUsesTheFormatAgnosticCollisionLabel()
+    {
+        var xaml = SourceContract.ReadAppSource("WorldView3DExportPanel.xaml");
+
+        Assert.Contains("Content=\"Collision mesh\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"Collision mesh\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Havok collision", xaml, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TiledExportOverlapsOneSaveWithTheNextRenderAndDrainsOnEveryExit()
+    {
+        var source = SourceContract.ReadAppSource("WorldView3DControl.ExportButton.cs");
+        var tileLoop = SourceContract.Extract(
+            source,
+            "for (var visitRow = 0; visitRow < plan.Rows; visitRow++)",
+            "if (tiledSavePipeline is { HasPending: true })");
+        var coordinator = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Export",
+            "SingleOutstandingOperation.cs");
+
+        // Each iteration renders before EnqueueAsync. EnqueueAsync is the only place that drains the
+        // preceding save, so iteration N+1 reaches its render before waiting for save N.
+        SourceContract.AssertOrder(
+            tileLoop,
+            "var result = await RenderProjectionTileAsync(",
+            "await tiledSavePipeline!.EnqueueAsync(");
+        Assert.DoesNotContain("DrainAsync(", tileLoop, StringComparison.Ordinal);
+        SourceContract.AssertOrder(
+            coordinator,
+            "await DrainAsync(commit);",
+            "admissionToken.ThrowIfCancellationRequested();",
+            "_pending = Task.Run(operation, CancellationToken.None);");
+
+        Assert.Contains("ExportTilePixelAnalysis.IsTransparentClear(bgra)", tileLoop, StringComparison.Ordinal);
+        Assert.Equal(2, SourceContract.CountOccurrences(
+            source, "ExportTilePixelAnalysis.IsTransparentClear(bgra)"));
+        Assert.DoesNotContain("IsUniformTile", source, StringComparison.Ordinal);
+        Assert.Contains("PngWriter.SaveRgba(BgraToRgba(bgra)", tileLoop, StringComparison.Ordinal);
+
+        SourceContract.AssertOrder(
+            source,
+            "await tiledSavePipeline!.EnqueueAsync(",
+            "await tiledSavePipeline.DrainAsync(CommitTiledSave);",
+            "progress.Report(\"Writing manifest\"");
+        Assert.Contains("await tiledSavePipeline.DrainAndRethrowAsync(", source, StringComparison.Ordinal);
+        Assert.Contains("primaryException,", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("File.Delete(basePath)", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SerpentineTraversalChangesOnlyVisitOrderAndKeepsPhysicalTileIdentity()
+    {
+        var source = SourceContract.ReadAppSource("WorldView3DControl.ExportButton.cs");
+
+        SourceContract.AssertOrder(
+            source,
+            "var coordinate = ExportTileTraversal.GetSerpentineCoordinate(",
+            "var tj = coordinate.Row;",
+            "var ti = coordinate.Column;",
+            "var tileIndex = visitOrdinal + 1;");
+        Assert.Contains(
+            "progress.Report(totalTiles > 1 ? \"Rendering tile\" : \"Rendering\", tileIndex, totalTiles);",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("ti, tj, plan.Cols, plan.Rows);", source, StringComparison.Ordinal);
+        Assert.Contains("var col = ti;", source, StringComparison.Ordinal);
+        Assert.Contains("var row = tj;", source, StringComparison.Ordinal);
+        Assert.Contains("$\"{name}_r{tj}_c{ti}{ext}\"", source, StringComparison.Ordinal);
+        Assert.Contains("var physicalIndex = (tj * plan.Cols) + ti;", source, StringComparison.Ordinal);
+        Assert.Contains("manifestTiles.Add((result.PhysicalIndex, new", source, StringComparison.Ordinal);
+        Assert.Contains(
+            ".OrderBy(static entry => entry.PhysicalIndex)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ".Select(static entry => entry.Tile)",
+            source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void FramingOverlayDrawsOnlyWhileTheExportTabIsUpAndTheToggleIsOn()
     {
         var panel = SourceContract.ReadAppSource("WorldView3DControl.ExportPanel.cs");
@@ -74,9 +156,10 @@ public sealed class Export3DTabMigrationSourceContractTests
         var frame = SourceContract.ReadAppSource("WorldView3DControl.Frame.cs");
         SourceContract.AssertOrder(
             frame,
-            "if (ExportFramingVisible && _exportFraming is not null)",
+            "var exportFramingOverlay = ExportFramingVisible ? _exportFraming : null;",
+            "if (exportFramingOverlay is not null)",
             "EnsureExportFramingLines();",
-            "_exportFraming.Render(");
+            "exportFramingOverlay.Render(");
     }
 
     private static string ReadTab(string fileName)

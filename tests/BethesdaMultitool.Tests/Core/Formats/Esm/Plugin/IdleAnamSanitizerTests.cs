@@ -116,7 +116,9 @@ public class IdleAnamSanitizerTests
         // Proto-only idles (CrucifixIdle / NVCrucifixHang*) had CTDA conditions in master
         // FNV that restricted them to specific actors. Our runtime reader only captures the
         // CTDA count, not the conditions — so we emit a synthetic CTDA that always evaluates
-        // false ("GetIsID 0 == 1") to make the idle inert until we can model the real CTDAs.
+        // false ("GetIsID Player base == 2") to make the idle inert until we can model the
+        // real CTDAs. FormID 0 is unsafe because unresolved condition operands can fall back
+        // to the player in the FNV runtime.
         var idle = MakeIdle(0u, 0u);
 
         var encoded = IdleEncoder.EncodeNew(idle);
@@ -125,12 +127,12 @@ public class IdleAnamSanitizerTests
         Assert.Equal(28, ctda.Bytes.Length);
         // Type byte = 0x00 (equality operator)
         Assert.Equal(0x00, ctda.Bytes[0]);
-        // ComparisonValue at offset 4 = 1.0f LE
-        Assert.Equal(1.0f, BinaryPrimitives.ReadSingleLittleEndian(ctda.Bytes.AsSpan(4, 4)));
+        // ComparisonValue at offset 4 = 2.0f LE (GetIsID is boolean).
+        Assert.Equal(2.0f, BinaryPrimitives.ReadSingleLittleEndian(ctda.Bytes.AsSpan(4, 4)));
         // FunctionIndex at offset 8 = 0x0048 (GetIsID)
         Assert.Equal((ushort)0x0048, BinaryPrimitives.ReadUInt16LittleEndian(ctda.Bytes.AsSpan(8, 2)));
-        // Parameter1 at offset 12 = 0 (FormID 0)
-        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(ctda.Bytes.AsSpan(12, 4)));
+        // Parameter1 at offset 12 = Player base actor (stable engine FormID 7).
+        Assert.Equal(0x00000007u, BinaryPrimitives.ReadUInt32LittleEndian(ctda.Bytes.AsSpan(12, 4)));
     }
 
     [Fact]
@@ -156,7 +158,7 @@ public class IdleAnamSanitizerTests
         var ctdas = encoded.Subrecords.Where(s => s.Signature == "CTDA").ToList();
         Assert.Single(ctdas);
         // The emitted CTDA should be the REAL one (FunctionIndex 0x48 GetIsID, Param1 0x000ED239),
-        // NOT the synthetic never-fire CTDA (which would have Param1 = 0).
+        // NOT the synthetic never-fire CTDA (which has Param1 = Player base and comparison 2).
         Assert.Equal((ushort)0x0048, BinaryPrimitives.ReadUInt16LittleEndian(ctdas[0].Bytes.AsSpan(8, 2)));
         Assert.Equal(0x000ED239u, BinaryPrimitives.ReadUInt32LittleEndian(ctdas[0].Bytes.AsSpan(12, 4)));
     }
@@ -192,8 +194,8 @@ public class IdleAnamSanitizerTests
 
         var ctdas = encoded.Subrecords.Where(s => s.Signature == "CTDA").ToList();
         Assert.Single(ctdas);
-        // Never-fire CTDA would have FunctionIndex=0x48 + Parameter1=0. Real CTDA has Param1!=0.
-        Assert.NotEqual(0u, BinaryPrimitives.ReadUInt32LittleEndian(ctdas[0].Bytes.AsSpan(12, 4)));
+        // Never-fire CTDA would have FunctionIndex=0x48 + comparison 2. Real CTDA compares 0.
+        Assert.NotEqual(2.0f, BinaryPrimitives.ReadSingleLittleEndian(ctdas[0].Bytes.AsSpan(4, 4)));
     }
 
     [Fact]
@@ -211,8 +213,9 @@ public class IdleAnamSanitizerTests
 
         var ctdas = encoded.Subrecords.Where(s => s.Signature == "CTDA").ToList();
         Assert.Single(ctdas);
-        // Sanitizer dropped the dangling CTDA → fallback to never-fire (Param1=0).
-        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(ctdas[0].Bytes.AsSpan(12, 4)));
+        // Sanitizer dropped the dangling CTDA → safe boolean-impossible fallback.
+        Assert.Equal(2.0f, BinaryPrimitives.ReadSingleLittleEndian(ctdas[0].Bytes.AsSpan(4, 4)));
+        Assert.Equal(0x00000007u, BinaryPrimitives.ReadUInt32LittleEndian(ctdas[0].Bytes.AsSpan(12, 4)));
         Assert.Contains(encoded.Warnings, w => w.Contains("CTDA sanitizer"));
     }
 

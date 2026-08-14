@@ -16,7 +16,7 @@ public interface IRecordEncoder
     ///     Produces the encoded subrecord payloads in canonical override order, for the
     ///     case where a DMP record overrides a master-ESM record. Returns an empty
     ///     <see cref="EncodedRecord" /> to signal "no override — preserve master verbatim";
-    ///     the <see cref="Pipeline.PluginBuilder" /> override loop skips records with no
+    ///     the <see cref="Pipeline.PluginConversionPipeline" /> override loop skips records with no
     ///     subrecords and falls through to ESM passthrough.
     /// </summary>
     /// <param name="model">An instance of <see cref="ModelType" />.</param>

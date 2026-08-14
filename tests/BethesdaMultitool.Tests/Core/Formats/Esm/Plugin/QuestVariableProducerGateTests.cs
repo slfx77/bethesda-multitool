@@ -193,7 +193,7 @@ public sealed class QuestVariableProducerGateTests
     }
 
     [Fact]
-    public void VerifyFinalOutput_rejects_pack_that_late_declines_serialization()
+    public void PlanWriter_rejects_pack_that_reaches_serialization_with_no_bytes()
     {
         var plan = PlanWithPackProducer(true);
         var writer = new PlanWriter(PlannedEncoders.BuildRegistry());
@@ -203,12 +203,14 @@ public sealed class QuestVariableProducerGateTests
             "LateDecliningProducer/OnBegin/script[0]");
         var requirement = new QuestVariableProducerRequirement(Augmentation(70), [owner]);
 
-        // The producer is still present in the immutable plan, but PACK's atomic inline-script
-        // gate declines the record after planning because the executable bundle is incomplete.
+        // This hand-built plan deliberately bypasses the planner's atomic inline-script
+        // suppression. New-empty serialization is now a planner/writer contract failure.
         QuestVariableProducerGate.VerifyFinalPlan(plan, [requirement]);
-        var grup = writer.BuildGrupForType("PACK", plan, new PluginBuildOptions());
+        var writerError = Assert.Throws<InvalidOperationException>(() =>
+            writer.BuildGrupForType("PACK", plan, new PluginBuildOptions()));
 
-        Assert.Empty(grup);
+        Assert.Contains("planner/writer emission policies have diverged", writerError.Message,
+            StringComparison.Ordinal);
         Assert.Empty(writer.ProducerLedger.Owners);
         var error = Assert.Throws<InvalidOperationException>(() =>
             QuestVariableProducerGate.VerifyFinalOutput(

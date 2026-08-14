@@ -1,12 +1,16 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
 /// <summary>
-///     CTDA condition sanitizer shared between INFO, QUST, and PERK encoders. The runtime
-///     captures CTDA Parameter1/Parameter2 verbatim — when a function index indicates the
-///     parameter is a FormID (per <see cref="PerkConditionParameterResolver" />), an
+///     CTDA condition sanitizer shared by the FNV conversion paths for dialogue, quests, packages,
+///     terminals, idles, camera paths, and perks. The runtime captures the comparison union and
+///     Parameter1/Parameter2 verbatim. A Use Global comparison
+///     is a GLOB FormID, and a function index can identify a parameter as a FormID (per
+///     <see cref="PerkConditionParameterResolver" />). In either case, an
 ///     unresolvable FormID makes the condition evaluate against the player as a fallback,
 ///     which is what triggered the original "every NPC plays the crucified idle every few
 ///     seconds" bug. Policy:
@@ -22,7 +26,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 internal static class ConditionSanitizer
 {
     /// <summary>
-    ///     Filter a list of INFO/QUST CTDA conditions. Returns a new list with dangling
+    ///     Filter a list of typed dialogue-style CTDA conditions. Returns a new list with dangling
     ///     conditions dropped and remappable FormID parameters substituted.
     /// </summary>
     public static List<DialogueCondition> Filter(
@@ -35,24 +39,59 @@ internal static class ConditionSanitizer
         var result = new List<DialogueCondition>(conditions.Count);
         foreach (var cond in conditions)
         {
-            // Existing policy: drop the whole condition when RunOn=Reference/LinkedRef and
-            // the Reference FormID is dangling.
             var patched = cond;
-            if ((cond.RunOn == 2 || cond.RunOn == 4)
-                && cond.Reference != 0)
+
+            // Type bit 0x04 changes ComparisonValue from a float into a raw GLOB FormID. Remap
+            // before checking validity for the same reason as ordinary CTDA FormID parameters.
+            if (cond.ComparisonGlobalFormId != 0)
             {
-                if (remapTable is not null
-                    && remapTable.TryGetValue(cond.Reference, out var remappedReference)
-                    && remappedReference != cond.Reference
-                    && validFormIds.Contains(remappedReference))
+                if (!TryFixFormId(
+                        cond.ComparisonGlobalFormId,
+                        validFormIds,
+                        remapTable,
+                        out var comparisonGlobalFormId,
+                        out var dropGlobal,
+                        ref remappedParameters))
+                {
+                    if (dropGlobal)
+                    {
+                        droppedConditions++;
+                        continue;
+                    }
+                }
+                else
+                {
+                    patched = patched with
+                    {
+                        ComparisonValue = BitConverter.UInt32BitsToSingle(comparisonGlobalFormId)
+                    };
+                }
+            }
+
+            // Offset 24 is a FormID only for the FNV semantic Reference arm. Ignored raw
+            // storage (including Linked Reference and the 0x006A/0x011D exceptions) is preserved.
+            if (DialogueConditionReferencePolicy.TryGetSemanticReference(
+                    cond,
+                    BethesdaGame.FalloutNewVegas,
+                    out var reference))
+            {
+                if (!TryFixFormId(
+                        reference,
+                        validFormIds,
+                        remapTable,
+                        out var remappedReference,
+                        out var dropReference,
+                        ref remappedParameters))
+                {
+                    if (dropReference)
+                    {
+                        droppedConditions++;
+                        continue;
+                    }
+                }
+                else
                 {
                     patched = patched with { Reference = remappedReference };
-                    remappedParameters++;
-                }
-                else if (!validFormIds.Contains(cond.Reference))
-                {
-                    droppedConditions++;
-                    continue;
                 }
             }
 
@@ -186,22 +225,42 @@ internal static class ConditionSanitizer
             return false;
         }
 
+        return TryFixFormId(
+            paramValue,
+            validFormIds,
+            remapTable,
+            out newParamValue,
+            out shouldDropCondition,
+            ref remappedParameters);
+    }
+
+    private static bool TryFixFormId(
+        uint formId,
+        HashSet<uint> validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        out uint newFormId,
+        out bool shouldDropCondition,
+        ref int remappedParameters)
+    {
+        newFormId = formId;
+        shouldDropCondition = false;
+
         // Try remap FIRST. The validity set (_emittedNewFormIds) tracks both DMP-source and
-        // allocated FormIDs (PluginBuilder lines 807 + 1175), so a source FormID that has
+        // allocated FormIDs (PluginConversionPipeline lines 807 + 1175), so a source FormID that has
         // been re-emitted under a different allocated PC FormID would look "valid" — but the
         // engine sees the source FormID in the CTDA bytes and can't resolve it. Remap to the
         // allocated PC value when possible. Mirrors the same fix applied to IDLE ANAM.
         if (remapTable is not null
-            && remapTable.TryGetValue(paramValue, out var remapped)
-            && remapped != paramValue
+            && remapTable.TryGetValue(formId, out var remapped)
+            && remapped != formId
             && validFormIds.Contains(remapped))
         {
-            newParamValue = remapped;
+            newFormId = remapped;
             remappedParameters++;
             return true;
         }
 
-        if (validFormIds.Contains(paramValue))
+        if (validFormIds.Contains(formId))
         {
             return false;
         }

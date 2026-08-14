@@ -6,12 +6,10 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 
 /// <summary>
-///     Encodes a <see cref="ConstructibleObjectRecord" /> (COBJ) as PC-format subrecord bytes.
-///     FNV crafting blueprint — ties ingredient list (CNTO*) and crafting conditions (CTDA*)
-///     to a created item (CNAM).
-///     New-record-only path: override emission is a no-op.
-///     fopdoc canonical order: EDID, OBND?, FULL?, MODL?, MODT?, COCT, CNTO*,
-///     CTDA* (with optional CIS1/CIS2), CNAM, BNAM?.
+///     Retained byte builder for the historical hybrid COBJ model and its synthetic tests.
+///     It combines FNV base-object fields with a Skyrim-style recipe tail and is therefore
+///     not a valid FNV schema encoder. Production FNV planning deliberately does not
+///     register it; re-enabling it requires an explicit cross-game conversion policy.
 ///     COCT (4 bytes): uint32 count of CNTO entries that follow.
 ///     CNTO (8 bytes): FormID Item(0) + int32 Count(4) — emitted via InventoryItem.
 ///     CNAM (4 bytes): FormID of the item produced by crafting.
@@ -70,26 +68,26 @@ public sealed class CobjEncoder : IRecordEncoder
         foreach (var condition in cobj.Conditions)
         {
             subs.Add(new EncodedSubrecord("CTDA", InfoEncoder.BuildCtdaSubrecord(condition)));
-            if (!string.IsNullOrEmpty(condition.Parameter1String))
+            if (condition.Parameter1String is not null)
             {
                 subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS1", condition.Parameter1String));
             }
 
-            if (!string.IsNullOrEmpty(condition.Parameter2String))
+            if (condition.Parameter2String is not null)
             {
                 subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS2", condition.Parameter2String));
             }
         }
 
-        // CNAM is the created/output item — required for the recipe to do anything.
+        // Preserve the historical hybrid helper's optional CNAM behavior. FNV's COBJ
+        // schema has no CNAM, which is why this helper is not production-routed.
         if (cobj.CreatedItemFormId.HasValue)
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("CNAM", cobj.CreatedItemFormId.Value));
         }
         else
         {
-            warnings.Add(
-                $"New COBJ 0x{cobj.FormId:X8} has no CreatedItemFormId — recipe will produce nothing.");
+            warnings.Add($"Hybrid COBJ 0x{cobj.FormId:X8} has no CreatedItemFormId — CNAM omitted.");
         }
 
         if (cobj.WorkbenchKeywordFormId.HasValue)

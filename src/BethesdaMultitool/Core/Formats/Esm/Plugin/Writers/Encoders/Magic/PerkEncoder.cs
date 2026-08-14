@@ -7,18 +7,19 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 /// <summary>
 ///     Encodes a <see cref="PerkRecord" /> (PERK) as PC-format subrecord bytes.
 ///     FNVEdit canonical order (wbPERK): EDID, OBND, FULL?, DESC?, ICON?, MICO?,
-///     CTDA*(top-level conditions), DATA(5B), then per perk entry: PRKE + DATA(type-dependent) +
-///     (PRKC + CTDA*)? + EPFT + EPFD? + PRKF.
-///     DATA layout (5B): byte Trait + byte MinLevel + byte Ranks + byte Playable + byte HiddenFromPC.
+///     CTDA*(top-level conditions), DATA(4B/5B), then per perk entry: PRKE + DATA(type-dependent) +
+///     (PRKC + CTDA*)* + EPFT + EPFD? + PRKF.
+///     DATA layout: byte Trait + byte MinLevel + byte Ranks + byte Playable + optional byte Hidden.
 ///     Top-level CTDA conditions are emitted before DATA; per-entry chains follow.
 /// </summary>
 public sealed class PerkEncoder : IRecordEncoder
 {
-    // CTDA schema field names: Type (operator), ComparisonValue, FunctionIndex, Parameter1,
-    // Parameter2, RunOn, Reference. RunOn / Reference left unset → zero-fill.
+    // CTDA schema field names: Type, ComparisonValue, FunctionIndex, Parameter1,
+    // Parameter2, RunOn, Reference. Type stores the comparison operator in bits 5–7;
+    // the unmodeled low-bit flags, RunOn, and Reference currently zero-fill.
     private static readonly Dictionary<string, Func<PerkCondition, object?>> CtdaExtractors = new(StringComparer.Ordinal)
     {
-        ["Type"] = m => m.ComparisonOperator,
+        ["Type"] = m => EncodeComparisonType(m.ComparisonOperator),
         ["ComparisonValue"] = m => m.ComparisonValue,
         ["FunctionIndex"] = m => m.FunctionIndex,
         ["Parameter1"] = m => m.Parameter1,
@@ -78,14 +79,18 @@ public sealed class PerkEncoder : IRecordEncoder
             subs.Add(new EncodedSubrecord("CTDA", BuildPerkCtdaSubrecord(condition)));
         }
 
-        // DATA (5B): Trait + MinLevel + Ranks + Playable + HiddenFromPC.
-        // Model lacks HiddenFromPC — zero is the correct default (perk visible to player).
-        var data = new byte[5];
+        // DATA (4B/5B): preserve whether the optional Hidden byte was serialized.
+        // A newly constructed model defaults Hidden to zero and therefore emits canonical 5B DATA.
+        var data = new byte[perk.Hidden.HasValue ? 5 : 4];
         data[0] = perk.Trait;
         data[1] = perk.MinLevel;
         data[2] = perk.Ranks;
         data[3] = perk.Playable;
-        // byte 4 = HiddenFromPC, zero
+        if (perk.Hidden is { } hidden)
+        {
+            data[4] = hidden;
+        }
+
         subs.Add(new EncodedSubrecord("DATA", data));
 
         foreach (var entry in perk.Entries)
@@ -136,9 +141,8 @@ public sealed class PerkEncoder : IRecordEncoder
     ///     <list type="bullet">
     ///         <item>PRKE (3B): type + rank + priority</item>
     ///         <item>DATA (type-dependent): QuestFormId+QuestStage (type 0, 8B), AbilityFormId
-    ///         (type 1, 4B), EntryPoint+FunctionType+RunImmediately (type 2, 3B)</item>
-    ///         <item>PRKC (1B): condition-tab count, when conditions are present</item>
-    ///         <item>CTDA* (28B each): per-entry conditions</item>
+    ///         (type 1, 4B), EntryPoint+Function+PerkConditionTabCount (type 2, 3B)</item>
+    ///         <item>Repeated PRKC (signed 1B selector) + CTDA* condition groups</item>
     ///         <item>EPFT (1B): function type (entry type 2 only)</item>
     ///         <item>EPFD (variable): function payload (entry type 2 only)</item>
     ///         <item>PRKF (0B): footer</item>
@@ -183,13 +187,12 @@ public sealed class PerkEncoder : IRecordEncoder
             }
             case 2:
             {
-                // Entry Point: 3 bytes = EntryPoint + FunctionType + RunImmediately.
-                // Model lacks RunImmediately; zero is the safe default (function fires
-                // through the engine's normal entry-point dispatch).
+                // Entry Point: 3 bytes = EntryPoint + result Function + Perk Condition Tab Count.
+                // EPFT is a separate function-parameter type and must not be copied into DATA[1].
                 var data = new byte[3];
                 data[0] = entry.EntryPoint ?? 0;
-                data[1] = entry.FunctionType ?? 0;
-                data[2] = 0; // RunImmediately
+                data[1] = entry.EntryPointFunction ?? 0;
+                data[2] = ResolvePerkConditionTabCount(entry);
                 subs.Add(new EncodedSubrecord("DATA", data));
                 break;
             }
@@ -208,23 +211,30 @@ public sealed class PerkEncoder : IRecordEncoder
                 break;
         }
 
-        // PRKC + CTDA* — per-entry conditions (entry type 2 typically). Master records emit
-        // a PRKC tab-count byte before any CTDA block; we emit one PRKC covering all captured
-        // conditions, since the model collapses per-tab grouping into a single Conditions list.
-        // Conditions go through ConditionSanitizer.FilterPerk so dangling FormID params are
-        // remapped or dropped. PRKC is only emitted when at least one CTDA survives.
-        if (entry.Conditions.Count > 0)
+        // Repeated PRKC + CTDA* groups — per-entry conditions (entry type 2 typically). PRKC is a
+        // signed selector; DATA[2], not PRKC, stores the tab count. Preserve source group order and
+        // two's-complement selector bytes. A null selector represents malformed source CTDAs that
+        // lacked a leading PRKC and is intentionally re-emitted without inventing one.
+        foreach (var group in entry.ConditionGroups)
         {
-            var sanitizedEntryConds = SanitizePerkConditions(entry.Conditions,
+            var sanitizedEntryConds = SanitizePerkConditions(group.Conditions,
                 validFormIds, remapTable, ref droppedCtdas, ref remappedCtdaParams);
-            if (sanitizedEntryConds.Count > 0)
+
+            // If sanitation removed every original CTDA, omit its now-empty selector too. An
+            // originally empty group is retained so parse→encode remains lossless.
+            if (group.Conditions.Count > 0 && sanitizedEntryConds.Count == 0)
             {
-                var tabCount = entry.ConditionTabCount ?? (byte)1;
-                subs.Add(new EncodedSubrecord("PRKC", [tabCount]));
-                foreach (var condition in sanitizedEntryConds)
-                {
-                    subs.Add(new EncodedSubrecord("CTDA", BuildPerkCtdaSubrecord(condition)));
-                }
+                continue;
+            }
+
+            if (group.RunOn is { } runOn)
+            {
+                subs.Add(new EncodedSubrecord("PRKC", [unchecked((byte)runOn)]));
+            }
+
+            foreach (var condition in sanitizedEntryConds)
+            {
+                subs.Add(new EncodedSubrecord("CTDA", BuildPerkCtdaSubrecord(condition)));
             }
         }
 
@@ -242,6 +252,35 @@ public sealed class PerkEncoder : IRecordEncoder
 
         // PRKF — zero-byte footer marking end of entry.
         subs.Add(new EncodedSubrecord("PRKF", []));
+    }
+
+    private static byte ResolvePerkConditionTabCount(PerkEntry entry)
+    {
+        if (entry.PerkConditionTabCount is { } authoredCount)
+        {
+            return authoredCount;
+        }
+
+        // xEdit derives this byte from the selected entry point's semantic condition-slot count,
+        // not simply from the number of serialized groups. Without that 74-entry metadata table,
+        // use the smallest internally consistent fallback: cover both the number of groups and
+        // the highest non-negative PRKC selector. Negative/raw selectors do not imply a slot.
+        var derivedCount = entry.ConditionGroups.Count;
+        foreach (var group in entry.ConditionGroups)
+        {
+            if (group.RunOn is { } runOn && runOn >= 0)
+            {
+                derivedCount = Math.Max(derivedCount, runOn + 1);
+            }
+        }
+
+        if (derivedCount > byte.MaxValue)
+        {
+            throw new InvalidOperationException(
+                $"PERK entry has {derivedCount} derived condition tabs; DATA[2] can store at most 255.");
+        }
+
+        return (byte)derivedCount;
     }
 
     /// <summary>
@@ -300,9 +339,22 @@ public sealed class PerkEncoder : IRecordEncoder
 
     private static byte[] BuildPerkCtdaSubrecord(PerkCondition condition)
     {
-        // CTDA (28B) per PDB CONDITION_ITEM_DATA. The schema-driven path writes the operator
-        // byte at offset 0 (UInt8 "Type" in schema); the high 3 bits are run-on/OR flags
-        // currently unused by the encoder. RunOn (offset 20) and Reference (offset 24) zero-fill.
+        // CTDA (28B) per PDB CONDITION_ITEM_DATA. Type at offset 0 stores the comparison
+        // operator in bits 5–7; low bits are condition flags. PerkCondition does not yet model
+        // those flags, RunOn (offset 20), or Reference (offset 24), so they zero-fill.
         return SchemaModelSerializer.Serialize("CTDA", "", 28, condition, CtdaExtractors);
+    }
+
+    private static byte EncodeComparisonType(byte comparisonOperator)
+    {
+        if (comparisonOperator > 5)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(comparisonOperator),
+                comparisonOperator,
+                "A CTDA comparison operator must be one of the six serialized values 0 through 5.");
+        }
+
+        return (byte)(comparisonOperator << 5);
     }
 }

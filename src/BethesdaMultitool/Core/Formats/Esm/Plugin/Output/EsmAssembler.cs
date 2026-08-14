@@ -64,7 +64,7 @@ internal sealed class EsmAssembler(RecordEncoderRegistry encoderRegistry)
             emittedTypes.Add(kvp.Key);
         }
 
-        // The planner section is normally prebuilt by PluginBuilder (so NAVI rows can be
+        // The planner section is normally prebuilt by PluginConversionPipeline (so NAVI rows can be
         // filtered to actually-written NAVMs before assembly); the fallback build here
         // serves direct callers/tests only. A plan-less call emits no cell hierarchy at
         // all — legitimate for the header-only fixtures that exercise TES4 assembly.

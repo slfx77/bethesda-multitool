@@ -62,10 +62,11 @@ public static class EsmRecordCompression
 
         var subOffset = 0;
         var pendingExtendedSize = 0;
+        var insidePerkEntry = false;
         while (subOffset < decompressed.Length)
         {
             subOffset = ConvertSubrecordFromDecompressed(decompressed, subOffset, recordType, convertedWriter,
-                ref pendingExtendedSize, stats);
+                ref pendingExtendedSize, ref insidePerkEntry, stats);
         }
 
         var convertedData = convertedStream.ToArray();
@@ -88,7 +89,7 @@ public static class EsmRecordCompression
     }
 
     private static int ConvertSubrecordFromDecompressed(byte[] data, int offset, string recordType, BinaryWriter writer,
-        ref int pendingExtendedSize, EsmConversionStats stats)
+        ref int pendingExtendedSize, ref bool insidePerkEntry, EsmConversionStats stats)
     {
         if (offset + 6 > data.Length)
         {
@@ -136,7 +137,24 @@ public static class EsmRecordCompression
 
         // Convert and write subrecord data
         var subData = data.AsSpan(dataOffset, dataSize);
-        var convertedData = EsmSubrecordConverter.ConvertSubrecordData(signature, subData, recordType);
+        var perkDataScope = PerkDataScope.Unspecified;
+        if (recordType == "PERK")
+        {
+            perkDataScope = insidePerkEntry ? PerkDataScope.Entry : PerkDataScope.TopLevel;
+        }
+        var convertedData = EsmSubrecordConverter.ConvertSubrecordData(signature, subData, recordType, perkDataScope);
+
+        if (recordType == "PERK")
+        {
+            if (signature == "PRKE")
+            {
+                insidePerkEntry = true;
+            }
+            else if (signature == "PRKF")
+            {
+                insidePerkEntry = false;
+            }
+        }
 
         // Write subrecord header (little-endian). If this subrecord used XXXX extended sizing, preserve the 0 size header.
         var outputSizeHeader = dataSizeHeader;

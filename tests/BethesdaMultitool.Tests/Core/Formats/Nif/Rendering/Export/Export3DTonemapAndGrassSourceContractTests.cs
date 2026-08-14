@@ -66,7 +66,7 @@ public sealed class Export3DTonemapAndGrassSourceContractTests
     {
         var source = ReadAppSource("WorldView3DControl.Export3D.cs");
         var start = source.IndexOf(
-            "internal async Task<Export3DTile?> RenderProjectionTileAsync(", StringComparison.Ordinal);
+            "internal async Task<Export3DRenderResult?> RenderProjectionTileAsync(", StringComparison.Ordinal);
         Assert.True(start >= 0, "Missing RenderProjectionTileAsync.");
         var end = source.IndexOf("internal sealed record Export3DOptions(", start, StringComparison.Ordinal);
         Assert.True(end > start, "Missing Export3DOptions record after the render method.");

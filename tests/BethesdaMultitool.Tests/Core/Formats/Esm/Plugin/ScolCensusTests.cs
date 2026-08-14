@@ -10,7 +10,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 
 /// <summary>
 ///     Phase B regression: SCOL census stats model + override-delta detection helper.
-///     Covers the parts that don't need a full PluginBuilder run.
+///     Covers the parts that don't need a full PluginConversionPipeline run.
 /// </summary>
 public class ScolCensusTests
 {

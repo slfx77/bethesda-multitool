@@ -71,11 +71,13 @@ public class PluginSemanticValidatorTests
         Assert.Equal(0, result.ErrorCount);
     }
 
-    [Fact]
-    public void Validate_RejectsConditionFunctionAbsentFromRetailCommandTable()
+    [Theory]
+    [InlineData(0x0002)] // AddItem is a real script command with no condition callback.
+    [InlineData(0x5102)] // Corrupt high raw index.
+    public void Validate_RejectsConditionFunctionAbsentFromRetailCallbackTable(ushort functionIndex)
     {
         var ctda = new byte[28];
-        BinaryPrimitives.WriteUInt16LittleEndian(ctda.AsSpan(8, 2), 0x5102);
+        BinaryPrimitives.WriteUInt16LittleEndian(ctda.AsSpan(8, 2), functionIndex);
         var bytes = BuildPlugin(
             BuildRecord(
                 "TERM",
@@ -87,8 +89,8 @@ public class PluginSemanticValidatorTests
 
         Assert.Equal(1, result.ErrorCount);
         Assert.Contains("TERM 0x01006F4E", result.Report, StringComparison.Ordinal);
-        Assert.Contains("function 0x5102", result.Report, StringComparison.Ordinal);
-        Assert.Contains("absent from the retail FNV command table", result.Report,
+        Assert.Contains($"function 0x{functionIndex:X4}", result.Report, StringComparison.Ordinal);
+        Assert.Contains("absent from the exact retail FNV condition-callback table", result.Report,
             StringComparison.Ordinal);
     }
 

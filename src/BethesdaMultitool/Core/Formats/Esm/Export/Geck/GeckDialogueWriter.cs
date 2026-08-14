@@ -6,6 +6,8 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Script;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Geck;
 
@@ -694,7 +696,7 @@ internal static class GeckDialogueWriter
             sections.Add(new ReportSection("Flags", flagFields));
         }
 
-        // Conditions — human-readable format using ScriptFunctionTable
+        // Conditions — human-readable format using the exact FNV raw condition-callback table.
         if (dialogue.Conditions.Count > 0)
         {
             var condFields = new List<ReportField>();
@@ -763,13 +765,13 @@ internal static class GeckDialogueWriter
     }
 
     /// <summary>
-    ///     Format a dialogue condition as a human-readable expression using
-    ///     <see cref="Script.ScriptFunctionTable" /> for function name resolution.
+    ///     Format an FNV-targeted GECK dialogue condition as a human-readable expression using the
+    ///     extracted FNV retail callback table for raw-index function name resolution.
     /// </summary>
     private static string FormatConditionHumanReadable(DialogueCondition c, FormIdResolver resolver)
     {
-        var opcode = (ushort)(0x1000 | c.FunctionIndex);
-        var function = ScriptFunctionTable.Get(opcode);
+        var function = ScriptFunctionTables.For(BethesdaGame.FalloutNewVegas)
+            .GetConditionFunction(c.FunctionIndex);
         var functionName = function?.Name ?? $"Func{c.FunctionIndex}";
 
         var paramParts = new List<string>();
@@ -786,19 +788,27 @@ internal static class GeckDialogueWriter
         var paramStr = paramParts.Count > 0 ? $"({string.Join(", ", paramParts)})" : "()";
 
         var qualifiers = new List<string>();
-        if (c.RunOnName != "Subject")
-            qualifiers.Add($"Run On: {c.RunOnName}");
-        if (c.Reference != 0)
+        if (DialogueConditionRunOnPolicy.ShouldDisplay(c, BethesdaGame.FalloutNewVegas))
         {
-            var refName = resolver.GetEditorId(c.Reference);
+            qualifiers.Add($"Run On: {DialogueConditionRunOnPolicy.Format(c, BethesdaGame.FalloutNewVegas)}");
+        }
+        if (DialogueConditionReferencePolicy.TryGetSemanticReference(
+                c,
+                BethesdaGame.FalloutNewVegas,
+                out var reference))
+        {
+            var refName = resolver.GetEditorId(reference);
             qualifiers.Add(!string.IsNullOrEmpty(refName)
                 ? $"Ref: {refName}"
-                : $"Ref: 0x{c.Reference:X8}");
+                : $"Ref: 0x{reference:X8}");
         }
 
         var qualStr = qualifiers.Count > 0 ? $" [{string.Join("; ", qualifiers)}]" : "";
+        var comparison = c.UsesGlobalComparison
+            ? $"GLOB {resolver.FormatFull(c.ComparisonGlobalFormId)}"
+            : c.ComparisonValue.ToString("G");
 
-        return $"{functionName}{paramStr} {c.ComparisonOperator} {c.ComparisonValue:G}{qualStr}";
+        return $"{functionName}{paramStr} {c.ComparisonOperator} {comparison}{qualStr}";
     }
 }
 
