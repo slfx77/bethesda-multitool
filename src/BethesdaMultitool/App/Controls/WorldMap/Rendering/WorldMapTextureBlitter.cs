@@ -80,7 +80,11 @@ internal static class WorldMapTextureBlitter
         // Fallout/Oblivion/Skyrim have no VtexTextureFormIds and fall through to the quadrant path.
         if (cell.LandVisualData?.VtexTextureFormIds is { Length: > 0 } vtex)
         {
-            table = CellLayerWeightTable.BuildFromVtexGrid(HmGridSize, vtex);
+            table = VtexCellWeightTableBuilder.Build(
+                HmGridSize,
+                (cell.GridX.Value, cell.GridY.Value),
+                vtex,
+                cellByGrid);
         }
         else if (hasOwnLayers || hasRealNeighbor)
         {

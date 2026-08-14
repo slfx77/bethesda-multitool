@@ -162,6 +162,7 @@ public sealed partial class WorldView3DControl
             source,
             cameraPosition,
             maxPerCell,
+            enabledOverrides: _referenceEnabledOverrides,
             includeInitiallyDisabled: _showDisabled,
             destination: _framePlacedLights,
             scratch: _cellPlacedLightScratch);

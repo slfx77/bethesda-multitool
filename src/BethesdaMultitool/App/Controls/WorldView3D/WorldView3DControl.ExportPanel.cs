@@ -163,7 +163,7 @@ public sealed partial class WorldView3DControl
             _exportScale, tiled, Export3DMaxTileDimension, Export3DMaxImageDimension);
 
         var pxPerCell = (int)Math.Round(MapExport3DPlanner.BaseScalePxPerUnit * _exportScale * 4096f);
-        var totalTiles = plan.Cols * plan.Rows;
+        var totalTiles = (long)plan.Cols * plan.Rows;
         string tileNote;
         if (tiled && totalTiles > 1)
         {
@@ -395,7 +395,7 @@ public sealed partial class WorldView3DControl
 
         // Per-tile PNGs + manifest only when the user asked for tiles AND there is more than one; a
         // one-tile "tiled" run stays a single PNG. A non-tiled grid > 1 tile is stitched into one PNG.
-        var tiledOutput = tiledRequested && (plan.Cols * plan.Rows) > 1;
+        var tiledOutput = tiledRequested && ((long)plan.Cols * plan.Rows) > 1;
 
         // World-space centers of the worldspace's ACTUAL cells — lets the tile loop skip a provably
         // empty tile before spending a full GPU render + readback (see RunProjectionExportAsync).

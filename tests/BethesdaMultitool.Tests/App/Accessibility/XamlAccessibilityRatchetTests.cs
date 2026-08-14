@@ -107,7 +107,7 @@ public sealed class XamlAccessibilityRatchetTests
     /// <summary>
     ///     Diagnostic fact — not a test assertion. Emits the scanner's current findings
     ///     to the console so a fresh run can be captured as the baseline. Run via
-    ///     <c>dotnet test --filter DumpCurrentGaps</c>.
+    ///     <c>dotnet test -- --filter-method '*DumpCurrentGaps*'</c>.
     /// </summary>
     [Fact(Skip = "Diagnostic only — uncomment to regenerate a11y-baseline.txt")]
     public void DumpCurrentGaps()

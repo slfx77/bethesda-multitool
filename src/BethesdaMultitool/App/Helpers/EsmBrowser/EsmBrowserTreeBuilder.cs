@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -542,6 +543,8 @@ internal static class EsmBrowserTreeBuilder
             candidate.RawDataSize.HasValue ? $"{candidate.RawDataSize.Value:N0} bytes" : null, "Raw Record");
         AddOptional(properties, "Raw Flags",
             candidate.RawFlags.HasValue ? $"0x{candidate.RawFlags.Value:X8}" : null, "Raw Record");
+        AddOptional(properties, "Form Version",
+            candidate.FormVersion?.ToString(CultureInfo.InvariantCulture), "Raw Record");
         if (candidate.Kind == DmpGapRecoveryCandidateKind.RawEsmRecord)
         {
             properties.Add(Property("Xbox/Reversed Header", candidate.IsBigEndian ? "Yes" : "No", "Raw Record"));
@@ -673,7 +676,7 @@ internal static class EsmBrowserTreeBuilder
             return RecordDetailPropertyAdapter.Convert(model);
         }
 
-        // Records read by the schema-driven parser (Oblivion today; Skyrim/FO4/FO76 next) carry an
+        // Records read by the schema-driven parser (Oblivion, Skyrim, FO4, and FO76) carry an
         // ordered, labeled field tree. Render it directly so member order is preserved and FormID
         // references resolve to names — the rich, browsable presentation the deliverable calls for.
         if (record is GenericEsmRecord schemaGeneric && schemaGeneric.DecodedTree is { Count: > 0 } decodedTree)

@@ -78,6 +78,13 @@ public sealed partial class LightingControlsPanel : UserControl
         set => ShadowsToggle.IsOn = value;
     }
 
+    /// <summary>Whether the host currently permits editing the sun-shadows preference.</summary>
+    internal bool ShadowsControlEnabled
+    {
+        get => ShadowsToggle.IsEnabled;
+        set => ShadowsToggle.IsEnabled = value;
+    }
+
     /// <summary>Skybox on/off. Setting this updates the toggle (and fires <see cref="SkyboxToggled" />).</summary>
     public bool SkyboxEnabled
     {

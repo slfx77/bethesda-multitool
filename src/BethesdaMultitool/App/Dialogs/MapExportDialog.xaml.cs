@@ -117,7 +117,10 @@ public sealed partial class MapExportDialog : ContentDialog
         var layer = SelectedLayer;
         var maxCells = Math.Max(_cellsWide, _cellsTall);
         var pxPerCell = Math.Clamp((int)Math.Round(NativePxPerCell(layer) * scale), 1, MaxPxPerCell(layer));
-        var longEdge = Math.Clamp(pxPerCell * maxCells, 32, (int)LongEdgeNumberBox.Maximum);
+        var longEdge = Math.Clamp(
+            (long)pxPerCell * maxCells,
+            32L,
+            (long)LongEdgeNumberBox.Maximum);
 
         _suspendNumberBox = true;
         LongEdgeNumberBox.Value = longEdge;
@@ -159,8 +162,8 @@ public sealed partial class MapExportDialog : ContentDialog
             capped = true;
         }
 
-        var imageW = _cellsWide * effectivePpc;
-        var imageH = _cellsTall * effectivePpc;
+        var imageW = (long)_cellsWide * effectivePpc;
+        var imageH = (long)_cellsTall * effectivePpc;
         var scaleX = (double)effectivePpc / native;
         string note;
         if (capped)
@@ -170,8 +173,8 @@ public sealed partial class MapExportDialog : ContentDialog
         else if (tiled && (long)effectivePpc * maxCells > WorldMapExporter.ExportMaxTileDimension)
         {
             var perTile = Math.Max(1, WorldMapExporter.ExportMaxTileDimension / effectivePpc);
-            var cols = (_cellsWide + perTile - 1) / perTile;
-            var rows = (_cellsTall + perTile - 1) / perTile;
+            var cols = ((long)_cellsWide + perTile - 1) / perTile;
+            var rows = ((long)_cellsTall + perTile - 1) / perTile;
             note = $"  — tiled into {cols}×{rows} PNGs";
         }
         else

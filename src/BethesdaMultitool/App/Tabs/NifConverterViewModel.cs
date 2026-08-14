@@ -10,24 +10,23 @@ internal sealed class NifConverterViewModel
     private List<NifTreeViewItem> _allItems = [];
 
     public string? CurrentPath { get; private set; }
-    public bool IsBsa { get; private set; }
+    public bool IsArchive { get; private set; }
     public string? SelectedNifPath { get; private set; }
 
-    /// <summary>Adopts a newly loaded folder/BSA source and returns the view state (tree, texture paths, file count).</summary>
+    /// <summary>Adopts a newly loaded folder/archive source and returns the view state.</summary>
     public NifViewerSourceState ApplySource(
         string path,
-        bool isBsa,
-        NifViewerSourceLoadResult result,
-        bool keepTextureOverride)
+        bool isArchive,
+        NifViewerSourceLoadResult result)
     {
         CurrentPath = path;
-        IsBsa = isBsa;
+        IsArchive = isArchive;
         SelectedNifPath = null;
         _allItems = result.Items;
 
         return new NifViewerSourceState(
             _allItems,
-            keepTextureOverride ? null : result.TexturePathsDisplay,
+            result.TexturePathsDisplay,
             $"{CountFiles(_allItems)} NIF files");
     }
 
@@ -103,5 +102,5 @@ internal sealed class NifConverterViewModel
 /// <summary>View state after loading a NIF source: the file tree, texture-path display text, and file count label.</summary>
 internal sealed record NifViewerSourceState(
     List<NifTreeViewItem> Items,
-    string? TexturePathsDisplay,
+    string TexturePathsDisplay,
     string FileCountText);

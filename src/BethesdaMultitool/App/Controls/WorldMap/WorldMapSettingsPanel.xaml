@@ -7,8 +7,9 @@
   xmlns:local="using:BethesdaMultitool">
 
   <!-- 2D world-map settings, shown in the host's right-panel "Settings" tab (replaces the old
-       toolbar dropdowns). Pure declarative XAML: WorldMapControl constructs this panel, reaches the
-       internal fields, and subscribes every control's events itself. FiltersSection mirrors the old
+       toolbar dropdowns). WorldMapControl constructs this panel, reaches the internal fields, and
+       subscribes every control's events itself; code-behind only premeasures collapsed content to
+       avoid WinUI's first-open Expander animation bounce. FiltersSection mirrors the old
        FilterCheckboxPanel (hidden wholesale in cell-browser mode); ShadingExpander is shown only for
        the TerrainTextures layer (owner-gated, like the old ShadingMenu). -->
   <StackPanel x:Name="FiltersSection" x:FieldModifier="internal" Spacing="8">
@@ -19,8 +20,11 @@
     <Expander x:Name="LightingExpander" IsExpanded="True"
               HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
       <Expander.Header>
-        <TextBlock Text="Lighting" FontWeight="SemiBold"
-                   AutomationProperties.HeadingLevel="Level2" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <FontIcon Glyph="&#xE706;" FontSize="14" />
+          <TextBlock Text="Lighting" FontWeight="SemiBold"
+                     AutomationProperties.HeadingLevel="Level2" />
+        </StackPanel>
       </Expander.Header>
       <local:LightingControlsPanel x:Name="Lighting" x:FieldModifier="internal"
                                    ShowFog="False" ShowWeather="False"
@@ -32,8 +36,11 @@
     <Expander x:Name="LayersExpander"
               HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
       <Expander.Header>
-        <TextBlock Text="Layers" FontWeight="SemiBold"
-                   AutomationProperties.HeadingLevel="Level2" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <FontIcon Glyph="&#xE81E;" FontSize="14" />
+          <TextBlock Text="Layers" FontWeight="SemiBold"
+                     AutomationProperties.HeadingLevel="Level2" />
+        </StackPanel>
       </Expander.Header>
       <StackPanel Spacing="8">
         <CheckBox x:Name="CellGridCheckBox" x:FieldModifier="internal" Content="Cell grid" IsChecked="True"
@@ -50,8 +57,11 @@
     <Expander x:Name="VisibilityExpander"
               HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
       <Expander.Header>
-        <TextBlock Text="Visibility" FontWeight="SemiBold"
-                   AutomationProperties.HeadingLevel="Level2" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <FontIcon Glyph="&#xE890;" FontSize="14" />
+          <TextBlock Text="Visibility" FontWeight="SemiBold"
+                     AutomationProperties.HeadingLevel="Level2" />
+        </StackPanel>
       </Expander.Header>
       <StackPanel Spacing="8">
         <CheckBox x:Name="WaterCheckBox" x:FieldModifier="internal" Content="Water" IsChecked="True"

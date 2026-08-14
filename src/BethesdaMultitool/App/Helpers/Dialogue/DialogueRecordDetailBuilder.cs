@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 using BethesdaMultitool.Core.Formats.Subtitles;
 using BethesdaMultitool.Core.Games;
 
@@ -391,6 +392,11 @@ internal static class DialogueRecordDetailBuilder
         var refs = new HashSet<uint>();
         foreach (var cond in conditions)
         {
+            if (cond.ComparisonGlobalFormId != 0)
+            {
+                refs.Add(cond.ComparisonGlobalFormId);
+            }
+
             if (cond.Parameter1 != 0 && DialogueConditionDisplayFormatter.IsFormReference(cond, 0, game))
             {
                 refs.Add(cond.Parameter1);
@@ -401,9 +407,9 @@ internal static class DialogueRecordDetailBuilder
                 refs.Add(cond.Parameter2);
             }
 
-            if (cond.Reference != 0)
+            if (DialogueConditionReferencePolicy.TryGetSemanticReference(cond, game, out var reference))
             {
-                refs.Add(cond.Reference);
+                refs.Add(reference);
             }
         }
 

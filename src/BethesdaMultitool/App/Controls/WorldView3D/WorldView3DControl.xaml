@@ -43,7 +43,7 @@
                     Checked="HudToggleButton_Changed" Unchecked="HudToggleButton_Changed">
         <FontIcon Glyph="&#xE946;" FontSize="14" />
       </ToggleButton>
-      <!-- The former toolbar controls (Lighting / Layers / Visibility / Projection dropdowns and the
+      <!-- The former toolbar controls (Lighting / Overlays / Visibility / Camera dropdowns and the
            Export button) all live in the host's right-panel tabs now: Settings = WorldView3DSettingsPanel
            and Export = WorldView3DExportPanel, both constructed + wired by this control. -->
     </Grid>
@@ -77,24 +77,25 @@
       <!-- 90°-snap rotate buttons for the projection modes. Collapsed in perspective mode
            (SetProjectionMode toggles it). The former extra right margin cleared the diagnostics
            toggle, which now lives in the toolbar. -->
-      <StackPanel x:Name="ProjectionSnapPanel" Orientation="Horizontal" Spacing="4"
-                  HorizontalAlignment="Right" VerticalAlignment="Top"
-                  Margin="8" Visibility="Collapsed">
-        <Button x:Name="RotateLeftButton" Padding="6" MinWidth="0"
-                ToolTipService.ToolTip="Rotate view 90° left"
-                AutomationProperties.Name="Rotate view 90 degrees left"
-                Click="RotateLeftButton_Click">
-          <FontIcon Glyph="&#xE80D;" FontSize="14" /> <!-- RotateMapLeft: curved CCW rotate arrow -->
-
-        </Button>
-        <Button x:Name="RotateRightButton" Padding="6" MinWidth="0"
-                ToolTipService.ToolTip="Rotate view 90° right"
-                AutomationProperties.Name="Rotate view 90 degrees right"
-                Click="RotateRightButton_Click">
-          <FontIcon Glyph="&#xE80C;" FontSize="14" /> <!-- RotateMapRight: curved CW rotate arrow -->
-
-        </Button>
-      </StackPanel>
+      <Border x:Name="ProjectionSnapPanel"
+              HorizontalAlignment="Right" VerticalAlignment="Top"
+              Margin="8" Padding="2" CornerRadius="4"
+              Background="#D8101014" Visibility="Collapsed">
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <Button x:Name="RotateLeftButton" Padding="6" MinWidth="0"
+                  ToolTipService.ToolTip="Rotate view 90° left"
+                  AutomationProperties.Name="Rotate view 90 degrees left"
+                  Click="RotateLeftButton_Click">
+            <FontIcon Glyph="&#xE80D;" FontSize="14" /> <!-- RotateMapLeft: curved CCW rotate arrow -->
+          </Button>
+          <Button x:Name="RotateRightButton" Padding="6" MinWidth="0"
+                  ToolTipService.ToolTip="Rotate view 90° right"
+                  AutomationProperties.Name="Rotate view 90 degrees right"
+                  Click="RotateRightButton_Click">
+            <FontIcon Glyph="&#xE80C;" FontSize="14" /> <!-- RotateMapRight: curved CW rotate arrow -->
+          </Button>
+        </StackPanel>
+      </Border>
 
       <!-- Interior cell browser — the shared CellListControl (same list the 2D viewer uses). Overlays the
            viewport while browsing; picking a cell loads it into the 3D scene and hides the panel. -->

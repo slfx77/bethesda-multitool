@@ -292,11 +292,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private bool _placedLightsEnabled = true;
     // Post-processing toggles (settings-panel "Post-processing" section; hidden for Morrowind —
     // no engine HDR stage there). Read per-frame by ResolveTonemapSettings, so flipping them is
-    // free (no pipeline rebuild): HDR off = LegacyClamp passthrough (the pre-HDR look — the float
-    // scene target itself stays; only the static FALLOUT_VIEWER_HDR=0 env kill-switch reverts it),
-    // bloom off = skip the BrightPassBlur chain. Imagespace is a three-way selection: Automatic
+    // free (no pipeline rebuild): FO3/FNV HDR off keeps their standalone cinematic grade but skips
+    // HDR exposure/adaptation/bloom; other games use LegacyClamp. The float scene target itself stays;
+    // only the static FALLOUT_VIEWER_HDR=0 env kill-switch reverts it. Bloom off skips the
+    // BrightPassBlur chain. Imagespace is a three-way selection: Automatic
     // follows the cell/worldspace resolution, None renders a neutral cinematic (no golden desert
-    // filter) while the eye-adapt exposure stays, Explicit forces one IMGS record by FormID.
+    // filter) while eye-adapt exposure stays only when an HDR operator is active; Explicit forces
+    // one IMGS record by FormID.
     private bool _hdrEnabled = true;
     private bool _bloomEnabled = true;
     private ImagespaceSelectionMode _imagespaceMode = ImagespaceSelectionMode.Automatic;
@@ -414,6 +416,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // Overrides are inspection previews, not plugin edits. A newly loaded file starts from its
         // authored REFR + XESP state even when it reuses a FormID from the prior scene.
         _referenceEnabledOverrides.Clear();
+        RefreshReferenceOverrideRecoveryUi();
         RequestClearAdaptedLight();
         _data = data;
         // Morrowind has no engine HDR/bloom/imagespace stage (LegacyClamp) — hide the toggles

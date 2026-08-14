@@ -273,19 +273,19 @@ public sealed class FnvWater001SourceContractTests
         var capture = SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs");
         SourceContract.AssertOrder(
             capture,
-            "_water.HasVisibleWaterToPartition(cylinder)",
-            "_references.RenderBlendedDeferredBelowWater(_water, _camera.Position.Z);",
+            "_water!.HasVisibleWaterToPartition(cylinder)",
+            "_references!.RenderBlendedDeferredBelowWater(_water, _camera.Position.Z);",
             "captureWaterTransparencyPartitioned = true;",
-            "_water.GetFnvWater001Preflight(",
+            "_water!.GetFnvWater001Preflight(",
             "target.TryPrepareWaterOpaqueSnapshot(cmd)",
-            "_water.Render(viewProj, cylinder, captureRenderOrigin)",
-            "_references?.RenderBlendedDeferredAtOrAboveWater(_water!, _camera.Position.Z);");
+            "_water!.Render(viewProj, cylinder, captureRenderOrigin)",
+            "_references!.RenderBlendedDeferredAtOrAboveWater(_water!, _camera.Position.Z);");
         SourceContract.AssertOrder(
             capture,
             "if (captureWaterTransparencyPartitioned)",
-            "_references?.RenderBlendedDeferredAtOrAboveWater(_water!, _camera.Position.Z);",
+            "_references!.RenderBlendedDeferredAtOrAboveWater(_water!, _camera.Position.Z);",
             "else",
-            "_references?.RenderBlendedDeferred();");
+            "_references!.RenderBlendedDeferred();");
 
         var references = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
@@ -577,7 +577,7 @@ public sealed class FnvWater001SourceContractTests
             "viewProj, cylinder, captureRenderOrigin, isPerspectiveProjection: true");
         Assert.Contains("RecordSunShadowPass(cmd, captureRenderOrigin", capture, StringComparison.Ordinal);
         Assert.Contains(
-            "_water.Render(viewProj, cylinder, captureRenderOrigin)",
+            "_water!.Render(viewProj, cylinder, captureRenderOrigin)",
             capture, StringComparison.Ordinal);
 
         // The planar sky reflection is rendered BY the capture, at the capture's own extent, and the

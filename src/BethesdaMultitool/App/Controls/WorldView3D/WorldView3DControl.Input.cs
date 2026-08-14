@@ -30,15 +30,18 @@ public sealed partial class WorldView3DControl
         {
             if (_toggleKeysDown.Add(e.Key))
             {
-                // Each toggle key flips its toolbar ToggleButton, whose Changed handler updates the
-                // backing field — so keyboard and toolbar stay in sync.
+                // Toggle shortcuts route through the corresponding settings control or state setter
+                // so keyboard and panel stay in sync. Disabled subordinate controls do not accept
+                // their equivalent shortcut either; their latent preference is preserved.
                 if (e.Key == VirtualKey.Number1) CellsCheckBox.IsChecked = !_showWireframe;
                 else if (e.Key == VirtualKey.Number2) TerrainToggle.IsChecked = !_showTerrain;
                 else if (e.Key == VirtualKey.Number3) WaterCheckBox.IsChecked = !_showWater;
-                else if (e.Key == VirtualKey.Number4) VertexColorsToggle.IsChecked = !_showVertexColors;
+                else if (e.Key == VirtualKey.Number4 && _showTerrain)
+                    VertexColorsToggle.IsChecked = !_showVertexColors;
                 else if (e.Key == VirtualKey.Number5) RefsToggle.IsChecked = !_showReferences;
                 else if (e.Key == VirtualKey.Number6) SetShowNavMesh(!_showNavMesh);
-                else if (e.Key == VirtualKey.Number7) SetShowDisabled(!_showDisabled);
+                else if (e.Key == VirtualKey.Number7 && _showReferences)
+                    SetShowDisabled(!_showDisabled);
                 else if (e.Key == VirtualKey.Number8) LightingPanel.LightingEnabled = !_showLighting;
                 else if (e.Key == VirtualKey.Number9) LightingPanel.SkyboxEnabled = !_showSky;
                 else if (e.Key == VirtualKey.Number0) LightingPanel.FogEnabled = !_showFog;
@@ -242,7 +245,10 @@ public sealed partial class WorldView3DControl
     /// </summary>
     private void TryPickObject(Vector2 screen)
     {
-        if (_data is null || _spatialIndex is null) return;
+        // Meshes is the parent visibility switch for placed references. Keep the current selection
+        // latent while it is off, but do not let a click or walk-mode E select an object that the
+        // live view is deliberately not drawing.
+        if (!_showReferences || _data is null || _spatialIndex is null) return;
         var width = (float)RenderPanel.ActualWidth;
         var height = (float)RenderPanel.ActualHeight;
         if (width <= 0f || height <= 0f) return;
@@ -350,7 +356,7 @@ public sealed partial class WorldView3DControl
                     }
                 }
 
-                // A collision entry is warm only after this model has decoded/uploaded. Transform the
+                // A collision entry is usable only after decoded geometry has published it. Transform the
                 // world ray into the same mesh-local frame and let CollisionMesh's local AABB reject
                 // cheaply before its exact triangle loop. A warm triangle miss is authoritative: do
                 // not resurrect it through the looser OBND/sphere fallback.
@@ -529,6 +535,36 @@ public sealed partial class WorldView3DControl
                 new Vector3(c.X + rad, c.Y + rad, c.Z + rad),
                 Matrix4x4.Identity);
         }
+    }
+
+    /// <summary>
+    ///     Applies the non-spatial live renderer gates to the retained selection. This keeps editor
+    ///     chrome from outlining a reference whose pixels are absent because of authored state, a
+    ///     per-reference preview, or an independent live category/layer decision.
+    /// </summary>
+    private bool IsSelectedReferenceVisible()
+    {
+        if (!_showReferences || _selectedReference is not { } placement || _data is null) return false;
+
+        var category = _data.CategoryIndex.GetValueOrDefault(
+            placement.BaseFormId, PlacedObjectCategory.Unknown);
+        if (RenderableReference.TryBuild(
+                placement,
+                category,
+                xespDisabled: _data.XespDisabledRefs.Contains(placement.FormId),
+                game: _data.Game) is not { } reference)
+        {
+            return false;
+        }
+
+        if (!_referenceEnabledOverrides.IsVisible(
+                reference.FormId, reference.IsInitiallyDisabled, _showDisabled)) return false;
+        if (reference.IsGrass && !_showGrass) return false;
+        if (reference.IsMarker && !_showMarkers) return false;
+        if (_hiddenCategories.Contains(reference.Category)) return false;
+
+        return !reference.IsImposter || BethesdaMultitool.Core.EnvironmentVariables.IsEnabled(
+            BethesdaMultitool.Core.EnvironmentVariables.Viewer.ShowImposters);
     }
 
     /// <summary>Clears the 3D selection + its outline. Called on Esc, worldspace switch, and reload.</summary>

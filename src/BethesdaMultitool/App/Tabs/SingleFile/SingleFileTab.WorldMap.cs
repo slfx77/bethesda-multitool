@@ -20,7 +20,7 @@ public sealed partial class SingleFileTab
 {
     private CellRecord? _selectedWorldCell;
     private PlacedReference? _selectedWorldObject;
-    private bool _suppressActivatorStateSelectionChanged;
+    private bool _suppressReferenceStateSelectionChanged;
 
     private async Task PopulateWorldMapAsync(CancellationToken cancellationToken)
     {
@@ -255,7 +255,7 @@ public sealed partial class SingleFileTab
         _selectedWorldObject = null;
         ViewBaseInBrowserButton.Visibility = Visibility.Collapsed;
         ViewCellInDetailButton.Visibility = Visibility.Visible;
-        ActivatorStatePanel.Visibility = Visibility.Collapsed;
+        ReferenceStatePanel.Visibility = Visibility.Collapsed;
 
         // Mirror the guard in WorldMap_InspectObject: a cell inspected from the 3D viewer must
         // not clear the hidden 2D map's selection (the 3D viewer owns its own highlight).
@@ -319,7 +319,7 @@ public sealed partial class SingleFileTab
         var worldResolver = _session.WorldViewData?.Resolver ?? _session.Resolver;
         WorldObjectTitle.Text = PlacedObjectCategoryResolver.GetObjectInspectionTitle(
             obj, _session.WorldViewData, worldResolver);
-        UpdateActivatorStateInspection(obj);
+        UpdateReferenceStateInspection(obj);
 
         WorldPropertyPanel.Children.Clear();
         var properties = PlacedObjectCategoryResolver.BuildObjectProperties(obj, _session.WorldViewData, worldResolver);
@@ -354,41 +354,55 @@ public sealed partial class SingleFileTab
     }
 
     /// <summary>
-    ///     Shows the per-instance Enabled preview for ACTI placements and effect-category references
-    ///     (the latter covers authored Fort/Hoover effect sheets). The authored label is resolved from
-    ///     both the placement flag and its XESP parent chain.
+    ///     Shows the per-instance 3D visibility preview for any selected placed reference. The
+    ///     authored label is resolved from both the placement flag and its XESP parent chain.
     /// </summary>
-    private void UpdateActivatorStateInspection(PlacedReference obj)
+    private void UpdateReferenceStateInspection(PlacedReference obj)
     {
-        var hasEnabledPreview = _session.WorldViewData?.CategoryIndex.TryGetValue(
-            obj.BaseFormId, out var category) == true &&
-            category is PlacedObjectCategory.Activator or PlacedObjectCategory.Effects;
-        ActivatorStatePanel.Visibility = hasEnabledPreview ? Visibility.Visible : Visibility.Collapsed;
-        if (!hasEnabledPreview) return;
+        var hasReferencePreview = WorldView3DControl.CanPreviewReferenceVisibility(obj);
+        ReferenceStatePanel.Visibility = hasReferencePreview ? Visibility.Visible : Visibility.Collapsed;
+        if (!hasReferencePreview) return;
 
         var enabledOverride = WorldView3DControl.GetReferenceEnabledOverride(obj.FormId);
-        _suppressActivatorStateSelectionChanged = true;
-        ActivatorStateComboBox.SelectedIndex = (int)enabledOverride;
-        _suppressActivatorStateSelectionChanged = false;
-        UpdateActivatorStateHint(obj, enabledOverride);
+        _suppressReferenceStateSelectionChanged = true;
+        ReferenceStateComboBox.SelectedIndex = (int)enabledOverride;
+        _suppressReferenceStateSelectionChanged = false;
+        UpdateReferenceStateHint(obj, enabledOverride);
     }
 
-    private void ActivatorStateComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ReferenceStateComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_suppressActivatorStateSelectionChanged || _selectedWorldObject is not { } obj) return;
-        if (ActivatorStateComboBox.SelectedIndex is < 0 or > 2) return;
+        if (_suppressReferenceStateSelectionChanged || _selectedWorldObject is not { } obj) return;
+        if (ReferenceStateComboBox.SelectedIndex is < 0 or > 2) return;
 
-        var enabledOverride = (ReferenceEnabledOverride)ActivatorStateComboBox.SelectedIndex;
+        var enabledOverride = (ReferenceEnabledOverride)ReferenceStateComboBox.SelectedIndex;
         WorldView3DControl.SetReferenceEnabledOverride(obj.FormId, enabledOverride);
-        UpdateActivatorStateHint(obj, enabledOverride);
+        UpdateReferenceStateHint(obj, enabledOverride);
     }
 
-    private void UpdateActivatorStateHint(PlacedReference obj, ReferenceEnabledOverride enabledOverride)
+    private void WorldView3D_ReferenceEnabledOverridesReset(object? sender, EventArgs e)
     {
-        var authored = WorldView3DControl.IsReferenceAuthoredEnabled(obj) ? "On" : "Off";
-        ActivatorStateHint.Text = enabledOverride == ReferenceEnabledOverride.Authored
-            ? $"Static authored state: {authored} (REFR/XESP). Quest/script runtime changes are not simulated."
-            : $"Preview forced {enabledOverride} for Form ID 0x{obj.FormId:X8} only; the parsed record is unchanged.";
+        if (_selectedWorldObject is { } obj) UpdateReferenceStateInspection(obj);
+    }
+
+    private void UpdateReferenceStateHint(PlacedReference obj, ReferenceEnabledOverride enabledOverride)
+    {
+        var placementAuthored = WorldView3DControl.IsReferenceAuthoredEnabled(obj) ? "Shown" : "Hidden";
+        var lightAuthored = WorldView3DControl.IsReferenceBaseLightAuthoredEnabled(obj) switch
+        {
+            true => "; base LIGH emission: On",
+            false => "; base LIGH emission: Off By Default",
+            null => string.Empty,
+        };
+        ReferenceStateHint.Text = enabledOverride switch
+        {
+            ReferenceEnabledOverride.Authored =>
+                $"Authored placement state: {placementAuthored} (REFR/XESP){lightAuthored}. Quest/script runtime changes are not simulated.",
+            ReferenceEnabledOverride.On =>
+                $"Preview forces Form ID 0x{obj.FormId:X8} Shown at the authored-state gate; independent layer, category, lighting, and water filters still apply.",
+            _ =>
+                $"Preview hides Form ID 0x{obj.FormId:X8} from supported 3D output (mesh, light, and embedded water as applicable), picks, collision preview, and walk collision; the parsed record is unchanged.",
+        };
     }
 
     private void BuildWorldPropertyPanel(List<EsmPropertyEntry> properties)

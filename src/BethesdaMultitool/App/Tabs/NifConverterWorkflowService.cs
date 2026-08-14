@@ -125,16 +125,14 @@ internal static class NifConverterWorkflowService
 
     internal static Task<NifViewerSourceLoadResult> LoadSourceAsync(
         string path,
-        bool isBsa,
+        bool isArchive,
         string? texturePathOverride)
     {
         return Task.Run(() =>
         {
-            var texturePathsOverride = string.IsNullOrWhiteSpace(texturePathOverride)
-                ? null
-                : new[] { texturePathOverride.Trim() };
+            var texturePathsOverride = NifTextureSourcePathText.ParseOverride(texturePathOverride);
 
-            var service = isBsa
+            var service = isArchive
                 ? NifBrowserService.CreateFromBsa(path, texturePathsOverride)
                 : NifBrowserService.CreateFromDirectory(path, texturePathsOverride);
 
@@ -144,7 +142,7 @@ internal static class NifConverterWorkflowService
             return new NifViewerSourceLoadResult(
                 service,
                 items,
-                string.Join("; ", service.TexturePaths));
+                NifTextureSourcePathText.Format(service.TexturePaths));
         });
     }
 
@@ -351,7 +349,7 @@ internal sealed record NifConversionProgress(int Current, int Total, string Rela
 /// <summary>Tally of a batch NIF conversion: converted, skipped, and failed file counts.</summary>
 internal sealed record NifConversionSummary(int Converted, int Skipped, int Failed);
 
-/// <summary>Result of loading a NIF source (folder or BSA): the browser service, file tree, and texture-path display.</summary>
+/// <summary>Result of loading a NIF source (folder or archive): its service, file tree, and texture paths.</summary>
 internal sealed record NifViewerSourceLoadResult(
     NifBrowserService Service,
     List<NifTreeViewItem> Items,

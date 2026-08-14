@@ -86,8 +86,8 @@
                   AutomationProperties.Name="Initially-disabled objects" />
         <CheckBox x:Name="NavMeshCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Nav mesh"
                   AutomationProperties.Name="Nav mesh" />
-        <CheckBox x:Name="CollisionCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Havok collision"
-                  AutomationProperties.Name="Havok collision" />
+        <CheckBox x:Name="CollisionCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Collision mesh"
+                  AutomationProperties.Name="Collision mesh" />
         <CheckBox x:Name="GridCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Cell grid"
                   AutomationProperties.Name="Cell grid" />
         <CheckBox x:Name="LightingCheckBox" x:FieldModifier="internal" IsChecked="True" Content="Lighting"

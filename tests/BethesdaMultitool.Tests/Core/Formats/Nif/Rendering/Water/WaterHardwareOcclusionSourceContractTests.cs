@@ -86,7 +86,7 @@ public sealed class WaterHardwareOcclusionSourceContractTests
 
         var capture = SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs");
         var captureBranch = Extract(capture, "if (captureWaterUsesDepth)",
-            "_water.Render(viewProj, cylinder, captureRenderOrigin)");
+            "_water!.Render(viewProj, cylinder, captureRenderOrigin)");
         Assert.Contains("target.BindColorReadOnlyDepth(cmd);", captureBranch,
             StringComparison.Ordinal);
     }

@@ -230,6 +230,12 @@ public sealed partial class WorldView3DControl
         into.Clear();
         _coldGroundCandidates.Clear();
         _walkCollisionWarmupCandidates.Clear();
+        // Meshes is the parent visibility gate for every placed-reference collision path. Return
+        // before scanning cells or touching the cache so hidden references cannot remain solid via a
+        // warm hit, a cold OBND fallback, or a background collision warmup. Ground terrain is sampled
+        // separately by SampleGroundAt and intentionally remains available in inspection views.
+        if (!_showReferences) return;
+
         var gx = (int)MathF.Floor(centerX / _cellSize);
         var gy = (int)MathF.Floor(centerY / _cellSize);
         // Ring reach + eye slack + a safety pad for OBNDs that under-cover their collision mesh.
@@ -260,6 +266,10 @@ public sealed partial class WorldView3DControl
                     // separate static and still collides normally.
                     var category = _data?.CategoryIndex.GetValueOrDefault(
                         p.BaseFormId, PlacedObjectCategory.Unknown) ?? PlacedObjectCategory.Unknown;
+                    // Keep walk/ceiling/horizontal collision in lockstep with the reference renderer's
+                    // per-category visibility filter. This precedes cache resolution and cold-candidate
+                    // admission, so neither the warm nor cold path can bypass the toggle.
+                    if (_hiddenCategories.Contains(category)) continue;
                     if (category == PlacedObjectCategory.Door)
                     {
                         continue;
@@ -273,17 +283,8 @@ public sealed partial class WorldView3DControl
                     var distanceSquared = (ddx * ddx) + (ddy * ddy);
                     if (resolution.Mesh is { } collision)
                     {
-                        // The cache builds ONE ordinary entry per model path under category Unknown, so
-                        // CollisionMeshBuilder's vegetation rule never saw this placement's category and
-                        // a tree's synthesized canopy soup arrived here as walkable ground ("walk mode
-                        // can stand on SPT leaves"). Re-apply the policy at the placement site;
-                        // authored Havok is exempt and stays solid.
-                        if (WalkCollisionFallbackPolicy.AllowsResolvedCollisionMesh(
-                                resolution.Source, p.ModelPath, category))
-                        {
-                            TryAddWarmRaycastCandidate(p, collision, centerX, centerY, reach, into);
-                        }
-
+                        // Category/path fallback policy is enforced when the cache entry resolves.
+                        TryAddWarmRaycastCandidate(p, collision, centerX, centerY, reach, into);
                         continue;
                     }
 
@@ -305,7 +306,7 @@ public sealed partial class WorldView3DControl
                     // OBND is all zeros.)
                     var allowsBoundsFallback = !resolution.IsResolved &&
                         WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(p.ModelPath, category);
-                    var allowsWarmup = _referenceMeshCache12 is not null && !resolution.IsResolved;
+                    var allowsWarmup = _referenceMeshCache12 is not null && resolution.ShouldOfferWarmup;
                     if (!allowsBoundsFallback && !allowsWarmup)
                     {
                         continue;
@@ -366,13 +367,8 @@ public sealed partial class WorldView3DControl
                 p.ModelPath!, cold.Category) ?? CollisionMeshResolution.Unresolved;
             if (resolution.Mesh is { } collision)
             {
-                // Same placement-site vegetation/SpeedTree gate as the warm pass above.
-                if (WalkCollisionFallbackPolicy.AllowsResolvedCollisionMesh(
-                        resolution.Source, p.ModelPath, cold.Category))
-                {
-                    TryAddWarmRaycastCandidate(p, collision, centerX, centerY, reach, into);
-                }
-
+                // Category/path fallback policy is enforced when the cache entry resolves.
+                TryAddWarmRaycastCandidate(p, collision, centerX, centerY, reach, into);
                 continue;
             }
 

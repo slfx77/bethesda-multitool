@@ -197,6 +197,10 @@ public sealed partial class WorldView3DControl
             _commandRecorder12?.WaitForGpuIdle();
         }
 
+        // The mesh cache releases every referenced texture during its disposal. Snapshot the opt-in
+        // alias telemetry first so the reference-cache summary describes the final live scene rather
+        // than the intentionally empty cache left by that release cascade.
+        _referenceTextureCache12?.EmitTraceSummary();
         _references?.Dispose(); _references = null;
         _referenceMeshCache12?.Dispose(); _referenceMeshCache12 = null;
         _referenceTextureCache12?.Dispose(); _referenceTextureCache12 = null;

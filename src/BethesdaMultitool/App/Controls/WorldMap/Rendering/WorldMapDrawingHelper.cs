@@ -60,25 +60,24 @@ internal static class WorldMapDrawingHelper
 
     /// <summary>Draw a cell grid overlay for PNG export (no viewport culling).</summary>
     internal static void DrawExportCellGrid(CanvasDrawingSession ds,
-        int minGridX, int maxGridX, int minGridY, int maxGridY, float pixelsPerWorldUnit, float cellWorldSize)
+        int cellsWide, int cellsTall,
+        WorldMapExportWorldBounds worldBounds,
+        float pixelsPerWorldUnit,
+        float cellWorldSize)
     {
         var gridColor = Color.FromArgb(40, 255, 255, 255);
         var lineWidth = 0.5f / pixelsPerWorldUnit;
 
-        for (var cx = minGridX; cx <= maxGridX + 1; cx++)
+        for (var cellOffsetX = 0; cellOffsetX <= cellsWide; cellOffsetX++)
         {
-            var worldX = cx * cellWorldSize;
-            var yStart = -(maxGridY + 1) * cellWorldSize;
-            var yEnd = -minGridY * cellWorldSize;
-            ds.DrawLine(worldX, yStart, worldX, yEnd, gridColor, lineWidth);
+            var worldX = (float)((double)worldBounds.MinX + ((double)cellOffsetX * cellWorldSize));
+            ds.DrawLine(worldX, -worldBounds.MaxY, worldX, -worldBounds.MinY, gridColor, lineWidth);
         }
 
-        for (var cy = minGridY; cy <= maxGridY + 1; cy++)
+        for (var cellOffsetY = 0; cellOffsetY <= cellsTall; cellOffsetY++)
         {
-            var worldY = -cy * cellWorldSize;
-            var xStart = minGridX * cellWorldSize;
-            var xEnd = (maxGridX + 1) * cellWorldSize;
-            ds.DrawLine(xStart, worldY, xEnd, worldY, gridColor, lineWidth);
+            var worldY = -(float)((double)worldBounds.MinY + ((double)cellOffsetY * cellWorldSize));
+            ds.DrawLine(worldBounds.MinX, worldY, worldBounds.MaxX, worldY, gridColor, lineWidth);
         }
     }
 }

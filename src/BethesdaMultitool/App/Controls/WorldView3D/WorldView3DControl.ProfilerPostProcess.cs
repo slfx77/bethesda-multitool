@@ -71,7 +71,9 @@ public sealed partial class WorldView3DControl
         get
         {
             var tonemap = ResolveTonemapSettings();
-            var hdrActive = _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
+            var tonemapAvailable = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
+            var hdrActive = _hdrEnabled && tonemapAvailable;
+            var modeTraits = GpuTonemapModeTraits.For(tonemap.Mode, tonemapAvailable);
             var sceneSunlightScale = GpuTonemapSettings.ResolveSceneSunlightScale(
                 tonemap,
                 _data?.Game ?? BethesdaGame.Unknown,
@@ -82,8 +84,8 @@ public sealed partial class WorldView3DControl
                 _bloomEnabled,
                 _imagespaceMode != ImagespaceSelectionMode.None,
                 _showFog,
-                !string.Equals(tonemap.Mode.ToString(), "LegacyClamp", StringComparison.Ordinal),
-                tonemap.BloomEnabled,
+                tonemapAvailable && modeTraits.IsHdrDisplayOperator,
+                modeTraits.AllowsClassicBloom && tonemap.BloomEnabled && tonemap.BrightScale > 0f,
                 tonemap.Mode.ToString(),
                 _tonemapBaseImageSpaceEditorId,
                 _tonemapBaseImageSpaceSource,

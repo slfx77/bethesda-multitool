@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Games;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls.Primitives;
 
@@ -29,7 +30,19 @@ public sealed partial class WorldView3DControl
         // Backend chip — D3D12 shows the feature level for at-a-glance diagnostics.
         var backend = _gpu12 is not null
             ? $"D3D12 {_gpu12.FeatureLevel}"
-            : "D3D11";
+            : "D3D12 unavailable";
+        var pointerHint = ProjectionActive
+            ? "drag pan   Shift+drag rotate   "
+            : "drag to look   ";
+        // ReferenceRenderer12 deliberately retains its last-frame diagnostics when the Meshes pass
+        // is skipped. Treat a disabled parent as no current reference result rather than surfacing
+        // that retained frame as if hidden meshes had just drawn.
+        var belowWaterBlendedDraws = _showReferences
+            ? _references?.LastBelowWaterBlendedDraws ?? 0
+            : 0;
+        var partitionedBlendedCandidates = _showReferences
+            ? _references?.LastPartitionedBlendedCandidates ?? 0
+            : 0;
         // Layer on/off state now lives in the toolbar toggle buttons, so the HUD spends the
         // freed space spelling out the movement controls.
         var text =
@@ -41,21 +54,22 @@ public sealed partial class WorldView3DControl
             // Submerged blended submeshes reordered ahead of the water surface. Zero while water is
             // on screen means the split is inactive — the state in which underwater decals composite
             // on top of the water, which had no diagnostic surface at all before.
-            $"subm: {_references?.LastBelowWaterBlendedDraws ?? 0}/" +
-            $"{_references?.LastPartitionedBlendedCandidates ?? 0}   " +
+            $"subm: {belowWaterBlendedDraws}/{partitionedBlendedCandidates}   " +
             $"pos: ({_camera.Position.X:0}, {_camera.Position.Y:0}, {_camera.Position.Z:0})   " +
             $"yaw: {NormalizedYawDegrees():0}°   pitch: {_camera.Pitch * (180f / MathF.PI):0}°   " +
             $"speed: {_controller.MoveSpeed:0}   " +
             $"dist: {_renderDistance / _cellSize:0.#}c   " +
             $"mode: {mode}   time {hour:00}:{minute:00}\n" +
-            "WASD move   Q/E up/down   mouse-wheel speed   drag to look   " +
+            "WASD move   Q/E up/down   mouse-wheel speed   " + pointerHint +
             "PgUp/PgDn view distance   F fly/walk   P copy camera pose   " +
             "click select (click again = cycle)   Esc deselect";
 
         // Draw-cap signal: when a dense frame can't fit every per-draw CB in the shared ring slot,
         // the renderer skips the overflow (instead of throwing + blanking the scene). Surface it so
         // the soft cap is visible — raise FALLOUT_VIEWER_RING_BUFFER_MB if this is persistently > 0.
-        var truncatedDraws = _references?.LastFrameDrawsTruncated ?? 0;
+        var truncatedDraws = _showReferences
+            ? _references?.LastFrameDrawsTruncated ?? 0
+            : 0;
         if (truncatedDraws > 0)
         {
             var ringTotalMib = _ringBuffer12 is not null ? _ringBuffer12.BytesPerFrame / (1024.0 * 1024.0) : 0;
@@ -69,29 +83,31 @@ public sealed partial class WorldView3DControl
         {
             text += $"\n⚠ PLACED OBJECTS UNAVAILABLE: {referenceError}";
         }
-        if (_showFrameStats && _terrain is not null)
+        if (_showFrameStats && _showTerrain && _terrain is not null)
         {
             var stats = _terrain.LastStats;
             text +=
                 $"\nstats cand:{stats.VisibleCandidates} draw:{stats.TerrainDraws} " +
                 $"up:{stats.NewUploads} texMiss:{stats.TextureCacheMisses} " +
                 $"water:{visibleWater} cpu:{stats.CpuFrameMilliseconds:0.0}ms";
+        }
 
-            if (_references is not null && _showReferences)
-            {
-                var rstats = _references.LastStats;
-                text +=
-                    $"\nrefs cand:{rstats.ReferenceCandidates} drawn:{rstats.ReferenceDrawn} " +
-                    $"sub:{rstats.ReferenceSubmeshDraws} batch:{rstats.ReferenceBatches} inst:{rstats.ReferenceInstances} " +
-                    $"instDraw:{rstats.ReferenceInstancedDraws} blendDraw:{rstats.ReferenceBlendedDraws} " +
-                    $"srvBinds:{rstats.ReferenceSrvBinds} meshMiss:{rstats.ReferenceMeshCacheMisses} " +
-                    $"qDec:{rstats.ReferenceQueuedDecodes} actDec:{rstats.ReferenceActiveDecodes} " +
-                    $"texPend:{rstats.ReferenceTexturePending} " +
-                    $"cpuHit:{rstats.ReferenceCpuDecodedMeshCacheHits} bcTex:{rstats.ReferenceCompressedTextureUploads} rgbaTex:{rstats.ReferenceRgbaTextureUploads} " +
-                    $"cull:{rstats.ReferenceCullMilliseconds:0.0} mesh:{rstats.ReferenceMeshUploadMilliseconds:0.0} " +
-                    $"cb:{rstats.ReferenceCbUpdateMilliseconds:0.0} srv:{rstats.ReferenceSrvBindMilliseconds:0.0} " +
-                    $"draw:{rstats.ReferenceDrawCallMilliseconds:0.0}ms";
-            }
+        // Reference stats are independent of Terrain; hiding LAND must not hide a current Meshes
+        // diagnostic, and hiding Meshes must not display the renderer's retained prior frame.
+        if (_showFrameStats && _showReferences && _references is not null)
+        {
+            var rstats = _references.LastStats;
+            text +=
+                $"\nrefs cand:{rstats.ReferenceCandidates} drawn:{rstats.ReferenceDrawn} " +
+                $"sub:{rstats.ReferenceSubmeshDraws} batch:{rstats.ReferenceBatches} inst:{rstats.ReferenceInstances} " +
+                $"instDraw:{rstats.ReferenceInstancedDraws} blendDraw:{rstats.ReferenceBlendedDraws} " +
+                $"srvBinds:{rstats.ReferenceSrvBinds} meshMiss:{rstats.ReferenceMeshCacheMisses} " +
+                $"qDec:{rstats.ReferenceQueuedDecodes} actDec:{rstats.ReferenceActiveDecodes} " +
+                $"texPend:{rstats.ReferenceTexturePending} " +
+                $"cpuHit:{rstats.ReferenceCpuDecodedMeshCacheHits} bcTex:{rstats.ReferenceCompressedTextureUploads} rgbaTex:{rstats.ReferenceRgbaTextureUploads} " +
+                $"cull:{rstats.ReferenceCullMilliseconds:0.0} mesh:{rstats.ReferenceMeshUploadMilliseconds:0.0} " +
+                $"cb:{rstats.ReferenceCbUpdateMilliseconds:0.0} srv:{rstats.ReferenceSrvBindMilliseconds:0.0} " +
+                $"draw:{rstats.ReferenceDrawCallMilliseconds:0.0}ms";
         }
 
         if (!string.Equals(_lastHudText, text, StringComparison.Ordinal))
@@ -121,7 +137,9 @@ public sealed partial class WorldView3DControl
     ///     radian fields (pitch positive looks up). FOV (--capture-fov) and the live panel size
     ///     (--capture-width/height) are emitted too so the replay matches the on-screen zoom + aspect —
     ///     omitting them silently reframed the capture at the profiler's 60° / default-size defaults,
-    ///     which looked like a different camera angle. Also logged, in case the clipboard is lost.
+    ///     which looked like a different camera angle. The profiler text remains the exact clipboard
+    ///     prefix; a game-specific console teleport block (or an explicit unsupported explanation) is
+    ///     appended. Also logged, in case the clipboard is lost.
     /// </summary>
     private void CopyCameraPoseToClipboard()
     {
@@ -174,9 +192,27 @@ public sealed partial class WorldView3DControl
             weather,
             sizeArg);
 
-        ClipboardHelper.CopyText(pose);
+        var game = _data?.Game ?? BethesdaGame.Unknown;
+        // TES3 CELL NAME is the console target and is retained as FullName. Later games require the
+        // EditorID; never feed their localized display name (or our synthetic FormID fallback) to COC.
+        var interiorConsoleTarget = game == BethesdaGame.Morrowind
+            ? _selectedInterior?.FullName
+            : _selectedInterior?.EditorId;
+        var teleport = InGameTeleportCommandFormatter.Format(new InGameTeleportRequest(
+            game,
+            _camera.Position,
+            yawDegrees,
+            pitchDegrees,
+            _selectedInterior is not null,
+            interiorConsoleTarget,
+            Profiler_SelectedWorldspaceEditorId,
+            _cellSize));
+        var clipboardText = InGameTeleportCommandFormatter.AppendToProfilerPose(pose, teleport);
+
+        ClipboardHelper.CopyText(clipboardText);
         Log.Info("[CameraPose] {0}", pose);
-        ShowStatus($"Camera pose copied:\n{pose}", autoDismiss: true);
+        Log.Info("[CameraTeleport] {0}", teleport.Text);
+        ShowStatus($"Camera pose + in-game teleport help copied:\n{clipboardText}", autoDismiss: true);
     }
 
     private void HudToggleButton_Changed(object sender, RoutedEventArgs e)
@@ -216,8 +252,8 @@ public sealed partial class WorldView3DControl
 
     private DispatcherTimer CreateStatusDismissTimer()
     {
-        // Short dismiss: these are transient hints ("Selected object is not a teleport door") — 4 s
-        // read as a lingering error banner (part9 feedback).
+        // Short dismiss: these are transient hints ("Selected object is not a teleport door"); the
+        // former 4-second interval read as a lingering error banner (part9 feedback).
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         timer.Tick += (_, _) =>
         {

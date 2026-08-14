@@ -620,13 +620,15 @@
                 <local:WorldView3DControl x:Name="WorldView3DControl" Grid.Column="0"
                                           Visibility="Collapsed"
                                           InspectObject="WorldMap_InspectObject"
-                                          InspectCell="WorldMap_InspectCell" />
+                                          InspectCell="WorldMap_InspectCell"
+                                          ReferenceEnabledOverridesReset="WorldView3D_ReferenceEnabledOverridesReset" />
 
                 <!--  Right: tabbed Settings / Inspection / Export panel. Settings (default) hosts the
                       ACTIVE viewer's settings expanders (content swapped on the 2D/3D view-mode change);
                       Inspection holds the object/cell detail and is auto-selected on click/pick; Export
                       (3D only) hosts the 3D viewer's export options + Export button.  -->
-              <Grid x:Name="WorldRightPanelContent" Grid.Column="2" Padding="12,0,0,0">
+              <Grid x:Name="WorldRightPanelContent" Grid.Column="2" Padding="12,0,0,0"
+                    Background="{ThemeResource LayerFillColorAltBrush}" CornerRadius="8">
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="*" />
@@ -691,28 +693,29 @@
                     <!--  A per-placed-reference preview, deliberately separate from Visibility's
                           global category/show-disabled filters. ComboBox is natively keyboard
                           operable; the explicit automation name makes its purpose unambiguous.  -->
-                    <StackPanel x:Name="ActivatorStatePanel" Visibility="Collapsed" Spacing="4">
+                    <StackPanel x:Name="ReferenceStatePanel" Visibility="Collapsed" Spacing="4">
                       <Grid ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
                           <ColumnDefinition Width="Auto" />
                           <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="Enabled preview"
+                        <TextBlock Grid.Column="0" Text="3D visibility preview"
                                    VerticalAlignment="Center" />
-                        <ComboBox x:Name="ActivatorStateComboBox" Grid.Column="1"
+                        <ComboBox x:Name="ReferenceStateComboBox" Grid.Column="1"
                                   MinWidth="140" HorizontalAlignment="Stretch"
                                   SelectedIndex="0"
-                                  SelectionChanged="ActivatorStateComboBox_SelectionChanged"
-                                  AutomationProperties.Name="Selected activator or effect enabled preview state"
-                                  AutomationProperties.HelpText="Choose Authored, On, or Off for only this placed activator or effect instance">
+                                  SelectionChanged="ReferenceStateComboBox_SelectionChanged"
+                                  AutomationProperties.Name="Selected reference 3D visibility preview state"
+                                  AutomationProperties.HelpText="Choose Authored, Shown, or Hidden for only this placed reference; global and category filters still apply">
                           <ComboBoxItem Content="Authored" />
-                          <ComboBoxItem Content="On" />
-                          <ComboBoxItem Content="Off" />
+                          <ComboBoxItem Content="Shown" />
+                          <ComboBoxItem Content="Hidden" />
                         </ComboBox>
                       </Grid>
-                      <TextBlock x:Name="ActivatorStateHint" FontSize="11"
+                      <TextBlock x:Name="ReferenceStateHint" FontSize="11"
                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                 TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                 TextWrapping="Wrap" IsTextSelectionEnabled="True"
+                                 AutomationProperties.LiveSetting="Polite" />
                     </StackPanel>
                   </StackPanel>
 

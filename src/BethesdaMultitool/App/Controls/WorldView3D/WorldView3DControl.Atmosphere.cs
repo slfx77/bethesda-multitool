@@ -1,7 +1,6 @@
 using System.IO;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
@@ -310,56 +309,40 @@ public sealed partial class WorldView3DControl
         // render-target/device/adaptive-mode lifecycle invalidation.
         var historyKey = TonemapHistoryKeyBuilder.Build(game, _tonemapHistoryClearGeneration);
 
-        // GUI post-processing toggles (settings panel, read per frame — no rebuild). HDR off =
-        // the LegacyClamp passthrough (visually the pre-HDR look; the float scene target itself is
-        // only revertible via the static FALLOUT_VIEWER_HDR=0 kill-switch).
-        var hdrEnabled = _hdrEnabled
-            && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
-        if (!hdrEnabled)
+        // The live GUI gate is independent of the static infrastructure kill-switch. FO3/FNV switch
+        // from ImageSpaceEffectHDR to their standalone cinematic effect when GUI HDR is off, so they
+        // must continue through IMGS + IMAD resolution. FALLOUT_VIEWER_HDR=0 remains the true
+        // float-target/tonemap kill-switch and every other game's GUI-off state remains LegacyClamp.
+        var tonemapAvailable = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
+        var operatorOverride = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings
+            .ParseTonemapModeOverride(Environment.GetEnvironmentVariable("FALLOUT_VIEWER_TONEMAP"));
+        var hdrEnabled = _hdrEnabled && tonemapAvailable;
+        var cinematicOnly = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings
+            .UsesCinematicOnly(game, _hdrEnabled, tonemapAvailable) && operatorOverride is null;
+        var diagnosticOperatorActive = tonemapAvailable && operatorOverride is not null;
+        if (!hdrEnabled && !cinematicOnly && !diagnosticOperatorActive)
         {
-            return settings with
-            {
-                Mode = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.LegacyClamp,
-                BloomEnabled = false,
-                HistoryKey = historyKey,
-                EmissiveMult = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings
-                    .ResolveEmissiveMult(settings.EmissiveMult, null, hdrEnabled: false,
-                        imagespaceModifiersEnabled: _imagespaceMode != ImagespaceSelectionMode.None),
-            };
+            settings = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ApplyOverrides(settings);
+            return Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.FinalizeViewerPostProcessing(
+                settings, game, _hdrEnabled, tonemapAvailable, operatorOverride, _bloomEnabled, historyKey);
         }
 
         // Tonemap operator overrides are display-pass A/Bs; they must not suppress the raw FO3/FNV
         // imagespace values consumed by the scene pass (notably EmissiveMult).
         if ((!engineImagespaceFamily && !modernImagespaceFamily) || _data is null)
         {
-            return settings with
-            {
-                BloomEnabled = settings.BloomEnabled && _bloomEnabled,
-                HistoryKey = historyKey,
-            };
+            settings = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ApplyOverrides(settings);
+            return Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.FinalizeViewerPostProcessing(
+                settings, game, _hdrEnabled, tonemapAvailable, operatorOverride, _bloomEnabled, historyKey);
         }
 
         // Imagespace "(None)" = skip the authored IMGS overlay (cinematic grade + HDR params)
-        // and render with a neutral scene grade; the eye-adapt exposure stays.
+        // and render with a neutral scene grade. Eye-adapt exposure stays only while HDR is active;
+        // cinematic-only and LegacyClamp deliberately have no adaptation.
         if (_imagespaceMode == ImagespaceSelectionMode.None)
         {
-            settings = settings with
-            {
-                EmissiveMult = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings
-                    .ResolveEmissiveMult(settings.EmissiveMult, null, hdrEnabled: true,
-                        imagespaceModifiersEnabled: false),
-                Saturation = 1f,
-                ContrastAvgLum = 0.5f,
-                Contrast = 1f,
-                Brightness = 1f,
-                TintR = 1f,
-                TintG = 1f,
-                TintB = 1f,
-                TintAmount = 0f,
-                CinematicFlags = ImageSpaceCinematicFlags.All,
-                SunlightScale = 1f,
-                SkyScale = 1f,
-            };
+            settings = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings
+                .WithoutImagespaceModifiers(settings);
         }
 
         if (_imagespaceMode != ImagespaceSelectionMode.None
@@ -382,7 +365,7 @@ public sealed partial class WorldView3DControl
                     // Raw engine copy: zero is authored data, not an "unset" sentinel.
                     EmissiveMult = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings
                         .ResolveEmissiveMult(settings.EmissiveMult, hdr.EmissiveMult,
-                            hdrEnabled: true, imagespaceModifiersEnabled: true),
+                            hdrEnabled, imagespaceModifiersEnabled: true),
                     BlurRadius = hdr.BlurRadius,
                     BlurPasses = hdr.BlurPasses,
                     BrightScale = hdr.BrightScale,
@@ -402,8 +385,9 @@ public sealed partial class WorldView3DControl
                     ContrastAvgLum = cin.ContrastAvgLum,
                     Contrast = cin.Contrast,
                     Brightness = cin.Brightness,
-                    // Retain the parsed source mask for capture telemetry. All classic DNAM sizes
-                    // author it; Creation-era split/packed cinematic blocks do not. The shipped
+                    // Retain the parsed source mask for capture telemetry. Only the 148- and 152-byte
+                    // classic DNAM layouts author it; the 132-byte and Creation-era split/packed
+                    // cinematic layouts do not. The shipped
                     // FO3/FNV composite shader itself does not consume this metadata.
                     CinematicFlags = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings
                         .ResolveCinematicFlags(settings.CinematicFlags, cin),
@@ -474,12 +458,9 @@ public sealed partial class WorldView3DControl
         }
 
         settings = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ApplyOverrides(settings);
-        // The GUI Bloom toggle wins over the FALLOUT_VIEWER_BLOOM=1 force-on (debug knob).
-        return settings with
-        {
-            BloomEnabled = settings.BloomEnabled && _bloomEnabled,
-            HistoryKey = historyKey,
-        };
+        // Final live policy gates HDR-only state after IMAD and preserves explicit display A/Bs.
+        return Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.FinalizeViewerPostProcessing(
+            settings, game, _hdrEnabled, tonemapAvailable, operatorOverride, _bloomEnabled, historyKey);
     }
 
     private WorldspaceRecord? FindWorldspace(uint formId) =>

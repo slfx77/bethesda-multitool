@@ -26,7 +26,7 @@ public sealed partial class KeyboardShortcutsDialog : ContentDialog
         new("HexViewer", "Arrow keys", "Move hex cursor"),
         new("HexViewer", "Page Up / Page Down", "Scroll by one screen"),
 
-        new("Model Tools — Viewer", "Ctrl+O", "Open folder or BSA"),
+        new("Model Tools — Viewer", "Ctrl+O", "Open folder or archive"),
         new("Model Tools — Viewer", "Ctrl+E", "Export current NIF as GLB"),
         new("Model Tools — Viewer", "Ctrl+R", "Render current NIF as PNG"),
 
@@ -39,10 +39,11 @@ public sealed partial class KeyboardShortcutsDialog : ContentDialog
         new("World Viewer — 3D", "Q / E", "Descend / climb (fly mode)"),
         new("World Viewer — 3D", "Shift / Ctrl", "Move faster / slower"),
         new("World Viewer — 3D", "Mouse drag", "Look around"),
+        new("World Viewer — 3D", "Shift+Mouse drag", "Rotate a projection view"),
         new("World Viewer — 3D", "Mouse wheel", "Adjust move speed"),
         new("World Viewer — 3D", "F", "Toggle fly / walk camera"),
         new("World Viewer — 3D", "Page Up / Page Down", "Increase / decrease draw distance"),
-        new("World Viewer — 3D", "1–7", "Toggle layers (cell grid, terrain, water, vertex colors, meshes, nav mesh, disabled objects)"),
+        new("World Viewer — 3D", "1–7", "Toggle visibility and overlays (cell grid, terrain, water, vertex colors, meshes, nav mesh, disabled objects)"),
         new("World Viewer — 3D", "8 / 9 / 0", "Toggle lighting / skybox / fog"),
         new("World Viewer — 3D", "E (walk mode)", "Select object at crosshair"),
         new("World Viewer — 3D", "Q (walk mode)", "Reselect previous pick"),

@@ -320,61 +320,61 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         var folder = await PickFolderAsync();
         if (folder != null)
         {
-            await LoadNifSourceAsync(folder, isBsa: false);
+            await LoadNifSourceAsync(folder, isArchive: false);
         }
     }
 
-    private async void NifViewerBrowseBsa_Click(object sender, RoutedEventArgs e)
+    private async void NifViewerBrowseArchive_Click(object sender, RoutedEventArgs e)
     {
         var filePicker = new FileOpenPicker();
         filePicker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
         filePicker.FileTypeFilter.Add(".bsa");
+        filePicker.FileTypeFilter.Add(".ba2");
         InitializeWithWindow.Initialize(filePicker,
             WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var file = await filePicker.PickSingleFileAsync();
         if (file != null)
         {
-            await LoadNifSourceAsync(file.Path, isBsa: true);
+            await LoadNifSourceAsync(file.Path, isArchive: true);
         }
     }
 
-    private async void NifViewerBrowseTextureBsa_Click(object sender, RoutedEventArgs e)
+    private async void NifViewerBrowseTextureArchive_Click(object sender, RoutedEventArgs e)
     {
         var filePicker = new FileOpenPicker();
         filePicker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
         filePicker.FileTypeFilter.Add(".bsa");
+        filePicker.FileTypeFilter.Add(".ba2");
         InitializeWithWindow.Initialize(filePicker,
             WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow));
 
         var file = await filePicker.PickSingleFileAsync();
         if (file == null) return;
 
-        NifViewerTextureBsaTextBox.Text = file.Path;
+        NifViewerTextureOverrideTextBox.Text = file.Path;
         if (!string.IsNullOrEmpty(_nifViewer.CurrentPath))
         {
-            await LoadNifSourceAsync(_nifViewer.CurrentPath, _nifViewer.IsBsa);
+            await LoadNifSourceAsync(_nifViewer.CurrentPath, _nifViewer.IsArchive);
         }
     }
 
-    private async Task LoadNifSourceAsync(string path, bool isBsa)
+    private async Task LoadNifSourceAsync(string path, bool isArchive)
     {
         _nifBrowserService?.Dispose();
         NifViewerPathTextBox.Text = path;
 
         try
         {
-            var overrideText = NifViewerTextureBsaTextBox.Text?.Trim();
-            var hasOverride = !string.IsNullOrEmpty(overrideText);
-            var result = await NifConverterWorkflowService.LoadSourceAsync(path, isBsa, overrideText);
+            var overrideText = NifViewerTextureOverrideTextBox.Text;
+            var result = await NifConverterWorkflowService.LoadSourceAsync(path, isArchive, overrideText);
             _nifBrowserService = result.Service;
-            var state = _nifViewer.ApplySource(path, isBsa, result, hasOverride);
+            var state = _nifViewer.ApplySource(path, isArchive, result);
 
-            // Reflect the auto-detected textures path in the UI when the user hasn't overridden it.
-            if (state.TexturePathsDisplay != null)
-            {
-                NifViewerTextureBsaTextBox.Text = state.TexturePathsDisplay;
-            }
+            NifViewerTextureSourcesText.Text = string.IsNullOrEmpty(state.TexturePathsDisplay)
+                ? "Texture sources: none detected"
+                : $"Texture sources: {state.TexturePathsDisplay}";
+            ToolTipService.SetToolTip(NifViewerTextureSourcesText, state.TexturePathsDisplay);
 
             PopulateNifTree(state.Items);
             NifViewerFileCount.Text = state.FileCountText;

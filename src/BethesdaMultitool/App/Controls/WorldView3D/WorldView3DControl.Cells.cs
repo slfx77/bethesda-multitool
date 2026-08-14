@@ -389,10 +389,10 @@ public sealed partial class WorldView3DControl
     private (float zMin, float zMax)? _worldZExtent;
 
     /// <summary>
-    ///     Computes the vertical (Z) extent the cell-grid walls should span for the loaded cells,
+    ///     Computes the vertical (Z) extent the cell-grid line cage should span for the loaded cells,
     ///     from the placed-object Z range (objects rest on the terrain, so this brackets the relief
     ///     and tall structures) plus a one-cell margin, with a minimum span so flat worldspaces still
-    ///     show tall-enough walls. Returns null when no finite placed-object Z exists (grid keeps its
+    ///     show a tall-enough cage. Returns null when no finite placed-object Z exists (grid keeps its
     ///     default extent).
     /// </summary>
     private (float zMin, float zMax)? ComputeGridZExtent(IReadOnlyCollection<CellRecord> cells)

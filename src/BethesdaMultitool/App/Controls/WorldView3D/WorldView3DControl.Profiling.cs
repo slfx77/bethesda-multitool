@@ -109,8 +109,15 @@ public sealed partial class WorldView3DControl
         fields["deltaSeconds"] = sample.DeltaSeconds;
         fields["shadowMode"] = _lastShadowMode.ToString();
         fields["shadowCascadeMask"] = _lastShadowCascadeMask;
+        fields["shadowCapturedBatchCount"] = _lastShadowDrawCount;
+        // Compatibility alias retained for existing trace consumers. This is captured work before
+        // cascade filtering, not a count of issued DrawIndexedInstanced calls.
         fields["shadowDrawCount"] = _lastShadowDrawCount;
         fields["shadowTerrainCellDraws"] = _lastShadowTerrainCellDraws;
+        fields["shadowReferenceDrawsByCascade"] = _lastShadowReferenceDrawsByCascade;
+        fields["shadowReferenceInstancesByCascade"] = _lastShadowReferenceInstancesByCascade;
+        fields["shadowTerrainCellDrawsByCascade"] = _lastShadowTerrainCellDrawsByCascade;
+        fields["shadowAvailableWithoutSubmissionMask"] = _lastShadowAvailableWithoutSubmissionMask;
         return fields;
     }
 

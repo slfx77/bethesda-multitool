@@ -55,13 +55,16 @@ public sealed partial class WorldView3DControl
     /// <summary>
     ///     Renders one export tile from a prebuilt ortho/iso/tri <paramref name="viewProj" /> + cull
     ///     <paramref name="cylinder" />, honouring <paramref name="opts" />. MUST be called on the UI
-    ///     thread (records + submits D3D12 commands); the fence wait + readback run on a worker thread.
-    ///     The caller (<see cref="RunProjectionExportAsync" />) runs with the live render loop paused and
-    ///     re-requests each tile until <see cref="Export3DTile.IsFullySettled" /> (time-boxed).
+    ///     thread (records + submits D3D12 commands). <paramref name="capturePolicy" /> decides from THIS
+    ///     pass's streaming status whether to pay for the resolve/readback; only that fence wait + CPU
+    ///     copy run on a worker thread. The caller (<see cref="RunProjectionExportAsync" />) runs with the
+    ///     live render loop paused and re-requests each tile until the result carries a readback
+    ///     (time-boxed).
     /// </summary>
-    internal async Task<Export3DTile?> RenderProjectionTileAsync(
+    internal async Task<Export3DRenderResult?> RenderProjectionTileAsync(
         Matrix4x4 viewProj, VisibilityCylinder cylinder, Vector3 leafRight, Vector3 leafUp,
-        Vector3 shadingEye, int pixelWidth, int pixelHeight, Export3DOptions opts, CancellationToken ct)
+        Vector3 shadingEye, int pixelWidth, int pixelHeight, Export3DOptions opts,
+        ExportTileCapturePolicy capturePolicy, CancellationToken ct)
     {
         if (!CanRenderProjectionExport) return null;
         if (pixelWidth <= 0 || pixelHeight <= 0) return null;
@@ -97,6 +100,7 @@ public sealed partial class WorldView3DControl
         ulong fenceValue;
         bool isComplete;
         bool isFullySettled;
+        var captureReadback = false;
         var prevShowDisabled = _references!.ShowInitiallyDisabled;
         var prevShowGrass = _references.ShowGrass;
         var prevRefThrottled = _references.StreamingThrottled;
@@ -155,10 +159,11 @@ public sealed partial class WorldView3DControl
                 target.Bind(cmd);
 
                 // Leaf cards re-face the ortho camera basis (top-down → flat in the ground plane).
-                // Pin wind strength/time for a clean deterministic pose. FNV TallGrass retains its
-                // recovered five-unit minimum bend at zero weather strength; Animations controls rest.
+                // Pin wind strength/time through the capture rig so repeated settlement passes cannot
+                // reset the live rig's integrated oscillator history. FNV TallGrass retains its recovered
+                // five-unit minimum bend at zero weather strength; Animations controls rest.
                 _references.SetLeafBillboardBasis(leafRight, leafUp);
-                _references.SetWind(WindDirection, 0f, 0f);
+                _references.SetWindForCapture(WindDirection, 0f, 0f);
                 // This path renders the legacy split (below-water partition + deferred blends) by
                 // design — ortho exports never stream. The routing flag is per-frame host state on
                 // the SHARED renderer: without this reset, an export after a live FNV water frame
@@ -192,8 +197,8 @@ public sealed partial class WorldView3DControl
                         exportWaterPartitioned = true;
                     }
 
-                    // Pinned water clock, matching the SetWind(dir, 0, 0) pose pin this path already
-                    // does for references: exports are one-shot snapshots, so a live clock made the
+                    // Pinned water clock, matching the SetWindForCapture(dir, 0, 0) pose pin this path
+                    // already does for references: exports are one-shot snapshots, so a live clock made the
                     // water phase depend on wall-clock at export time (byte-unstable re-exports).
                     _water.RenderAtTime(viewProj, cylinder, default, 0f, isPerspectiveProjection: false);
                 }
@@ -212,12 +217,39 @@ public sealed partial class WorldView3DControl
                     }
                 }
                 if (opts.ShowNavMesh) _navMesh?.Render(viewProj, cylinder);
-                // Analytic line width is in render-target pixels: a supersampled export draws
-                // proportionally finer lines and the final downsample restores the on-screen weight.
-                if (opts.ShowCollision) _collisionDebug?.Render(viewProj, cylinder, ssWidth, ssHeight);
+                // An offscreen export has no XAML composition scale, so the analytic overlay keeps
+                // its scale-1 profile in supersample pixels. It therefore becomes proportionally
+                // finer in the downsampled PNG; changing that established export style is separate
+                // from keeping the live SwapChainPanel overlay constant in DIPs.
+                if (opts.ShowReferences && opts.ShowCollision)
+                {
+                    _collisionDebug?.Render(
+                        viewProj, cylinder, ssWidth, ssHeight,
+                        showReferences: opts.ShowReferences,
+                        hiddenCategories: opts.HiddenCategories);
+                }
                 if (opts.ShowGrid) _cellGrid?.Render(viewProj, cylinder);
 
-                target.RecordReadback(cmd);
+                // Gate only on the layers THIS render drew: a disabled layer's LastStats is stale (frozen
+                // from the last live frame, since the live loop is detached during export) and could either
+                // wedge the settle loop or falsely pass it. Strict additionally waits out the
+                // texture-withheld window (ReferenceTexturePending) so no submesh is missing from the PNG.
+                // Sample BEFORE the capture decision so a grace-mature pass that starts loading again does
+                // not read back or save an incomplete frame.
+                var refStats = opts.ShowReferences ? _references.LastStats : null;
+                var terrainStats = opts.ShowTerrain ? _terrain.LastStats : null;
+                isComplete = StreamingQuiescence.IsQuiesced(refStats, terrainStats, strict: false);
+                isFullySettled = StreamingQuiescence.IsQuiesced(refStats, terrainStats, strict: true);
+                captureReadback = ExportTileCaptureDecision.ShouldCapture(
+                    capturePolicy, isComplete, isFullySettled);
+                if (captureReadback)
+                {
+                    target.RecordReadback(cmd);
+                }
+                else
+                {
+                    target.FinishFrameWithoutReadback(cmd);
+                }
             }
             finally
             {
@@ -225,14 +257,6 @@ public sealed partial class WorldView3DControl
             }
 
             fenceValue = recorder.LastSubmittedFenceValue;
-            // Gate only on the layers THIS render drew: a disabled layer's LastStats is stale (frozen
-            // from the last live frame, since the live loop is detached during export) and could either
-            // wedge the settle loop or falsely pass it. Strict additionally waits out the
-            // texture-withheld window (ReferenceTexturePending) so no submesh is missing from the PNG.
-            var refStats = opts.ShowReferences ? _references.LastStats : null;
-            var terrainStats = opts.ShowTerrain ? _terrain.LastStats : null;
-            isComplete = StreamingQuiescence.IsQuiesced(refStats, terrainStats, strict: false);
-            isFullySettled = StreamingQuiescence.IsQuiesced(refStats, terrainStats, strict: true);
             _gpu12.PumpDebugMessages();
         }
         catch (Exception ex)
@@ -258,10 +282,17 @@ public sealed partial class WorldView3DControl
             _showSky = prevShowSky;
         }
 
+        if (!captureReadback)
+        {
+            // The command recorder enforces its frames-in-flight fence before recycling frame resources;
+            // no CPU-visible resource is consumed by this status-only pass, so an immediate wait is waste.
+            return new Export3DRenderResult(null, isComplete, isFullySettled);
+        }
+
         var frameFence = _gpu12!.FrameFence;
         try
         {
-            return await Task.Run(() =>
+            var readback = await Task.Run(() =>
             {
                 WaitForFrameFence(frameFence, fenceValue);
                 ct.ThrowIfCancellationRequested();
@@ -269,8 +300,9 @@ public sealed partial class WorldView3DControl
                 var pixels = supersample > 1
                     ? NifSpriteRenderer.Downsample(ssBytes, ssWidth, ssHeight, supersample)
                     : ssBytes;
-                return new Export3DTile(pixels, finalW, finalH, isComplete, isFullySettled);
+                return new Export3DTile(pixels, finalW, finalH);
             }, ct);
+            return new Export3DRenderResult(readback, isComplete, isFullySettled);
         }
         catch (OperationCanceledException)
         {
@@ -294,8 +326,16 @@ internal sealed record Export3DOptions(
     bool EnableFog,
     IReadOnlyCollection<PlacedObjectCategory> HiddenCategories);
 
-/// <summary>One rendered export tile: BGRA pixels (<see cref="Width" />×<see cref="Height" />, tightly
-/// packed). <see cref="IsComplete" /> is false while meshes/textures are still ACTIVELY streaming;
-/// <see cref="IsFullySettled" /> additionally requires no submesh withheld on pending textures
-/// (<see cref="StreamingQuiescence" /> strict mode) — the export gate, which must be time-boxed.</summary>
-internal sealed record Export3DTile(byte[] Bgra, int Width, int Height, bool IsComplete, bool IsFullySettled);
+/// <summary>One captured export tile: tightly-packed BGRA pixels plus its output dimensions.</summary>
+internal sealed record Export3DTile(byte[] Bgra, int Width, int Height);
+
+/// <summary>
+///     Status from one rendered pass. <see cref="Readback" /> is present only when the current-frame
+///     capture policy accepted this pass. <see cref="IsComplete" /> is false while meshes/textures are
+///     actively streaming; <see cref="IsFullySettled" /> additionally requires no submesh withheld on
+///     pending textures (<see cref="StreamingQuiescence" /> strict mode).
+/// </summary>
+internal sealed record Export3DRenderResult(
+    Export3DTile? Readback,
+    bool IsComplete,
+    bool IsFullySettled);

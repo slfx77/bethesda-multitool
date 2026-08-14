@@ -288,8 +288,8 @@
               <DropDownButton
                 Grid.Column="1"
                 Margin="4,0,0,0"
-                AutomationProperties.Name="Open folder or BSA"
-                ToolTipService.ToolTip="Browse for directory or BSA file">
+                AutomationProperties.Name="Open folder or archive"
+                ToolTipService.ToolTip="Browse for a directory, BSA, or BA2 file">
                 <DropDownButton.KeyboardAccelerators>
                   <KeyboardAccelerator Key="O" Modifiers="Control" />
                 </DropDownButton.KeyboardAccelerators>
@@ -301,7 +301,7 @@
                         <FontIcon Glyph="&#xE8B7;" />
                       </MenuFlyoutItem.Icon>
                     </MenuFlyoutItem>
-                    <MenuFlyoutItem Text="Open Archive..." Click="NifViewerBrowseBsa_Click">
+                    <MenuFlyoutItem Text="Open Archive..." Click="NifViewerBrowseArchive_Click">
                       <MenuFlyoutItem.Icon>
                         <FontIcon Glyph="&#xE8E5;" />
                       </MenuFlyoutItem.Icon>
@@ -311,28 +311,36 @@
               </DropDownButton>
             </Grid>
 
-            <!-- Texture BSA row -->
-            <Grid Grid.Row="1" Margin="0,0,0,8">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-              </Grid.ColumnDefinitions>
-              <TextBox
-                x:Name="NifViewerTextureBsaTextBox"
-                PlaceholderText="Textures archive (auto-detected)..."
-                Grid.Column="0"
-                AutomationProperties.Name="Textures BSA path"
-                AutomationProperties.HelpText="Overrides the auto-detected textures archive used when rendering NIFs"
-                FontSize="12" />
-              <Button
-                Grid.Column="1"
-                Margin="4,0,0,0"
-                Click="NifViewerBrowseTextureBsa_Click"
-                AutomationProperties.Name="Browse for textures BSA"
-                ToolTipService.ToolTip="Browse for textures BSA">
-                <FontIcon Glyph="&#xE8E5;" FontSize="14" />
-              </Button>
-            </Grid>
+            <!-- Texture-source override + actual sources in use -->
+            <StackPanel Grid.Row="1" Margin="0,0,0,8" Spacing="2">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBox
+                  x:Name="NifViewerTextureOverrideTextBox"
+                  PlaceholderText="Optional texture-source override..."
+                  Grid.Column="0"
+                  AutomationProperties.Name="Texture-source override paths"
+                  AutomationProperties.HelpText="Optional semicolon-separated BSA, BA2, or loose-directory paths; leave empty to auto-detect"
+                  FontSize="12" />
+                <Button
+                  Grid.Column="1"
+                  Margin="4,0,0,0"
+                  Click="NifViewerBrowseTextureArchive_Click"
+                  AutomationProperties.Name="Browse for a texture archive"
+                  ToolTipService.ToolTip="Browse for a texture BSA or BA2">
+                  <FontIcon Glyph="&#xE8E5;" FontSize="14" />
+                </Button>
+              </Grid>
+              <TextBlock
+                x:Name="NifViewerTextureSourcesText"
+                Text="Texture sources: auto-detected when a source is opened"
+                FontSize="11"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                TextTrimming="CharacterEllipsis" />
+            </StackPanel>
 
             <!-- Search box -->
             <TextBox

@@ -9,7 +9,7 @@ namespace BethesdaMultitool;
 public sealed partial class WorldView3DControl
 {
     /// <summary>
-    ///     The viewer's settings panel (Lighting / Layers / Visibility / Projection expanders),
+    ///     The viewer's settings panel (Lighting / Overlays / Visibility / Camera expanders),
     ///     constructed in the ctor and displayed by the host's right-panel Settings tab. Owned here
     ///     so standalone hosts (the profiler apps) keep working without a SingleFileTab.
     /// </summary>
@@ -45,8 +45,8 @@ public sealed partial class WorldView3DControl
     /// <summary>
     ///     Subscribes every settings-panel control to its handler. Runs in the ctor while
     ///     <c>_initializing</c> is still true, replacing the XAML event attributes the controls had
-    ///     on the old toolbar (the panel XAML is purely declarative — its defaults must mirror the
-    ///     <c>_show*</c> field initializers).
+    ///     on the old toolbar. Dependency availability is initialized from the owner's authoritative
+    ///     parent fields after every control has been subscribed.
     /// </summary>
     private void WireSettingsPanel()
     {
@@ -83,11 +83,14 @@ public sealed partial class WorldView3DControl
         Wire(p.EffectsCheckBox, EffectsCheckBox_Changed);
         Wire(p.DisabledCheckBox, DisabledCheckBox_Changed);
         Wire(p.AnimationsCheckBox, AnimationsCheckBox_Changed);
+        p.ResetReferenceOverridesButton.Click += ResetReferenceOverridesButton_Click;
 
         p.ProjectionModeRadios.SelectionChanged += ProjectionModeRadios_SelectionChanged;
         p.FovSlider.ValueChanged += FovSlider_ValueChanged;
         p.FlyModeToggle.Toggled += FlyModeToggle_Changed;
         p.DrawDistanceSlider.ValueChanged += DrawDistanceSlider_ValueChanged;
+
+        p.ApplyDependencyState(_showLighting, _showTerrain, _showReferences);
 
         static void Wire(CheckBox box, RoutedEventHandler handler)
         {
@@ -194,6 +197,7 @@ public sealed partial class WorldView3DControl
     {
         if (_initializing) return;
         _showTerrain = TerrainToggle.IsChecked == true;
+        SettingsPanel.ApplyDependencyState(_showLighting, _showTerrain, _showReferences);
     }
 
     private void WaterCheckBox_Changed(object sender, RoutedEventArgs e)
@@ -226,12 +230,14 @@ public sealed partial class WorldView3DControl
     {
         if (_initializing) return;
         _showReferences = RefsToggle.IsChecked == true;
+        SettingsPanel.ApplyDependencyState(_showLighting, _showTerrain, _showReferences);
     }
 
     private void LightingPanel_LightingToggled(object? sender, bool isOn)
     {
         if (_initializing) return;
         _showLighting = isOn;
+        SettingsPanel.ApplyDependencyState(_showLighting, _showTerrain, _showReferences);
     }
 
     private void LightingPanel_SkyboxToggled(object? sender, bool isOn)
@@ -283,6 +289,9 @@ public sealed partial class WorldView3DControl
         if (_initializing) return;
         SetShowDisabled(DisabledCheckBox.IsChecked == true);
     }
+
+    private void ResetReferenceOverridesButton_Click(object sender, RoutedEventArgs e) =>
+        ClearReferenceEnabledOverrides();
 
     private void EditorMarkersCheckBox_Changed(object sender, RoutedEventArgs e)
     {
@@ -522,8 +531,8 @@ public sealed partial class WorldView3DControl
 /// <summary>
 ///     The viewer's imagespace grading source. <see cref="Automatic" /> follows the engine's
 ///     cell/worldspace resolution (XCIM → WRLD INAM → shipped defaults); <see cref="None" /> renders
-///     a neutral grade (eye-adapt exposure stays); <see cref="Explicit" /> forces one IMGS record
-///     chosen in the settings-panel dropdown.
+///     a neutral grade (eye-adapt exposure stays only while an HDR operator is active);
+///     <see cref="Explicit" /> forces one IMGS record chosen in the settings-panel dropdown.
 /// </summary>
 internal enum ImagespaceSelectionMode
 {
