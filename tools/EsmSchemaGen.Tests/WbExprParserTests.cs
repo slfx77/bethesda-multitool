@@ -63,4 +63,26 @@ public class WbExprParserTests
         // Procedural/expression args are discarded, not mis-parsed.
         Assert.All(call.Modifiers, m => Assert.Empty(m.Args));
     }
+
+    [Theory]
+    [InlineData("1/24", 1.0 / 24.0)]
+    [InlineData("180/pi", 180.0 / Math.PI)]
+    [InlineData("180/Pi", 180.0 / Math.PI)]
+    public void Parses_Numeric_Division_Used_By_XEdit_Builder_Arguments(
+        string source,
+        double expected)
+    {
+        var value = Assert.IsType<WbNum>(WbExprParser.Parse(source));
+
+        Assert.True(value.IsFloat);
+        Assert.Equal(expected, value.FloatValue, precision: 12);
+    }
+
+    [Theory]
+    [InlineData("1/0")]
+    [InlineData("1/notNumeric")]
+    public void Rejects_Invalid_Numeric_Division(string source)
+    {
+        Assert.Throws<FormatException>(() => WbExprParser.Parse(source));
+    }
 }

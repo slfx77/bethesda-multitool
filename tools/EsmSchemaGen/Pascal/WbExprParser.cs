@@ -6,7 +6,8 @@ namespace EsmSchemaGen.Pascal;
 ///     callers feed it one self-contained <c>wbExpr</c> (e.g. a whole <c>wbRecord(...)</c> or the RHS
 ///     of an <c>ident := …</c> assignment). The grammar:
 ///     <code>
-///     value     := list | str | num | '-' num | ident-or-call
+///     value     := primary ('/' numeric-primary)?
+///     primary   := list | str | num | '-' num | ident-or-call
 ///     idOrCall  := IDENT ('(' args ')')? modifier*        // call/symbol with optional fluent chain
 ///                | IDENT                                   // bare identifier value (itU32, nil, …)
 ///     list      := '[' (value (',' value)*)? ']'
@@ -56,6 +57,30 @@ public sealed class WbExprParser
 
     private WbValue ParseValue()
     {
+        var left = ParsePrimary();
+        if (!Is(TokenKind.Slash))
+        {
+            return left;
+        }
+
+        Next();
+        var right = ParsePrimary();
+        if (left is not WbNum numerator || !TryNumericValue(right, out var denominator))
+        {
+            throw new FormatException("Division in the xEdit builder DSL must have numeric operands.");
+        }
+
+        if (denominator == 0)
+        {
+            throw new FormatException("Division by zero in the xEdit builder DSL.");
+        }
+
+        var quotient = numerator.FloatValue / denominator;
+        return new WbNum((long)quotient, true, quotient);
+    }
+
+    private WbValue ParsePrimary()
+    {
         switch (Peek.Kind)
         {
             case TokenKind.LBracket:
@@ -86,6 +111,22 @@ public sealed class WbExprParser
                 return ParseIdentOrCall();
             default:
                 throw new FormatException($"Unexpected token {Peek.Kind} '{Peek.Text}' at {_pos}.");
+        }
+    }
+
+    private static bool TryNumericValue(WbValue value, out double number)
+    {
+        switch (value)
+        {
+            case WbNum numeric:
+                number = numeric.FloatValue;
+                return true;
+            case WbIdent id when id.Name.Equals("pi", StringComparison.OrdinalIgnoreCase):
+                number = Math.PI;
+                return true;
+            default:
+                number = 0;
+                return false;
         }
     }
 

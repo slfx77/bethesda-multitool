@@ -976,7 +976,7 @@ public static class SkyrimSchema
                 new RawMemberDef("IfThen"),
                 new FormIdDef { Signature = "LTMP", Name = "Lighting Template", Targets = ["LGTM", ""] },
                 new FieldDef(PrimType.ByteArray) { Signature = "LNAM", Name = "Unknown", FixedSize = 0 },
-                new FieldDef(PrimType.Float) { Signature = "XCLW", Name = "Water Height", FixedSize = 1 },
+                new FieldDef(PrimType.Float) { Signature = "XCLW", Name = "Water Height" },
                 new FieldDef(PrimType.ZString) { Signature = "XNAM", Name = "Water Noise Texture" },
                 new ArrayDef(
                     new FormIdDef { Name = "Region", Targets = ["REGN"] }
@@ -2008,19 +2008,19 @@ public static class SkyrimSchema
         new RecordDef("KYWD",
             [
                 new FieldDef(PrimType.StringKC) { Signature = "EDID", Name = "Editor ID", FixedSize = 0 },
-                new RawMemberDef("wbByteRGBA")
+                new RawMemberDef("wbByteRGBA") { Required = true }
             ]
         ) { Name = "Keyword" },
         new RecordDef("LCRT",
             [
                 new FieldDef(PrimType.StringKC) { Signature = "EDID", Name = "Editor ID", FixedSize = 0 },
-                new RawMemberDef("wbByteRGBA")
+                new RawMemberDef("wbByteRGBA") { Required = true }
             ]
         ) { Name = "Location Reference Type" },
         new RecordDef("AACT",
             [
                 new FieldDef(PrimType.StringKC) { Signature = "EDID", Name = "Editor ID", FixedSize = 0 },
-                new RawMemberDef("wbByteRGBA")
+                new RawMemberDef("wbByteRGBA") { Required = true }
             ]
         ) { Name = "Action" },
         new RecordDef("TXST",
@@ -3454,14 +3454,14 @@ public static class SkyrimSchema
         new RecordDef("ECZN",
             [
                 new FieldDef(PrimType.StringKC) { Signature = "EDID", Name = "Editor ID", FixedSize = 0 },
-                new UnionDef("<unknown-decider>",
+                new UnionDef("wbFormVersionDecider",
                     [
                         new StructDef(
                             [
                                 new FormIdDef { Name = "Owner", Targets = ["NPC_", "FACT", ""] },
                                 new FormIdDef { Name = "Location", Targets = ["LCTN", ""] }
                             ]
-                        ) { Name = "" },
+                        ) { MaxFormVersionExclusive = 34, Name = "" },
                         new StructDef(
                             [
                                 new FormIdDef { Name = "Owner", Targets = ["NPC_", "FACT", ""] },
@@ -3471,7 +3471,7 @@ public static class SkyrimSchema
                                 new FieldDef(PrimType.U8) { Name = "Flags", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Never Resets"), new FlagMember(1, "Match PC Below Minimum Level"), new FlagMember(2, "Disable Combat Boundary")]) },
                                 new FieldDef(PrimType.S8) { Name = "Max Level" }
                             ]
-                        ) { Name = "" }
+                        ) { MinFormVersion = 34, Name = "" }
                     ]
                 ) { Signature = "DATA", Name = "" }
             ]
@@ -3759,15 +3759,15 @@ public static class SkyrimSchema
                                 new FieldDef(PrimType.U8) { Name = "Blue" },
                                 new UnusedDef(1)
                             ]
-                        ) { Name = "Fog Color Far" },
-                        new FieldDef(PrimType.Float) { Name = "Fog Max" },
+                        ) { MinFormVersion = 34, Name = "Fog Color Far" },
+                        new FieldDef(PrimType.Float) { MinFormVersion = 34, Name = "Fog Max" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.Float) { Name = "Start" },
                                 new FieldDef(PrimType.Float) { Name = "End" }
                             ]
-                        ) { Name = "Light Fade Distances" },
-                        new UnusedDef(4)
+                        ) { MinFormVersion = 34, Name = "Light Fade Distances" },
+                        new UnusedDef(4) { MinFormVersion = 34 }
                     ]
                 ) { Signature = "DATA", Name = "Lighting", Required = true },
                 new RawMemberDef("wbAmbientColors")
@@ -3886,6 +3886,74 @@ public static class SkyrimSchema
                 new FieldDef(PrimType.U32) { Signature = "XNAM", Name = "Max concurrent quests" }
             ]
         ) { Name = "Story Manager Branch Node" },
+        new RecordDef("SMQN",
+            [
+                new FieldDef(PrimType.StringKC) { Signature = "EDID", Name = "Editor ID", FixedSize = 0 },
+                new FormIdDef { Signature = "PNAM", Name = "Parent Node", Targets = ["SMQN", "SMBN", "SMEN", ""] },
+                new FormIdDef { Signature = "SNAM", Name = "Previous Node ", Targets = ["SMQN", "SMBN", "SMEN", ""] },
+                new FieldDef(PrimType.U32) { Signature = "CITC", Name = "Condition Count" },
+                new ArrayDef(
+                    new StructDef(
+                        [
+                            new StructDef(
+                                [
+                                    new FieldDef(PrimType.U8) { Name = "Type", EnumRefName = "wbConditionTypeToStr" },
+                                    new UnusedDef(3),
+                                    new UnionDef("wbConditionCompValueDecider",
+                                        [
+                                            new FieldDef(PrimType.Float) { Name = "Comparison Value - Float" },
+                                            new FormIdDef { Name = "Comparison Value - Global", Targets = ["GLOB"] }
+                                        ]
+                                    ) { Name = "Comparison Value" },
+                                    new FieldDef(PrimType.U16) { Name = "Function", EnumRefName = "wbConditionFunctionToStr" },
+                                    new UnusedDef(2),
+                                    new UnionDef("wbConditionParam1Decider",
+                                        []
+                                    ) { Name = "Parameter #1" },
+                                    new UnionDef("wbConditionParam2Decider",
+                                        []
+                                    ) { Name = "Parameter #2" },
+                                    new FieldDef(PrimType.U32) { Name = "Run On", InlineEnum = new EnumDef(null, [new EnumMember(0, "Subject"), new EnumMember(1, "Target"), new EnumMember(2, "Reference"), new EnumMember(3, "Combat Target"), new EnumMember(4, "Linked Reference"), new EnumMember(5, "Quest Alias"), new EnumMember(6, "Package Data"), new EnumMember(7, "Event Data")]) },
+                                    new UnionDef("wbConditionReferenceDecider",
+                                        [
+                                            new FieldDef(PrimType.U32) { Name = "Unused" },
+                                            new FormIdDef { Name = "Reference", Targets = ["", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA"] }
+                                        ]
+                                    ) { Name = "Reference" },
+                                    new UnionDef("wbConditionParam3Decider",
+                                        [
+                                            new FieldDef(PrimType.S32) { Name = "Parameter #3", DefaultValue = -1 },
+                                            new FieldDef(PrimType.S32) { Name = "Parameter #3", DefaultValue = -1 },
+                                            new FieldDef(PrimType.S32) { Name = "Parameter #3", DefaultValue = -1 },
+                                            new FieldDef(PrimType.S32) { Name = "Parameter #3", DefaultValue = -1 },
+                                            new FieldDef(PrimType.S32) { Name = "Parameter #3", DefaultValue = -1 },
+                                            new FieldDef(PrimType.S32) { Name = "Quest Alias", DefaultValue = -1, EnumRefName = "wbConditionAliasToStr" },
+                                            new FieldDef(PrimType.S32) { Name = "Parameter #3", DefaultValue = -1 },
+                                            new FieldDef(PrimType.S32) { Name = "Event Data", DefaultValue = -1, InlineEnum = new EnumDef(null, []) }
+                                        ]
+                                    ) { Name = "Parameter #3" }
+                                ]
+                            ) { Signature = "CTDA", Name = "" },
+                            new FieldDef(PrimType.ZString) { Signature = "CIS1", Name = "Parameter #1" },
+                            new FieldDef(PrimType.ZString) { Signature = "CIS2", Name = "Parameter #2" }
+                        ]
+                    ) { Name = "Condition" }
+                ) { Name = "Conditions", Count = 0 },
+                new FieldDef(PrimType.U32) { Signature = "DNAM", Name = "Flags", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Random"), new FlagMember(1, "Warn if no child quest started"), new FlagMember(16, "Do all before repeating"), new FlagMember(17, "Shares event"), new FlagMember(18, "Num quests to run")]) },
+                new FieldDef(PrimType.U32) { Signature = "XNAM", Name = "Max concurrent quests" },
+                new FieldDef(PrimType.U32) { Signature = "MNAM", Name = "Num quests to run" },
+                new FieldDef(PrimType.U32) { Signature = "QNAM", Name = "Quest Count" },
+                new ArrayDef(
+                    new StructDef(
+                        [
+                            new FormIdDef { Signature = "NNAM", Name = "Quest", Targets = ["QUST"] },
+                            new FieldDef(PrimType.U32) { Signature = "FNAM", Name = "24 Hours Till Reset", EnumRefName = "wbBoolEnum" },
+                            new FieldDef(PrimType.Float) { Signature = "RNAM", Name = "Hours until reset" }
+                        ]
+                    ) { Name = "Quest" }
+                ) { Name = "Quests", Count = 0 }
+            ]
+        ) { Name = "Story Manager Quest Node" },
         new RecordDef("SMEN",
             [
                 new FieldDef(PrimType.StringKC) { Signature = "EDID", Name = "Editor ID", FixedSize = 0 },
@@ -4535,14 +4603,42 @@ public static class SkyrimSchema
                                 new FieldDef(PrimType.Float) { Name = "Z" }
                             ]
                         ) { Name = "Projection Vector" },
-                        new FieldDef(PrimType.Float) { Name = "Normal Dampener" },
-                        new RawMemberDef("wbFloatColors"),
-                        new FieldDef(PrimType.U32) { Name = "Single Pass", EnumRefName = "wbBoolEnum" },
+                        new FieldDef(PrimType.Float) { MinFormVersion = 19, Name = "Normal Dampener" },
+                        new RawMemberDef("wbFloatColors") { MinFormVersion = 25 },
+                        new FieldDef(PrimType.U32) { MinFormVersion = 25, Name = "Single Pass", EnumRefName = "wbBoolEnum" },
                         new RawMemberDef("IsSSE")
                     ]
                 ) { Signature = "DATA", Name = "Directional Material Data" }
             ]
         ) { Name = "Material Object" },
+        new RecordDef("MOVT",
+            [
+                new FieldDef(PrimType.StringKC) { Signature = "EDID", Name = "Editor ID", FixedSize = 0 },
+                new FieldDef(PrimType.ZString) { Signature = "MNAM", Name = "Name" },
+                new StructDef(
+                    [
+                        new FieldDef(PrimType.Float) { Name = "Left Walk" },
+                        new FieldDef(PrimType.Float) { Name = "Left Run" },
+                        new FieldDef(PrimType.Float) { Name = "Right Walk" },
+                        new FieldDef(PrimType.Float) { Name = "Right Run" },
+                        new FieldDef(PrimType.Float) { Name = "Forward Walk" },
+                        new FieldDef(PrimType.Float) { Name = "Forward Run" },
+                        new FieldDef(PrimType.Float) { Name = "Back Walk" },
+                        new FieldDef(PrimType.Float) { Name = "Back Run" },
+                        new FieldDef(PrimType.Float) { Name = "Rotate In Place Walk" },
+                        new FieldDef(PrimType.Float) { Name = "Rotate In Place Run" },
+                        new FieldDef(PrimType.Float) { MinFormVersion = 28, Name = "Rotate while Moving Run" }
+                    ]
+                ) { Signature = "SPED", Name = "Default Data", Required = true },
+                new StructDef(
+                    [
+                        new FieldDef(PrimType.Float) { Name = "Directional" },
+                        new FieldDef(PrimType.Float) { Name = "Movement Speed" },
+                        new FieldDef(PrimType.Float) { Name = "Rotation Speed" }
+                    ]
+                ) { Signature = "INAM", Name = "Anim Change Thresholds", Required = true }
+            ]
+        ) { Name = "Movement Type" },
         new RecordDef("SNDR",
             [
                 new FieldDef(PrimType.StringKC) { Signature = "EDID", Name = "Editor ID", FixedSize = 0 },
@@ -4553,7 +4649,7 @@ public static class SkyrimSchema
                     new FieldDef(PrimType.ZString) { Signature = "ANAM", Name = "Sound" }
                 ) { Name = "Sounds", Count = 0 },
                 new FormIdDef { Signature = "ONAM", Name = "Output Model", Targets = ["SOPM", ""] },
-                new RawMemberDef("wbBelowVersion"),
+                new FieldDef(PrimType.U32) { Signature = "FNAM", MaxFormVersionExclusive = 35, Name = "Flags", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Unknown 0"), new FlagMember(1, "Unknown 1"), new FlagMember(2, "Unknown 2"), new FlagMember(4, "Loop")]) },
                 new ArrayDef(
                     new StructDef(
                         [
@@ -4601,7 +4697,14 @@ public static class SkyrimSchema
                         ]
                     ) { Name = "Condition" }
                 ) { Name = "Conditions", Count = 0 },
-                new RawMemberDef("LNAM"),
+                new StructDef(
+                    [
+                        new FieldDef(PrimType.ByteArray) { Name = "Unknown", FixedSize = 1 },
+                        new FieldDef(PrimType.U8) { Name = "Looping", InlineEnum = new EnumDef(null, []) },
+                        new FieldDef(PrimType.ByteArray) { Name = "Unknown", FixedSize = 1 },
+                        new FieldDef(PrimType.U8) { Name = "Rumble Send Value = (Small / 7) + ((Big / 7) * 16)" }
+                    ]
+                ) { Signature = "LNAM", MinFormVersion = 34, Name = "Values" },
                 new StructDef(
                     [
                         new FieldDef(PrimType.S8) { Name = "% Frequency Shift" },
@@ -4718,7 +4821,7 @@ public static class SkyrimSchema
             [
                 new FieldDef(PrimType.StringKC) { Signature = "EDID", Name = "Editor ID", FixedSize = 0 },
                 new FieldDef(PrimType.LString) { Signature = "FULL", Name = "Name", FixedSize = 0 },
-                new RawMemberDef("wbByteRGBA"),
+                new RawMemberDef("wbByteRGBA") { Required = true },
                 new FieldDef(PrimType.U32) { Signature = "FNAM", Name = "Playable", EnumRefName = "wbBoolEnum" }
             ]
         ) { Name = "Color" },
@@ -5543,32 +5646,32 @@ public static class SkyrimSchema
                         new FieldDef(PrimType.U32) { Name = "Flags", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Dynamic"), new FlagMember(1, "Can be Carried"), new FlagMember(2, "Negative"), new FlagMember(3, "Flicker"), new FlagMember(4, "Unknown 4"), new FlagMember(5, "Off By Default"), new FlagMember(6, "Flicker Slow"), new FlagMember(7, "Pulse"), new FlagMember(8, "Pulse Slow"), new FlagMember(9, "Spot Light"), new FlagMember(10, "Shadow Spotlight"), new FlagMember(11, "Shadow Hemisphere"), new FlagMember(12, "Shadow Omnidirectional"), new FlagMember(13, "Portal-strict")]) },
                         new UnionDef("wbLIGHInverseSquareDecider",
                             [
-                                new FieldDef(PrimType.Float) { Name = "Falloff Exponent", FixedSize = 1 },
-                                new FieldDef(PrimType.Float) { Name = "Inverse Square Falloff", FixedSize = 1 }
+                                new FieldDef(PrimType.Float) { Name = "Falloff Exponent" },
+                                new FieldDef(PrimType.Float) { Name = "Inverse Square Falloff" }
                             ]
                         ) { Name = "" },
                         new UnionDef("wbLIGHInverseSquareDecider",
                             [
-                                new FieldDef(PrimType.Float) { Name = "FOV", FixedSize = 1 },
-                                new FieldDef(PrimType.Float) { Name = "Size", FixedSize = 1 }
+                                new FieldDef(PrimType.Float) { Name = "FOV" },
+                                new FieldDef(PrimType.Float) { Name = "Size" }
                             ]
                         ) { Name = "" },
-                        new FieldDef(PrimType.Float) { Name = "Near Clip", DefaultValue = 1, FixedSize = 1 },
+                        new FieldDef(PrimType.Float) { Name = "Near Clip", DefaultValue = 1 },
                         new StructDef(
                             [
-                                new FieldDef(PrimType.Float) { Name = "Period", FixedSize = 0 },
-                                new FieldDef(PrimType.Float) { Name = "Intensity Amplitude", FixedSize = 1 },
-                                new FieldDef(PrimType.Float) { Name = "Movement Amplitude", FixedSize = 1 }
+                                new FieldDef(PrimType.Float) { Name = "Period" },
+                                new FieldDef(PrimType.Float) { Name = "Intensity Amplitude" },
+                                new FieldDef(PrimType.Float) { Name = "Movement Amplitude" }
                             ]
                         ) { Name = "Flicker Effect" },
                         new FieldDef(PrimType.U32) { Name = "Value" },
-                        new FieldDef(PrimType.Float) { Name = "Weight", FixedSize = 1 }
+                        new FieldDef(PrimType.Float) { Name = "Weight" }
                     ]
                 ) { Signature = "DATA", Name = "Data", Required = true },
                 new UnionDef("wbLIGHInverseSquareDecider",
                     [
-                        new FieldDef(PrimType.Float) { Name = "Fade Value", FixedSize = 1 },
-                        new FieldDef(PrimType.Float) { Name = "Intensity", FixedSize = 1 }
+                        new FieldDef(PrimType.Float) { Name = "Fade Value" },
+                        new FieldDef(PrimType.Float) { Name = "Intensity" }
                     ]
                 ) { Signature = "FNAM", Name = "", Required = true },
                 new FormIdDef { Signature = "SNAM", Name = "Sound", Targets = ["SNDR"] },
@@ -6617,7 +6720,7 @@ public static class SkyrimSchema
                             new ArrayDef(
                                 new StructDef(
                                     [
-                                        new RawMemberDef("IsTES5"),
+                                        new RawMemberDef("IsTES5") { Required = true },
                                         new FieldDef(PrimType.U8) { Signature = "CSDC", Name = "Sound Chance", Required = true }
                                     ]
                                 ) { Name = "Sound" }
@@ -7936,14 +8039,14 @@ public static class SkyrimSchema
                         new FieldDef(PrimType.U32) { Name = "Flags 2", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Use Advanced Avoidance"), new FlagMember(1, "Non-Hostile"), new FlagMember(2, "Unknown 2"), new FlagMember(3, "Unknown 3"), new FlagMember(4, "Allow Mounted Combat")]) },
                         new StructDef(
                             [
-                                new FieldDef(PrimType.Float) { Name = "Mount Offset X", FixedSize = 1 },
+                                new FieldDef(PrimType.Float) { Name = "Mount Offset X" },
                                 new FieldDef(PrimType.Float) { Name = "Mount Offset Y" },
                                 new FieldDef(PrimType.Float) { Name = "Mount Offset Z" },
-                                new FieldDef(PrimType.Float) { Name = "Dismount Offset X", FixedSize = 1 },
+                                new FieldDef(PrimType.Float) { Name = "Dismount Offset X" },
                                 new FieldDef(PrimType.Float) { Name = "Dismount Offset Y" },
-                                new FieldDef(PrimType.Float) { Name = "Dismount Offset Z", FixedSize = 1 },
+                                new FieldDef(PrimType.Float) { Name = "Dismount Offset Z" },
                                 new FieldDef(PrimType.Float) { Name = "Mount Camera Offset X" },
-                                new FieldDef(PrimType.Float) { Name = "Mount Camera Offset Y", FixedSize = 1 },
+                                new FieldDef(PrimType.Float) { Name = "Mount Camera Offset Y" },
                                 new FieldDef(PrimType.Float) { Name = "Mount Camera Offset Z" }
                             ]
                         ) { Name = "Mount Data" }
@@ -10205,7 +10308,7 @@ public static class SkyrimSchema
                 new ArrayDef(
                     new FieldDef(PrimType.U8) { Name = "Layer" }
                 ) { Signature = "ONAM", Name = "Old Cloud Speeds (Unused)", Count = 4 },
-                new RawMemberDef("IfThen"),
+                new RawMemberDef("IfThen") { Required = true },
                 new ArrayDef(
                     new RawMemberDef("wbWeatherTimeOfDay")
                 ) { Signature = "PNAM", Name = "Cloud Colors", Required = true, Count = -1 },
@@ -10278,10 +10381,10 @@ public static class SkyrimSchema
                 new RawMemberDef("IsSSE"),
                 new StructDef(
                     [
-                        new RawMemberDef("wbAmbientColors"),
-                        new RawMemberDef("wbAmbientColors"),
-                        new RawMemberDef("wbAmbientColors"),
-                        new RawMemberDef("wbAmbientColors"),
+                        new RawMemberDef("wbAmbientColors") { Required = true },
+                        new RawMemberDef("wbAmbientColors") { Required = true },
+                        new RawMemberDef("wbAmbientColors") { Required = true },
+                        new RawMemberDef("wbAmbientColors") { Required = true },
                         new RawMemberDef("IsFO4Plus"),
                         new RawMemberDef("IsFO4Plus"),
                         new RawMemberDef("IsFO4Plus"),
@@ -10505,7 +10608,22 @@ public static class SkyrimSchema
                 ) { Signature = "ONAM", Name = "World Map Offset Data", Required = true },
                 new FieldDef(PrimType.Float) { Signature = "NAMA", Name = "Distant LOD Multiplier", Required = true, DefaultValue = 1 },
                 new FieldDef(PrimType.U8) { Signature = "DATA", Name = "Flags", Required = true, DefaultValue = 1, InlineFlags = new FlagsDef(null, [new FlagMember(0, "Small World"), new FlagMember(1, "Can't Fast Travel"), new FlagMember(3, "No LOD Water"), new FlagMember(4, "No Landscape"), new FlagMember(5, "No Sky"), new FlagMember(6, "Fixed Dimensions"), new FlagMember(7, "No Grass")]) },
-                new RawMemberDef("wbWorldObjectBounds"),
+                new StructDef(
+                    [
+                        new StructDef(
+                            [
+                                new RawMemberDef("IsSF1"),
+                                new RawMemberDef("IsSF1")
+                            ]
+                        ) { Signature = "NAM0", Name = "Min", Required = true },
+                        new StructDef(
+                            [
+                                new RawMemberDef("IsSF1"),
+                                new RawMemberDef("IsSF1")
+                            ]
+                        ) { Signature = "NAM9", Name = "Max", Required = true }
+                    ]
+                ) { Name = "Worldspace Bounds", Required = true },
                 new FormIdDef { Signature = "ZNAM", Name = "Music", Targets = ["MUSC"] },
                 new FieldDef(PrimType.ZString) { Signature = "NNAM", Name = "Canopy Shadow (unused)", FixedSize = 0 },
                 new FieldDef(PrimType.ZString) { Signature = "XNAM", Name = "Water Noise Texture" },

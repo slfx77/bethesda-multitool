@@ -62,8 +62,10 @@ public class DefinitionsFileParserTests
         var colors = Assert.IsType<StructDef>(Assert.Single(parser.Records).Members[0]);
         var sunrise = Assert.IsType<StructDef>(colors.Members[0]);
         Assert.Equal("Sunrise", sunrise.Name);
-        Assert.Equal(3, sunrise.Members.Count);
-        Assert.All(sunrise.Members, m => Assert.Equal(PrimType.U8, Assert.IsType<FieldDef>(m).Type));
+        Assert.Equal(4, sunrise.Members.Count);
+        Assert.All(sunrise.Members.Take(3),
+            m => Assert.Equal(PrimType.U8, Assert.IsType<FieldDef>(m).Type));
+        Assert.Equal(1, Assert.IsType<UnusedDef>(sunrise.Members[3]).Size);
         Assert.Empty(parser.Builder.UnknownCalls);
     }
 
@@ -136,5 +138,69 @@ public class DefinitionsFileParserTests
 
         Assert.Equal(0, parser.ParseFailures);
         Assert.Equal(["AAAA", "BBBB"], parser.Records.Select(r => r.Signature));
+    }
+
+    [Fact]
+    public void Parses_Division_Expressions_Without_Dropping_Records_Or_Version_Gates()
+    {
+        const string src = """
+            wbRecord(SMQN, 'Story Manager Quest Node', [
+              wbFloat(RNAM, 'Hours until reset', cpNormal, True, 1/24)
+            ]);
+            wbRecord(MOVT, 'Movement Type', [
+              wbStruct(SPED, 'Default Data', [
+                wbFloat('Rotate In Place Run'),
+                wbFromVersion(28, wbFloat('Rotate while Moving Run', cpNormal, True, 180/pi, 2))
+              ])
+            ]);
+            """;
+
+        var parser = new DefinitionsFileParser();
+        parser.ParseFile(src);
+
+        Assert.Equal(0, parser.ParseFailures);
+        Assert.Equal(2, parser.Records.Count);
+        Assert.Contains(parser.Records, record => record.Signature == "SMQN");
+        var movement = Assert.Single(parser.Records, record => record.Signature == "MOVT");
+        var sped = Assert.IsType<StructDef>(Assert.Single(
+            movement.Members,
+            member => member.Signature == "SPED"));
+        var gated = Assert.IsType<FieldDef>(Assert.Single(
+            sped.Members,
+            member => member.Name == "Rotate while Moving Run"));
+        Assert.Equal((ushort)28, gated.MinFormVersion);
+        Assert.Null(gated.FixedSize);
+    }
+
+    [Fact]
+    public void Parses_SelfContained_Tes5_Sound_Upper_And_Lower_Version_Gates()
+    {
+        const string src = """
+            wbRecord(SNDR, 'Sound Descriptor', [
+              wbBelowVersion(35, FNAM,
+                wbInteger('Flags', itU32, wbFlags([
+                  0, 'Unknown 0',
+                  1, 'Unknown 1',
+                  2, 'Unknown 2',
+                  4, 'Loop'
+                ]))),
+              wbFromVersion(34, LNAM,
+                wbStruct('Values', [wbInteger('Looping', itU8)]))
+            ]);
+            """;
+
+        var parser = new DefinitionsFileParser();
+        parser.ParseFile(src);
+
+        Assert.Equal(0, parser.ParseFailures);
+        var sound = Assert.Single(parser.Records);
+        var fnam = Assert.IsType<FieldDef>(sound.Members[0]);
+        Assert.Equal("FNAM", fnam.Signature);
+        Assert.Equal((ushort)35, fnam.MaxFormVersionExclusive);
+        Assert.Equal([0, 1, 2, 4], fnam.InlineFlags!.Bits.Select(bit => bit.Bit));
+        var lnam = Assert.IsType<StructDef>(sound.Members[1]);
+        Assert.Equal("LNAM", lnam.Signature);
+        Assert.Equal((ushort)34, lnam.MinFormVersion);
+        Assert.Empty(parser.Builder.UnknownCalls);
     }
 }

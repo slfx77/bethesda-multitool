@@ -3762,8 +3762,8 @@ public static class Fallout4Schema
                             new FieldDef(PrimType.Float) { Name = "Offset Z" },
                             new FieldDef(PrimType.Float) { Name = "Rotation Z" },
                             new FormIdDef { Name = "Keyword", Targets = ["KYWD", ""] },
-                            new FieldDef(PrimType.U8) { Name = "Entry Types", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Front"), new FlagMember(1, "Rear"), new FlagMember(2, "Right"), new FlagMember(3, "Left"), new FlagMember(4, "Other"), new FlagMember(5, "Unused 5"), new FlagMember(6, "Unused 6"), new FlagMember(7, "Unused 7")]) },
-                            new FieldDef(PrimType.ByteArray) { Name = "Unknown", FixedSize = 3 }
+                            new FieldDef(PrimType.U8) { MinFormVersion = 125, Name = "Entry Types", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Front"), new FlagMember(1, "Rear"), new FlagMember(2, "Right"), new FlagMember(3, "Left"), new FlagMember(4, "Other"), new FlagMember(5, "Unused 5"), new FlagMember(6, "Unused 6"), new FlagMember(7, "Unused 7")]) },
+                            new FieldDef(PrimType.ByteArray) { MinFormVersion = 125, Name = "Unknown", FixedSize = 3 }
                         ]
                     ) { Name = "Marker" }
                 ) { Signature = "SNAM", Name = "Marker Parameters", Count = -1 },
@@ -3882,7 +3882,7 @@ public static class Fallout4Schema
         new RecordDef("KYWD",
             [
                 new FieldDef(PrimType.StringKC) { Signature = "EDID", Name = "Editor ID", FixedSize = 0 },
-                new RawMemberDef("wbByteRGBA"),
+                new RawMemberDef("wbByteRGBA") { Required = true },
                 new FieldDef(PrimType.ZString) { Signature = "DNAM", Name = "Notes" },
                 new FieldDef(PrimType.U32) { Signature = "TNAM", Name = "Type", Required = true, EnumRefName = "wbKeywordTypeEnum" },
                 new FormIdDef { Signature = "DATA", Name = "Attraction Rule", Targets = ["AORU"] },
@@ -3893,14 +3893,14 @@ public static class Fallout4Schema
         new RecordDef("LCRT",
             [
                 new FieldDef(PrimType.StringKC) { Signature = "EDID", Name = "Editor ID", FixedSize = 0 },
-                new RawMemberDef("wbByteRGBA"),
+                new RawMemberDef("wbByteRGBA") { Required = true },
                 new FieldDef(PrimType.U32) { Signature = "TNAM", Name = "Type", Required = true, EnumRefName = "wbKeywordTypeEnum" }
             ]
         ) { Name = "Location Reference Type" },
         new RecordDef("AACT",
             [
                 new FieldDef(PrimType.StringKC) { Signature = "EDID", Name = "Editor ID", FixedSize = 0 },
-                new RawMemberDef("wbByteRGBA"),
+                new RawMemberDef("wbByteRGBA") { Required = true },
                 new FieldDef(PrimType.ZString) { Signature = "DNAM", Name = "Notes" },
                 new FieldDef(PrimType.U32) { Signature = "TNAM", Name = "Type", Required = true, EnumRefName = "wbKeywordTypeEnum" },
                 new FormIdDef { Signature = "DATA", Name = "Attraction Rule", Targets = ["AORU"] },
@@ -4867,14 +4867,14 @@ public static class Fallout4Schema
                         new FormIdDef { Name = "Spawn Projectile", Targets = ["PROJ", ""] },
                         new FieldDef(PrimType.Float) { Name = "Force" },
                         new FieldDef(PrimType.Float) { Name = "Damage" },
-                        new FieldDef(PrimType.Float) { Name = "Inner Radius" },
+                        new FieldDef(PrimType.Float) { MinFormVersion = 97, Name = "Inner Radius" },
                         new FieldDef(PrimType.Float) { Name = "Outer Radius" },
                         new FieldDef(PrimType.Float) { Name = "IS Radius" },
                         new FieldDef(PrimType.Float) { Name = "Vertical Offset Mult" },
                         new FieldDef(PrimType.U32) { Name = "Flags", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Unknown 0"), new FlagMember(1, "Always Uses World Orientation"), new FlagMember(2, "Knock Down - Always"), new FlagMember(3, "Knock Down - By Formula"), new FlagMember(4, "Ignore LOS Check"), new FlagMember(5, "Push Explosion Source Ref Only"), new FlagMember(6, "Ignore Image Space Swap"), new FlagMember(7, "Chain"), new FlagMember(8, "No Controller Vibration"), new FlagMember(9, "Placed Object Persists"), new FlagMember(10, "Skip Underwater Tests")]) },
                         new FieldDef(PrimType.U32) { Name = "Sound Level", EnumRefName = "wbSoundLevelEnum" },
-                        new FieldDef(PrimType.Float) { Name = "Placed Object AutoFade Delay" },
-                        new FieldDef(PrimType.U32) { Name = "Stagger", InlineEnum = new EnumDef(null, [new EnumMember(0, "None"), new EnumMember(1, "Small"), new EnumMember(2, "Medium"), new EnumMember(3, "Large"), new EnumMember(4, "Extra Large")]) },
+                        new FieldDef(PrimType.Float) { MinFormVersion = 70, Name = "Placed Object AutoFade Delay" },
+                        new FieldDef(PrimType.U32) { MinFormVersion = 91, Name = "Stagger", InlineEnum = new EnumDef(null, [new EnumMember(0, "None"), new EnumMember(1, "Small"), new EnumMember(2, "Medium"), new EnumMember(3, "Large"), new EnumMember(4, "Extra Large")]) },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.Float) { Name = "X" },
@@ -4883,7 +4883,7 @@ public static class Fallout4Schema
                                 new FieldDef(PrimType.Float) { Name = "Spread Degrees" },
                                 new FieldDef(PrimType.U32) { Name = "Count" }
                             ]
-                        ) { Name = "Spawn" }
+                        ) { MinFormVersion = 112, Name = "Spawn" }
                     ]
                 ) { Signature = "DATA", Name = "Data" }
             ]
@@ -5022,8 +5022,8 @@ public static class Fallout4Schema
                         new FieldDef(PrimType.U32) { Name = "Radial Blur Down Start" },
                         new FieldDef(PrimType.U32) { Name = "Fade Color" },
                         new FieldDef(PrimType.U32) { Name = "Motion Blur Strength" },
-                        new FieldDef(PrimType.U32) { Name = "Vignette Radius" },
-                        new FieldDef(PrimType.U32) { Name = "Vignette Strength" }
+                        new FieldDef(PrimType.U32) { MinFormVersion = 116, Name = "Vignette Radius" },
+                        new FieldDef(PrimType.U32) { MinFormVersion = 116, Name = "Vignette Strength" }
                     ]
                 ) { Signature = "DNAM", Name = "Data", Required = true },
                 new RawMemberDef("wbTimeInterpolators"),
@@ -6311,7 +6311,7 @@ public static class Fallout4Schema
                 new FieldDef(PrimType.StringKC) { Signature = "EDID", Name = "Editor ID", FixedSize = 0 },
                 new FormIdDef { Signature = "PNAM", Name = "Material Parent", Targets = ["MATT", ""] },
                 new FieldDef(PrimType.ZString) { Signature = "MNAM", Name = "Material Name" },
-                new RawMemberDef("wbFloatColors"),
+                new RawMemberDef("wbFloatColors") { Required = true },
                 new FieldDef(PrimType.Float) { Signature = "BNAM", Name = "Buoyancy", Required = true },
                 new FieldDef(PrimType.U32) { Signature = "FNAM", Name = "Flags", Required = true, InlineFlags = new FlagsDef(null, [new FlagMember(0, "Stair Material"), new FlagMember(1, "Arrows Stick"), new FlagMember(2, "Can Tunnel")]) },
                 new FormIdDef { Signature = "HNAM", Name = "Havok Impact Data Set", Targets = ["IPDS"] },
@@ -6830,7 +6830,7 @@ public static class Fallout4Schema
                         new FieldDef(PrimType.Float) { Name = "Far Height Range" }
                     ]
                 ) { Signature = "DATA", Name = "Lighting" },
-                new RawMemberDef("wbAmbientColors"),
+                new RawMemberDef("wbAmbientColors") { Required = true },
                 new FormIdDef { Signature = "WGDR", Name = "God Rays", Targets = ["GDRY"] }
             ]
         ) { Name = "Lighting Template" },
@@ -8838,9 +8838,9 @@ public static class Fallout4Schema
                                 new FieldDef(PrimType.Float) { Name = "Z" }
                             ]
                         ) { Name = "Projection Vector" },
-                        new FieldDef(PrimType.Float) { Name = "Normal Dampener" },
-                        new RawMemberDef("wbFloatColors"),
-                        new FieldDef(PrimType.U32) { Name = "Single Pass", EnumRefName = "wbBoolEnum" }
+                        new FieldDef(PrimType.Float) { MinFormVersion = 19, Name = "Normal Dampener" },
+                        new RawMemberDef("wbFloatColors") { MinFormVersion = 25 },
+                        new FieldDef(PrimType.U32) { MinFormVersion = 31, Name = "Single Pass", EnumRefName = "wbBoolEnum" }
                     ]
                 ) { Signature = "DATA", Name = "Directional Material Data", Required = true }
             ]
@@ -12971,8 +12971,8 @@ public static class Fallout4Schema
                                 new FieldDef(PrimType.U32) { Name = "Attack" }
                             ]
                         ) { Name = "Aggro" },
-                        new FieldDef(PrimType.U8) { Name = "No Slow Approach", EnumRefName = "wbBoolEnum" },
-                        new FieldDef(PrimType.ByteArray) { Name = "Unknown", FixedSize = 3 }
+                        new FieldDef(PrimType.U8) { MinFormVersion = 29, Name = "No Slow Approach", EnumRefName = "wbBoolEnum" },
+                        new FieldDef(PrimType.ByteArray) { MinFormVersion = 29, Name = "Unknown", FixedSize = 3 }
                     ]
                 ) { Signature = "AIDT", Name = "AI Data", Required = true },
                 new ArrayDef(
@@ -15346,7 +15346,7 @@ public static class Fallout4Schema
                                             [
                                                 new FieldDef(PrimType.S32) { Name = "Alias", EnumRefName = "wbQuestAliasToStr" },
                                                 new FieldDef(PrimType.U32) { Name = "Flags", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Compass Marker Ignores Locks"), new FlagMember(1, "Hostile"), new FlagMember(2, "Use Straight Line Pathing")]) },
-                                                new FormIdDef { Name = "Keyword", Targets = ["KYWD", ""] }
+                                                new FormIdDef { MinFormVersion = 82, Name = "Keyword", Targets = ["KYWD", ""] }
                                             ]
                                         ) { Signature = "QSTA", Name = "Target" },
                                         new ArrayDef(
@@ -16000,14 +16000,14 @@ public static class Fallout4Schema
                                 new FieldDef(PrimType.Float) { Name = "Muscular" },
                                 new FieldDef(PrimType.Float) { Name = "Fat" }
                             ]
-                        ) { Name = "Male Default Weight" },
+                        ) { MinFormVersion = 109, Name = "Male Default Weight" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.Float) { Name = "Thin" },
                                 new FieldDef(PrimType.Float) { Name = "Muscular" },
                                 new FieldDef(PrimType.Float) { Name = "Fat" }
                             ]
-                        ) { Name = "Female Default Weight" },
+                        ) { MinFormVersion = 109, Name = "Female Default Weight" },
                         new FieldDef(PrimType.U32) { Name = "Flags", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Playable"), new FlagMember(1, "FaceGen Head"), new FlagMember(2, "Child"), new FlagMember(3, "Tilt Front/Back"), new FlagMember(4, "Tilt Left/Right"), new FlagMember(5, "No Shadow"), new FlagMember(6, "Swims"), new FlagMember(7, "Flies"), new FlagMember(8, "Walks"), new FlagMember(9, "Immobile"), new FlagMember(10, "Not Pushable"), new FlagMember(11, "No Combat In Water"), new FlagMember(12, "No Rotating to Head-Track"), new FlagMember(13, "Don't Show Blood Spray"), new FlagMember(14, "Don't Show Blood Decal"), new FlagMember(15, "Uses Head Track Anims"), new FlagMember(16, "Spells Align w/Magic Node"), new FlagMember(17, "Use World Raycasts For FootIK"), new FlagMember(18, "Allow Ragdoll Collision"), new FlagMember(19, "Regen HP In Combat"), new FlagMember(20, "Can't Open Doors"), new FlagMember(21, "Allow PC Dialogue"), new FlagMember(22, "No Knockdowns"), new FlagMember(23, "Allow Pickpocket"), new FlagMember(24, "Always Use Proxy Controller"), new FlagMember(25, "Don't Show Weapon Blood"), new FlagMember(26, "Overlay Head Part List"), new FlagMember(27, "Override Head Part List"), new FlagMember(28, "Can Pickup Items"), new FlagMember(29, "Allow Multiple Membrane Shaders"), new FlagMember(30, "Can Dual Wield"), new FlagMember(31, "Avoids Roads")]) },
                         new FieldDef(PrimType.Float) { Name = "Acceleration Rate" },
                         new FieldDef(PrimType.Float) { Name = "Deceleration Rate" },
@@ -16016,7 +16016,7 @@ public static class Fallout4Schema
                         new FieldDef(PrimType.ByteArray) { Name = "Unknown Bytes2", FixedSize = 4 },
                         new FieldDef(PrimType.Float) { Name = "Injured Health Pct" },
                         new FieldDef(PrimType.S32) { Name = "Shield Biped Object", EnumRefName = "wbBipedObjectEnum" },
-                        new FieldDef(PrimType.S32) { Name = "Beard Biped Object", EnumRefName = "wbBipedObjectEnum" },
+                        new FieldDef(PrimType.S32) { MinFormVersion = 124, Name = "Beard Biped Object", EnumRefName = "wbBipedObjectEnum" },
                         new FieldDef(PrimType.S32) { Name = "Body Biped Object", EnumRefName = "wbBipedObjectEnum" },
                         new FieldDef(PrimType.Float) { Name = "Aim Angle Tolerance" },
                         new FieldDef(PrimType.Float) { Name = "Flight Radius" },
@@ -16055,10 +16055,10 @@ public static class Fallout4Schema
                                 new FormIdDef { Name = "Debris", Targets = ["DEBR", ""] },
                                 new FormIdDef { Name = "Impact DataSet", Targets = ["IPDS", ""] }
                             ]
-                        ) { Name = "OnCripple" },
-                        new FormIdDef { Name = "Explodable - Subsegment Explosion", Targets = ["EXPL", ""] },
-                        new FieldDef(PrimType.Float) { Name = "Orientation Limits - Pitch" },
-                        new FieldDef(PrimType.Float) { Name = "Orientation Limits - Roll" }
+                        ) { MinFormVersion = 96, Name = "OnCripple" },
+                        new FormIdDef { MinFormVersion = 118, Name = "Explodable - Subsegment Explosion", Targets = ["EXPL", ""] },
+                        new FieldDef(PrimType.Float) { MinFormVersion = 98, Name = "Orientation Limits - Pitch" },
+                        new FieldDef(PrimType.Float) { MinFormVersion = 101, Name = "Orientation Limits - Roll" }
                     ]
                 ) { Signature = "DATA", Name = "Data" },
                 new EmptyDef { Signature = "MNAM", Name = "Male Marker" },
@@ -20210,8 +20210,8 @@ public static class Fallout4Schema
                             new FieldDef(PrimType.Float) { Name = "Offset Z" },
                             new FieldDef(PrimType.Float) { Name = "Rotation Z" },
                             new FormIdDef { Name = "Keyword", Targets = ["KYWD", ""] },
-                            new FieldDef(PrimType.U8) { Name = "Entry Types", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Front"), new FlagMember(1, "Rear"), new FlagMember(2, "Right"), new FlagMember(3, "Left"), new FlagMember(4, "Other"), new FlagMember(5, "Unused 5"), new FlagMember(6, "Unused 6"), new FlagMember(7, "Unused 7")]) },
-                            new FieldDef(PrimType.ByteArray) { Name = "Unknown", FixedSize = 3 }
+                            new FieldDef(PrimType.U8) { MinFormVersion = 125, Name = "Entry Types", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Front"), new FlagMember(1, "Rear"), new FlagMember(2, "Right"), new FlagMember(3, "Left"), new FlagMember(4, "Other"), new FlagMember(5, "Unused 5"), new FlagMember(6, "Unused 6"), new FlagMember(7, "Unused 7")]) },
+                            new FieldDef(PrimType.ByteArray) { MinFormVersion = 125, Name = "Unknown", FixedSize = 3 }
                         ]
                     ) { Name = "Marker" }
                 ) { Signature = "SNAM", Name = "Marker Parameters", Count = -1 },
@@ -21117,7 +21117,7 @@ public static class Fallout4Schema
                 new FieldDef(PrimType.U32) { Signature = "LNAM", Name = "Max Cloud Layers", Required = true, DefaultValue = 16 },
                 new FormIdDef { Signature = "MNAM", Name = "Precipitation Type", Required = true, Targets = ["SPGD", ""] },
                 new FormIdDef { Signature = "NNAM", Name = "Visual Effect", Required = true, Targets = ["RFCT", ""] },
-                new RawMemberDef("IfThen"),
+                new RawMemberDef("IfThen") { Required = true },
                 new ArrayDef(
                     new RawMemberDef("wbWeatherTimeOfDay")
                 ) { Signature = "PNAM", Name = "Cloud Colors", Required = true, Count = -1 },
@@ -21164,7 +21164,7 @@ public static class Fallout4Schema
                         new FieldDef(PrimType.U8) { Name = "Visual Effect - End" },
                         new FieldDef(PrimType.U8) { Name = "Wind Direction" },
                         new FieldDef(PrimType.U8) { Name = "Wind Direction Range" },
-                        new FieldDef(PrimType.U8) { Name = "Wind Turbulance" }
+                        new FieldDef(PrimType.U8) { MinFormVersion = 119, Name = "Wind Turbulance" }
                     ]
                 ) { Signature = "DATA", Name = "Data", Required = true },
                 new FieldDef(PrimType.U32) { Signature = "NAM1", Name = "Disabled Cloud Layers", Required = true, InlineFlags = new FlagsDef(null, [new FlagMember(0, "0"), new FlagMember(1, "1"), new FlagMember(2, "2"), new FlagMember(3, "3"), new FlagMember(4, "4"), new FlagMember(5, "5"), new FlagMember(6, "6"), new FlagMember(7, "7"), new FlagMember(8, "8"), new FlagMember(9, "9"), new FlagMember(10, "10"), new FlagMember(11, "11"), new FlagMember(12, "12"), new FlagMember(13, "13"), new FlagMember(14, "14"), new FlagMember(15, "15"), new FlagMember(16, "16"), new FlagMember(17, "17"), new FlagMember(18, "18"), new FlagMember(19, "19"), new FlagMember(20, "20"), new FlagMember(21, "21"), new FlagMember(22, "22"), new FlagMember(23, "23"), new FlagMember(24, "24"), new FlagMember(25, "25"), new FlagMember(26, "26"), new FlagMember(27, "27"), new FlagMember(28, "28"), new FlagMember(29, "29"), new FlagMember(30, "30"), new FlagMember(31, "31")]) },
@@ -21205,10 +21205,10 @@ public static class Fallout4Schema
                 ) { Signature = "WGDR", Name = "God Rays", Required = true },
                 new StructDef(
                     [
-                        new RawMemberDef("wbAmbientColors"),
-                        new RawMemberDef("wbAmbientColors"),
-                        new RawMemberDef("wbAmbientColors"),
-                        new RawMemberDef("wbAmbientColors"),
+                        new RawMemberDef("wbAmbientColors") { Required = true },
+                        new RawMemberDef("wbAmbientColors") { Required = true },
+                        new RawMemberDef("wbAmbientColors") { Required = true },
+                        new RawMemberDef("wbAmbientColors") { Required = true },
                         new RawMemberDef("IsFO4Plus"),
                         new RawMemberDef("IsFO4Plus"),
                         new RawMemberDef("IsFO4Plus"),
@@ -21240,10 +21240,10 @@ public static class Fallout4Schema
                         new StructDef(
                             [
                                 new FormIdDef { Name = "Spell", Targets = ["SPEL", ""] },
-                                new FieldDef(PrimType.Float) { Name = "Threshold" }
+                                new FieldDef(PrimType.Float) { MinFormVersion = 130, Name = "Threshold" }
                             ]
                         ) { Name = "Weather Activate" },
-                        new UnusedDef(8)
+                        new UnusedDef(8) { MinFormVersion = 130 }
                     ]
                 ) { Signature = "UNAM", Name = "Magic", Required = true },
                 new FieldDef(PrimType.Float) { Signature = "VNAM", Name = "Volatility Mult", Required = true, DefaultValue = 1 },

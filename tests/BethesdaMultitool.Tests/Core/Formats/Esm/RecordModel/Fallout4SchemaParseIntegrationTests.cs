@@ -1,3 +1,6 @@
+using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -90,5 +93,72 @@ public class Fallout4SchemaParseIntegrationTests
         var withSpeaker = result.Records.Dialogues.Count(d => d.SpeakerFormId is > 0);
         Assert.True(withSpeaker > 5000,
             $"Expected many FO4 INFOs to attribute an NPC speaker via ANAM/CTDA; got {withSpeaker}.");
+    }
+
+    [Fact]
+    public async Task Fallout4_Commonwealth_WaterAuthoring_PinsSanctuaryAndAdjacentCells()
+    {
+        // Exact retail FormIDs and their authored relationship cannot be replaced by a synthetic
+        // fixture without ceasing to be the requested retail oracle. Keep this coverage inside the
+        // grandfathered, sequential Bucket-B class and reuse its cache-owned full-master load.
+        var esm = ResolveFallout4Esm();
+        BucketBTestGuard.SkipUnlessEnabled();
+        Assert.SkipUnless(esm is not null,
+            "Fallout4.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout 4).");
+
+        var result = await RealAssetEsmCache.LoadAsync(
+            esm!, TestContext.Current.CancellationToken);
+
+        var commonwealth = Assert.Single(result.Records.Worldspaces,
+            worldspace => worldspace.FormId == 0x0000003C);
+        Assert.Equal(450f, commonwealth.DefaultWaterHeight);
+        Assert.False(commonwealth.WaterFromParentWorldspace);
+
+        var sanctuary = Assert.Single(commonwealth.Cells,
+            cell => cell.FormId == 0x0000DD60);
+        Assert.Equal(-20, sanctuary.GridX);
+        Assert.Equal(21, sanctuary.GridY);
+        Assert.Equal((byte)0x02, sanctuary.Flags);
+        Assert.True(sanctuary.HasWater);
+        var sanctuaryWaterHeight = Assert.IsType<float>(sanctuary.WaterHeight);
+        Assert.Equal(0x7F7FFFFFu,
+            BitConverter.SingleToUInt32Bits(sanctuaryWaterHeight));
+        Assert.True(WorldHeightNormalizer.IsNoWaterSentinel(sanctuaryWaterHeight));
+
+        // The semantic parser canonicalizes every non-reportable XCLW to FLT_MAX. Inspect the
+        // decompressed retail record as well so this discriminator proves the bytes were authored
+        // as the canonical sentinel, rather than merely normalized to it after parsing.
+        var rawCell = Assert.Single(result.RawResult.EsmRecords!.MainRecords,
+            record => record.RecordType == "CELL" && record.FormId == sanctuary.FormId);
+        Assert.False(rawCell.IsBigEndian);
+        var storedPayload = new byte[checked((int)rawCell.DataSize)];
+        var accessor = result.Accessor
+            ?? throw new InvalidOperationException("Retail ESM load did not retain its memory-mapped accessor.");
+        Assert.Equal(storedPayload.Length, accessor.ReadArray(
+            rawCell.Offset + rawCell.HeaderSize, storedPayload, 0, storedPayload.Length));
+        var rawPayload = rawCell.IsCompressed
+            ? EsmParser.DecompressRecordData(storedPayload, rawCell.IsBigEndian)
+              ?? throw new InvalidDataException("Retail CELL 0x0000DD60 could not be decompressed.")
+            : storedPayload;
+        var rawXclw = Assert.Single(EsmParser.ParseSubrecords(rawPayload, rawCell.IsBigEndian),
+            subrecord => subrecord.Signature == "XCLW");
+        Assert.Equal(4, rawXclw.Data.Length);
+        Assert.Equal(0x7F7FFFFFu, BinaryPrimitives.ReadUInt32LittleEndian(rawXclw.Data));
+
+        Assert.Equal(0x00034519u, sanctuary.WaterFormId);
+        Assert.Equal(450f, WorldRenderCache.ResolveEffectiveWaterHeight(
+            sanctuary, commonwealth.DefaultWaterHeight, commonwealth.WaterFromParentWorldspace));
+
+        var sanctuaryExt06 = Assert.Single(commonwealth.Cells,
+            cell => cell.FormId == 0x0000DD5F);
+        Assert.Equal(-19, sanctuaryExt06.GridX);
+        Assert.Equal(21, sanctuaryExt06.GridY);
+        Assert.Equal(7250f, Assert.IsType<float>(sanctuaryExt06.WaterHeight));
+
+        var sanctuaryExt04 = Assert.Single(commonwealth.Cells,
+            cell => cell.FormId == 0x0000DD81);
+        Assert.Equal(-20, sanctuaryExt04.GridX);
+        Assert.Equal(20, sanctuaryExt04.GridY);
+        Assert.Equal(7250f, Assert.IsType<float>(sanctuaryExt04.WaterHeight));
     }
 }

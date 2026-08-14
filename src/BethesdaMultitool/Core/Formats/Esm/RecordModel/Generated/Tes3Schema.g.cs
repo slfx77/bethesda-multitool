@@ -1294,7 +1294,7 @@ public static class Tes3Schema
                     new FieldDef(PrimType.ZString) { Name = "Script Variable", FixedSize = 0 }
                 ) { Signature = "SCVR", Name = "Script Variables", Count = -1 },
                 new FieldDef(PrimType.ByteArray) { Signature = "SCDT", Name = "Compiled Script" },
-                new RawMemberDef("wbStringScript")
+                new FieldDef(PrimType.ZString) { Signature = "SCTX", Name = "Script Source", Required = true }
             ]
         ) { Name = "Script" },
         new RecordDef("SKIL",

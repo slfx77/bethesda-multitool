@@ -27,5 +27,11 @@ public class GeneratedTes3SchemaTests
         var version = Assert.IsType<FieldDef>(hedr.Members[0]);
         Assert.Equal("Version", version.Name);
         Assert.Equal(PrimType.Float, version.Type);
+
+        var scpt = Assert.Single(records, r => r.Signature == "SCPT");
+        var source = Assert.IsType<FieldDef>(Assert.Single(scpt.Members, m => m.Signature == "SCTX"));
+        Assert.Equal("Script Source", source.Name);
+        Assert.Equal(PrimType.ZString, source.Type);
+        Assert.True(source.Required);
     }
 }

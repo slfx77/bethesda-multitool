@@ -53,4 +53,17 @@ public class PascalLexerTests
         Assert.Equal(TokenKind.Float, tokens[2].Kind);
         Assert.Equal(1.5, tokens[2].FloatValue);
     }
+
+    [Fact]
+    public void Recognizes_Division_Without_Confusing_Line_Comments()
+    {
+        var tokens = PascalLexer.Tokenize("1/24 // ignored\n180/pi");
+
+        Assert.Equal(
+            [TokenKind.Int, TokenKind.Slash, TokenKind.Int,
+             TokenKind.Int, TokenKind.Slash, TokenKind.Ident, TokenKind.Eof],
+            tokens.Select(token => token.Kind));
+        Assert.Equal("/", tokens[1].Text);
+        Assert.Equal("pi", tokens[5].Text);
+    }
 }

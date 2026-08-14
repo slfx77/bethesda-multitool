@@ -18,6 +18,7 @@ public enum TokenKind
     Semicolon,
     Assign,
     Minus,
+    Slash,
     Eof
 }
 
@@ -32,8 +33,9 @@ public readonly record struct Token(TokenKind Kind, string Text, long IntValue =
 ///     builder DSL. It is NOT a full Pascal lexer — it only recognizes what the <c>wb*</c> call tree
 ///     needs: identifiers, single-quoted strings (<c>''</c> escape), decimal/hex (<c>$</c>) integers,
 ///     floats, and the handful of punctuation tokens. Comments (<c>// …</c>, <c>{ … }</c> incl.
-///     <c>{$…}</c> directives, <c>(* … *)</c>) are skipped. Operators other than unary <c>-</c> are not
-///     modeled (numeric values in the DSL are literals, not expressions).
+///     <c>{$…}</c> directives, <c>(* … *)</c>) are skipped. Unary <c>-</c> and the numeric division
+///     expressions used as xEdit display metadata (for example <c>1/24</c> and <c>180/pi</c>) are modeled;
+///     other Pascal operators are outside this constrained grammar.
 /// </summary>
 public static class PascalLexer
 {
@@ -118,6 +120,10 @@ public static class PascalLexer
                     continue;
                 case '-':
                     tokens.Add(new Token(TokenKind.Minus, "-"));
+                    i++;
+                    continue;
+                case '/':
+                    tokens.Add(new Token(TokenKind.Slash, "/"));
                     i++;
                     continue;
             }

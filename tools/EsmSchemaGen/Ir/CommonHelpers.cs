@@ -15,7 +15,7 @@ public static class CommonHelpers
     public static MemberDef? TryBuild(string name, IReadOnlyList<WbValue> args, bool isFo4Plus = false) =>
         name.ToLowerInvariant() switch
         {
-            // wbByteColors(aSignature?, aName='Color', R, G, B) — a 3-byte RGB struct (Common.pas:516-527).
+            // wbByteColors(aSignature?, aName='Color', R, G, B) — RGB plus one pad byte (Common.pas:516-527).
             "wbbytecolors" => ByteColors(args),
             // wbVec3(aSignature?, aName) — three little-endian floats (X, Y, Z); ubiquitous across all games.
             "wbvec3" => Vec3(args),

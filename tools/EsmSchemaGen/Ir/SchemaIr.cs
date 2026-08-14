@@ -3,8 +3,8 @@ namespace EsmSchemaGen.Ir;
 /// <summary>
 ///     Normalized intermediate representation of an xEdit record definition. The Pascal DSL parser
 ///     (<see cref="Pascal.WbExprParser" />) produces a generic call AST, the <see cref="IrBuilder" />
-///     lowers it into this IR, and the emitter (later stage) writes it as C# schema-data tables that a
-///     single generic reader/writer interprets at runtime. Records are immutable.
+///     lowers it into this IR, and the emitter writes it as C# schema-data tables that the generic
+///     reader interprets at runtime. No generic schema writer exists today. Records are immutable.
 /// </summary>
 public abstract record SchemaNode
 {
@@ -29,6 +29,20 @@ public sealed record RecordDef(string Signature, IReadOnlyList<MemberDef> Member
 public abstract record MemberDef : SchemaNode
 {
     public string? Signature { get; init; }
+
+    /// <summary>
+    ///     Minimum record-header form version required for this member, from an enclosing
+    ///     <c>wbFromVersion(version, member)</c> or the upper arm of a literal two-way
+    ///     <c>wbFormVersionDecider(version)</c>. Null means the member has no lower version gate.
+    /// </summary>
+    public ushort? MinFormVersion { get; init; }
+
+    /// <summary>
+    ///     Exclusive record-header form-version ceiling for this member, from an enclosing
+    ///     <c>wbBelowVersion(version, member)</c> or the lower arm of a literal two-way
+    ///     <c>wbFormVersionDecider(version)</c>. Null means the member has no upper version gate.
+    /// </summary>
+    public ushort? MaxFormVersionExclusive { get; init; }
 }
 
 /// <summary>A scalar value field (integer, float, string, byte array).</summary>
@@ -69,7 +83,7 @@ public sealed record ArrayDef(MemberDef Element) : MemberDef
 /// <summary>A tagged union: the active variant is chosen at runtime by a named decider function.</summary>
 public sealed record UnionDef(string DeciderName, IReadOnlyList<MemberDef> Variants) : MemberDef;
 
-/// <summary>Padding/unused bytes (<c>wbUnused(N)</c>): consumed on read, preserved verbatim, no value.</summary>
+/// <summary>Padding/unused bytes (<c>wbUnused(N)</c>): consumed on read with no decoded value.</summary>
 public sealed record UnusedDef(int Size) : MemberDef;
 
 /// <summary>A zero-length marker subrecord (<c>wbEmpty</c>).</summary>

@@ -3,10 +3,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema;
 /// <summary>
 ///     Runtime representation of a record-layout schema, generated from the xEdit (TES5Edit) record
 ///     definitions by the <c>tools/EsmSchemaGen</c> code generator. The generated per-game
-///     <c>*Schema.g.cs</c> files instantiate these types; a schema-driven reader/writer interprets them
-///     to decode/encode records. These are pure, immutable data — no behavior — so the same types serve
-///     every game. (The generator carries an internal mirror of these shapes in <c>EsmSchemaGen.Ir</c>;
-///     if the two drift, the generated C# stops compiling, which is the intended early-warning.)
+///     <c>*Schema.g.cs</c> files instantiate these types; the schema-driven reader interprets them to
+///     decode records. A future generic writer could share the model, but none exists today. These are
+///     pure, immutable data — no behavior — so the same types serve every game. The generator carries
+///     an internal mirror of these shapes in <c>EsmSchemaGen.Ir</c>;
+///     explicitly regenerated output compiles against this runtime model, exposing shape drift during
+///     the reviewed regeneration/build rather than through an automatic clean-CI oracle check.
 /// </summary>
 public abstract record SchemaNode
 {
@@ -30,6 +32,18 @@ public sealed record RecordDef(string Signature, IReadOnlyList<MemberDef> Member
 public abstract record MemberDef : SchemaNode
 {
     public string? Signature { get; init; }
+
+    /// <summary>
+    ///     Minimum record-header form version required for this member, from <c>wbFromVersion</c> or
+    ///     the upper arm of a literal two-way <c>wbFormVersionDecider</c>. Null means no lower gate.
+    /// </summary>
+    public ushort? MinFormVersion { get; init; }
+
+    /// <summary>
+    ///     Exclusive record-header form-version ceiling for this member, from <c>wbBelowVersion</c> or
+    ///     the lower arm of a literal two-way <c>wbFormVersionDecider</c>. Null means no upper gate.
+    /// </summary>
+    public ushort? MaxFormVersionExclusive { get; init; }
 }
 
 /// <summary>A scalar value field (integer, float, string, byte array).</summary>
@@ -70,15 +84,16 @@ public sealed record ArrayDef(MemberDef Element) : MemberDef
 /// <summary>A tagged union whose active variant is chosen at runtime by a named decider.</summary>
 public sealed record UnionDef(string DeciderName, IReadOnlyList<MemberDef> Variants) : MemberDef;
 
-/// <summary>Padding/unused bytes: consumed on read, preserved verbatim, no decoded value.</summary>
+/// <summary>Padding/unused bytes: consumed on read without producing an individually retained value.</summary>
 public sealed record UnusedDef(int Size) : MemberDef;
 
 /// <summary>A zero-length marker subrecord.</summary>
 public sealed record EmptyDef : MemberDef;
 
 /// <summary>
-///     A member the generator could not model yet (an unmapped builder/helper). The reader treats it as
-///     opaque — preserved verbatim on round-trip — so coverage gaps never lose data, only structure.
+///     A member the generator could not model yet (an unmapped builder/helper). Within an inline struct,
+///     the reader exposes the remaining undecodable tail as one raw node and stops; it does not capture a
+///     bounded member value or provide a generic round-trip writer.
 /// </summary>
 public sealed record RawMemberDef(string Builder) : MemberDef;
 

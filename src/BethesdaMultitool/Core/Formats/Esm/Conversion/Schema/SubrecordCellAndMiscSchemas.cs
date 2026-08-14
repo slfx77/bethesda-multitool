@@ -16,7 +16,7 @@ internal static class SubrecordCellAndMiscSchemas
         // CELL SCHEMAS
         // ========================================================================
 
-        // XCLL - Cell Lighting (40 bytes)
+        // XCLL - Cell Lighting (40 bytes) — FO3/FNV and later.
         schemas[new SubrecordSchemaRegistry.SchemaKey("XCLL", null, 40)] = new SubrecordSchema(
             F.UInt32("AmbientColor"), F.UInt32("DirectionalColor"),
             F.UInt32("FogColor"), F.Float("FogNear"), F.Float("FogFar"),
@@ -24,6 +24,22 @@ internal static class SubrecordCellAndMiscSchemas
             F.Float("DirectionalFade"), F.Float("FogClipDistance"), F.Float("FogPow"))
         {
             Description = "Cell Lighting"
+        };
+
+        // XCLL - Cell Lighting (36 bytes) — TES4. Identical to the 40-byte form MINUS the trailing
+        // FogPow float (xEdit's TES4 CELL 'Lighting' ends at Fog Clip Dist; see the generated
+        // OblivionSchema field list). Measured on retail masters: Oblivion.esm carries 1,770 XCLL
+        // subrecords and EVERY one is 36 bytes, while FalloutNV.esm's 388 are all 40.
+        // Without this entry the length-exact parse gate dropped every Oblivion cell's authored
+        // lighting, so interiors fell back to neutral engine defaults — the "cave lighting seems too
+        // bright" report (user 2026-08-11). Do NOT "fix" that symptom with an ambient scale.
+        schemas[new SubrecordSchemaRegistry.SchemaKey("XCLL", null, 36)] = new SubrecordSchema(
+            F.UInt32("AmbientColor"), F.UInt32("DirectionalColor"),
+            F.UInt32("FogColor"), F.Float("FogNear"), F.Float("FogFar"),
+            F.Int32("DirectionalRotationXY"), F.Int32("DirectionalRotationZ"),
+            F.Float("DirectionalFade"), F.Float("FogClipDistance"))
+        {
+            Description = "Cell Lighting (TES4, no FogPow)"
         };
 
         // XCLC - Cell Grid (12 bytes)

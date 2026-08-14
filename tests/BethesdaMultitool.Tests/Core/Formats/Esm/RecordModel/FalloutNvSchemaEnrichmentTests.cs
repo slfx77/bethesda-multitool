@@ -1,3 +1,6 @@
+using BethesdaMultitool.Core.Formats.Esm.RecordModel;
+using BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -14,6 +17,58 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 [Collection(SequentialIntegrationGroup.Name)]
 public class FalloutNvSchemaEnrichmentTests
 {
+    [Fact]
+    public void FnvCobjSchema_IsBaseObjectShape_NotModernRecipeShape()
+    {
+        var definitions = EsmSchemas.IndexForGame(BethesdaGame.FalloutNewVegas);
+        Assert.NotNull(definitions);
+        Assert.True(definitions.TryGetValue("COBJ", out var cobj));
+
+        var signatures = EnumerateSignatures(cobj!.Members).ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("EDID", signatures);
+        Assert.Contains("OBND", signatures);
+        Assert.Contains("FULL", signatures);
+        Assert.Contains("MODL", signatures);
+        Assert.Contains("SCRI", signatures);
+        Assert.Contains("YNAM", signatures);
+        Assert.Contains("ZNAM", signatures);
+        Assert.Contains("DATA", signatures);
+
+        foreach (var modernRecipeSignature in
+                 new[] { "COCT", "CNTO", "CTDA", "CIS1", "CIS2", "CNAM", "BNAM", "NAM1" })
+        {
+            Assert.DoesNotContain(modernRecipeSignature, signatures);
+        }
+    }
+
+    [Fact]
+    public void FnvIngredientSchema_SeparatesWeightEffectDataAndEffectGroup()
+    {
+        var definitions = EsmSchemas.IndexForGame(BethesdaGame.FalloutNewVegas);
+        Assert.NotNull(definitions);
+        Assert.True(definitions.TryGetValue("INGR", out var ingredient));
+
+        var data = Assert.IsType<FieldDef>(
+            Assert.Single(ingredient!.Members, member => member.Signature == "DATA"));
+        Assert.Equal(PrimType.Float, data.Type);
+
+        var enit = Assert.IsType<StructDef>(
+            Assert.Single(ingredient.Members, member => member.Signature == "ENIT"));
+        Assert.Collection(
+            enit.Members,
+            member => Assert.Equal(PrimType.S32, Assert.IsType<FieldDef>(member).Type),
+            member => Assert.Equal(PrimType.U8, Assert.IsType<FieldDef>(member).Type),
+            member => Assert.Equal(3, Assert.IsType<UnusedDef>(member).Size));
+
+        var effects = Assert.IsType<ArrayDef>(
+            Assert.Single(ingredient.Members, member => member.Name == "Effects"));
+        var effectSignatures = EnumerateSignatures([effects]).ToHashSet(StringComparer.Ordinal);
+        Assert.Contains("EFID", effectSignatures);
+        Assert.Contains("EFIT", effectSignatures);
+        Assert.Contains("CTDA", effectSignatures);
+    }
+
     private static string? ResolveFalloutNvEsm()
     {
         var root = Environment.GetEnvironmentVariable("BETHESDA_TEST_DATA_ROOT");
@@ -61,5 +116,34 @@ public class FalloutNvSchemaEnrichmentTests
         var withConfig = trees.Values.First(t => t.Any(n => n.Label == "Configuration"));
         Assert.Contains(withConfig, n => n.Label == "Configuration"); // ACBS
         Assert.Contains(withConfig, n => n.Label is "Race" or "Class");
+    }
+
+    private static IEnumerable<string> EnumerateSignatures(IEnumerable<MemberDef> members)
+    {
+        foreach (var member in members)
+        {
+            if (member.Signature is { } signature)
+            {
+                yield return signature;
+            }
+
+            IEnumerable<MemberDef>? children = member switch
+            {
+                StructDef structure => structure.Members,
+                ArrayDef array => [array.Element],
+                UnionDef union => union.Variants,
+                _ => null
+            };
+
+            if (children is null)
+            {
+                continue;
+            }
+
+            foreach (var childSignature in EnumerateSignatures(children))
+            {
+                yield return childSignature;
+            }
+        }
     }
 }

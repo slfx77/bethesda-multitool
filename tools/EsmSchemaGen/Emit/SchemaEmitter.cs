@@ -7,12 +7,13 @@ namespace EsmSchemaGen.Emit;
 /// <summary>
 ///     Emits a per-game schema as a C# source file that instantiates the runtime schema types in
 ///     <c>BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema</c>. Output is committed under the main
-///     library's <c>RecordModel/Generated</c> folder (a drift-check test re-runs the generator and
-///     asserts no diff). Deterministic LF line endings keep that check stable across platforms.
+///     library's <c>RecordModel/Generated</c> folder. Regeneration is an explicit, reviewed operation;
+///     the local xEdit source tree is not available to clean CI. Deterministic LF output keeps reviewed
+///     diffs stable across platforms.
 /// </summary>
 public static class SchemaEmitter
 {
-    private const string Nl = "\n";
+    private const char Nl = '\n';
 
     public static string EmitGame(string className, IReadOnlyList<RecordDef> records)
     {
@@ -25,7 +26,7 @@ public static class SchemaEmitter
         sb.Append("namespace BethesdaMultitool.Core.Formats.Esm.RecordModel.Generated;").Append(Nl);
         sb.Append(Nl);
         sb.Append("public static class ").Append(className).Append(Nl);
-        sb.Append("{").Append(Nl);
+        sb.Append('{').Append(Nl);
         sb.Append("    public static IReadOnlyList<RecordDef> Records { get; } =").Append(Nl);
         sb.Append("    [").Append(Nl);
         foreach (var record in records)
@@ -34,7 +35,7 @@ public static class SchemaEmitter
         }
 
         sb.Append("    ];").Append(Nl);
-        sb.Append("}").Append(Nl);
+        sb.Append('}').Append(Nl);
         return sb.ToString();
     }
 
@@ -56,11 +57,11 @@ public static class SchemaEmitter
             case FormIdDef formId:
                 return pad + "new FormIdDef" + InitBlock(formId);
             case UnusedDef unused:
-                return pad + "new UnusedDef(" + unused.Size + ")";
+                return pad + "new UnusedDef(" + unused.Size + ")" + InitBlock(unused);
             case EmptyDef:
                 return pad + "new EmptyDef" + InitBlock(member);
             case UnknownMemberDef unknown:
-                return pad + "new RawMemberDef(" + Quote(unknown.CallName) + ")";
+                return pad + "new RawMemberDef(" + Quote(unknown.CallName) + ")" + InitBlock(unknown);
             case StructDef structDef:
                 return pad + "new StructDef(" + Nl +
                        EmitList(structDef.Members, indent + 1) + Nl +
@@ -97,6 +98,16 @@ public static class SchemaEmitter
         if (node is MemberDef { Signature: { } sig })
         {
             props.Add($"Signature = {Quote(sig)}");
+        }
+
+        if (node is MemberDef { MinFormVersion: { } minFormVersion })
+        {
+            props.Add($"MinFormVersion = {minFormVersion}");
+        }
+
+        if (node is MemberDef { MaxFormVersionExclusive: { } maxFormVersionExclusive })
+        {
+            props.Add($"MaxFormVersionExclusive = {maxFormVersionExclusive}");
         }
 
         if (node.Name is { } name)

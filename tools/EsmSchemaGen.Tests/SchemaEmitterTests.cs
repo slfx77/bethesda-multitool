@@ -46,4 +46,66 @@ public class SchemaEmitterTests
             cs, StringComparison.Ordinal);
         Assert.Contains("new RawMemberDef(\"wbNotModeledYet\")", cs, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Emits_FromVersion_Metadata_For_Field_Unused_And_Raw_Members()
+    {
+        var rec = new IrBuilder().BuildRecord("""
+            wbRecord(TEST, 'Versioned', [
+              wbFromVersion(97, wbFloat('Inner Radius')),
+              wbFromVersion(112, wbUnused(4)),
+              wbFromVersion(125, wbNotModeledYet)
+            ])
+            """);
+
+        var cs = SchemaEmitter.EmitGame("X", [rec]);
+
+        Assert.Contains("new FieldDef(PrimType.Float) { MinFormVersion = 97, Name = \"Inner Radius\" }",
+            cs, StringComparison.Ordinal);
+        Assert.Contains("new UnusedDef(4) { MinFormVersion = 112 }", cs, StringComparison.Ordinal);
+        Assert.Contains("new RawMemberDef(\"wbNotModeledYet\") { MinFormVersion = 125 }",
+            cs, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Emits_BelowVersion_Metadata_Without_Dropping_Inner_InitBlock_Properties()
+    {
+        var rec = new IrBuilder().BuildRecord("""
+            wbRecord(TEST, 'Versioned', [
+              wbBelowVersion(35, FNAM, wbInteger('Flags', itU32).SetRequired),
+              wbBelowVersion(34, wbUnused(4)),
+              wbBelowVersion(33, wbNotModeledYet)
+            ])
+            """);
+
+        var cs = SchemaEmitter.EmitGame("X", [rec]);
+
+        Assert.Contains(
+            "new FieldDef(PrimType.U32) { Signature = \"FNAM\", MaxFormVersionExclusive = 35, Name = \"Flags\", Required = true }",
+            cs, StringComparison.Ordinal);
+        Assert.Contains("new UnusedDef(4) { MaxFormVersionExclusive = 34 }", cs, StringComparison.Ordinal);
+        Assert.Contains("new RawMemberDef(\"wbNotModeledYet\") { MaxFormVersionExclusive = 33 }",
+            cs, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Emits_Direct_FormVersionDecider_As_Exact_Complementary_Arm_Gates()
+    {
+        var rec = new IrBuilder().BuildRecord("""
+            wbRecord(ECZN, 'Encounter Zone', [
+              wbUnion(DATA, 'Versioned Data', wbFormVersionDecider(34), [
+                wbStruct('Old', [wbInteger('A', itU32)]),
+                wbStruct('New', [wbInteger('B', itU32), wbInteger('C', itU32)])
+              ])
+            ])
+            """);
+
+        var cs = SchemaEmitter.EmitGame("X", [rec]);
+
+        Assert.Contains("new UnionDef(\"wbFormVersionDecider\",", cs, StringComparison.Ordinal);
+        Assert.Contains(") { MaxFormVersionExclusive = 34, Name = \"Old\" }", cs, StringComparison.Ordinal);
+        Assert.Contains(") { MinFormVersion = 34, Name = \"New\" }", cs, StringComparison.Ordinal);
+        Assert.Contains(") { Signature = \"DATA\", Name = \"Versioned Data\" }", cs, StringComparison.Ordinal);
+        Assert.DoesNotContain("<unknown-decider>", cs, StringComparison.Ordinal);
+    }
 }

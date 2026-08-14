@@ -103,13 +103,16 @@ internal static class SubrecordEffectSchemas
         // PERK SCHEMAS
         // ========================================================================
 
-        // DATA - PERK (variable). Top-level PERK DATA is 5 bytes in FNV; the shorter
-        // DATA variants below are type-specific perk-entry payloads following PRKE.
+        // DATA - PERK (variable). Top-level PERK DATA is 4 bytes with an optional fifth
+        // Hidden byte in FNV; the other sizes below are type-specific entry payloads.
+        // DATA(4) is ambiguous with a type-1 PRKE ability FormID. This registry has no
+        // record-chain context, so its stateless default retains FormID endian conversion.
+        // Record conversion supplies PRKE..PRKF scope and bypasses that swap for top-level DATA.
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "PERK", 4)] = SubrecordSchema.Simple4Byte();
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "PERK", 3)] = new SubrecordSchema(
             F.UInt8("EntryPoint"),
-            F.UInt8("FunctionType"),
-            F.UInt8("RunImmediately"))
+            F.UInt8("Function"),
+            F.UInt8("PerkConditionTabCount"))
         {
             Description = "Perk entry-point payload"
         };
@@ -118,7 +121,7 @@ internal static class SubrecordEffectSchemas
             F.UInt8("MinLevel"),
             F.UInt8("Ranks"),
             F.UInt8("Playable"),
-            F.UInt8("HiddenFromPC"))
+            F.UInt8("Hidden"))
         {
             Description = "Perk data"
         };
@@ -144,9 +147,9 @@ internal static class SubrecordEffectSchemas
                 Description = "Perk entry-point function type"
             };
         schemas[new SubrecordSchemaRegistry.SchemaKey("PRKC", "PERK", 1)] =
-            new SubrecordSchema(F.UInt8("ConditionTabCount"))
+            new SubrecordSchema(F.Int8("RunOn"))
             {
-                Description = "Perk entry condition tab count"
+                Description = "Perk entry condition-group selector"
             };
         schemas[new SubrecordSchemaRegistry.SchemaKey("PRKF", "PERK", 0)] = SubrecordSchema.Empty;
         schemas[new SubrecordSchemaRegistry.SchemaKey("EPFD", null, 4)] = SubrecordSchema.Simple4Byte();

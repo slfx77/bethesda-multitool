@@ -30,7 +30,8 @@ public static class RecordHeaderProcessor
             FormId = BinaryPrimitives.ReadUInt32BigEndian(span[RecordHeaderSchema.RecordFormIdOffset..]),
             Timestamp = BinaryPrimitives.ReadUInt32BigEndian(span[RecordHeaderSchema.RecordTimestampOffset..]),
             VcsInfo = BinaryPrimitives.ReadUInt16BigEndian(span[RecordHeaderSchema.RecordVcsInfoOffset..]),
-            Version = BinaryPrimitives.ReadUInt16BigEndian(span[RecordHeaderSchema.RecordVersionOffset..])
+            Version = BinaryPrimitives.ReadUInt16BigEndian(span[RecordHeaderSchema.RecordVersionOffset..]),
+            FormVersion = BinaryPrimitives.ReadUInt16BigEndian(span[RecordHeaderSchema.RecordVcsInfoOffset..])
         };
     }
 

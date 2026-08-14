@@ -3,8 +3,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 /// <summary>
 ///     One node in the ordered, labeled tree produced by <see cref="SchemaRecordDecoder" /> from a raw
 ///     record and its <see cref="Schema.RecordDef" />. The tree mirrors the schema's member order, so it
-///     re-serializes faithfully and renders the same way the rich FNV typed presenters do — a label, a
-///     display value, optional children (structs/arrays), and a FormID when the node is a reference.
+///     can present the decoded structure in source order — a label, a display value, optional children
+///     (structs/arrays), and a FormID when the node is a reference. It is a read/display model, not a
+///     serialization contract; raw nodes retain bytes only so unmodeled coverage remains inspectable.
 /// </summary>
 public sealed record DecodedNode
 {

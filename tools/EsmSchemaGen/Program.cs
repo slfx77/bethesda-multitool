@@ -2,15 +2,16 @@ using EsmSchemaGen;
 using EsmSchemaGen.Emit;
 using EsmSchemaGen.Ir;
 
-// Bootstrap entrypoint. The full System.CommandLine surface (--xedit-root / --out / --game) and the
-// C# schema emitters arrive in a later stage. For now this points the DefinitionsFileParser at a single
-// wbDefinitions*.pas file and reports how completely it lowers into IR (records, resolved symbols, and
-// the unmapped-builder coverage tally that drives the next increment).
+// Positional command-line entrypoint for schema inspection, TES3 read proof, and C# emission. The
+// default form parses one wbDefinitions*.pas file and reports how completely it lowers into IR;
+// `emit` and `emit-all` below generate the committed per-game runtime schemas.
 if (args.Length == 0)
 {
-    Console.WriteLine("EsmSchemaGen (bootstrap)");
+    Console.WriteLine("EsmSchemaGen");
     Console.WriteLine("  usage: EsmSchemaGen <wbDefinitions*.pas>                  # parse + coverage report");
     Console.WriteLine("         EsmSchemaGen read <wbDefinitionsTES3.pas> <esm>    # decode a real TES3 file");
+    Console.WriteLine("         EsmSchemaGen emit <wbDefinitions*.pas> <out.cs> [class]");
+    Console.WriteLine("         EsmSchemaGen emit-all <xEdit Core dir> <out dir>");
     return 0;
 }
 

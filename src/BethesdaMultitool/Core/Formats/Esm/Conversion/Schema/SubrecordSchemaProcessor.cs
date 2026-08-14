@@ -22,17 +22,8 @@ public static class SubrecordSchemaProcessor
             return pkdt;
         }
 
-        // PERK DATA is a small fixed-size struct, but Xbox 360 files frequently store it as 5 bytes
-        // where the last byte is always 0x00 (observed). PC FalloutNV.esm uses 4 bytes.
-        // Emit PC-compatible size by dropping the trailing 0x00.
-        if (recordType == "PERK" && signature == "DATA" && data.Length == 5 && data[4] == 0x00)
-        {
-            return data[..4].ToArray();
-        }
-
-        // PERK PRKE entries are followed by a DATA(8) payload where the first dword is big-endian
-        // on Xbox 360 and must be swapped to match PC ordering. The trailing 4 bytes should be
-        // preserved as-is.
+        // A type-0 PERK quest-stage entry uses DATA(8): its first dword is big-endian on Xbox 360
+        // and must be swapped to match PC ordering, while the trailing 4 bytes are preserved.
         if (recordType == "PERK" && signature == "DATA" && data.Length == 8)
         {
             var perkData = data.ToArray();

@@ -229,7 +229,8 @@ internal static class SubrecordDialogueSchemas
             Description = "Condition Data (no Reference)"
         };
 
-        // CTDA - 20 bytes: FO3/older condition form without RunOn + Reference (both FNV additions).
+        // CTDA - 20 bytes: Oblivion/older condition form without the optional TES4-family
+        // Run On + Reference tail (FO3 definitions also contain both tail fields in longer forms).
         // Exact 20-byte prefix of CONDITION_ITEM_DATA (swap32 @4, FUNCTION_DATA::Endian @8).
         schemas[new SubrecordSchemaRegistry.SchemaKey("CTDA", null, 20)] = new SubrecordSchema(
             F.UInt8("Type"),

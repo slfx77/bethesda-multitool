@@ -14,11 +14,10 @@ public readonly record struct RawSubrecord(string Signature, byte[] Data);
 /// <summary>
 ///     Schema-driven record decoder: turns a record's raw subrecords into an ordered, labeled
 ///     <see cref="DecodedNode" /> tree using a generated <see cref="RecordDef" />. One engine serves every
-///     game — the per-game schema supplies the layout, and version differences are absorbed by
-///     <em>length-bounded</em> struct decoding (trailing optional/conditional fields simply consume what
-///     is left in their framed subrecord, so a field present only in later games occupies zero bytes when
-///     the subrecord is short). Anything the schema cannot model yet is preserved as a raw node rather
-///     than guessed, so coverage gaps stay visible.
+///     game — the per-game schema supplies the layout. Generated form-version bounds skip inactive members
+///     without consuming bytes; remaining optional layout differences are handled by length-bounded
+///     struct decoding. Anything the schema cannot model yet is surfaced as raw data rather than guessed,
+///     so coverage gaps stay visible.
 ///     <para>
 ///         PC plugins are little-endian; pass <c>bigEndian: true</c> for an unconverted Xbox 360 record.
 ///     </para>
@@ -33,19 +32,20 @@ public static class SchemaRecordDecoder
         IReadOnlyList<RawSubrecord> subrecords,
         bool bigEndian = false,
         FormIdNameResolver? resolveName = null,
-        BethesdaGame game = BethesdaGame.Unknown)
+        BethesdaGame game = BethesdaGame.Unknown,
+        ushort? formVersion = null)
     {
         ArgumentNullException.ThrowIfNull(schema);
         ArgumentNullException.ThrowIfNull(subrecords);
 
-        var ctx = new DecodeContext(bigEndian, resolveName, game, schema.Signature);
+        var ctx = new DecodeContext(bigEndian, resolveName, game, schema.Signature, formVersion);
 
         // Map each entry-point signature to the top-level member that consumes it. Arrays map via their
         // element's signature(s); a plain signed member maps directly.
         var bySignature = new Dictionary<string, MemberDef>(StringComparer.Ordinal);
         foreach (var member in schema.Members)
         {
-            foreach (var sig in EntrySignatures(member))
+            foreach (var sig in EntrySignatures(member, ctx))
             {
                 bySignature.TryAdd(sig, member);
             }
@@ -103,17 +103,30 @@ public static class SchemaRecordDecoder
     }
 
     /// <summary>The signatures that, when seen in the subrecord stream, begin this member.</summary>
-    private static IEnumerable<string> EntrySignatures(MemberDef member)
+    private static IEnumerable<string> EntrySignatures(MemberDef member, DecodeContext ctx)
     {
+        if (!IsMemberActive(member, ctx))
+        {
+            yield break;
+        }
+
         if (member.Signature is { Length: > 0 } sig)
         {
+            // An outer-signed repeating array has no physical entry in a layout where its element is
+            // version-gated out. Leave an unexpected old/new subrecord visible as a top-level raw node
+            // instead of manufacturing an "array with one raw element" as if the schema consumed it.
+            if (member is ArrayDef outerSignedArray && !IsMemberActive(outerSignedArray.Element, ctx))
+            {
+                yield break;
+            }
+
             yield return sig;
             yield break;
         }
 
         if (member is ArrayDef array)
         {
-            foreach (var s in EntrySignatures(array.Element))
+            foreach (var s in EntrySignatures(array.Element, ctx))
             {
                 yield return s;
             }
@@ -123,7 +136,7 @@ public static class SchemaRecordDecoder
             // Element-per-group struct (e.g. MAST + DATA): its children own the signatures.
             foreach (var child in structDef.Members)
             {
-                if (child.Signature is { Length: > 0 } cs)
+                if (IsMemberActive(child, ctx) && child.Signature is { Length: > 0 } cs)
                 {
                     yield return cs;
                 }
@@ -135,7 +148,7 @@ public static class SchemaRecordDecoder
             // subrecord): each variant contributes its own entry signature.
             foreach (var variant in union.Variants)
             {
-                foreach (var s in EntrySignatures(variant))
+                foreach (var s in EntrySignatures(variant, ctx))
                 {
                     yield return s;
                 }
@@ -159,7 +172,9 @@ public static class SchemaRecordDecoder
             while (i < subrecords.Count && subrecords[i].Signature == elementSig)
             {
                 var sub = subrecords[i];
-                var node = DecodeSignedMember(element, sub.Signature, sub.Data, ctx);
+                var node = IsMemberActive(element, ctx)
+                    ? DecodeSignedMember(element, sub.Signature, sub.Data, ctx)
+                    : RawNode(sub.Signature, sub.Signature, sub.Data);
                 children.Add(node with { Label = $"{ElementLabel(element, node.Label)} [{index}]" });
                 index++;
                 i++;
@@ -173,7 +188,8 @@ public static class SchemaRecordDecoder
             while (i < subrecords.Count)
             {
                 var sub = subrecords[i];
-                var variant = union.Variants.FirstOrDefault(v => v.Signature == sub.Signature);
+                var variant = union.Variants.FirstOrDefault(
+                    v => IsMemberActive(v, ctx) && v.Signature == sub.Signature);
                 if (variant is null)
                 {
                     break;
@@ -190,7 +206,7 @@ public static class SchemaRecordDecoder
             // Multi-subrecord element group (e.g. MAST filename + DATA size). Each call to DecodeOneGroup
             // consumes one element; repeat while the group's signed children keep appearing.
             var index = 0;
-            while (i < subrecords.Count && GroupContainsSignature(groupStruct, subrecords[i].Signature))
+            while (i < subrecords.Count && GroupContainsSignature(groupStruct, subrecords[i].Signature, ctx))
             {
                 var before = i;
                 var groupChildren = DecodeOneGroup(groupStruct, subrecords, ref i, ctx);
@@ -216,8 +232,8 @@ public static class SchemaRecordDecoder
         };
     }
 
-    private static bool GroupContainsSignature(StructDef group, string signature) =>
-        group.Members.Any(m => m.Signature == signature);
+    private static bool GroupContainsSignature(StructDef group, string signature, DecodeContext ctx) =>
+        group.Members.Any(m => IsMemberActive(m, ctx) && m.Signature == signature);
 
     /// <summary>
     ///     Consumes one group element: walks the struct's signed children in order, decoding each from its
@@ -229,7 +245,10 @@ public static class SchemaRecordDecoder
         var children = new List<DecodedNode>();
         foreach (var child in group.Members)
         {
-            if (child.Signature is not { Length: > 0 } cs || i >= subrecords.Count || subrecords[i].Signature != cs)
+            if (!IsMemberActive(child, ctx) ||
+                child.Signature is not { Length: > 0 } cs ||
+                i >= subrecords.Count ||
+                subrecords[i].Signature != cs)
             {
                 continue;
             }
@@ -239,8 +258,83 @@ public static class SchemaRecordDecoder
             i++;
         }
 
+        ApplyConditionStringAuthority(children);
         return children;
     }
+
+    /// <summary>
+    ///     A physical CIS1/CIS2 sibling carries the authoritative string for the corresponding CTDA
+    ///     parameter. The four-byte CTDA slot remains useful forensic evidence, but it is only placeholder
+    ///     storage and must not keep an inferred FormID link or a resolver-derived display name. This pass is
+    ///     deliberately group-local: malformed/orphan CIS subrecords decoded into a group without CTDA are
+    ///     left untouched rather than attached to an earlier condition.
+    /// </summary>
+    private static void ApplyConditionStringAuthority(List<DecodedNode> groupChildren)
+    {
+        var ctdaIndex = groupChildren.FindIndex(static node => node.Signature == "CTDA");
+        if (ctdaIndex < 0)
+        {
+            return;
+        }
+
+        var ctda = groupChildren[ctdaIndex];
+        var ctdaChildren = ctda.Children.ToList();
+        var changedCtda = false;
+
+        for (var parameterNumber = 1; parameterNumber <= 2; parameterNumber++)
+        {
+            var cisSignature = $"CIS{parameterNumber}";
+            var cisIndex = groupChildren.FindIndex(
+                ctdaIndex + 1,
+                node => string.Equals(node.Signature, cisSignature, StringComparison.Ordinal));
+            if (cisIndex < 0)
+            {
+                continue;
+            }
+
+            var parameterLabel = $"Parameter #{parameterNumber}";
+            var placeholderIndex = ctdaChildren.FindIndex(
+                node => string.Equals(node.Label, parameterLabel, StringComparison.Ordinal));
+            if (placeholderIndex >= 0)
+            {
+                var placeholder = ctdaChildren[placeholderIndex];
+                ctdaChildren[placeholderIndex] = placeholder with
+                {
+                    Label = $"{parameterLabel} (CTDA placeholder)",
+                    Value = FormatConditionPlaceholderBits(placeholder.RawValue, placeholder.Value),
+                    FormId = null
+                };
+                changedCtda = true;
+            }
+
+            var cis = groupChildren[cisIndex];
+            groupChildren[cisIndex] = cis with
+            {
+                Label = $"{parameterLabel} ({cisSignature} authoritative string)",
+                Value = cis.RawValue is string { Length: 0 } ? "(empty string)" : cis.Value
+            };
+        }
+
+        if (changedCtda)
+        {
+            groupChildren[ctdaIndex] = ctda with { Children = ctdaChildren };
+        }
+    }
+
+    /// <summary>Displays the exact scalar bits without retaining a FormID resolver's friendly name.</summary>
+    private static string? FormatConditionPlaceholderBits(object? rawValue, string? fallback) => rawValue switch
+    {
+        byte value => $"0x{value:X2}",
+        sbyte value => $"0x{unchecked((byte)value):X2}",
+        ushort value => $"0x{value:X4}",
+        short value => $"0x{unchecked((ushort)value):X4}",
+        uint value => $"0x{value:X8}",
+        int value => $"0x{unchecked((uint)value):X8}",
+        ulong value => $"0x{value:X16}",
+        long value => $"0x{unchecked((ulong)value):X16}",
+        byte[] value => Convert.ToHexString(value),
+        _ => fallback
+    };
 
     private static string ElementLabel(MemberDef element, string fallback) =>
         element.Name ?? (string.IsNullOrEmpty(fallback) ? "Item" : fallback);
@@ -279,11 +373,67 @@ public static class SchemaRecordDecoder
                 DecodeStructInto(structDef, data, 0, data.Length, ctx, leMap, children);
                 return new DecodedNode { Label = label, Children = children, Signature = sig };
             }
+            case UnionDef union when TrySelectSignedFormVersionVariant(
+                union, data.Length, ctx, out var selected):
+            {
+                // A direct one-threshold wbFormVersionDecider is fully represented by complementary
+                // gates on its two arms. Decode only when a known header version selects exactly one
+                // exact-size arm; unknown/general/malformed layouts keep the historical whole-subrecord
+                // raw fallback.
+                var decoded = DecodeSignedMember(selected, sig, data, ctx);
+                return decoded with { Label = label, Signature = sig };
+            }
             case EmptyDef:
                 return new DecodedNode { Label = label, Value = "(present)", Signature = sig };
             default:
                 return RawNode(label, sig, data);
         }
+    }
+
+    private static bool TrySelectSignedFormVersionVariant(
+        UnionDef union, int payloadLength, DecodeContext ctx, out MemberDef selected)
+    {
+        selected = null!;
+        if (ctx.FormVersion is null ||
+            !string.Equals(union.DeciderName, "wbFormVersionDecider", StringComparison.Ordinal) ||
+            union.Variants.Count != 2)
+        {
+            return false;
+        }
+
+        var below = union.Variants[0];
+        var from = union.Variants[1];
+        if (below.MinFormVersion is not null ||
+            below.MaxFormVersionExclusive is not { } threshold ||
+            from.MinFormVersion != threshold ||
+            from.MaxFormVersionExclusive is not null)
+        {
+            return false;
+        }
+
+        MemberDef? active = null;
+        foreach (var variant in union.Variants)
+        {
+            if (!IsMemberActive(variant, ctx))
+            {
+                continue;
+            }
+
+            if (active is not null)
+            {
+                return false;
+            }
+
+            active = variant;
+        }
+
+        if (active is null || TryFixedSize(active, ctx) != payloadLength)
+        {
+            return false;
+        }
+
+        selected = active;
+        return true;
     }
 
     /// <summary>
@@ -297,6 +447,13 @@ public static class SchemaRecordDecoder
     {
         foreach (var member in structDef.Members)
         {
+            // A form-version gate is a layout decision, not a length check: inactive members occupy
+            // exactly zero bytes even when later active fields remain in this same framed subrecord.
+            if (!IsMemberActive(member, ctx))
+            {
+                continue;
+            }
+
             if (offset >= limit)
             {
                 break; // remaining members are absent in this (shorter) framed subrecord
@@ -346,6 +503,11 @@ public static class SchemaRecordDecoder
                 }
                 case ArrayDef inlineArray when inlineArray.Count > 0:
                 {
+                    if (!IsMemberActive(inlineArray.Element, ctx))
+                    {
+                        break;
+                    }
+
                     var children = new List<DecodedNode>();
                     for (var n = 0; n < inlineArray.Count && offset < limit; n++)
                     {
@@ -358,17 +520,25 @@ public static class SchemaRecordDecoder
                     });
                     break;
                 }
+                case UnionDef union when union.Variants.Count > 0 &&
+                                         !union.Variants.Any(variant => IsMemberActive(variant, ctx)):
+                    // Every arm is version-gated out: the union occupies zero bytes in this layout.
+                    // An actually empty CTDA parameter union is different: its physical slot is still
+                    // four bytes and TryDecodeConditionUnion below preserves those bits for alignment.
+                    // Emit no placeholder node here, so a later active sibling starts at this offset.
+                    break;
                 case UnionDef union when TryDecodeConditionUnion(union, data, offset, limit, ctx, leMap, output, out var conditionNode):
                 {
                     // CTDA deciders resolved from the ALREADY-DECODED siblings: the Function index
                     // picks each Parameter's numeric-vs-FormID interpretation via the game's
                     // condition-function table, and the Type flags pick float-vs-GLOB for the
-                    // comparison value. Every variant is 4 bytes.
+                    // comparison value. Run On plus Function select whether offset 24 is a semantic
+                    // Reference FormID. Every variant is 4 bytes.
                     output.Add(conditionNode);
                     offset += 4;
                     break;
                 }
-                case UnionDef union when TryUniformVariantSize(union, out var usize) && offset + usize <= limit:
+                case UnionDef union when TryUniformVariantSize(union, ctx, out var usize) && offset + usize <= limit:
                 {
                     // An inline value union (e.g. CTDA Comparison Value / Parameter #1) — every variant is the
                     // same width, so the struct stays aligned whichever one the data is. Without a game
@@ -393,6 +563,11 @@ public static class SchemaRecordDecoder
         MemberDef element, byte[] data, int offset, int limit, DecodeContext ctx,
         IReadOnlyDictionary<int, LeFieldKind>? leMap, int index, List<DecodedNode> output)
     {
+        if (!IsMemberActive(element, ctx))
+        {
+            return offset;
+        }
+
         switch (element)
         {
             case FieldDef field:
@@ -461,15 +636,15 @@ public static class SchemaRecordDecoder
     }
 
     /// <summary>
-    ///     Decode an inline value union by its first variant (no per-function decider yet). A purely opaque
-    ///     first variant (an unmodeled 4-byte value, e.g. a TESConditionItem parameter) is surfaced as a u32
-    ///     so the value stays visible rather than rendering as "&lt;4 bytes&gt;".
+    ///     Fallback for an inline value union whose specialized decider did not select a variant: decode
+    ///     the first uniform-width variant so the enclosing struct remains aligned. A purely opaque
+    ///     four-byte first variant is surfaced as a u32 rather than only "&lt;4 bytes&gt;".
     /// </summary>
     private static DecodedNode DecodeInlineUnion(UnionDef union, byte[] data, int offset, int limit, DecodeContext ctx,
         IReadOnlyDictionary<int, LeFieldKind>? leMap)
     {
         var label = union.Name ?? "Value";
-        var repr = union.Variants[0];
+        var repr = union.Variants.First(v => IsMemberActive(v, ctx));
         if (repr is FieldDef { Type: PrimType.ByteArray } opaque)
         {
             repr = new FieldDef(PrimType.U32) { Name = opaque.Name };
@@ -497,16 +672,20 @@ public static class SchemaRecordDecoder
     ///     condition-function table plus the struct's already-decoded sibling nodes.
     ///     <c>wbConditionParam1/2Decider</c> classify their 4-byte value as FormID-vs-numeric by the
     ///     sibling <c>Function</c> index; <c>wbConditionCompValueDecider</c> picks GLOB-vs-float by
-    ///     the sibling <c>Type</c>'s UseGlobal flag (0x04). Any miss (unknown game, missing sibling,
-    ///     short data, unrecognized decider) returns false — the historical Variants[0] decode stays
-    ///     byte-for-byte in effect.
+    ///     the sibling <c>Type</c>'s UseGlobal flag (0x04); <c>wbConditionReferenceDecider</c> uses the
+    ///     preceding <c>Function</c> and <c>Run On</c> fields with the explicit game-aware Reference
+    ///     policy. <c>wbConditionRunOnDecider</c> repairs FNV's omitted sparse body-selector labels, and
+    ///     <c>wbConditionParam3Decider</c> selects the generated signed variant by Run On. Parameter
+    ///     metadata misses consume the physically fixed 4-byte slot as a raw u32 so
+    ///     later Run On / Reference members remain aligned; non-semantic Reference storage falls back
+    ///     to the schema's raw first variant without manufacturing a FormID link.
     /// </summary>
     private static bool TryDecodeConditionUnion(
         UnionDef union, byte[] data, int offset, int limit, DecodeContext ctx,
         IReadOnlyDictionary<int, LeFieldKind>? leMap, List<DecodedNode> siblings, out DecodedNode node)
     {
         node = null!;
-        if (ctx.ConditionTable is not { } table || limit - offset < 4)
+        if (limit - offset < 4)
         {
             return false;
         }
@@ -514,9 +693,83 @@ public static class SchemaRecordDecoder
         var label = union.Name ?? "Value";
         switch (union.DeciderName)
         {
+            case "wbConditionRunOnDecider":
+            {
+                // FNV gives two functions a second meaning for this word: it is a sparse
+                // animation-body selector, not the ordinary Subject/Target/Reference enum.
+                // The generated second variant currently has no enum members, so recover the
+                // function-aware labels from the same policy used by typed dialogue displays.
+                if (ctx.Game != BethesdaGame.FalloutNewVegas ||
+                    !TryUniformVariantSize(union, ctx, out var runOnSize) ||
+                    runOnSize != 4 ||
+                    FindSiblingRawValue(siblings, "Type") is not { } typeRaw ||
+                    typeRaw is < byte.MinValue or > byte.MaxValue ||
+                    FindSiblingRawValue(siblings, "Function") is not { } functionRaw ||
+                    functionRaw is < ushort.MinValue or > ushort.MaxValue)
+                {
+                    return false;
+                }
+
+                var rawNode = DecodeRawConditionValue(label, data, offset, limit, ctx, leMap);
+                var runOn = Convert.ToUInt32(rawNode.RawValue, CultureInfo.InvariantCulture);
+                var semantic = DialogueConditionRunOnPolicy.Format(
+                    (byte)typeRaw, (ushort)functionRaw, runOn, ctx.Game);
+                node = rawNode with
+                {
+                    Value = semantic.StartsWith("Unknown (", StringComparison.Ordinal)
+                        ? semantic
+                        : $"{semantic} ({runOn})"
+                };
+                return true;
+            }
+            case "wbConditionParam3Decider":
+            {
+                if (FindSiblingRawValue(siblings, "Run On") is not { } runOnRaw ||
+                    runOnRaw < 0 ||
+                    runOnRaw >= union.Variants.Count ||
+                    union.Variants[(int)runOnRaw] is not FieldDef selected ||
+                    !IsMemberActive(selected, ctx) ||
+                    FixedPrimSize(selected) != 4)
+                {
+                    // The uniform fallback preserves today's generic signed-int interpretation
+                    // when Run On is absent, corrupt, or outside the generated schema's domain.
+                    return false;
+                }
+
+                var (value, raw, fid) = DecodeScalar(selected, data, offset, limit, ctx, leMap, out _);
+                var selectedLabel = selected.Name is { Length: > 0 } name &&
+                                    !string.Equals(name, label, StringComparison.Ordinal)
+                    ? $"{label} ({name})"
+                    : label;
+                node = new DecodedNode
+                {
+                    Label = selectedLabel,
+                    Value = value,
+                    RawValue = raw,
+                    FormId = fid
+                };
+                return true;
+            }
+            case "wbConditionReferenceDecider":
+            {
+                if (FindSiblingRawValue(siblings, "Function") is not { } functionRaw ||
+                    FindSiblingRawValue(siblings, "Run On") is not { } runOnRaw ||
+                    !DialogueConditionReferencePolicy.IsSemanticReferenceSlot(
+                        (ushort)functionRaw, (uint)runOnRaw, ctx.Game))
+                {
+                    // Variant 0 is the raw/unused u32. The uniform-union fallback preserves
+                    // nonzero ignored storage without manufacturing a FormID link.
+                    return false;
+                }
+
+                var (value, raw, fid) = DecodeFormId(data, offset, limit, ctx, leMap);
+                node = new DecodedNode { Label = label, Value = value, RawValue = raw, FormId = fid };
+                return true;
+            }
             case "wbConditionCompValueDecider":
             {
-                if (FindSiblingRawValue(siblings, "Type") is not { } typeRaw)
+                if (ctx.ConditionTable is null ||
+                    FindSiblingRawValue(siblings, "Type") is not { } typeRaw)
                 {
                     return false;
                 }
@@ -544,14 +797,63 @@ public static class SchemaRecordDecoder
             case "wbConditionParam1Decider":
             case "wbConditionParam2Decider":
             {
-                if (FindSiblingRawValue(siblings, "Function") is not { } functionRaw)
+                if (ctx.ConditionTable is not { } table ||
+                    FindSiblingRawValue(siblings, "Function") is not { } functionRaw)
                 {
-                    return false;
+                    node = DecodeRawConditionValue(label, data, offset, limit, ctx, leMap);
+                    return true;
                 }
 
                 var paramIndex = union.DeciderName == "wbConditionParam1Decider" ? 0 : 1;
                 var functionIndex = (ushort)functionRaw;
-                if (table.ClassifyParam(functionIndex, paramIndex) == ConditionParamKind.FormId)
+                if (FindSiblingRawValue(siblings, "Type") is not { } rawType)
+                {
+                    node = DecodeRawConditionValue(label, data, offset, limit, ctx, leMap);
+                    return true;
+                }
+
+                var conditionType = (byte)rawType;
+                uint? runOn = null;
+                if (ctx.Game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76)
+                {
+                    // FO4-family CTDA is exactly 32 bytes. At param1/param2 the later Run On field is
+                    // respectively 8/4 bytes ahead. Read it only when the full modern tail remains;
+                    // truncated/older layouts leave it unknown so the one Run-On-dependent exception
+                    // fails closed rather than borrowing bytes from an adjacent field.
+                    var runOnDelta = paramIndex == 0 ? 8 : 4;
+                    var requiredRemaining = paramIndex == 0 ? 20 : 16;
+                    if (limit - offset >= requiredRemaining)
+                    {
+                        runOn = ctx.BigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset + runOnDelta, 4))
+                            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset + runOnDelta, 4));
+                    }
+                }
+
+                uint? parameter1Value = null;
+                var parameter1Raw = FindSiblingRawValue(siblings, "Parameter #1");
+                if (paramIndex == 1 && parameter1Raw is >= 0 and <= uint.MaxValue)
+                {
+                    parameter1Value = (uint)parameter1Raw.Value;
+                }
+
+                if (!table.TryClassifyParam(
+                        functionIndex,
+                        paramIndex,
+                        conditionType,
+                        runOn,
+                        parameter1Value,
+                        out var paramKind))
+                {
+                    // xEdit's generated CTDA schemas sometimes leave this union empty (or nest an
+                    // unmodeled decider) even though the on-disk parameter slot is always one u32.
+                    // Stopping at that union would misalign every following field. Preserve the exact
+                    // bits without attaching FormID semantics, then continue through Run On/Reference.
+                    node = DecodeRawConditionValue(label, data, offset, limit, ctx, leMap);
+                    return true;
+                }
+
+                if (paramKind == ConditionParamKind.FormId)
                 {
                     var (value, raw, fid) = DecodeFormId(data, offset, limit, ctx, leMap);
                     node = new DecodedNode { Label = label, Value = value, RawValue = raw, FormId = fid };
@@ -574,6 +876,15 @@ public static class SchemaRecordDecoder
             default:
                 return false;
         }
+    }
+
+    private static DecodedNode DecodeRawConditionValue(
+        string label, byte[] data, int offset, int limit, DecodeContext ctx,
+        IReadOnlyDictionary<int, LeFieldKind>? leMap)
+    {
+        var (value, raw, _) = DecodeScalar(
+            new FieldDef(PrimType.U32), data, offset, limit, ctx, leMap, out _);
+        return new DecodedNode { Label = label, Value = value, RawValue = raw };
     }
 
     /// <summary>An already-decoded sibling's numeric raw value by label, searching backwards (the
@@ -604,18 +915,18 @@ public static class SchemaRecordDecoder
 
     /// <summary>True when every union variant has the same known fixed width (so decoding any one keeps the
     /// enclosing struct byte-aligned). Returns false for variable/mixed-width unions (e.g. GMST DATA).</summary>
-    private static bool TryUniformVariantSize(UnionDef union, out int size)
+    private static bool TryUniformVariantSize(UnionDef union, DecodeContext ctx, out int size)
     {
         size = 0;
-        if (union.Variants.Count == 0)
-        {
-            return false;
-        }
-
         int? common = null;
         foreach (var variant in union.Variants)
         {
-            if (TryFixedSize(variant) is not { } s)
+            if (!IsMemberActive(variant, ctx))
+            {
+                continue;
+            }
+
+            if (TryFixedSize(variant, ctx) is not { } s)
             {
                 return false;
             }
@@ -632,21 +943,31 @@ public static class SchemaRecordDecoder
     }
 
     /// <summary>The fixed byte width of a member, or null when it is variable/unknown (strings, dynamic arrays).</summary>
-    private static int? TryFixedSize(MemberDef member) => member switch
+    private static int? TryFixedSize(MemberDef member, DecodeContext ctx)
     {
-        FormIdDef => 4,
-        UnusedDef unused => unused.Size,
-        FieldDef field => FixedPrimSize(field),
-        StructDef structDef => SumFixedSizes(structDef.Members),
-        _ => null
-    };
+        if (!IsMemberActive(member, ctx))
+        {
+            return 0;
+        }
 
-    private static int? SumFixedSizes(IReadOnlyList<MemberDef> members)
+        return member switch
+        {
+            FormIdDef => 4,
+            UnusedDef unused => unused.Size,
+            FieldDef field => FixedPrimSize(field),
+            StructDef structDef => SumFixedSizes(structDef.Members, ctx),
+            ArrayDef { Count: > 0 } array when TryFixedSize(array.Element, ctx) is { } elementSize =>
+                checked(array.Count * elementSize),
+            _ => null
+        };
+    }
+
+    private static int? SumFixedSizes(IReadOnlyList<MemberDef> members, DecodeContext ctx)
     {
         var total = 0;
         foreach (var m in members)
         {
-            if (TryFixedSize(m) is not { } s)
+            if (TryFixedSize(m, ctx) is not { } s)
             {
                 return null;
             }
@@ -841,21 +1162,39 @@ public static class SchemaRecordDecoder
     }
 
     /// <summary>Endian-aware primitive reads, captured once so the scalar switch stays terse.</summary>
+    private static bool IsMemberActive(MemberDef member, DecodeContext ctx)
+    {
+        // Unknown header versions deliberately preserve the historical length-bounded behavior. Once
+        // the version is known (including zero), both bounds apply: minimum inclusive, maximum exclusive.
+        if (ctx.FormVersion is not { } actual)
+        {
+            return true;
+        }
+
+        return (member.MinFormVersion is not { } minimum || actual >= minimum) &&
+               (member.MaxFormVersionExclusive is not { } maximumExclusive || actual < maximumExclusive);
+    }
+
     private sealed class DecodeContext(
-        bool bigEndian, FormIdNameResolver? resolveName, BethesdaGame game, string recordSignature)
+        bool bigEndian,
+        FormIdNameResolver? resolveName,
+        BethesdaGame game,
+        string recordSignature,
+        ushort? formVersion)
     {
         private ConditionFunctionTable? _conditionTable;
 
         public bool BigEndian { get; } = bigEndian;
         public FormIdNameResolver? ResolveName { get; } = resolveName;
         public BethesdaGame Game { get; } = game;
+        public ushort? FormVersion { get; } = formVersion;
 
         /// <summary>The top-level record signature (e.g. "WEAP", "RGDL"), used to resolve the conversion
         /// schema's per-subrecord fixed-LE layout for big-endian records.</summary>
         public string RecordSignature { get; } = recordSignature;
 
-        /// <summary>The game's condition-function table, or null when the game is unknown
-        /// (unknown → the historical Variants[0] union decode stays in effect).</summary>
+        /// <summary>The game's condition-function table, or null when the game is unknown.
+        /// Unknown parameter semantics remain visible as raw four-byte values.</summary>
         public ConditionFunctionTable? ConditionTable =>
             Game == BethesdaGame.Unknown
                 ? null

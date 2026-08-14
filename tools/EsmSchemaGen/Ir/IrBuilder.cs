@@ -158,6 +158,7 @@ public sealed class IrBuilder
             case "wbstring":
             case "wbstringforward":
             case "wbstringlc":
+            case "wbstringscript":
                 return Field(PrimType.ZString, args);
             case "wbstringkc":
                 return Field(PrimType.StringKC, args);
@@ -201,6 +202,8 @@ public sealed class IrBuilder
                 return Field(PrimType.ByteArray, args);
             case "wbfromversion":
                 return BuildFromVersion(args);
+            case "wbbelowversion":
+                return BuildBelowVersion(args);
             default:
                 // A reference to a defined symbol (e.g. `wbModel.SetRequired` — no args), or a
                 // Common helper function (e.g. `wbByteColors('Sunrise')`), else genuinely unknown.
@@ -275,7 +278,12 @@ public sealed class IrBuilder
         {
             Signature = SignatureOf(args),
             Name = FirstString(args),
-            FixedSize = (int?)FirstInt(SkipSignature(args))
+            // Only byte/string builders use an integer argument as a physical width. Numeric scalar
+            // builders also accept presentation metadata (scale, precision), including expressions
+            // such as 1/24 and 180/pi; treating those as a byte width corrupts the runtime schema.
+            FixedSize = type is PrimType.ZString or PrimType.LString or PrimType.StringKC or PrimType.ByteArray
+                ? (int?)FirstInt(SkipSignature(args))
+                : null
         };
     }
 
@@ -339,12 +347,85 @@ public sealed class IrBuilder
 
     /// <summary>
     ///     <c>wbFromVersion(formVersion, member)</c> — a form-version gate around a single member. The
-    ///     oracle unwraps to the inner member (the version threshold is a runtime concern modeled later).
+    ///     threshold is retained on the lowered member so the runtime decoder can skip it without
+    ///     consuming bytes from an older record layout.
     /// </summary>
     private MemberDef BuildFromVersion(IReadOnlyList<WbValue> args)
     {
-        var inner = args.FirstOrDefault(a => a is WbCall || (a is WbIdent id && !IsItType(id.Name)));
-        return inner is not null ? BuildMember(inner) : Unknown("wbFromVersion");
+        if (!TryGetVersionThreshold(args, out var threshold))
+        {
+            return Unknown("wbFromVersion");
+        }
+
+        // Two overloads occur in the xEdit oracle:
+        //   wbFromVersion(version, member)
+        //   wbFromVersion(version, signature, inlineMember)
+        // Select the LAST member-like argument so the signature identifier in the three-argument
+        // overload is not mistaken for the value being wrapped.
+        var inner = args.LastOrDefault(a => a is WbCall || (a is WbIdent id && !IsItType(id.Name)));
+        if (inner is null)
+        {
+            return Unknown("wbFromVersion");
+        }
+
+        var member = BuildMember(inner);
+        if (args.Count >= 3 && args[1] is WbIdent explicitSignature && !IsItType(explicitSignature.Name))
+        {
+            member = member with { Signature = ResolveSignature(explicitSignature.Name) };
+        }
+
+        var minimum = member.MinFormVersion is { } existing
+            ? Math.Max(existing, threshold)
+            : threshold;
+        return member with { MinFormVersion = minimum };
+    }
+
+    /// <summary>
+    ///     <c>wbBelowVersion(formVersion, member)</c> — an exclusive upper form-version gate around a
+    ///     single member. The threshold is retained on the lowered member so the runtime decoder can
+    ///     skip it without consuming bytes from the newer record layout.
+    /// </summary>
+    private MemberDef BuildBelowVersion(IReadOnlyList<WbValue> args)
+    {
+        if (!TryGetVersionThreshold(args, out var threshold))
+        {
+            return Unknown("wbBelowVersion");
+        }
+
+        // xEdit exposes the same two overload shapes as wbFromVersion. Select the last member-like
+        // argument so an explicit signature in the three-argument form is not mistaken for the value.
+        var inner = args.LastOrDefault(a => a is WbCall || (a is WbIdent id && !IsItType(id.Name)));
+        if (inner is null)
+        {
+            return Unknown("wbBelowVersion");
+        }
+
+        var member = BuildMember(inner);
+        if (args.Count >= 3 && args[1] is WbIdent explicitSignature && !IsItType(explicitSignature.Name))
+        {
+            member = member with { Signature = ResolveSignature(explicitSignature.Name) };
+        }
+
+        var maximumExclusive = member.MaxFormVersionExclusive is { } existing
+            ? Math.Min(existing, threshold)
+            : threshold;
+        return member with { MaxFormVersionExclusive = maximumExclusive };
+    }
+
+    private static bool TryGetVersionThreshold(IReadOnlyList<WbValue> args, out ushort threshold)
+    {
+        // The version is specifically argument zero. Do not search later numeric arguments: the wrapped
+        // member commonly contains widths/formatting values that must never masquerade as a threshold.
+        if (args.Count > 0 &&
+            args[0] is WbNum { IsFloat: false } numeric &&
+            numeric.IntValue is >= ushort.MinValue and <= ushort.MaxValue)
+        {
+            threshold = (ushort)numeric.IntValue;
+            return true;
+        }
+
+        threshold = default;
+        return false;
     }
 
     private MemberDef BuildArray(IReadOnlyList<WbValue> args, bool greedy)
@@ -366,8 +447,6 @@ public sealed class IrBuilder
 
     private UnionDef BuildUnion(IReadOnlyList<WbValue> args)
     {
-        var decider = SkipSignature(args).OfType<WbIdent>().FirstOrDefault(i => !IsItType(i.Name))?.Name
-                      ?? "<unknown-decider>";
         // Variants are usually an inline list, but a union like wbUnion('Parameter #1', decider,
         // wbConditionParameters) passes them by name (the decider is also an ident — only the member-array
         // symbol resolves here, so it is not mistaken for the decider).
@@ -376,11 +455,52 @@ public sealed class IrBuilder
                            .Select(i => _memberArraySymbols.GetValueOrDefault(i.Name))
                            .FirstOrDefault(v => v is not null)?.ToList()
                        ?? [];
+
+        var decider = SkipSignature(args).OfType<WbIdent>().FirstOrDefault(i => !IsItType(i.Name))?.Name
+                      ?? "<unknown-decider>";
+
+        // xEdit's one-argument wbFormVersionDecider returns arm 0 below the literal threshold and
+        // arm 1 at or above it. Lower only that exact, two-arm shape into complementary version gates.
+        // The other overloads (ranges/version arrays), symbolic thresholds, and arbitrary deciders
+        // remain opaque unions rather than being guessed from payload length or argument position.
+        if (TryGetDirectFormVersionThreshold(args, variants.Count, out var threshold))
+        {
+            decider = "wbFormVersionDecider";
+            variants[0] = variants[0] with
+            {
+                MaxFormVersionExclusive = variants[0].MaxFormVersionExclusive is { } existingMaximum
+                    ? Math.Min(existingMaximum, threshold)
+                    : threshold
+            };
+            variants[1] = variants[1] with
+            {
+                MinFormVersion = variants[1].MinFormVersion is { } existingMinimum
+                    ? Math.Max(existingMinimum, threshold)
+                    : threshold
+            };
+        }
+
         return new UnionDef(decider, variants)
         {
             Signature = SignatureOf(args),
             Name = FirstString(args)
         };
+    }
+
+    private static bool TryGetDirectFormVersionThreshold(
+        IReadOnlyList<WbValue> args, int variantCount, out ushort threshold)
+    {
+        threshold = default;
+        if (variantCount != 2)
+        {
+            return false;
+        }
+
+        var deciderCalls = SkipSignature(args).OfType<WbCall>().ToArray();
+        return deciderCalls is [{ } decider] &&
+               IsBuilder(decider.Name, "wbFormVersionDecider") &&
+               decider.Args.Count == 1 &&
+               TryGetVersionThreshold(decider.Args, out threshold);
     }
 
     private MemberDef MapNamedSymbol(string name)
