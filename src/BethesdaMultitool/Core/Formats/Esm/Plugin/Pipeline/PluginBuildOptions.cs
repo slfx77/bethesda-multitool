@@ -124,7 +124,7 @@ public sealed record PluginBuildOptions
 
     /// <summary>
     ///     Asset-rename pass. When non-empty (and <see cref="AssetRenameBaselineFolder" />
-    ///     is set), <c>PluginBuilder.BuildAsync</c> resolves every record-sourced asset path
+    ///     is set), <c>PluginConversionPipeline.BuildAsync</c> resolves every record-sourced asset path
     ///     against these folders before encoding. Paths that fuzzy-match to a differently-
     ///     named asset get their record field rewritten in-place so the output ESM carries
     ///     the matched filename. Mirror the same folders passed to <c>AssetPackingService</c>.
