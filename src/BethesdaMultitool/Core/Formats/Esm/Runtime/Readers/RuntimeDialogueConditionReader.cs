@@ -1,5 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Script;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers;
@@ -11,6 +13,11 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers;
 /// </summary>
 internal sealed class RuntimeDialogueConditionReader
 {
+    private const byte CtdaTypeUseGlobalBit = 0x04;
+    private const byte GlobalFormType = 0x06;
+    private static readonly ScriptFunctionSet FalloutFunctions =
+        ScriptFunctionTables.For(BethesdaGame.FalloutNewVegas);
+
     private readonly RuntimeMemoryContext _context;
 
     /// <summary>Creates the condition reader bound to the given runtime memory context.</summary>
@@ -201,11 +208,7 @@ internal sealed class RuntimeDialogueConditionReader
         }
 
         var functionIndex = BinaryUtils.ReadUInt16BE(buffer, 8);
-        var comparisonValue = BinaryUtils.ReadFloatBE(buffer, 4);
-        if (!RuntimeMemoryContext.IsNormalFloat(comparisonValue))
-        {
-            comparisonValue = 0;
-        }
+        var comparisonValue = ReadComparisonValue(buffer, type);
 
         var rawParam1 = BinaryUtils.ReadUInt32BE(buffer, 12);
         var rawParam2 = BinaryUtils.ReadUInt32BE(buffer, 16);
@@ -231,8 +234,25 @@ internal sealed class RuntimeDialogueConditionReader
             Parameter1 = ResolveConditionParameter(functionIndex, 0, rawParam1),
             Parameter2 = ResolveConditionParameter(functionIndex, 1, rawParam2),
             RunOn = runOn,
-            Reference = _context.FollowPointerVaToFormId(referencePtr) ?? 0
+            Reference = DialogueConditionReferencePolicy.IsSemanticReferenceSlot(
+                functionIndex,
+                runOn,
+                BethesdaGame.FalloutNewVegas)
+                ? _context.FollowPointerVaToFormId(referencePtr) ?? 0
+                : 0
         };
+    }
+
+    private float ReadComparisonValue(byte[] buffer, byte type)
+    {
+        if ((type & CtdaTypeUseGlobalBit) != 0)
+        {
+            var globalFormId = _context.FollowPointerToFormId(buffer, 4, GlobalFormType) ?? 0u;
+            return BitConverter.UInt32BitsToSingle(globalFormId);
+        }
+
+        var comparisonValue = BinaryUtils.ReadFloatBE(buffer, 4);
+        return RuntimeMemoryContext.IsNormalFloat(comparisonValue) ? comparisonValue : 0f;
     }
 
     private uint ResolveConditionParameter(ushort functionIndex, int parameterIndex, uint rawValue)
@@ -242,7 +262,7 @@ internal sealed class RuntimeDialogueConditionReader
             return 0;
         }
 
-        var function = ScriptFunctionTable.Get((ushort)(0x1000 | functionIndex));
+        var function = FalloutFunctions.GetConditionFunction(functionIndex);
         var paramType = function is not null && parameterIndex < function.Params.Length
             ? function.Params[parameterIndex].Type
             : (ScriptParamType?)null;
@@ -266,6 +286,7 @@ internal sealed class RuntimeDialogueConditionReader
                 ScriptParamType.Axis or
                 ScriptParamType.AnimGroup or
                 ScriptParamType.Sex or
+                ScriptParamType.ActorValue or
                 ScriptParamType.ScriptVar or
                 ScriptParamType.Stage or
                 ScriptParamType.CrimeType or
@@ -287,7 +308,8 @@ internal sealed class RuntimeDialogueConditionReader
         ref uint? conditionVoiceType)
     {
         var comparisonOperator = (condition.Type >> 5) & 0x7;
-        var isPositive = condition.RunOn == 0 &&
+        var isPositive = (condition.Type & CtdaTypeUseGlobalBit) == 0 &&
+                         condition.RunOn == 0 &&
                          ((comparisonOperator is 0 or 3 && condition.ComparisonValue >= 0.99f) ||
                           (comparisonOperator is 1 && condition.ComparisonValue < 0.01f) ||
                           (comparisonOperator is 2 && condition.ComparisonValue < 0.01f));

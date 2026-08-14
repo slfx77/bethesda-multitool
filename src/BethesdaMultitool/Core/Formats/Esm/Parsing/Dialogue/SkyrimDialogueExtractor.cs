@@ -1,6 +1,6 @@
-using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Utils;
 
@@ -12,14 +12,16 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 ///     game-agnostic <see cref="Handlers.DialogueTreeBuilder" /> and the Dialogue tab works for Skyrim.
 ///     <para>
 ///         Skyrim diverges from Oblivion/FNV in three ways that matter here:
-///         (1) display text is <em>localized</em> — DIAL FULL and INFO RNAM are 4-byte .STRINGS ids and
-///         INFO response text NAM1 is a 4-byte .ILSTRINGS id, all resolved through
-///         <see cref="RecordParserContext" />; (2) the INFO carries an explicit <c>ANAM</c> speaker FormID
-///         (→ NPC_), so speaker attribution is direct rather than inferred (CTDA GetIsID is only a
+///         (1) display text uses the lstring framing — localized plugins store DIAL FULL / INFO RNAM in
+///         .STRINGS and response NAM1 in .ILSTRINGS, while non-localized sources store inline text; both
+///         are handled through <see cref="RecordParserContext" />; (2) the INFO carries an explicit
+///         <c>ANAM</c> speaker FormID (→ NPC_), so speaker attribution is direct rather than inferred
+///         (CTDA GetIsID is only a
 ///         fallback); (3) response flags live in <c>ENAM</c>/<c>DATA</c> as a 16-bit field whose low byte
 ///         matches Oblivion's bit positions, and the CTDA condition is the 32-byte Skyrim layout (a union
 ///         comparison value and a trailing Run On / Reference / Parameter #3), though Type@0 / Function@8 /
-///         Parameter #1@12 sit at the same offsets Oblivion uses. PC plugins are little-endian.
+///         Parameter #1@12 sit at the same offsets Oblivion uses. Numeric fields follow the containing
+///         record's byte order (PC plugins are little-endian; unconverted Xbox 360 records are big-endian).
 ///     </para>
 /// </summary>
 internal sealed class SkyrimDialogueExtractor : IDialogueExtractor
@@ -38,7 +40,8 @@ internal sealed class SkyrimDialogueExtractor : IDialogueExtractor
     private const ushort GetIsVoiceType = 426;
 
     public DialogTopicRecord BuildTopic(
-        uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs, RecordParserContext context)
+        uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs, bool isBigEndian,
+        RecordParserContext context)
     {
         string? fullName = null;
         byte category = 0;
@@ -53,10 +56,10 @@ internal sealed class SkyrimDialogueExtractor : IDialogueExtractor
                     fullName = context.ReadFullName(sub.Data);
                     break;
                 case "QNAM" when sub.Data.Length >= 4:
-                    questFormId = BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
+                    questFormId = BinaryUtils.ReadUInt32(sub.Data, 0, isBigEndian);
                     break;
                 case "PNAM" when sub.Data.Length >= 4:
-                    priority = BinaryPrimitives.ReadSingleLittleEndian(sub.Data);
+                    priority = BinaryUtils.ReadFloat(sub.Data, 0, isBigEndian);
                     break;
                 // DATA: Do All Before Repeating (u8) + Category (u8) + Subtype (u16). Category is the
                 // closest analogue to the model's topic-type byte; bytes 0-6 already render with sensible
@@ -75,13 +78,14 @@ internal sealed class SkyrimDialogueExtractor : IDialogueExtractor
             FullName = fullName,
             TopicType = category,
             Priority = priority,
-            QuestFormId = questFormId is > 0 ? questFormId : null
+            QuestFormId = questFormId is > 0 ? questFormId : null,
+            IsBigEndian = isBigEndian
         };
     }
 
     public DialogueRecord BuildInfo(
         uint formId, string? editorId, uint? topicFormId, ushort infoIndex,
-        IReadOnlyList<RawSubrecord> subs, RecordParserContext context)
+        IReadOnlyList<RawSubrecord> subs, bool isBigEndian, RecordParserContext context)
     {
         uint? questFormId = null;
         uint? previousInfo = null;
@@ -95,34 +99,43 @@ internal sealed class SkyrimDialogueExtractor : IDialogueExtractor
         uint? speakerRaceFormId = null;
         uint? speakerVoiceTypeFormId = null;
 
-        // Each response is a TRDT (emotion) followed by NAM1 (localized text); emit on NAM1 using the
-        // last TRDT seen.
+        // Each response is a TRDT (emotion) followed by NAM1 (lstring/inline text); emit on NAM1 using
+        // the last TRDT seen.
         var haveTrdt = false;
         uint emotionType = 0;
         var emotionValue = 0;
         byte responseNumber = 0;
         uint? soundFormId = null;
+        var pendingConditionIndex = -1;
 
         foreach (var sub in subs)
         {
+            if (sub.Signature is not ("CIS1" or "CIS2"))
+            {
+                pendingConditionIndex = -1;
+            }
+
             switch (sub.Signature)
             {
-                // Response flags: ENAM stores them at byte 0, the older DATA at byte 2. The low byte's
-                // bit positions match Oblivion's, so the shared remap applies.
-                case "ENAM" when sub.Data.Length >= 1:
-                    infoFlags = RemapInfoFlags(sub.Data[0]);
+                // Response flags are u16: ENAM stores them at offset 0, the older DATA at offset 2.
+                // Decode the word before taking its low byte so big-endian records do not select the
+                // high byte. The low-byte bit positions match Oblivion's, so the shared remap applies.
+                case "ENAM" when sub.Data.Length >= 2:
+                    infoFlags = RemapInfoFlags(
+                        (byte)BinaryUtils.ReadUInt16(sub.Data, 0, isBigEndian));
                     break;
-                case "DATA" when sub.Data.Length >= 3 && infoFlags == 0:
-                    infoFlags = RemapInfoFlags(sub.Data[2]);
+                case "DATA" when sub.Data.Length >= 4 && infoFlags == 0:
+                    infoFlags = RemapInfoFlags(
+                        (byte)BinaryUtils.ReadUInt16(sub.Data, 2, isBigEndian));
                     break;
                 case "PNAM" when sub.Data.Length >= 4:
-                    previousInfo = BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
+                    previousInfo = BinaryUtils.ReadUInt32(sub.Data, 0, isBigEndian);
                     break;
                 case "TCLT" when sub.Data.Length >= 4:
-                    linkToTopics.Add(BinaryPrimitives.ReadUInt32LittleEndian(sub.Data));
+                    linkToTopics.Add(BinaryUtils.ReadUInt32(sub.Data, 0, isBigEndian));
                     break;
                 case "ANAM" when sub.Data.Length >= 4:
-                    var anam = BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
+                    var anam = BinaryUtils.ReadUInt32(sub.Data, 0, isBigEndian);
                     if (anam != 0)
                     {
                         speakerFormId ??= anam;
@@ -130,11 +143,11 @@ internal sealed class SkyrimDialogueExtractor : IDialogueExtractor
 
                     break;
                 case "TRDT" when sub.Data.Length >= 16:
-                    emotionType = BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
-                    emotionValue = BinaryPrimitives.ReadInt32LittleEndian(sub.Data.AsSpan(4));
+                    emotionType = BinaryUtils.ReadUInt32(sub.Data, 0, isBigEndian);
+                    emotionValue = BinaryUtils.ReadInt32(sub.Data, 4, isBigEndian);
                     responseNumber = sub.Data[12];
                     soundFormId = sub.Data.Length >= 20
-                        ? BinaryPrimitives.ReadUInt32LittleEndian(sub.Data.AsSpan(16))
+                        ? BinaryUtils.ReadUInt32(sub.Data, 16, isBigEndian)
                         : null;
                     haveTrdt = true;
                     break;
@@ -150,10 +163,24 @@ internal sealed class SkyrimDialogueExtractor : IDialogueExtractor
                     haveTrdt = false;
                     soundFormId = null;
                     break;
-                case "CTDA" when sub.Data.Length >= 16:
-                    ParseCondition(sub.Data, conditions, conditionFunctions,
+                case "CTDA" when sub.Data.Length == 32:
+                    ParseCondition(sub.Data, isBigEndian, conditions, conditionFunctions,
                         ref speakerFormId, ref speakerFactionFormId, ref speakerRaceFormId,
                         ref speakerVoiceTypeFormId);
+                    pendingConditionIndex = conditions.Count - 1;
+                    break;
+                case "CIS1" when pendingConditionIndex >= 0:
+                    conditions[pendingConditionIndex] = conditions[pendingConditionIndex] with
+                    {
+                        Parameter1String = EsmStringUtils.ReadNullTermString(sub.Data)
+                    };
+                    break;
+                case "CIS2" when pendingConditionIndex >= 0:
+                    conditions[pendingConditionIndex] = conditions[pendingConditionIndex] with
+                    {
+                        Parameter2String = EsmStringUtils.ReadNullTermString(sub.Data)
+                    };
+                    pendingConditionIndex = -1;
                     break;
             }
         }
@@ -174,21 +201,23 @@ internal sealed class SkyrimDialogueExtractor : IDialogueExtractor
             SpeakerFormId = speakerFormId,
             SpeakerFactionFormId = speakerFactionFormId,
             SpeakerRaceFormId = speakerRaceFormId,
-            SpeakerVoiceTypeFormId = speakerVoiceTypeFormId
+            SpeakerVoiceTypeFormId = speakerVoiceTypeFormId,
+            IsBigEndian = isBigEndian
         };
     }
 
     /// <summary>
     ///     Parses one Skyrim CTDA condition and, when it positively asserts the speaker's identity,
-    ///     records the FormID. Skyrim CTDA layout (xEdit <c>wbCTDA</c>, little-endian, 32 bytes):
+    ///     records the FormID. Skyrim CTDA layout (xEdit <c>wbCTDA</c>, 32 bytes in the record's byte order):
     ///     Type@0 (1) + unused (3) + Comparison Value@4 (float, or a GLOB FormID when Type bit 2 is set) +
     ///     Function@8 (u16) + unused (2) + Parameter #1@12 (4) + Parameter #2@16 (4) + Run On@20 (4) +
-    ///     Reference@24 (4) + Parameter #3@28 (4). Only Type / Function / Parameter #1 are needed for
-    ///     attribution, and they sit at the same offsets Oblivion uses. ANAM remains the primary speaker
-    ///     source; this fills generic/voiced lines that have no ANAM.
+    ///     Reference storage@24 (4) + signed Parameter #3@28 (4). All three trailing fields are retained
+    ///     here; semantic consumers decide whether offset 24 is a Reference FormID. ANAM remains the
+    ///     primary speaker source; this fills generic/voiced lines that have no ANAM.
     /// </summary>
     private static void ParseCondition(
         byte[] data,
+        bool isBigEndian,
         List<DialogueCondition> conditions,
         List<ushort> conditionFunctions,
         ref uint? speaker,
@@ -196,22 +225,19 @@ internal sealed class SkyrimDialogueExtractor : IDialogueExtractor
         ref uint? race,
         ref uint? voiceType)
     {
-        var typeByte = data[0];
+        if (!CtdaParser.TryDecode(data, isBigEndian, out var condition, out _))
+        {
+            return;
+        }
+
+        var typeByte = condition.Type;
         var usesGlobal = (typeByte & 0x04) != 0;
-        var comparisonValue = usesGlobal ? 0f : BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(4));
-        var functionIndex = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(8));
-        var param1 = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(12));
-        var param2 = data.Length >= 20 ? BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(16)) : 0u;
+        var comparisonValue = condition.ComparisonValue;
+        var functionIndex = condition.FunctionIndex;
+        var param1 = condition.Parameter1;
 
         conditionFunctions.Add(functionIndex);
-        conditions.Add(new DialogueCondition
-        {
-            Type = typeByte,
-            ComparisonValue = comparisonValue,
-            FunctionIndex = functionIndex,
-            Parameter1 = param1,
-            Parameter2 = param2
-        });
+        conditions.Add(condition);
 
         // "Speaker is X" reads as the function equalling true (== / >= ~1) or not-false (!= / > ~0). A
         // global comparison value can't be evaluated statically, so treat it as non-asserting.

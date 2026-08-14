@@ -1,7 +1,8 @@
-using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 
@@ -13,13 +14,14 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 ///     localized NAM1/RNAM, ANAM speaker, 32-byte CTDA) is identical to FO4's; only the DIAL DATA Category
 ///     enum differs, which affects the cosmetic topic-type label alone.
 ///     <para>
-///         FO4 sits on the same Skyrim-era framing (localized text, explicit ANAM speaker, 32-byte CTDA,
+///         FO4 sits on the same Skyrim-era framing (lstring text, explicit ANAM speaker, 32-byte CTDA,
 ///         DIAL FULL/QNAM/DATA-Category), so the topic build and condition parse mirror
 ///         <see cref="SkyrimDialogueExtractor" />. The INFO response struct differs: FO4 uses <c>TRDA</c>
 ///         (emotion is a Keyword FormID, not the old numeric enum; response number at byte 4) in place of
 ///         Skyrim's <c>TRDT</c>, the response flags sit in <c>ENAM</c> with FO4 bit positions (no Goodbye
 ///         bit), and FO4 dropped the TCLT/NAME topic-linking subrecords (flow is scene/quest driven).
-///         PC plugins are little-endian.
+///         PC plugins are little-endian; numeric reads still honor the containing record's explicit byte
+///         order rather than inferring a platform from the selected game.
 ///     </para>
 /// </summary>
 internal sealed class Fallout4DialogueExtractor : IDialogueExtractor
@@ -37,7 +39,8 @@ internal sealed class Fallout4DialogueExtractor : IDialogueExtractor
     private const ushort GetIsVoiceType = 426;
 
     public DialogTopicRecord BuildTopic(
-        uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs, RecordParserContext context)
+        uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs, bool isBigEndian,
+        RecordParserContext context)
     {
         string? fullName = null;
         byte category = 0;
@@ -52,10 +55,10 @@ internal sealed class Fallout4DialogueExtractor : IDialogueExtractor
                     fullName = context.ReadFullName(sub.Data);
                     break;
                 case "QNAM" when sub.Data.Length >= 4:
-                    questFormId = BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
+                    questFormId = BinaryUtils.ReadUInt32(sub.Data, 0, isBigEndian);
                     break;
                 case "PNAM" when sub.Data.Length >= 4:
-                    priority = BinaryPrimitives.ReadSingleLittleEndian(sub.Data);
+                    priority = BinaryUtils.ReadFloat(sub.Data, 0, isBigEndian);
                     break;
                 // DATA: Topic Flags (u8) + Category (u8) + Subtype (u16). Category is the closest analogue
                 // to the model's topic-type byte; bytes 0-6 render with sensible names, but FO4's
@@ -73,13 +76,14 @@ internal sealed class Fallout4DialogueExtractor : IDialogueExtractor
             FullName = fullName,
             TopicType = category,
             Priority = priority,
-            QuestFormId = questFormId is > 0 ? questFormId : null
+            QuestFormId = questFormId is > 0 ? questFormId : null,
+            IsBigEndian = isBigEndian
         };
     }
 
     public DialogueRecord BuildInfo(
         uint formId, string? editorId, uint? topicFormId, ushort infoIndex,
-        IReadOnlyList<RawSubrecord> subs, RecordParserContext context)
+        IReadOnlyList<RawSubrecord> subs, bool isBigEndian, RecordParserContext context)
     {
         uint? previousInfo = null;
         byte infoFlags = 0;
@@ -91,26 +95,34 @@ internal sealed class Fallout4DialogueExtractor : IDialogueExtractor
         uint? speakerRaceFormId = null;
         uint? speakerVoiceTypeFormId = null;
 
-        // Each response is a TRDA (metadata) followed by NAM1 (localized text); emit on NAM1 using the
-        // last TRDA seen.
+        // Each response is a TRDA (metadata) followed by NAM1 (lstring/inline text); emit on NAM1 using
+        // the last TRDA seen.
         var haveTrda = false;
         byte responseNumber = 0;
         uint? soundFormId = null;
+        var pendingConditionIndex = -1;
 
         foreach (var sub in subs)
         {
+            if (sub.Signature is not ("CIS1" or "CIS2"))
+            {
+                pendingConditionIndex = -1;
+            }
+
             switch (sub.Signature)
             {
-                // ENAM: response flags (u16) + reset hours (u16). FO4 bit positions differ from
-                // Oblivion/Skyrim (bit 0 is "Start Scene on End", not Goodbye), so remap explicitly.
-                case "ENAM" when sub.Data.Length >= 1:
-                    infoFlags = RemapInfoFlags(sub.Data[0]);
+                // ENAM: response flags (u16) + reset hours (u16). Decode the word before taking its
+                // low byte so big-endian records do not select the high byte. FO4 bit positions differ
+                // from Oblivion/Skyrim (bit 0 is "Start Scene on End", not Goodbye), so remap explicitly.
+                case "ENAM" when sub.Data.Length >= 2:
+                    infoFlags = RemapInfoFlags(
+                        (byte)BinaryUtils.ReadUInt16(sub.Data, 0, isBigEndian));
                     break;
                 case "PNAM" when sub.Data.Length >= 4:
-                    previousInfo = BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
+                    previousInfo = BinaryUtils.ReadUInt32(sub.Data, 0, isBigEndian);
                     break;
                 case "ANAM" when sub.Data.Length >= 4:
-                    var anam = BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
+                    var anam = BinaryUtils.ReadUInt32(sub.Data, 0, isBigEndian);
                     if (anam != 0)
                     {
                         speakerFormId ??= anam;
@@ -122,7 +134,7 @@ internal sealed class Fallout4DialogueExtractor : IDialogueExtractor
                 case "TRDA" when sub.Data.Length >= 5:
                     responseNumber = sub.Data[4];
                     soundFormId = sub.Data.Length >= 9
-                        ? BinaryPrimitives.ReadUInt32LittleEndian(sub.Data.AsSpan(5))
+                        ? BinaryUtils.ReadUInt32(sub.Data, 5, isBigEndian)
                         : null;
                     haveTrda = true;
                     break;
@@ -136,10 +148,24 @@ internal sealed class Fallout4DialogueExtractor : IDialogueExtractor
                     haveTrda = false;
                     soundFormId = null;
                     break;
-                case "CTDA" when sub.Data.Length >= 16:
-                    ParseCondition(sub.Data, conditions, conditionFunctions,
+                case "CTDA" when sub.Data.Length == 32:
+                    ParseCondition(sub.Data, isBigEndian, conditions, conditionFunctions,
                         ref speakerFormId, ref speakerFactionFormId, ref speakerRaceFormId,
                         ref speakerVoiceTypeFormId);
+                    pendingConditionIndex = conditions.Count - 1;
+                    break;
+                case "CIS1" when pendingConditionIndex >= 0:
+                    conditions[pendingConditionIndex] = conditions[pendingConditionIndex] with
+                    {
+                        Parameter1String = EsmStringUtils.ReadNullTermString(sub.Data)
+                    };
+                    break;
+                case "CIS2" when pendingConditionIndex >= 0:
+                    conditions[pendingConditionIndex] = conditions[pendingConditionIndex] with
+                    {
+                        Parameter2String = EsmStringUtils.ReadNullTermString(sub.Data)
+                    };
+                    pendingConditionIndex = -1;
                     break;
             }
         }
@@ -158,18 +184,22 @@ internal sealed class Fallout4DialogueExtractor : IDialogueExtractor
             SpeakerFormId = speakerFormId,
             SpeakerFactionFormId = speakerFactionFormId,
             SpeakerRaceFormId = speakerRaceFormId,
-            SpeakerVoiceTypeFormId = speakerVoiceTypeFormId
+            SpeakerVoiceTypeFormId = speakerVoiceTypeFormId,
+            IsBigEndian = isBigEndian
         };
     }
 
     /// <summary>
     ///     Parses one FO4 CTDA condition and, when it positively asserts the speaker's identity, records
-    ///     the FormID. The layout matches Skyrim's 32-byte CTDA: Type@0 / Function@8 / Parameter #1@12 are
-    ///     all that attribution needs. ANAM remains the primary speaker source; this fills generic/voiced
-    ///     lines that have no ANAM.
+    ///     the FormID. The layout matches Skyrim's 32-byte CTDA: Type@0 / Function@8 / Parameter #1@12 /
+    ///     Parameter #2@16 / Run On@20 / Reference storage@24 / signed Parameter #3@28, with numeric fields
+    ///     decoded in the containing record's byte order. The shared dialogue model retains all three
+    ///     trailing fields; semantic consumers decide whether offset 24 is a Reference FormID. ANAM remains
+    ///     the primary speaker source; this fills generic/voiced lines that have no ANAM.
     /// </summary>
     private static void ParseCondition(
         byte[] data,
+        bool isBigEndian,
         List<DialogueCondition> conditions,
         List<ushort> conditionFunctions,
         ref uint? speaker,
@@ -177,22 +207,19 @@ internal sealed class Fallout4DialogueExtractor : IDialogueExtractor
         ref uint? race,
         ref uint? voiceType)
     {
-        var typeByte = data[0];
+        if (!CtdaParser.TryDecode(data, isBigEndian, out var condition, out _))
+        {
+            return;
+        }
+
+        var typeByte = condition.Type;
         var usesGlobal = (typeByte & 0x04) != 0;
-        var comparisonValue = usesGlobal ? 0f : BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(4));
-        var functionIndex = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(8));
-        var param1 = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(12));
-        var param2 = data.Length >= 20 ? BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(16)) : 0u;
+        var comparisonValue = condition.ComparisonValue;
+        var functionIndex = condition.FunctionIndex;
+        var param1 = condition.Parameter1;
 
         conditionFunctions.Add(functionIndex);
-        conditions.Add(new DialogueCondition
-        {
-            Type = typeByte,
-            ComparisonValue = comparisonValue,
-            FunctionIndex = functionIndex,
-            Parameter1 = param1,
-            Parameter2 = param2
-        });
+        conditions.Add(condition);
 
         var compOp = (typeByte >> 5) & 0x7;
         var isPositive = !usesGlobal &&

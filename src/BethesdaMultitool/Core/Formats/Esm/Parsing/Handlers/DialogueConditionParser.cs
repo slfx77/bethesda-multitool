@@ -279,6 +279,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
         uint? speakerAnimationFormId = null;
         var conditionFunctions = new List<ushort>();
         var conditions = new List<DialogueCondition>();
+        var conditionStrings = new ConditionStringSiblingBinder();
 
         // Result scripts
         var resultScriptBlocks = new List<DialogueResultScriptParser.DialogueResultScriptBuilder>();
@@ -318,6 +319,11 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
             var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            if (conditionStrings.TryConsume(sub.Signature, subData))
+            {
+                continue;
+            }
+
             if (currentResultScript is not null)
             {
                 currentResultScript.SerializedLocals.ObserveSubrecord(
@@ -490,27 +496,16 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                     currentResultScript.HasNextSeparator = true;
                     currentResultScript = null;
                     break;
-                case "CTDA" when sub.DataLength >= 28:
+                case "CTDA" when CtdaParser.IsSupportedBodyLength(sub.DataLength):
                 {
                     var condition = ParseCtdaCondition(subData, record.IsBigEndian, conditionFunctions,
                         ref conditionSpeaker, ref conditionFaction, ref conditionRace, ref conditionVoiceType);
                     if (condition != null)
                     {
                         conditions.Add(condition);
+                        conditionStrings.Begin(conditions);
                     }
 
-                    break;
-                }
-                case "CIS1" when conditions.Count > 0:
-                {
-                    var s = EsmStringUtils.ReadNullTermString(subData);
-                    conditions[^1] = conditions[^1] with { Parameter1String = s };
-                    break;
-                }
-                case "CIS2" when conditions.Count > 0:
-                {
-                    var s = EsmStringUtils.ReadNullTermString(subData);
-                    conditions[^1] = conditions[^1] with { Parameter2String = s };
                     break;
                 }
             }
@@ -564,7 +559,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
     /// <summary>
     ///     Parse a CTDA condition subrecord, extracting speaker-related function parameters.
     /// </summary>
-    private static DialogueCondition? ParseCtdaCondition(
+    internal static DialogueCondition? ParseCtdaCondition(
         Span<byte> subData,
         bool isBigEndian,
         List<ushort> conditionFunctions,
@@ -573,23 +568,24 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
         ref uint? conditionRace,
         ref uint? conditionVoiceType)
     {
-        var v = SubrecordSchemaView.TryRead("CTDA", null, subData, isBigEndian);
-        if (v == null)
+        if (!CtdaParser.TryDecode(subData, isBigEndian, out var condition, out _))
         {
             return null;
         }
 
-        var functionIndex = v.UInt16("FunctionIndex");
+        var functionIndex = condition.FunctionIndex;
         conditionFunctions.Add(functionIndex);
 
-        var param1 = v.UInt32("Parameter1");
-        var runOn = v.UInt32("RunOn");
-        var reference = v.UInt32("Reference");
-        var compValue = v.Float("ComparisonValue");
-        var typeByte = v.Byte("Type");
+        var param1 = condition.Parameter1;
+        var runOn = condition.RunOn;
+        var typeByte = condition.Type;
+        var usesGlobal = (typeByte & 0x04) != 0;
+        var compValue = condition.ComparisonValue;
+
         var compOp = (typeByte >> 5) & 0x7;
 
-        var isPositive = runOn == 0 &&
+        var isPositive = !usesGlobal &&
+                         runOn == 0 &&
                          ((compOp is 0 or 3 && compValue >= 0.99f) ||
                           (compOp is 1 && compValue < 0.01f) ||
                           (compOp is 2 && compValue < 0.01f));
@@ -613,15 +609,6 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
             }
         }
 
-        return new DialogueCondition
-        {
-            Type = typeByte,
-            ComparisonValue = compValue,
-            FunctionIndex = functionIndex,
-            Parameter1 = param1,
-            Parameter2 = v.UInt32("Parameter2"),
-            RunOn = runOn,
-            Reference = reference
-        };
+        return condition;
     }
 }

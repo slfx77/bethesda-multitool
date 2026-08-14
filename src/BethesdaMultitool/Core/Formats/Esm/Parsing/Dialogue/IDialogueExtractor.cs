@@ -13,30 +13,42 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 ///     (<c>Handlers.DialogueRecordHandler</c>), and TES3's positional file-order model with
 ///     deferred editor-id resolution has its own <c>Tes3DialogueExtractor</c> inside the TES3
 ///     parser fork — neither has a polymorphic call site here.
+///     <para>
+///         The byte-order argument belongs to the individual DIAL/INFO record rather than the selected
+///         game. This keeps recovered or synthetic records honest and, for Skyrim, preserves unconverted
+///         Xbox 360 numeric fields without making platform claims about FO4/FO76 inputs.
+///     </para>
 /// </summary>
 internal interface IDialogueExtractor
 {
     DialogTopicRecord BuildTopic(
-        uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs, RecordParserContext context);
+        uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs, bool isBigEndian,
+        RecordParserContext context);
 
     DialogueRecord BuildInfo(
         uint formId, string? editorId, uint? topicFormId, ushort infoIndex,
-        IReadOnlyList<RawSubrecord> subs, RecordParserContext context);
+        IReadOnlyList<RawSubrecord> subs, bool isBigEndian, RecordParserContext context);
 }
 
 /// <summary>
-///     Selects the DIAL/INFO extractor for a schema-primary game. Mirrors the layouts: Skyrim's
-///     localized TRDT framing; FO4's TRDA framing (FO76 verified identical); everything else falls
-///     to Oblivion's inline-text layout. Starfield lands on the Oblivion arm today, matching the
-///     historical switch — unreachable in practice, as it has no generated schema so the
-///     schema-driven parser never runs for it.
+///     Selects the DIAL/INFO extractor for a schema-primary game. Mirrors the layouts: Oblivion's
+///     inline text, Skyrim's localized TRDT framing, and FO4's TRDA framing (FO76 verified
+///     identical). Games without a registered schema-primary dialogue layout are rejected instead
+///     of being interpreted as Oblivion records.
 /// </summary>
 internal static class DialogueExtractors
 {
     public static IDialogueExtractor For(BethesdaGame game) => game switch
     {
+        BethesdaGame.Oblivion => OblivionDialogueExtractor.Instance,
         BethesdaGame.Skyrim => SkyrimDialogueExtractor.Instance,
         BethesdaGame.Fallout4 or BethesdaGame.Fallout76 => Fallout4DialogueExtractor.Instance,
-        _ => OblivionDialogueExtractor.Instance,
+        BethesdaGame.Unknown or
+            BethesdaGame.Morrowind or
+            BethesdaGame.Fallout3 or
+            BethesdaGame.FalloutNewVegas or
+            BethesdaGame.Starfield => throw new NotSupportedException(
+                $"No schema-primary dialogue extractor is registered for {game}."),
+        _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
     };
 }

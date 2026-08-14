@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 using BethesdaMultitool.Core.Games;
@@ -6,9 +8,9 @@ namespace BethesdaMultitool;
 
 /// <summary>
 ///     Formats parsed INFO conditions and result-script metadata for the dialogue viewer.
-///     Function names and the numeric-vs-FormID parameter split come from the game-keyed
-///     <see cref="ConditionFunctionTable" /> — Oblivion conditions previously rendered through the
-///     FNV table, misnaming every function past index 0x171 and mistyping params past raw id 31.
+///     Observed CIS1/CIS2 siblings take precedence over their CTDA placeholder slots. Otherwise,
+///     function names and the numeric-vs-FormID parameter split come from the game-keyed
+///     <see cref="ConditionFunctionTable" />.
 /// </summary>
 internal static class DialogueConditionDisplayFormatter
 {
@@ -26,19 +28,30 @@ internal static class DialogueConditionDisplayFormatter
         var resolveParamName = resolveEditorId ?? resolveFormName;
 
         var parameterParts = new List<string>();
-        if (condition.Parameter1 != 0)
+        if (condition.Parameter1String is { } parameter1String)
+        {
+            parameterParts.Add(FormatStringParameter(parameter1String));
+        }
+        else if (condition.Parameter1 != 0)
         {
             parameterParts.Add(FormatParameter(table, condition, 0, condition.Parameter1, resolveParamName));
         }
 
-        if (condition.Parameter2 != 0)
+        if (condition.Parameter2String is { } parameter2String)
+        {
+            parameterParts.Add(FormatStringParameter(parameter2String));
+        }
+        else if (condition.Parameter2 != 0)
         {
             parameterParts.Add(FormatParameter(table, condition, 1, condition.Parameter2, resolveParamName));
         }
 
+        var comparison = condition.UsesGlobalComparison
+            ? FormatGlobalComparison(condition.ComparisonGlobalFormId, resolveParamName)
+            : FormatComparisonValue(condition.ComparisonValue);
         var expression = parameterParts.Count > 0
-            ? $"{functionName}({string.Join(", ", parameterParts)}) {condition.ComparisonOperator} {FormatComparisonValue(condition.ComparisonValue)}"
-            : $"{functionName} {condition.ComparisonOperator} {FormatComparisonValue(condition.ComparisonValue)}";
+            ? $"{functionName}({string.Join(", ", parameterParts)}) {condition.ComparisonOperator} {comparison}"
+            : $"{functionName} {condition.ComparisonOperator} {comparison}";
 
         var qualifiers = new List<string>();
         if (condition.IsOr)
@@ -46,14 +59,19 @@ internal static class DialogueConditionDisplayFormatter
             qualifiers.Add("OR");
         }
 
-        if (condition.RunOn != 0)
+        if (DialogueConditionRunOnPolicy.ShouldDisplay(condition, game))
         {
-            qualifiers.Add($"Run On: {condition.RunOnName}");
+            qualifiers.Add($"Run On: {DialogueConditionRunOnPolicy.Format(condition, game)}");
         }
 
-        if (condition.Reference != 0)
+        if (DialogueConditionReferencePolicy.TryGetSemanticReference(condition, game, out var reference))
         {
-            qualifiers.Add($"Ref: {resolveFormName(condition.Reference)} (0x{condition.Reference:X8})");
+            qualifiers.Add($"Ref: {resolveFormName(reference)} (0x{reference:X8})");
+        }
+
+        if (TryFormatParameter3(condition, game, out var parameter3))
+        {
+            qualifiers.Add(parameter3);
         }
 
         if (condition.IsSubjectTargetSwapped)
@@ -75,14 +93,28 @@ internal static class DialogueConditionDisplayFormatter
         int paramIndex,
         BethesdaGame game = GameProfiles.DefaultGame)
     {
-        var table = ConditionFunctionTable.For(game);
-        var function = table.Get(condition.FunctionIndex);
-        if (function == null || paramIndex >= function.Params.Length)
+        // A physical CIS1/CIS2 sibling is authoritative even when the function table is absent,
+        // incomplete, or disagrees with a newer retail record. The CTDA u32 is only placeholder
+        // storage in that case and must never enter the reverse FormID index.
+        if (paramIndex switch
+            {
+                0 => condition.Parameter1String is not null,
+                1 => condition.Parameter2String is not null,
+                _ => false
+            })
         {
             return false;
         }
 
-        return table.ClassifyParam(condition.FunctionIndex, paramIndex) == ConditionParamKind.FormId;
+        var table = ConditionFunctionTable.For(game);
+        return table.TryClassifyParam(
+                   condition.FunctionIndex,
+                   paramIndex,
+                   condition.Type,
+                   condition.RunOn,
+                   condition.Parameter1,
+                   out var kind) &&
+               kind == ConditionParamKind.FormId;
     }
 
     /// <summary>Formats a result script's referenced objects as a comma-separated "name (0xFormID)" list.</summary>
@@ -102,6 +134,98 @@ internal static class DialogueConditionDisplayFormatter
             : value.ToString("0.###");
     }
 
+    private static string FormatGlobalComparison(uint formId, Func<uint, string> resolveName)
+    {
+        if (formId == 0)
+        {
+            return "GLOB 0x00000000";
+        }
+
+        var resolved = resolveName(formId);
+        return $"GLOB {resolved} (0x{formId:X8})";
+    }
+
+    private static string FormatStringParameter(string value)
+    {
+        var escaped = new StringBuilder(value.Length + 2);
+        escaped.Append('"');
+        foreach (var character in value)
+        {
+            switch (character)
+            {
+                case '\\':
+                    escaped.Append("\\\\");
+                    break;
+                case '"':
+                    escaped.Append("\\\"");
+                    break;
+                case '\r':
+                    escaped.Append("\\r");
+                    break;
+                case '\n':
+                    escaped.Append("\\n");
+                    break;
+                case '\t':
+                    escaped.Append("\\t");
+                    break;
+                case '\b':
+                    escaped.Append("\\b");
+                    break;
+                case '\f':
+                    escaped.Append("\\f");
+                    break;
+                case var control when char.IsControl(control):
+                    escaped.Append("\\u");
+                    escaped.Append(((int)control).ToString("X4", CultureInfo.InvariantCulture));
+                    break;
+                default:
+                    escaped.Append(character);
+                    break;
+            }
+        }
+
+        escaped.Append('"');
+        return escaped.ToString();
+    }
+
+    private static bool TryFormatParameter3(
+        DialogueCondition condition,
+        BethesdaGame game,
+        out string formatted)
+    {
+        formatted = string.Empty;
+        if (condition.Parameter3 is not { } value)
+        {
+            return false;
+        }
+
+        // Community provenance for Starfield's signed Quest Alias/Event Data arms: xEdit commit
+        // e0e529a2d473756520f2d41f72c24dea0cf5ee0d, wbDefinitionsSF1.pas SHA-256
+        // 8736162FCE44C970CFA3DDAC945A739530169390C4FDABAFC0209B36B247A576,
+        // MPL-2.0. The retail census supports the physical signed field, not these labels.
+        var modern = game is BethesdaGame.Skyrim or BethesdaGame.Fallout4 or BethesdaGame.Fallout76
+            or BethesdaGame.Starfield;
+        var semanticLabel = modern
+            ? condition.RunOn switch
+            {
+                5 => "Quest Alias",
+                7 => "Event Data",
+                _ => null
+            }
+            : null;
+
+        // -1 is the normal raw default. It is still meaningful for the two Run-On-selected modern
+        // contexts, but suppress it elsewhere so every ordinary 32-byte condition does not gain noise.
+        if (semanticLabel is null && value == -1)
+        {
+            return false;
+        }
+
+        var label = semanticLabel ?? "Parameter #3";
+        formatted = $"{label}: {value.ToString(CultureInfo.InvariantCulture)}";
+        return true;
+    }
+
     private static string FormatParameter(
         ConditionFunctionTable table,
         DialogueCondition condition,
@@ -114,8 +238,15 @@ internal static class DialogueConditionDisplayFormatter
             return "0";
         }
 
-        // Unknown functions/params classify Numeric — the historical raw-value fallback.
-        return table.ClassifyParam(condition.FunctionIndex, paramIndex) == ConditionParamKind.FormId
+        // Unknown functions/params stay numeric — the historical raw-value fallback.
+        return table.TryClassifyParam(
+                   condition.FunctionIndex,
+                   paramIndex,
+                   condition.Type,
+                   condition.RunOn,
+                   condition.Parameter1,
+                   out var kind) &&
+               kind == ConditionParamKind.FormId
             ? resolveName(value)
             : value.ToString();
     }

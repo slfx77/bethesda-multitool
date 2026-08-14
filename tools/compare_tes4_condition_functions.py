@@ -1,8 +1,10 @@
 """
-Cross-check the extracted TES4 command table against (a) the Remastered exe's table and
-(b) xEdit's wbConditionFunctions (wbDefinitionsTES4.pas).
+Optional research cross-check of the extracted TES4 retail command table against (a) the
+Remastered exe's table and (b) xEdit's wbConditionFunctions (wbDefinitionsTES4.pas).
 
-Gate for the generated table: zero unexplained name mismatches.
+The generator itself now hash-pins its retail/xEdit inputs, reads classic CommandInfo.eval,
+and validates the exact 31-row xOBSE extension block including parameters. This script is
+only the separate Remastered name-drift report, not the generation/provenance gate.
 
 Usage:
     python tools/compare_tes4_condition_functions.py \
@@ -66,29 +68,28 @@ def main():
     xedit = load_xedit_condition_functions()
     print(f"  xEdit entries: {len(xedit)}")
     mismatches = 0
-    condition_only = 0
+    xobse_extensions = 0
     for idx, xe in sorted(xedit.items()):
         op = 0x1000 | idx
         cf = classic_by_op.get(op)
         if cf is None:
             if idx >= 370:
-                # Condition-ONLY functions (IsAmmo, GetPackage*, …): evaluated by index in the
-                # game's condition dispatch, no CommandInfo entry and NO name string in either exe
-                # (names are Construction Set-side). These enter the generated table from xEdit
-                # with community provenance — expected, not a mismatch.
-                condition_only += 1
+                # The pinned xEdit array labels this exact trailing block "Added by (x)OBSE".
+                # It is absent from retail CommandInfo but retained by the runtime table as
+                # explicitly attributed community extension commands/conditions.
+                xobse_extensions += 1
             else:
                 print(f"  index {idx} (0x{op:04X}) '{xe['name']}': NOT in classic table")
                 mismatches += 1
         elif cf["name"].lower() != xe["name"].lower():
             print(f"  index {idx} (0x{op:04X}): classic '{cf['name']}' vs xEdit '{xe['name']}'")
             mismatches += 1
-    print(f"  name mismatches: {mismatches}; condition-only (xEdit-provenance) entries: {condition_only}")
+    print(f"  name mismatches: {mismatches}; xOBSE extension entries: {xobse_extensions}")
 
     # The classic 0x1171 placeholder terminator ("ADD NEW FUNCTIONS BEFORE THIS ONE!!!") is the
     # only expected engine drift; anything else needs review.
     unexplained_drift = drift - (1 if 0x1171 in classic_by_op else 0)
-    print("\nGATE:", "PASS" if mismatches == 0 and unexplained_drift <= 0 else "REVIEW REQUIRED")
+    print("\nREPORT:", "CONSISTENT" if mismatches == 0 and unexplained_drift <= 0 else "REVIEW REQUIRED")
 
 
 if __name__ == "__main__":
