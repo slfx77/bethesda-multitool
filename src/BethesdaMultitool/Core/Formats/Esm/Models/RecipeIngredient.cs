@@ -1,6 +1,6 @@
 namespace BethesdaMultitool.Core.Formats.Esm.Models;
 
-/// <summary>One input item (FormID + quantity) consumed by a crafting recipe (COBJ).</summary>
+/// <summary>One input item (FormID + quantity) consumed by an FNV RCPE recipe.</summary>
 public record RecipeIngredient
 {
     public uint ItemFormId { get; init; }

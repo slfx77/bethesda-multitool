@@ -37,15 +37,20 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
         string? fullName = null;
         uint enchantType = 0, chargeAmount = 0, enchantCost = 0;
         byte flags = 0;
-        var effects = new List<EnchantmentEffect>();
-        uint currentEffectId = 0;
+        var effectParser = new MagicEffectSubrecordParser(record.IsBigEndian);
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            if (effectParser.TryConsume(sub.Signature, subData))
+            {
+                continue;
+            }
+
             switch (sub.Signature)
             {
                 case "EDID":
-                    editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
                     if (!string.IsNullOrEmpty(editorId))
                     {
                         Context.FormIdToEditorId[record.FormId] = editorId;
@@ -53,7 +58,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
 
                     break;
                 case "FULL":
-                    fullName = Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "ENIT" when sub.DataLength >= 12:
                 {
@@ -64,35 +69,6 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                         chargeAmount = v.UInt32("ChargeAmount");
                         enchantCost = v.UInt32("EnchantCost");
                         flags = v.Byte("Flags");
-                    }
-
-                    break;
-                }
-                case "EFID" when sub.DataLength >= 4:
-                    currentEffectId =
-                        RecordParserContext.ReadFormId(data.AsSpan(sub.DataOffset, 4), record.IsBigEndian);
-                    break;
-                case "EFIT" when sub.DataLength >= 12:
-                {
-                    if (SubrecordSchemaView.TryRead("EFIT", null,
-                            data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian) is { } v)
-                    {
-                        var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
-                        var magnitude = GameStatNormalizer.EffectMagnitude(subData, record.IsBigEndian);
-                        var area = v.UInt32("Area");
-                        var duration = v.UInt32("Duration");
-                        var effectTargetType = v.UInt32("Type");
-                        var actorValue = v.Int32("ActorValue", -1);
-
-                        effects.Add(new EnchantmentEffect
-                        {
-                            EffectFormId = currentEffectId,
-                            Magnitude = magnitude,
-                            Area = GameStatNormalizer.IsPlausibleEffectArea(area) ? area : 0,
-                            Duration = GameStatNormalizer.IsPlausibleEffectDuration(duration) ? duration : 0,
-                            Type = GameStatNormalizer.IsPlausibleEffectTarget(effectTargetType) ? effectTargetType : 0,
-                            ActorValue = GameStatNormalizer.IsPlausibleActorValue(actorValue) ? actorValue : -1
-                        });
                     }
 
                     break;
@@ -109,7 +85,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
             ChargeAmount = chargeAmount,
             EnchantCost = enchantCost,
             Flags = flags,
-            Effects = effects,
+            Effects = effectParser.Effects,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -296,6 +272,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
         byte minLevel = 0;
         byte ranks = 1;
         byte playable = 1;
+        byte? hidden = null;
         var entries = new List<PerkEntry>();
         var conditions = new List<PerkCondition>();
 
@@ -307,14 +284,16 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
         uint? currentQuestFormId = null;
         int? currentQuestStage = null;
         byte? currentEntryPoint = null;
+        byte? currentEntryPointFunction = null;
+        byte? currentPerkConditionTabCount = null;
         byte? currentFunctionType = null;
         float? currentEffectValue = null;
         uint? currentEffectFormId = null;
         string? currentEffectData = null;
         byte[]? currentRawEntryData = null;
         byte[]? currentRawFunctionData = null;
-        byte? currentConditionTabCount = null;
-        var currentEntryConditions = new List<PerkCondition>();
+        var currentConditionGroups = new List<PerkConditionGroup>();
+        PerkConditionGroup? currentConditionGroup = null;
         var currentEntryActive = false;
 
         void FinalizeCurrentEntry()
@@ -333,28 +312,31 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                 QuestFormId = currentQuestFormId,
                 QuestStage = currentQuestStage,
                 EntryPoint = currentEntryPoint,
+                EntryPointFunction = currentEntryPointFunction,
+                PerkConditionTabCount = currentPerkConditionTabCount,
                 FunctionType = currentFunctionType,
                 EffectValue = currentEffectValue,
                 EffectFormId = currentEffectFormId,
                 EffectData = currentEffectData,
                 RawEntryData = currentRawEntryData,
                 RawFunctionData = currentRawFunctionData,
-                ConditionTabCount = currentConditionTabCount,
-                Conditions = currentEntryConditions
+                ConditionGroups = currentConditionGroups
             });
 
             currentAbilityFormId = null;
             currentQuestFormId = null;
             currentQuestStage = null;
             currentEntryPoint = null;
+            currentEntryPointFunction = null;
+            currentPerkConditionTabCount = null;
             currentFunctionType = null;
             currentEffectValue = null;
             currentEffectFormId = null;
             currentEffectData = null;
             currentRawEntryData = null;
             currentRawFunctionData = null;
-            currentConditionTabCount = null;
-            currentEntryConditions = [];
+            currentConditionGroups = [];
+            currentConditionGroup = null;
             currentEntryActive = false;
         }
 
@@ -377,11 +359,12 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                 case "MICO":
                     iconPath = EsmStringUtils.ReadNullTermString(subData);
                     break;
-                case "DATA" when !currentEntryActive && sub.DataLength >= 5:
+                case "DATA" when !currentEntryActive && sub.DataLength is 4 or 5:
                     trait = subData[0];
                     minLevel = subData[1];
                     ranks = subData[2];
                     playable = subData[3];
+                    hidden = sub.DataLength == 5 ? subData[4] : null;
                     break;
                 case "DATA" when currentEntryActive:
                     currentRawEntryData = subData.ToArray();
@@ -393,6 +376,8 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                         ref currentQuestFormId,
                         ref currentQuestStage,
                         ref currentEntryPoint,
+                        ref currentEntryPointFunction,
+                        ref currentPerkConditionTabCount,
                         ref currentEffectData);
                     break;
                 case "CTDA" when sub.DataLength >= 24:
@@ -400,10 +385,21 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                     var condition = ParsePerkCondition(subData, record.IsBigEndian);
                     if (condition != null)
                     {
-                        conditions.Add(condition);
                         if (currentEntryActive)
                         {
-                            currentEntryConditions.Add(condition);
+                            if (currentConditionGroup is null)
+                            {
+                                // Preserve malformed entry CTDAs that have no leading PRKC without
+                                // inventing a selector when the record is encoded again.
+                                currentConditionGroup = new PerkConditionGroup();
+                                currentConditionGroups.Add(currentConditionGroup);
+                            }
+
+                            currentConditionGroup.Conditions.Add(condition);
+                        }
+                        else
+                        {
+                            conditions.Add(condition);
                         }
                     }
 
@@ -418,7 +414,11 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                     currentEntryActive = true;
                     break;
                 case "PRKC" when currentEntryActive && sub.DataLength >= 1:
-                    currentConditionTabCount = subData[0];
+                    currentConditionGroup = new PerkConditionGroup
+                    {
+                        RunOn = unchecked((sbyte)subData[0])
+                    };
+                    currentConditionGroups.Add(currentConditionGroup);
                     break;
                 case "EPFT" when sub.DataLength >= 1:
                     currentFunctionType = subData[0];
@@ -451,6 +451,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
             MinLevel = minLevel,
             Ranks = ranks,
             Playable = playable,
+            Hidden = hidden,
             Entries = entries,
             Conditions = conditions,
             Offset = record.Offset,
@@ -466,6 +467,8 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
         ref uint? questFormId,
         ref int? questStage,
         ref byte? entryPoint,
+        ref byte? entryPointFunction,
+        ref byte? perkConditionTabCount,
         ref string? effectData)
     {
         effectData = FormatRawBytes(subData);
@@ -493,6 +496,8 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
 
             case 2 when subData.Length >= 1:
                 entryPoint = subData[0];
+                entryPointFunction = subData.Length >= 2 ? subData[1] : null;
+                perkConditionTabCount = subData.Length >= 3 ? subData[2] : null;
                 effectData = subData.Length >= 2
                     ? $"Entry Point #{subData[0]}, payload {FormatRawBytes(subData[1..])}"
                     : $"Entry Point #{subData[0]}";
@@ -634,12 +639,15 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
         uint cost = 0;
         uint level = 0;
         byte flags = 0;
-        var effects = new List<EnchantmentEffect>();
-        uint currentEffectId = 0;
+        var effectParser = new MagicEffectSubrecordParser(record.IsBigEndian);
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
             var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            if (effectParser.TryConsume(sub.Signature, subData))
+            {
+                continue;
+            }
 
             switch (sub.Signature)
             {
@@ -661,32 +669,6 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
 
                     break;
                 }
-                case "EFID" when sub.DataLength >= 4:
-                    currentEffectId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
-                    break;
-                case "EFIT" when sub.DataLength >= 12:
-                {
-                    if (SubrecordSchemaView.TryRead("EFIT", null, subData, record.IsBigEndian) is { } v)
-                    {
-                        var magnitude = GameStatNormalizer.EffectMagnitude(subData, record.IsBigEndian);
-                        var area = v.UInt32("Area");
-                        var duration = v.UInt32("Duration");
-                        var effectTargetType = v.UInt32("Type");
-                        var actorValue = v.Int32("ActorValue", -1);
-
-                        effects.Add(new EnchantmentEffect
-                        {
-                            EffectFormId = currentEffectId,
-                            Magnitude = magnitude,
-                            Area = GameStatNormalizer.IsPlausibleEffectArea(area) ? area : 0,
-                            Duration = GameStatNormalizer.IsPlausibleEffectDuration(duration) ? duration : 0,
-                            Type = GameStatNormalizer.IsPlausibleEffectTarget(effectTargetType) ? effectTargetType : 0,
-                            ActorValue = GameStatNormalizer.IsPlausibleActorValue(actorValue) ? actorValue : -1
-                        });
-                    }
-
-                    break;
-                }
             }
         }
 
@@ -699,7 +681,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
             Cost = cost,
             Level = level,
             Flags = flags,
-            Effects = effects,
+            Effects = effectParser.Effects,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

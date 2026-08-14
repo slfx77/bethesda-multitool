@@ -361,6 +361,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
         var stages = new List<QuestStage>();
         var objectives = new List<QuestObjective>();
         var conditions = new List<DialogueCondition>(); // top-level
+        var conditionStrings = new ConditionStringSiblingBinder();
 
         // Stage being assembled.
         int? currentStageIndex = null;
@@ -458,6 +459,10 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
             var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            if (conditionStrings.TryConsume(sub.Signature, subData))
+            {
+                continue;
+            }
 
             switch (sub.Signature)
             {
@@ -481,34 +486,13 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
                 case "SCRI" when sub.DataLength == 4:
                     script = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
-                case "CTDA" when sub.DataLength >= 28:
+                case "CTDA":
                 {
-                    var ctda = CtdaParser.Decode(subData, record.IsBigEndian);
-                    ActiveConditionList()?.Add(ctda);
-                    break;
-                }
-                case "CIS1":
-                {
-                    var list = ActiveConditionList();
-                    if (list is { Count: > 0 })
+                    if (CtdaParser.TryDecode(subData, record.IsBigEndian, out var ctda, out _) &&
+                        ActiveConditionList() is { } list)
                     {
-                        list[^1] = list[^1] with
-                        {
-                            Parameter1String = EsmStringUtils.ReadNullTermString(subData)
-                        };
-                    }
-
-                    break;
-                }
-                case "CIS2":
-                {
-                    var list = ActiveConditionList();
-                    if (list is { Count: > 0 })
-                    {
-                        list[^1] = list[^1] with
-                        {
-                            Parameter2String = EsmStringUtils.ReadNullTermString(subData)
-                        };
+                        list.Add(ctda);
+                        conditionStrings.Begin(list);
                     }
 
                     break;

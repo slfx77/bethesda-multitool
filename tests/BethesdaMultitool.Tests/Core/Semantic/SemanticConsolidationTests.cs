@@ -495,25 +495,29 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
         Assert.Equal("1 variables", list.Display);
     }
 
-    [Fact]
-    public void Script_report_resolves_hardcoded_player_form_id_in_references()
+    [Theory]
+    [InlineData(0x00000007u, "Player (0x00000007)")]
+    [InlineData(0x00000014u, "PlayerRef (0x00000014)")]
+    public void Script_report_distinguishes_player_base_from_placed_reference(
+        uint formId,
+        string expectedDisplay)
     {
         var report = GeckScriptWriter.BuildScriptReport(
             new ScriptRecord
             {
                 FormId = 0x00008000,
                 EditorId = "TestScript",
-                ReferencedObjects = [0x00000014]
+                ReferencedObjects = [formId]
             },
             FormIdResolver.Empty);
 
         var references = Assert.Single(report.Sections, section => section.Name == "References");
         var list = Assert.IsType<ReportValue.ListVal>(
             references.Fields.Single(field => field.Key == "Referenced Objects").Value);
-        var playerRef = Assert.IsType<ReportValue.FormIdVal>(Assert.Single(list.Items));
+        var playerForm = Assert.IsType<ReportValue.FormIdVal>(Assert.Single(list.Items));
 
-        Assert.Equal(0x00000014u, playerRef.Raw);
-        Assert.Equal("Player (0x00000014)", playerRef.Display);
+        Assert.Equal(formId, playerForm.Raw);
+        Assert.Equal(expectedDisplay, playerForm.Display);
     }
 
     [Fact]

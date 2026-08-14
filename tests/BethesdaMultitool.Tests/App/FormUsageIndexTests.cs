@@ -4,12 +4,42 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.App;
 
 public class FormUsageIndexTests
 {
+    [Fact]
+    public void Build_IndexesCtdaReferenceSlotOnlyWhenGamePolicyMakesItSemantic()
+    {
+        const uint semanticReference = 0x00001234;
+        const uint ignoredStorage = 0x00005678;
+        var records = new RecordCollection
+        {
+            Game = BethesdaGame.FalloutNewVegas,
+            Dialogues =
+            [
+                new DialogueRecord
+                {
+                    FormId = 0x100,
+                    Conditions =
+                    [
+                        new DialogueCondition { RunOn = 2, Reference = semanticReference },
+                        new DialogueCondition { RunOn = 5, Reference = ignoredStorage },
+                        new DialogueCondition { FunctionIndex = 0x006A, RunOn = 2, Reference = ignoredStorage }
+                    ]
+                }
+            ]
+        };
+
+        var usageIndex = FormUsageIndex.Build(records);
+
+        Assert.Equal(1, usageIndex.GetUseCount(semanticReference));
+        Assert.Equal(0, usageIndex.GetUseCount(ignoredStorage));
+    }
+
     [Fact]
     public void Build_IndexesScriptsListsPackagesAndAttachedScripts()
     {
@@ -123,5 +153,102 @@ public class FormUsageIndexTests
 
         var questScriptUses = usageIndex.GetUsages(questScriptFormId);
         Assert.Contains(questScriptUses, u => u.SourceKind == "Quest" && u.Context == "Attached script");
+    }
+
+    [Fact]
+    public void Build_DoesNotIndexCisPlaceholderAsFormId()
+    {
+        const uint placeholder = 0x00123456;
+        var records = new RecordCollection
+        {
+            Game = BethesdaGame.Fallout4,
+            Dialogues =
+            [
+                new DialogueRecord
+                {
+                    FormId = 0x100,
+                    Conditions =
+                    [
+                        new DialogueCondition
+                        {
+                            FunctionIndex = 0x001, // GetDistance normally takes a FormID.
+                            Parameter1 = placeholder,
+                            Parameter1String = string.Empty
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var usageIndex = FormUsageIndex.Build(records);
+
+        Assert.Equal(0, usageIndex.GetUseCount(placeholder));
+    }
+
+    [Theory]
+    [InlineData(BethesdaGame.Fallout3)]
+    [InlineData(BethesdaGame.FalloutNewVegas)]
+    public void Build_DoesNotIndexActorValueEnumAsFormId(BethesdaGame game)
+    {
+        const uint actorValueIndex = 5;
+        var records = new RecordCollection
+        {
+            Game = game,
+            Dialogues =
+            [
+                new DialogueRecord
+                {
+                    FormId = 0x100,
+                    Conditions =
+                    [
+                        new DialogueCondition
+                        {
+                            FunctionIndex = 0x00E,
+                            Parameter1 = actorValueIndex
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var usageIndex = FormUsageIndex.Build(records);
+
+        Assert.Equal(0, usageIndex.GetUseCount(actorValueIndex));
+    }
+
+    [Fact]
+    public void Build_IndexesUseGlobalComparisonButNotNumericComparisonBits()
+    {
+        const uint globalFormId = 0x00123456;
+        var records = new RecordCollection
+        {
+            Game = BethesdaGame.Fallout4,
+            Dialogues =
+            [
+                new DialogueRecord
+                {
+                    FormId = 0x100,
+                    Conditions =
+                    [
+                        new DialogueCondition
+                        {
+                            Type = 0x04,
+                            ComparisonValue = BitConverter.UInt32BitsToSingle(globalFormId)
+                        },
+                        new DialogueCondition
+                        {
+                            Type = 0,
+                            ComparisonValue = BitConverter.UInt32BitsToSingle(0x00111111)
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var usageIndex = FormUsageIndex.Build(records);
+
+        var use = Assert.Single(usageIndex.GetUsages(globalFormId));
+        Assert.Equal("Condition global comparison", use.Context);
+        Assert.Equal(0, usageIndex.GetUseCount(0x00111111));
     }
 }

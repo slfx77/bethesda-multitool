@@ -28,8 +28,16 @@ public record PerkRecord
     /// <summary>Number of ranks available.</summary>
     public byte Ranks { get; init; }
 
-    /// <summary>Is this perk visible to players (1) or hidden (0).</summary>
+    /// <summary>
+    ///     Raw Playable byte from DATA offset 3. This is independent of the optional Hidden byte.
+    /// </summary>
     public byte Playable { get; init; }
+
+    /// <summary>
+    ///     Raw optional fifth byte of the PERK DATA subrecord. A null value preserves the
+    ///     legacy four-byte DATA shape; a non-null value preserves the fifth byte exactly.
+    /// </summary>
+    public byte? Hidden { get; init; } = 0;
 
     /// <summary>Icon file path (ICON/MICO subrecord).</summary>
     public string? IconPath { get; init; }
@@ -49,6 +57,9 @@ public record PerkRecord
     /// <summary>Whether this is a trait rather than a perk.</summary>
     public bool IsTrait => Trait != 0;
 
-    /// <summary>Whether this perk is visible in the perk selection UI.</summary>
+    /// <summary>Whether the raw Playable byte is non-zero; this does not derive from Hidden.</summary>
     public bool IsPlayable => Playable != 0;
+
+    /// <summary>Whether the optional Hidden DATA byte is present and non-zero.</summary>
+    public bool IsHidden => Hidden is > 0;
 }

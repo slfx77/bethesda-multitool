@@ -52,6 +52,51 @@ public sealed class ObjectBoundsIndexCategoryTests
     }
 
     [Fact]
+    public void FloraRecord_WithoutAUsefulModelPath_CategorizesAsPlants()
+    {
+        var records = new RecordCollection
+        {
+            GenericRecords = [new GenericEsmRecord { FormId = 0x3456, RecordType = "FLOR" }]
+        };
+
+        Assert.Equal(PlacedObjectCategory.Plants, Categorize(records)[0x3456]);
+    }
+
+    [Fact]
+    public void FloraRecord_UnderTrees_PromotesToTree()
+    {
+        var records = new RecordCollection
+        {
+            GenericRecords =
+            [
+                new GenericEsmRecord
+                {
+                    FormId = 0x4567, RecordType = "FLOR", ModelPath = "landscape\\trees\\sapling.nif"
+                }
+            ]
+        };
+
+        Assert.Equal(PlacedObjectCategory.Tree, Categorize(records)[0x4567]);
+    }
+
+    [Fact]
+    public void FloraRecord_UnderAnUnrelatedFolder_RemainsPlants()
+    {
+        var records = new RecordCollection
+        {
+            GenericRecords =
+            [
+                new GenericEsmRecord
+                {
+                    FormId = 0x5678, RecordType = "FLOR", ModelPath = "architecture\\plantsdisplay.nif"
+                }
+            ]
+        };
+
+        Assert.Equal(PlacedObjectCategory.Plants, Categorize(records)[0x5678]);
+    }
+
+    [Fact]
     public void GetStaticCategoryFromModelPath_TreeSegmentRules()
     {
         // (PlacedObjectCategory is internal, so a [Theory] can't carry it in InlineData.)
@@ -61,6 +106,8 @@ public sealed class ObjectBoundsIndexCategoryTests
             ("meshes/landscape/trees/treeblasted01.nif", PlacedObjectCategory.Tree),
             ("architecture\\treehouse.nif", PlacedObjectCategory.Architecture), // whole-segment only
             ("plants\\shrub.nif", PlacedObjectCategory.Plants), // other vegetation stays Plants
+            ("landscape\\plants\\shrub.nif", PlacedObjectCategory.Plants),
+            ("architecture\\plantshouse.nif", PlacedObjectCategory.Architecture), // whole segment only
             ("landscape\\rock01.nif", PlacedObjectCategory.Landscape)
         ];
         foreach (var (modelPath, expected) in cases)

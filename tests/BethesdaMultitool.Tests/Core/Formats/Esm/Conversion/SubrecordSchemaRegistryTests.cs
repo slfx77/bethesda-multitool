@@ -56,6 +56,26 @@ public class SubrecordSchemaRegistryTests
         Assert.Null(schema);
     }
 
+    [Fact]
+    public void GetSchema_PerkEntryConditionFields_MatchFnvLayout()
+    {
+        var perkData = SubrecordSchemaRegistry.GetSchema("DATA", "PERK", 5);
+        Assert.NotNull(perkData);
+        Assert.Equal(["Trait", "MinLevel", "Ranks", "Playable", "Hidden"],
+            perkData.Fields.Select(field => field.Name));
+
+        var data = SubrecordSchemaRegistry.GetSchema("DATA", "PERK", 3);
+        Assert.NotNull(data);
+        Assert.Equal(["EntryPoint", "Function", "PerkConditionTabCount"],
+            data.Fields.Select(field => field.Name));
+
+        var prkc = SubrecordSchemaRegistry.GetSchema("PRKC", "PERK", 1);
+        Assert.NotNull(prkc);
+        var runOn = Assert.Single(prkc.Fields);
+        Assert.Equal("RunOn", runOn.Name);
+        Assert.Equal(SubrecordFieldType.Int8, runOn.Type);
+    }
+
     #endregion
 
     #region IMAD Special Handling

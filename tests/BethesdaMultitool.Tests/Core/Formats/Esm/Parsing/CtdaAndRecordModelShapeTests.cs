@@ -10,7 +10,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 
 /// <summary>
 ///     Parser + record-model shape coverage:
-///     - CtdaParser shared 28-byte condition decoder (BE + LE)
+///     - CtdaParser shared classic/modern condition decoder (BE + LE)
 ///     - RecipeCategoryRecord model shape (RCCT)
 ///     - ConstructibleObjectRecord model shape (COBJ)
 ///     - ArmaRecord texture hashes / icons / detection-sound-level fields
@@ -19,7 +19,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 public class CtdaAndRecordModelShapeTests
 {
     // ====================================================================================
-    // CtdaParser.Decode — shared 28-byte CTDA decoder
+    // CtdaParser.Decode — shared classic/modern CTDA decoder
     // ====================================================================================
 
     [Fact]
@@ -45,6 +45,7 @@ public class CtdaAndRecordModelShapeTests
         Assert.Equal(0x12345678u, condition.Parameter2);
         Assert.Equal(4u, condition.RunOn);
         Assert.Equal(0xDEADBEEFu, condition.Reference);
+        Assert.Null(condition.Parameter3);
     }
 
     [Fact]
@@ -65,6 +66,29 @@ public class CtdaAndRecordModelShapeTests
         Assert.Equal(1.0f, condition.ComparisonValue);
         Assert.Equal(76, condition.FunctionIndex);
         Assert.Equal(0x1234u, condition.Parameter1);
+        Assert.Null(condition.Parameter3);
+    }
+
+    [Theory]
+    [InlineData(false, -123456789)]
+    [InlineData(true, int.MinValue)]
+    public void CtdaParser_Decode_ModernLayoutPreservesSignedParameter3(bool bigEndian, int parameter3)
+    {
+        var bytes = new byte[32];
+        if (bigEndian)
+        {
+            BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(8, 2), 76);
+            BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(28, 4), parameter3);
+        }
+        else
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(8, 2), 76);
+            BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(28, 4), parameter3);
+        }
+
+        var condition = CtdaParser.Decode(bytes, bigEndian);
+
+        Assert.Equal(parameter3, condition.Parameter3);
     }
 
     [Fact]
@@ -74,6 +98,35 @@ public class CtdaAndRecordModelShapeTests
         var condition = CtdaParser.Decode(bytes, false);
         Assert.Null(condition.Parameter1String);
         Assert.Null(condition.Parameter2String);
+        Assert.Null(condition.Parameter3);
+    }
+
+    [Theory]
+    [InlineData(20)]
+    [InlineData(24)]
+    [InlineData(28)]
+    public void CtdaParser_Decode_ExactLegacyWidthsDoNotInventParameter3(int length)
+    {
+        var bytes = new byte[length];
+
+        var condition = CtdaParser.Decode(bytes, false);
+
+        Assert.Null(condition.Parameter3);
+    }
+
+    [Theory]
+    [InlineData(19)]
+    [InlineData(21)]
+    [InlineData(23)]
+    [InlineData(25)]
+    [InlineData(27)]
+    [InlineData(29)]
+    [InlineData(30)]
+    [InlineData(31)]
+    [InlineData(33)]
+    public void CtdaParser_Decode_RejectsUnsupportedWidths(int length)
+    {
+        Assert.Throws<ArgumentException>(() => CtdaParser.Decode(new byte[length], false));
     }
 
     // ====================================================================================

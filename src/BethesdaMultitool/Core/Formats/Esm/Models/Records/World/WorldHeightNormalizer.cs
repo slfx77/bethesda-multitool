@@ -7,8 +7,9 @@ internal static class WorldHeightNormalizer
 {
     internal const float MaxReportableAbsHeight = 100_000f;
 
-    // Bethesda's "no water in this cell" marker — written as the IEEE 754 bit pattern
-    // 0x7F7FFFFF (float.MaxValue) in XCLW and worldspace DNAM water-height fields.
+    // Bethesda's "no explicit water height" marker — written as the IEEE 754 bit pattern
+    // 0x7F7FFFFF (float.MaxValue) in XCLW and worldspace DNAM water-height fields. On a CELL it
+    // means "use the worldspace default"; on a WRLD it means no default water plane exists.
     // Distinct from "no XCLW present" (null) so authoring intent survives the parse.
     internal const uint NoWaterSentinelBits = 0x7F7FFFFFu;
 
@@ -49,9 +50,10 @@ internal static class WorldHeightNormalizer
     // sentinel (0x7F7FFFFF), Skyrim's additional "no explicit height" markers (e.g.
     // -2147483648 / ~4.29e9 seen on Tamriel coast cells), and NaN/Inf — collapses to the
     // canonical no-water sentinel. Collapsing rather than clamping to 0 is load-bearing:
-    // the water resolvers read the sentinel as "no override — fall back to the worldspace
-    // default water height," whereas a 0 reads as a real sea-level plane and floods the
-    // entire cell (the Skyrim "water at the wrong level" bug).
+    // on a CELL, the water resolver reads the sentinel as "no explicit override — use the
+    // worldspace default," whereas a 0 reads as a real sea-level plane and floods the entire
+    // cell (the Skyrim "water at the wrong level" bug). On a WRLD, the sentinel instead means
+    // no default water plane exists, so the resolver returns null.
     internal static float PreserveSentinelOrNormalize(float value)
     {
         return IsReportableHeight(value) ? value : NoWaterSentinel;

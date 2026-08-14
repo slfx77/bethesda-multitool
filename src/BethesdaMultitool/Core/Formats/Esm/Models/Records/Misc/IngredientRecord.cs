@@ -2,7 +2,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 
 /// <summary>
 ///     Ingredient (INGR) record. Legacy Oblivion-era alchemy ingredient.
-///     FNV uses ALCH for most consumables but retains 1 INGR record.
+///     This is a partial forensic projection: FNV's separate ENIT block and required effect
+///     group are not represented, so new INGR emission is intentionally disabled.
 ///     PDB struct: IngredientItem (180 bytes, FormType 0x1D).
 /// </summary>
 public record IngredientRecord

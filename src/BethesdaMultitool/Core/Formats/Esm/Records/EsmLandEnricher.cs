@@ -263,7 +263,7 @@ internal static class EsmLandEnricher
     /// </param>
     /// <param name="masterExteriorCellByGrid">
     ///     <c>(worldspaceFormId, gridX, gridY) → master-CELL FormId</c> index. Comes from
-    ///     <c>PluginBuilder</c>'s <c>_masterExteriorCellByGrid</c> in the converter
+    ///     <c>PluginConversionPipeline</c>'s <c>_masterExteriorCellByGrid</c> in the converter
     ///     pipeline; can be built directly in the GUI when master ESM is loaded.
     /// </param>
     /// <param name="landsByCell">

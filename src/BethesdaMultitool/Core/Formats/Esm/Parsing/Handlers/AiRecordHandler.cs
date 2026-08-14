@@ -58,6 +58,7 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
         PackageTarget? target = null;
         PackageTarget? target2 = null;
         var conditions = new List<DialogueCondition>();
+        var conditionStrings = new ConditionStringSiblingBinder();
         var isRepeatable = false;
         var isStartingLocationLinkedRef = false;
         var hasEatMarker = false;
@@ -72,6 +73,10 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
             var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            if (conditionStrings.TryConsume(sub.Signature, subData))
+            {
+                continue;
+            }
 
             if (TryStartEventAction(sub.Signature, out var eventKind))
             {
@@ -130,27 +135,14 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
                 case "PTD2" when sub.DataLength >= 16:
                     target2 ??= ParsePackageTarget(subData, record.IsBigEndian);
                     break;
-                case "CTDA" when sub.DataLength >= 28:
-                    conditions.Add(CtdaParser.Decode(subData, record.IsBigEndian));
-                    break;
-                case "CIS1" when conditions.Count > 0:
-                {
-                    var last = conditions[^1];
-                    conditions[^1] = last with
+                case "CTDA":
+                    if (CtdaParser.TryDecode(subData, record.IsBigEndian, out var packageCondition, out _))
                     {
-                        Parameter1String = EsmStringUtils.ReadNullTermString(subData)
-                    };
+                        conditions.Add(packageCondition);
+                        conditionStrings.Begin(conditions);
+                    }
+
                     break;
-                }
-                case "CIS2" when conditions.Count > 0:
-                {
-                    var last = conditions[^1];
-                    conditions[^1] = last with
-                    {
-                        Parameter2String = EsmStringUtils.ReadNullTermString(subData)
-                    };
-                    break;
-                }
                 case "PKPT" when sub.DataLength >= 2:
                     (isRepeatable, isStartingLocationLinkedRef) = ParsePatrolData(subData);
                     break;

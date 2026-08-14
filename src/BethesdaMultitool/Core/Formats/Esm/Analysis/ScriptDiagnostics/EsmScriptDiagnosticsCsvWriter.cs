@@ -104,7 +104,7 @@ internal static class EsmScriptDiagnosticsCsvWriter
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "target,relation,record_type,form_id,editor_id,condition_index,function_name,function_index,type,comparison_value,parameter1,parameter1_label,parameter2,parameter2_label,run_on,reference,reference_label,raw_bytes");
+            "target,relation,record_type,form_id,editor_id,condition_index,function_name,function_index,type,comparison_value,parameter1,parameter1_label,parameter2,parameter2_label,run_on,reference_storage,semantic_reference_label,raw_bytes,comparison_kind,comparison_raw_bits,comparison_global_form_id,comparison_global_label,parameter3,reference_storage_is_semantic,semantic_reference_form_id,ctda_body_length,layout_status");
         foreach (var row in result.Conditions)
         {
             sb.AppendLine(string.Join(',',
@@ -117,15 +117,30 @@ internal static class EsmScriptDiagnosticsCsvWriter
                 Csv(row.FunctionName),
                 Csv($"0x{row.FunctionIndex:X4}"),
                 row.Type,
-                row.ComparisonValue.ToString(CultureInfo.InvariantCulture),
+                row.NumericComparisonValue is { } numericComparison
+                    ? numericComparison.ToString(CultureInfo.InvariantCulture)
+                    : string.Empty,
                 Csv($"0x{row.Parameter1:X8}"),
                 Csv(row.Parameter1Label),
                 Csv($"0x{row.Parameter2:X8}"),
                 Csv(row.Parameter2Label),
-                row.RunOn,
-                Csv(row.Reference == 0 ? string.Empty : $"0x{row.Reference:X8}"),
-                Csv(row.ReferenceLabel),
-                Csv(row.RawBytes)));
+                row.RunOn?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                Csv(row.ReferenceStorage is { } referenceStorage
+                    ? $"0x{referenceStorage:X8}"
+                    : string.Empty),
+                Csv(row.SemanticReferenceLabel),
+                Csv(row.RawBytes),
+                Csv(row.ComparisonKind),
+                Csv($"0x{row.ComparisonRawBits:X8}"),
+                Csv(row.ComparisonGlobalFormId is { } globalFormId ? $"0x{globalFormId:X8}" : string.Empty),
+                Csv(row.ComparisonGlobalLabel),
+                row.Parameter3?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                row.ReferenceStorageIsSemantic,
+                Csv(row.SemanticReferenceFormId is { } semanticReference
+                    ? $"0x{semanticReference:X8}"
+                    : string.Empty),
+                row.BodyLength,
+                Csv(row.LayoutStatus)));
         }
 
         return sb.ToString();
@@ -197,6 +212,7 @@ internal static class EsmScriptDiagnosticsCsvWriter
         var sb = new StringBuilder();
         sb.AppendLine($"# Script Diagnostics: {Path.GetFileName(result.SourcePath)}");
         sb.AppendLine();
+        sb.AppendLine($"- Game: {result.Game}");
         sb.AppendLine($"- Targets: {string.Join(", ", result.Targets)}");
         sb.AppendLine($"- Target matches: {result.TargetMatches.Count:N0}");
         sb.AppendLine($"- Related records: {result.Records.Count:N0}");

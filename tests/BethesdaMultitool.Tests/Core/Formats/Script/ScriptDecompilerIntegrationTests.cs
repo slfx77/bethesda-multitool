@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Script;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Script;
@@ -13,6 +14,26 @@ namespace BethesdaMultitool.Tests.Core.Formats.Script;
 public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
 {
     private readonly ITestOutputHelper _output = output;
+
+    [Fact]
+    public void ShowBarterMenu_UsesItsEngineAuthoredShortNameWithoutLosingCanonicalIdentity()
+    {
+        const ushort opcode = 0x1173;
+        var functions = ScriptFunctionTables.For(BethesdaGame.FalloutNewVegas);
+        var definition = functions.Get(opcode);
+
+        Assert.NotNull(definition);
+        Assert.Equal("ShowBarterMenu", definition!.Name);
+        Assert.Equal("sbm", definition.ShortName);
+        Assert.Equal("sbm", ScriptDecompiler.GetFunctionDisplayName(definition, opcode, functions));
+
+        var comparison = ScriptComparer.CompareScripts(
+            definition.Name,
+            definition.ShortName,
+            ScriptComparer.BuildFunctionNameNormalizationMap());
+        Assert.Equal(1, comparison.MatchCount);
+        Assert.Equal(0, comparison.TotalMismatches);
+    }
 
     [Fact]
     public void Decompile_AllSyntheticScripts_NoExceptions()

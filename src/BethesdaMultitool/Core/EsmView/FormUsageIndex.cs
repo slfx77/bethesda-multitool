@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 
 namespace BethesdaMultitool;
 
@@ -110,6 +111,12 @@ internal sealed class FormUsageIndex
 
             foreach (var cond in dialogue.Conditions)
             {
+                if (cond.ComparisonGlobalFormId != 0)
+                {
+                    index.Add(cond.ComparisonGlobalFormId,
+                        new FormUsageReference(sourceFormId, "Dialogue", "Condition global comparison"));
+                }
+
                 if (cond.Parameter1 != 0 && DialogueConditionDisplayFormatter.IsFormReference(cond, 0, game))
                 {
                     index.Add(cond.Parameter1,
@@ -122,9 +129,9 @@ internal sealed class FormUsageIndex
                         new FormUsageReference(sourceFormId, "Dialogue", "Condition reference"));
                 }
 
-                if (cond.Reference != 0)
+                if (DialogueConditionReferencePolicy.TryGetSemanticReference(cond, game, out var reference))
                 {
-                    index.Add(cond.Reference,
+                    index.Add(reference,
                         new FormUsageReference(sourceFormId, "Dialogue", "Condition reference"));
                 }
             }

@@ -3,11 +3,11 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 
 /// <summary>
-///     Parsed Constructible Object (COBJ) record. FNV crafting blueprint used by workbenches —
-///     ties ingredient list (CNTO*) and crafting conditions (CTDA*) to a created item (CNAM).
-///     PDB struct: BGSConstructibleObject (196 bytes).
-///     fopdoc canonical subrecord order:
-///     EDID, OBND?, FULL?, MODL?, MODT?, COCT, CNTO*, CTDA*, CNAM, BNAM?.
+///     Forensic Constructible Object (COBJ) capture model. The FNV PDB identifies a
+///     196-byte <c>BGSConstructibleObject</c>, but current FNV xEdit defines its on-disk
+///     record as a MISC-like base object rather than the modern crafting-recipe layout.
+///     Recipe-shaped fields below are retained for existing probes and synthetic fixtures;
+///     this hybrid is deliberately not registered for production FNV emission.
 /// </summary>
 public record ConstructibleObjectRecord
 {
@@ -22,16 +22,16 @@ public record ConstructibleObjectRecord
     /// <summary>Texture-hash blob from MODT (opaque byte-array passthrough).</summary>
     public byte[]? TextureHashData { get; init; }
 
-    /// <summary>Crafting ingredients — each CNTO is parsed as an InventoryItem (FormID + Count).</summary>
+    /// <summary>Recipe-shaped CNTO data retained for forensic/non-FNV fixtures; absent from the FNV COBJ schema.</summary>
     public List<InventoryItem> Ingredients { get; init; } = [];
 
-    /// <summary>Crafting conditions (CTDA* with optional CIS1/CIS2 string parameters).</summary>
+    /// <summary>Recipe-shaped CTDA data retained for forensic/non-FNV fixtures; absent from the FNV COBJ schema.</summary>
     public List<DialogueCondition> Conditions { get; init; } = [];
 
-    /// <summary>FormID of the item produced by crafting (CNAM subrecord).</summary>
+    /// <summary>Runtime pCreatedItem recovery or modern-layout CNAM; FNV xEdit defines no COBJ CNAM.</summary>
     public uint? CreatedItemFormId { get; init; }
 
-    /// <summary>FormID of the workbench keyword that filters this recipe (BNAM subrecord, optional).</summary>
+    /// <summary>Modern-layout workbench keyword; FNV xEdit defines no COBJ BNAM.</summary>
     public uint? WorkbenchKeywordFormId { get; init; }
 
     public long Offset { get; init; }

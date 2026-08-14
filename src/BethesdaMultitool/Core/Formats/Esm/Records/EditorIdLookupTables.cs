@@ -1,6 +1,7 @@
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Utils;
 
@@ -20,9 +21,7 @@ internal static class EditorIdLookupTables
     ///     Detect INFO FormType from EditorID patterns, then read dialogue prompt text.
     /// </summary>
     internal static void ExtractDialogueLinesForInfoEntries(
-        MemoryMappedViewAccessor accessor,
-        long fileSize,
-        MinidumpInfo minidumpInfo,
+        RuntimeMemoryContext memoryContext,
         EsmRecordScanResult scanResult,
         int startIndex,
         Logger log)
@@ -43,11 +42,12 @@ internal static class EditorIdLookupTables
             if (entry.FormType == infoFormType.Value && entry.TesFormOffset.HasValue)
             {
                 infoCount++;
-                var dialogueLine = EsmEditorIdStringReader.ReadBsStringT(accessor, fileSize, minidumpInfo,
-                    entry.TesFormOffset.Value, EsmEditorIdConstants.InfoPromptOffset);
-                if (dialogueLine != null)
+                var dialogueLine = EsmEditorIdStringReader.ReadFromTesFormEntry(
+                    memoryContext, entry, EsmEditorIdConstants.InfoPromptOffset);
+                if (dialogueLine is { } line)
                 {
-                    entry.DialogueLine = dialogueLine;
+                    entry.DialogueLine = line.Text;
+                    entry.DialogueLineStringOffset = line.StringFileOffset;
                     dialogueCount++;
                 }
             }
@@ -105,6 +105,8 @@ internal static class EditorIdLookupTables
         Logger log)
     {
         log.Debug("EditorIDs: Walking pAllForms hash table at VA 0x{0:X8} for LAND/REFR entries...", allFormsVa);
+        var memoryContext = new RuntimeMemoryContext(
+            new MmfMemoryAccessor(accessor), fileSize, minidumpInfo);
 
         // Read NiTMapBase header: vfptr(4) + hashSize(4) + bucketArrayVa(4) + count(4) = 16 bytes
         var htFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(allFormsVa));
@@ -173,7 +175,7 @@ internal static class EditorIdLookupTables
             if (itemVa != 0 && Xbox360MemoryUtils.IsValidPointerInDump(itemVa, minidumpInfo))
             {
                 WalkAllFormsBucketChainCollect(
-                    accessor, fileSize, minidumpInfo, itemVa, ref chainErrors,
+                    memoryContext, itemVa, ref chainErrors,
                     knownLandFormIds, landFormTypeCounts,
                     knownRefrFormIds, refrFormTypeCounts,
                     allEntries);
@@ -283,9 +285,7 @@ internal static class EditorIdLookupTables
     ///     Uses VA-based region validation to prevent reading garbage across memory region gaps.
     /// </summary>
     private static void WalkAllFormsBucketChainCollect(
-        MemoryMappedViewAccessor accessor,
-        long fileSize,
-        MinidumpInfo minidumpInfo,
+        RuntimeMemoryContext memoryContext,
         uint itemVa,
         ref int chainErrors,
         HashSet<uint> knownLandFormIds,
@@ -295,10 +295,6 @@ internal static class EditorIdLookupTables
         List<(uint FormId, byte FormType, long FileOffset, long Va)> allEntries)
     {
         var chainDepth = 0;
-        var itemBuffer = new byte[12];
-        // Enlarged from 24 → 36 bytes so the probe can read iFormID at +32 for MSTT-style
-        // multi-inheritance classes. See TesFormHeaderProbe for the candidate-layout list.
-        var tesFormBuffer = new byte[TesFormHeaderProbe.RequiredBufferSize];
 
         while (itemVa != 0 && chainDepth < 1000)
         {
@@ -306,60 +302,47 @@ internal static class EditorIdLookupTables
 
             var itemVaLong = Xbox360MemoryUtils.VaToLong(itemVa);
 
-            // Validate 12-byte NiTMapItem is fully within a captured memory region
-            if (!minidumpInfo.IsVaRangeCaptured(itemVaLong, 12))
+            // Read by VA so adjacent capture regions may be stored out of order in the dump,
+            // while an actual virtual-address gap remains a hard boundary.
+            var itemBytes = memoryContext.ReadBytesAtVa(itemVaLong, 12);
+            if (itemBytes is null)
             {
                 chainErrors++;
                 break;
             }
 
-            var itemFileOffset = minidumpInfo.VirtualAddressToFileOffset(itemVaLong);
-            if (!itemFileOffset.HasValue || itemFileOffset.Value + 12 > fileSize)
-            {
-                chainErrors++;
-                break;
-            }
+            var nextVa = BinaryUtils.ReadUInt32BE(itemBytes);
+            var keyFormId = BinaryUtils.ReadUInt32BE(itemBytes, 4);
+            var valVa = BinaryUtils.ReadUInt32BE(itemBytes, 8);
 
-            accessor.ReadArray(itemFileOffset.Value, itemBuffer, 0, 12);
-            var nextVa = BinaryUtils.ReadUInt32BE(itemBuffer);
-            var keyFormId = BinaryUtils.ReadUInt32BE(itemBuffer, 4);
-            var valVa = BinaryUtils.ReadUInt32BE(itemBuffer, 8);
-
-            if (valVa != 0 && Xbox360MemoryUtils.IsValidPointerInDump(valVa, minidumpInfo))
+            if (memoryContext.IsValidPointer(valVa))
             {
                 var valVaLong = Xbox360MemoryUtils.VaToLong(valVa);
-
-                if (minidumpInfo.IsVaRangeCaptured(valVaLong, TesFormHeaderProbe.RequiredBufferSize))
+                var formFileOffset = memoryContext.VaToFileOffset(valVa);
+                var tesFormBytes = memoryContext.ReadBytesAtVa(
+                    valVaLong, TesFormHeaderProbe.RequiredBufferSize);
+                if (formFileOffset.HasValue &&
+                    tesFormBytes is not null &&
+                    keyFormId != 0 &&
+                    TesFormHeaderProbe.TryProbe(
+                        tesFormBytes, out var formType, out _, expectedFormId: keyFormId))
                 {
-                    var formFileOffset = minidumpInfo.VirtualAddressToFileOffset(valVaLong);
-                    if (formFileOffset.HasValue
-                        && formFileOffset.Value + TesFormHeaderProbe.RequiredBufferSize <= fileSize)
+                    // The map value is TESForm*, so identity is always TESForm-relative
+                    // (+4/+12), even when this is an interior subobject of MSTT or FLOR.
+                    allEntries.Add((keyFormId, formType, formFileOffset.Value, valVaLong));
+
+                    // Calibrate: if this FormID is a known LAND record, record its FormType
+                    if (knownLandFormIds.Contains(keyFormId))
                     {
-                        accessor.ReadArray(formFileOffset.Value, tesFormBuffer, 0,
-                            TesFormHeaderProbe.RequiredBufferSize);
+                        landFormTypeCounts.TryGetValue(formType, out var count);
+                        landFormTypeCounts[formType] = count + 1;
+                    }
 
-                        // Probe with expectedFormId = keyFormId so the candidate that matches
-                        // the hash-table key wins unambiguously, even on multi-inheritance classes.
-                        if (TesFormHeaderProbe.TryProbe(tesFormBuffer, out var formType, out _,
-                                expectedFormId: keyFormId)
-                            && keyFormId != 0)
-                        {
-                            allEntries.Add((keyFormId, formType, formFileOffset.Value, valVaLong));
-
-                            // Calibrate: if this FormID is a known LAND record, record its FormType
-                            if (knownLandFormIds.Contains(keyFormId))
-                            {
-                                landFormTypeCounts.TryGetValue(formType, out var count);
-                                landFormTypeCounts[formType] = count + 1;
-                            }
-
-                            // Calibrate: if this FormID is a known REFR/ACHR/ACRE, record its FormType
-                            if (knownRefrFormIds.Contains(keyFormId))
-                            {
-                                refrFormTypeCounts.TryGetValue(formType, out var rCount);
-                                refrFormTypeCounts[formType] = rCount + 1;
-                            }
-                        }
+                    // Calibrate: if this FormID is a known REFR/ACHR/ACRE, record its FormType
+                    if (knownRefrFormIds.Contains(keyFormId))
+                    {
+                        refrFormTypeCounts.TryGetValue(formType, out var rCount);
+                        refrFormTypeCounts[formType] = rCount + 1;
                     }
                 }
             }

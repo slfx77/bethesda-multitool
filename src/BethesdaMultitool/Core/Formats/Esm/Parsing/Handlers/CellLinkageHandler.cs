@@ -322,7 +322,7 @@ internal static class CellLinkageHandler
     ///     the same worldspace and grid. Orphan refs whose parent cell couldn't be resolved are
     ///     placed in synthetic virtual cells keyed by world position; when a non-virtual cell already
     ///     occupies that (worldspace, grid) the emission-time grid-collision dedup
-    ///     (<c>PluginBuilder._emittedExteriorCellCoords</c>) drops the virtual cell and loses its
+    ///     (<c>PluginConversionPipeline._emittedExteriorCellCoords</c>) drops the virtual cell and loses its
     ///     refs. Seen in the cut <c>TheStripWorld</c>: the VStreetFluff travel markers were recovered
     ///     into a virtual (0,0) cell colliding with the worldspace persistent cell, so the markers
     ///     never emitted and every package referencing them dangled. Consolidate the refs into the

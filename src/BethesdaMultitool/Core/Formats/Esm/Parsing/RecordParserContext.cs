@@ -133,9 +133,10 @@ public sealed class RecordParserContext
             }
         }
 
-        // Inject well-known engine FormIDs.
-        FormIdToEditorId.TryAdd(0x00000007, "PlayerRef");
-        FormIdToEditorId.TryAdd(0x00000014, "Player");
+        // Inject well-known identities. Player is a master-backed NPC_ EDID; PlayerRef is a
+        // synthetic name for the engine-created reference at 0x14, which has no master record.
+        FormIdToEditorId.TryAdd(0x00000007, "Player");
+        FormIdToEditorId.TryAdd(0x00000014, "PlayerRef");
 
         EditorIdToFormId = FormIdToEditorId
             .GroupBy(kv => kv.Value)

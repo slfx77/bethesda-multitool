@@ -58,7 +58,10 @@ public record CellRecord
     /// <summary>Whether this cell has water.</summary>
     public bool HasWater => (Flags & 0x02) != 0;
 
-    /// <summary>Water height (XCLW subrecord, interior cells).</summary>
+    /// <summary>
+    ///     Per-cell water height from XCLW. On an exterior CELL, the canonical sentinel means no
+    ///     explicit per-cell override, so resolution uses the WRLD default; interiors have no WRLD fallback.
+    /// </summary>
     public float? WaterHeight { get; init; }
 
     /// <summary>

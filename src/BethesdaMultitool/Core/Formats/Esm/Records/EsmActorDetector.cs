@@ -1,4 +1,6 @@
+using BethesdaMultitool.Core.Formats.Esm.Script;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Records;
@@ -9,6 +11,16 @@ namespace BethesdaMultitool.Core.Formats.Esm.Records;
 /// </summary>
 internal static class EsmActorDetector
 {
+    private static readonly BethesdaGame[] GamesWithExplicitConditionTables =
+    [
+        BethesdaGame.Oblivion,
+        BethesdaGame.FalloutNewVegas,
+        BethesdaGame.Skyrim,
+        BethesdaGame.Fallout4,
+        BethesdaGame.Fallout76,
+        BethesdaGame.Starfield
+    ];
+
     #region Actor Base (ACBS)
 
     internal static void TryAddActorBaseSubrecord(byte[] data, int i, int dataLength, List<ActorBaseSubrecord> records)
@@ -158,108 +170,87 @@ internal static class EsmActorDetector
 
     internal static void TryAddConditionSubrecord(byte[] data, int i, int dataLength, List<ConditionSubrecord> records)
     {
-        // CTDA is typically 24 or 28 bytes
-        if (i + 30 > dataLength)
-        {
-            return;
-        }
-
-        var len = BinaryUtils.ReadUInt16LE(data, i + 4);
-        if (len != 24 && len != 28)
-        {
-            return;
-        }
-
-        var condition = TryParseCondition(data, i + 6, i, false);
-        if (condition != null)
-        {
-            records.Add(condition);
-            return;
-        }
-
-        condition = TryParseCondition(data, i + 6, i, true);
-        if (condition != null)
-        {
-            records.Add(condition);
-        }
+        TryAddConditionSubrecordCore(data, i, dataLength, i, records);
     }
 
     internal static void TryAddConditionSubrecordWithOffset(byte[] data, int i, int dataLength, long baseOffset,
         List<ConditionSubrecord> records)
     {
-        if (i + 30 > dataLength)
-        {
-            return;
-        }
-
-        var len = BinaryUtils.ReadUInt16LE(data, i + 4);
-        if (len != 24 && len != 28)
-        {
-            return;
-        }
-
-        var condition = TryParseCondition(data, i + 6, baseOffset + i, false);
-        if (condition != null)
-        {
-            records.Add(condition);
-            return;
-        }
-
-        condition = TryParseCondition(data, i + 6, baseOffset + i, true);
-        if (condition != null)
-        {
-            records.Add(condition);
-        }
+        TryAddConditionSubrecordCore(data, i, dataLength, baseOffset + i, records);
     }
 
-    private static ConditionSubrecord? TryParseCondition(byte[] data, int offset, long recordOffset, bool isBigEndian)
+    private static void TryAddConditionSubrecordCore(
+        byte[] data,
+        int i,
+        int dataLength,
+        long recordOffset,
+        List<ConditionSubrecord> records)
     {
-        // CTDA structure (24 bytes):
-        // Offset 0: type (1 byte)
-        // Offset 1: unused (3 bytes) - byte 1 is operator
-        // Offset 4: compValue (4 bytes float)
-        // Offset 8: functionIndex (2 bytes)
-        // Offset 10: unused (2 bytes)
-        // Offset 12: param1 (4 bytes)
-        // Offset 16: param2 (4 bytes)
-        // Offset 20: runOnType (4 bytes) - optional
-
-        var conditionType = data[offset];
-        var operatorVal = data[offset + 1];
-        float compValue;
-        ushort functionIndex;
-        uint param1;
-        uint param2;
-
-        if (isBigEndian)
+        if (dataLength < 0 || dataLength > data.Length || i < 0 || i > dataLength - 6)
         {
-            compValue = BinaryUtils.ReadFloatBE(data, offset + 4);
-            functionIndex = BinaryUtils.ReadUInt16BE(data, offset + 8);
-            param1 = BinaryUtils.ReadUInt32BE(data, offset + 12);
-            param2 = BinaryUtils.ReadUInt32BE(data, offset + 16);
+            return;
+        }
+
+        bool isBigEndian;
+        if (data.AsSpan(i, 4).SequenceEqual("CTDA"u8))
+        {
+            isBigEndian = false;
+        }
+        else if (data.AsSpan(i, 4).SequenceEqual("ADTC"u8))
+        {
+            isBigEndian = true;
         }
         else
         {
-            compValue = BinaryUtils.ReadFloatLE(data, offset + 4);
-            functionIndex = BinaryUtils.ReadUInt16LE(data, offset + 8);
-            param1 = BinaryUtils.ReadUInt32LE(data, offset + 12);
-            param2 = BinaryUtils.ReadUInt32LE(data, offset + 16);
+            return;
         }
 
-        // Validate function index (should be < 1000 for known functions)
-        if (functionIndex > 1000)
+        var bodyLength = isBigEndian
+            ? BinaryUtils.ReadUInt16BE(data, i + 4)
+            : BinaryUtils.ReadUInt16LE(data, i + 4);
+        if (!ConditionSubrecordDecoder.IsSupportedBodyLength(bodyLength) ||
+            bodyLength > dataLength - (i + 6))
         {
-            return null;
+            return;
         }
 
-        // Validate comparison value
-        if (float.IsNaN(compValue) || float.IsInfinity(compValue))
+        var body = data.AsSpan(i + 6, bodyLength);
+        if (!ConditionSubrecordDecoder.TryDecode(body, recordOffset, isBigEndian, out var condition) ||
+            !IsPlausibleCondition(condition))
         {
-            return null;
+            return;
         }
 
-        return new ConditionSubrecord(conditionType, operatorVal, compValue, functionIndex, param1, param2,
-            recordOffset);
+        records.Add(condition);
+    }
+
+    private static bool IsPlausibleCondition(ConditionSubrecord condition)
+    {
+        // This blind scanner has no game identity. Preserve the historical coarse range for low
+        // indices, but require every higher value to occur in at least one supported game's explicit
+        // raw CTDA map. This admits sparse TES4/xOBSE, Skyrim/SKSE, and FO76 indices without turning
+        // the full UInt16 range into blind-carving candidates.
+        if (condition.FunctionIndex > 1000 && !IsKnownHighConditionIndex(condition.FunctionIndex))
+        {
+            return false;
+        }
+
+        // A UseGlobal comparison stores raw GLOB FormID bits, so interpreting those bits as a float
+        // can legitimately produce NaN or infinity. Finiteness is meaningful only for numeric storage.
+        return condition.UsesGlobalComparison || float.IsFinite(condition.ComparisonValue);
+    }
+
+    private static bool IsKnownHighConditionIndex(ushort functionIndex)
+    {
+        foreach (var game in GamesWithExplicitConditionTables)
+        {
+            if (ScriptFunctionTables.For(game).GetConditionFunction(functionIndex) is not null)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     #endregion

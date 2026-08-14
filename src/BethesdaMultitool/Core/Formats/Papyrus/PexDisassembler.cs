@@ -22,6 +22,18 @@ public static class PexDisassembler
             }
 
             output.AppendLine();
+            if (obj.HasFallout76TrailingStateReferenceTable)
+            {
+                output.Append("  .fallout76TrailingStateReferenceCount ")
+                    .AppendLine(obj.Fallout76TrailingStateReferences.Length.ToString());
+                foreach (var reference in obj.Fallout76TrailingStateReferences)
+                {
+                    output.Append("  .fallout76TrailingStateReference ")
+                        .Append(reference.Index).Append(" \"")
+                        .Append(PexDecompiler.EscapeString(reference.Value)).AppendLine("\"");
+                }
+            }
+
             foreach (var state in obj.States)
             {
                 output.Append("  .state ").AppendLine(state.Name.Value);
@@ -56,6 +68,8 @@ public static class PexDisassembler
     {
         AppendIndent(output, indent).Append(".function ").AppendLine(name);
         AppendIndent(output, indent + 2).Append(".return ").AppendLine(function.ReturnTypeName.Value);
+        AppendIndent(output, indent + 2).Append(".rawFlags 0x")
+            .AppendLine(function.RawFlags.ToString("X2"));
         foreach (var parameter in function.Parameters)
         {
             AppendIndent(output, indent + 2).Append(".param ").Append(parameter.Name.Value).Append(' ')

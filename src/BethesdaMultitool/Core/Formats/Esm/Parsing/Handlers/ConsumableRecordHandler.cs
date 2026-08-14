@@ -406,12 +406,15 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
         uint? pickupSoundFormId = null;
         uint? dropSoundFormId = null;
         var equipmentType = EquipmentType.None;
-        var effects = new List<EnchantmentEffect>();
-        uint currentEffectId = 0;
+        var effectParser = new MagicEffectSubrecordParser(record.IsBigEndian);
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
             var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            if (effectParser.TryConsume(sub.Signature, subData))
+            {
+                continue;
+            }
 
             switch (sub.Signature)
             {
@@ -436,13 +439,6 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
 
                     break;
                 }
-                case "CTDA" when sub.DataLength >= 20 && effects.Count > 0:
-                    // ALCH effect conditions follow their EFID/EFIT; attach to the current effect.
-                    effects[^1] = effects[^1] with
-                    {
-                        Conditions = [.. effects[^1].Conditions, CtdaParser.Decode(subData, record.IsBigEndian)]
-                    };
-                    break;
                 case "EDID":
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
@@ -506,33 +502,6 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
 
                     break;
                 }
-                case "EFID" when sub.DataLength >= 4:
-                    currentEffectId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
-                    break;
-                case "EFIT" when sub.DataLength >= 12:
-                {
-                    if (SubrecordSchemaView.TryRead("EFIT", null, subData, record.IsBigEndian) is { } v)
-                    {
-                        var magnitude = GameStatNormalizer.EffectMagnitude(subData, record.IsBigEndian);
-                        var area = v.UInt32("Area");
-                        var duration = v.UInt32("Duration");
-                        var type = v.UInt32("Type");
-                        var actorValue = v.Int32("ActorValue", -1);
-
-                        effects.Add(new EnchantmentEffect
-                        {
-                            EffectFormId = currentEffectId,
-                            Magnitude = magnitude,
-                            Area = GameStatNormalizer.IsPlausibleEffectArea(area) ? area : 0,
-                            Duration = GameStatNormalizer.IsPlausibleEffectDuration(duration) ? duration : 0,
-                            Type = GameStatNormalizer.IsPlausibleEffectTarget(type) ? type : 0,
-                            ActorValue = GameStatNormalizer.IsPlausibleActorValue(actorValue) ? actorValue : -1
-                        });
-                    }
-
-                    break;
-                }
-
                 default:
                     NoteUnmodeledSubrecord("ALCH", sub.Signature, sub.DataLength);
                     break;
@@ -555,7 +524,7 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
             WithdrawalEffectFormId = withdrawalEffectFormId != 0 ? withdrawalEffectFormId : null,
             AddictionChance = addictionChance,
             ConsumeSoundFormId = consumeSoundFormId,
-            Effects = effects,
+            Effects = effectParser.Effects,
             ScriptFormId = scriptFormId != 0 ? scriptFormId : null,
             PickupSoundFormId = pickupSoundFormId != 0 ? pickupSoundFormId : null,
             DropSoundFormId = dropSoundFormId != 0 ? dropSoundFormId : null,

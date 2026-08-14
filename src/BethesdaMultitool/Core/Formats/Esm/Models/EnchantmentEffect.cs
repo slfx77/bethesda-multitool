@@ -2,7 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Models;
 
-/// <summary>One magic effect on an enchantment or spell, parsed from its EFID/EFIT subrecords.</summary>
+/// <summary>One magic effect on a consumable, enchantment, or spell.</summary>
 public record EnchantmentEffect
 {
     /// <summary>Base effect FormID (MGEF) from EFID subrecord.</summary>
@@ -23,7 +23,11 @@ public record EnchantmentEffect
     /// <summary>Actor value index from EFIT (-1 if not applicable).</summary>
     public int ActorValue { get; init; }
 
-    /// <summary>Per-effect conditions (CTDA subrecords following this effect's EFID/EFIT). Empty for
-    ///     unconditioned effects and for ENCH/SPEL (whose encoders do not emit effect conditions).</summary>
+    /// <summary>
+    ///     Per-effect conditions (CTDA subrecords following this effect's EFID/EFIT), including physically
+    ///     adjacent CIS1/CIS2 strings when present. The typed ALCH/ENCH/SPEL parsers preserve that grammar.
+    ///     The Fallout New Vegas target writers emit its 28-byte CTDA form; modern CIS strings and the
+    ///     Parameter #3 tail are outside that writer contract.
+    /// </summary>
     public List<DialogueCondition> Conditions { get; init; } = [];
 }

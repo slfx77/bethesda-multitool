@@ -442,7 +442,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                         ? BinaryPrimitives.ReadUInt32BigEndian(subData)
                         : BinaryPrimitives.ReadUInt32LittleEndian(subData);
                     break;
-                case "XCLL" when sub.DataLength == 40:
+                // 40 = FO3/FNV+, 36 = TES4 (same layout without the trailing FogPow float). The gate
+                // was 40-exact, which silently discarded EVERY Oblivion cell's authored lighting
+                // (all 1,770 XCLLs in Oblivion.esm are 36 bytes) and left interiors on engine
+                // fallback defaults. SubrecordSchemaView resolves the right layout by length.
+                case "XCLL" when sub.DataLength is 40 or 36:
                 {
                     if (SubrecordSchemaView.TryRead("XCLL", "CELL", subData, record.IsBigEndian) is { } v)
                     {

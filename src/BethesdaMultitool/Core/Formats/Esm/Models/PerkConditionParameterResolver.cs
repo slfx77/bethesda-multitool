@@ -1,31 +1,38 @@
 using BethesdaMultitool.Core.Formats.Esm.Script;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Models;
 
-/// <summary>Maps CTDA condition-function indices to script function names and resolves their parameter values.</summary>
+/// <summary>
+///     FNV-targeted resolver for conversion/runtime paths that consume the extracted FNV command and
+///     exact retail callback tables. Its raw indices are not a cross-game CTDA numbering rule; generic
+///     consumers must use the game-keyed <see cref="Script.Conditions.ConditionFunctionTable" />.
+/// </summary>
 internal static class PerkConditionParameterResolver
 {
+    private static readonly ScriptFunctionSet FalloutFunctions =
+        ScriptFunctionTables.For(BethesdaGame.FalloutNewVegas);
+
     /// <summary>
-    ///     Returns true when the condition index resolves to a function present in the
-    ///     final FNV executable's game-command table. Prototype-only or corrupt indices
-    ///     must not be serialized: the retail loader indexes this table while loading
-    ///     CTDAs and does not safely tolerate an out-of-range value.
+    ///     Returns true when the raw condition index belongs to the pinned final FNV executable's exact
+    ///     non-null callback subset. Absent, script-only, corrupt, and out-of-range indices fail closed.
     /// </summary>
     public static bool IsKnownConditionFunction(ushort conditionFunctionIndex)
     {
-        return ScriptFunctionTable.Get(ToScriptOpcode(conditionFunctionIndex)) is not null;
+        return FalloutFunctions.GetConditionFunction(conditionFunctionIndex) is not null;
     }
 
     /// <summary>Returns the script function name for a CTDA condition-function index.</summary>
     public static string ResolveScriptFunctionName(ushort conditionFunctionIndex)
     {
-        return ScriptFunctionTable.GetName(ToScriptOpcode(conditionFunctionIndex));
+        return FalloutFunctions.GetConditionFunction(conditionFunctionIndex)?.Name
+               ?? $"UnknownCondition_0x{conditionFunctionIndex:X4}";
     }
 
     /// <summary>Returns the declared parameter type for a condition function's nth parameter, or null if unknown.</summary>
     public static ScriptParamType? GetParameterType(ushort conditionFunctionIndex, int parameterIndex)
     {
-        var function = ScriptFunctionTable.Get(ToScriptOpcode(conditionFunctionIndex));
+        var function = FalloutFunctions.GetConditionFunction(conditionFunctionIndex);
         return function is not null && parameterIndex >= 0 && parameterIndex < function.Params.Length
             ? function.Params[parameterIndex].Type
             : null;
@@ -73,13 +80,6 @@ internal static class PerkConditionParameterResolver
     {
         var type = GetParameterType(conditionFunctionIndex, parameterIndex);
         return type.HasValue && ShouldResolveAsForm(type);
-    }
-
-    private static ushort ToScriptOpcode(ushort conditionFunctionIndex)
-    {
-        return conditionFunctionIndex >= 0x1000
-            ? conditionFunctionIndex
-            : (ushort)(0x1000 + conditionFunctionIndex);
     }
 
     private static bool ShouldResolveAsForm(ScriptParamType? paramType)

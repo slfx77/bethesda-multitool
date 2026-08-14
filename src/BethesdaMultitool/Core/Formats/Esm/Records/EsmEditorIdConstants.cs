@@ -14,7 +14,7 @@ internal static class EsmEditorIdConstants
 
     /// <summary>
     ///     Maps runtime FormType byte values (ENUM_FORM_ID) to the offset of the TESFullName
-    ///     pointer within the C++ class hierarchy for each record type.
+    ///     embedded BSStringT field from the complete-object base for each record type.
     /// </summary>
     internal static readonly Dictionary<byte, int> FullNameOffsetByFormType = new()
     {
@@ -28,10 +28,8 @@ internal static class EsmEditorIdConstants
         [0x1B] = 80, // CONT - TESObjectCONT
         [0x1C] = 68, // DOOR - TESObjectDOOR
         [0x1F] = 68, // MISC - TESObjectMISC
-        // MSTT/FLOR put TESFullName earlier in the inheritance chain than the usual
-        // TESBoundAnimObject layout — verified via pdb_layouts.json keys "0x22"/"0x26".
-        // Required so display-name reads succeed once TesFormHeaderProbe lets these
-        // FormTypes through with the correct values.
+        // These are complete-object-relative PDB offsets. MSTT/FLOR map values point at
+        // interior TESForm subobjects (+20/+12), so callers must rebase before adding them.
         [0x22] = 4, // MSTT - BGSMovableStatic (TESFullName is first base)
         [0x26] = 80, // FLOR - TESFlora (TESFullName via TESBoundAnimObject after TESProduceForm)
         [0x28] = 68, // WEAP - TESObjectWEAP

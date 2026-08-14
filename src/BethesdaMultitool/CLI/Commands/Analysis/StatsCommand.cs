@@ -59,7 +59,7 @@ public static class StatsCommand
         }
     }
 
-    private static void DisplayStats(RecordCollection records)
+    internal static List<(string Category, string Type, int Count)> BuildCategories(RecordCollection records)
     {
         var categories = new List<(string Category, string Type, int Count)>();
 
@@ -69,6 +69,11 @@ public static class StatsCommand
         AddIfNonZero(categories, "Characters", "RACE", records.Races.Count);
         AddIfNonZero(categories, "Characters", "FACT", records.Factions.Count);
         AddIfNonZero(categories, "Characters", "CLAS", records.Classes.Count);
+        AddIfNonZero(categories, "Characters", "ECZN", records.EncounterZones.Count);
+        AddIfNonZero(categories, "Characters", "EYES", records.Eyes.Count);
+        AddIfNonZero(categories, "Characters", "HAIR", records.Hair.Count);
+        AddIfNonZero(categories, "Characters", "HDPT", records.HeadParts.Count);
+        AddIfNonZero(categories, "Characters", "VTYP", records.VoiceTypes.Count);
 
         // Quests & Dialogue
         AddIfNonZero(categories, "Quests & Dialogue", "QUST", records.Quests.Count);
@@ -85,6 +90,7 @@ public static class StatsCommand
         AddIfNonZero(categories, "Items", "ARMO", records.Armor.Count);
         AddIfNonZero(categories, "Items", "AMMO", records.Ammo.Count);
         AddIfNonZero(categories, "Items", "ALCH", records.Consumables.Count);
+        AddIfNonZero(categories, "Items", "INGR", records.Ingredients.Count);
         AddIfNonZero(categories, "Items", "MISC", records.MiscItems.Count);
         AddIfNonZero(categories, "Items", "KEYM", records.Keys.Count);
         AddIfNonZero(categories, "Items", "CONT", records.Containers.Count);
@@ -99,21 +105,38 @@ public static class StatsCommand
         // World
         AddIfNonZero(categories, "World", "CELL", records.Cells.Count);
         AddIfNonZero(categories, "World", "WRLD", records.Worldspaces.Count);
-        AddIfNonZero(categories, "World", "LVLI/LVLN", records.LeveledLists.Count);
+        AddIfNonZero(categories, "World", "LVLI/LVLN/LVLC", records.LeveledLists.Count);
         AddIfNonZero(categories, "World", "NAVM", records.NavMeshes.Count);
+        AddIfNonZero(categories, "World", "NAVI", records.NavMeshInfoMaps.Count);
         AddIfNonZero(categories, "World", "STAT", records.Statics.Count);
+        AddIfNonZero(categories, "World", "SCOL", records.StaticCollections.Count);
+        AddIfNonZero(categories, "World", "PWAT", records.PlaceableWaters.Count);
+        AddIfNonZero(categories, "World", "TREE", records.Trees.Count);
         AddIfNonZero(categories, "World", "ACTI", records.Activators.Count);
         AddIfNonZero(categories, "World", "DOOR", records.Doors.Count);
         AddIfNonZero(categories, "World", "FURN", records.Furniture.Count);
         AddIfNonZero(categories, "World", "LIGH", records.Lights.Count);
+        AddIfNonZero(categories, "World", "CPTH", records.CameraPaths.Count);
+        AddIfNonZero(categories, "World", "LSCT", records.LoadScreenTypes.Count);
+        AddIfNonZero(categories, "World", "IDLE", records.IdleAnimations.Count);
+        AddIfNonZero(categories, "World", "PGRE", records.PlacedGrenades.Count);
+        AddIfNonZero(categories, "World", "REGN", records.Regions.Count);
 
         // Game Data
         AddIfNonZero(categories, "Game Data", "GMST", records.GameSettings.Count);
         AddIfNonZero(categories, "Game Data", "GLOB", records.Globals.Count);
         AddIfNonZero(categories, "Game Data", "RCPE", records.Recipes.Count);
+        AddIfNonZero(categories, "Game Data", "RCCT", records.RecipeCategories.Count);
+        AddIfNonZero(categories, "Game Data", "COBJ", records.ConstructibleObjects.Count);
         AddIfNonZero(categories, "Game Data", "CHAL", records.Challenges.Count);
         AddIfNonZero(categories, "Game Data", "REPU", records.Reputations.Count);
+        AddIfNonZero(categories, "Game Data", "CCRD", records.CaravanCards.Count);
         AddIfNonZero(categories, "Game Data", "CMNY", records.CaravanMoney.Count);
+        AddIfNonZero(categories, "Game Data", "CDCK", records.CaravanDecks.Count);
+        AddIfNonZero(categories, "Game Data", "RADS", records.RadiationStages.Count);
+        AddIfNonZero(categories, "Game Data", "DEHY", records.DehydrationStages.Count);
+        AddIfNonZero(categories, "Game Data", "HUNG", records.HungerStages.Count);
+        AddIfNonZero(categories, "Game Data", "SLPD", records.SleepDeprivationStages.Count);
         AddIfNonZero(categories, "Game Data", "FLST", records.FormLists.Count);
         AddIfNonZero(categories, "Game Data", "PROJ", records.Projectiles.Count);
         AddIfNonZero(categories, "Game Data", "EXPL", records.Explosions.Count);
@@ -128,12 +151,22 @@ public static class StatsCommand
         // silently disappear from the table on FO4/FO76 files (no longer listed under Unparsed).
         AddIfNonZero(categories, "Graphics & Audio", "MSWP", records.MaterialSwaps.Count);
         AddIfNonZero(categories, "Graphics & Audio", "SOUN", records.Sounds.Count);
+        AddIfNonZero(categories, "Graphics & Audio", "MUSC", records.MusicTypes.Count);
+        AddIfNonZero(categories, "Graphics & Audio", "MICN", records.MenuIcons.Count);
         AddIfNonZero(categories, "Graphics & Audio", "ARMA", records.ArmorAddons.Count);
         AddIfNonZero(categories, "Graphics & Audio", "WATR", records.Water.Count);
         AddIfNonZero(categories, "Graphics & Audio", "WTHR", records.Weather.Count);
+        AddIfNonZero(categories, "Graphics & Audio", "CLMT", records.Climate.Count);
         AddIfNonZero(categories, "Graphics & Audio", "LGTM", records.LightingTemplates.Count);
         AddIfNonZero(categories, "Graphics & Audio", "BPTD", records.BodyPartData.Count);
         AddIfNonZero(categories, "Graphics & Audio", "AVIF", records.ActorValueInfos.Count);
+        AddIfNonZero(categories, "Graphics & Audio", "ALOC", records.AudioLocationControllers.Count);
+        AddIfNonZero(categories, "Graphics & Audio", "DEBR", records.Debris.Count);
+        AddIfNonZero(categories, "Graphics & Audio", "IPCT", records.ImpactData.Count);
+        AddIfNonZero(categories, "Graphics & Audio", "LTEX", records.LandTextures.Count);
+        AddIfNonZero(categories, "Graphics & Audio", "GRAS", records.Grasses.Count);
+        AddIfNonZero(categories, "Graphics & Audio", "IMGS", records.ImageSpaces.Count);
+        AddIfNonZero(categories, "Graphics & Audio", "IMAD", records.ImageSpaceModifiers.Count);
 
         // Map markers
         AddIfNonZero(categories, "World", "Markers", records.MapMarkers.Count);
@@ -146,6 +179,13 @@ public static class StatsCommand
         {
             categories.Add(("Unparsed", type, count));
         }
+
+        return categories;
+    }
+
+    private static void DisplayStats(RecordCollection records)
+    {
+        var categories = BuildCategories(records);
 
         // Display table
         var table = new Table();

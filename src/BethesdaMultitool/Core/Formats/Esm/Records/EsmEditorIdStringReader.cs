@@ -1,59 +1,80 @@
-using System.IO.MemoryMappedFiles;
-using BethesdaMultitool.Core.Minidump;
+using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Records;
 
 /// <summary>
-///     Reads BSStringT&lt;char&gt; strings from TESForm objects in Xbox 360 memory dumps.
+///     Reads BSStringT&lt;char&gt; fields from runtime objects in Xbox 360 memory dumps.
 ///     Shared by <see cref="EsmEditorIdExtractor" /> and <see cref="EditorIdLookupTables" />.
 /// </summary>
 internal static class EsmEditorIdStringReader
 {
+    internal readonly record struct ReadResult(string Text, long StringFileOffset);
+
     /// <summary>
-    ///     Read a BSStringT&lt;char&gt; string from a TESForm object in the dump.
+    ///     Read a BSStringT&lt;char&gt; field at a complete-object-relative offset. Both the
+    ///     eight-byte header and pointed-to payload are read in VA space, so VA-contiguous
+    ///     regions can be stitched regardless of their physical dump-file placement and
+    ///     capture gaps fail closed.
     ///     BSStringT layout (8 bytes, big-endian on Xbox 360):
     ///     Offset 0: pString (char* pointer, 4 bytes BE)
     ///     Offset 4: sLen (uint16 BE)
     /// </summary>
-    internal static string? ReadBsStringT(
-        MemoryMappedViewAccessor accessor,
-        long fileSize,
-        MinidumpInfo minidumpInfo,
-        long tesFormFileOffset,
+    internal static ReadResult? ReadBsStringTAtVa(
+        RuntimeMemoryContext context,
+        long objectVa,
         int fieldOffset)
     {
-        var bstOffset = tesFormFileOffset + fieldOffset;
-        if (bstOffset + 8 > fileSize)
+        if (fieldOffset < 0 || objectVa > long.MaxValue - fieldOffset)
         {
             return null;
         }
 
-        var bstBuffer = new byte[8];
-        accessor.ReadArray(bstOffset, bstBuffer, 0, 8);
-
-        var pString = BinaryUtils.ReadUInt32BE(bstBuffer);
-        var sLen = BinaryUtils.ReadUInt16BE(bstBuffer, 4);
-
-        if (pString == 0 || sLen == 0 || sLen > 4096)
+        var header = context.ReadBytesAtVa(objectVa + fieldOffset, 8);
+        if (header == null)
         {
             return null;
         }
 
-        if (!Xbox360MemoryUtils.IsValidPointerInDump(pString, minidumpInfo))
+        var text = context.ReadBSStringTDiag(header, 0, out _,
+            out var stringVa, out _, out _, out _);
+        if (text == null)
         {
             return null;
         }
 
-        var strFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(pString));
-        if (!strFileOffset.HasValue || strFileOffset.Value + sLen > fileSize)
+        var stringFileOffset = context.MinidumpInfo.VirtualAddressToFileOffset(
+            Xbox360MemoryUtils.VaToLong(stringVa));
+        if (!stringFileOffset.HasValue)
         {
             return null;
         }
 
-        var strBuffer = new byte[sLen];
-        accessor.ReadArray(strFileOffset.Value, strBuffer, 0, sLen);
+        return new ReadResult(text, stringFileOffset.Value);
+    }
 
-        return EsmStringUtils.ValidateAndDecodeGameText(strBuffer, sLen);
+    /// <summary>
+    ///     Resolves an entry's captured TESForm subobject VA, preferring the retained pointer
+    ///     and falling back to the file-offset mapping for synthetic or legacy entries.
+    /// </summary>
+    internal static ReadResult? ReadFromTesFormEntry(
+        RuntimeMemoryContext context,
+        RuntimeEditorIdEntry entry,
+        int tesFormRelativeFieldOffset)
+    {
+        long? tesFormVa = null;
+        if (entry.TesFormPointer is { } pointer && pointer != 0)
+        {
+            tesFormVa = pointer;
+        }
+        else if (entry.TesFormOffset is { } fileOffset)
+        {
+            tesFormVa = context.MinidumpInfo.FileOffsetToVirtualAddress(fileOffset);
+        }
+
+        return tesFormVa.HasValue
+            ? ReadBsStringTAtVa(context, tesFormVa.Value, tesFormRelativeFieldOffset)
+            : null;
     }
 }

@@ -39,14 +39,15 @@ internal static class EsmRecordScanner
         var seenFormIds = new HashSet<uint>();
         var seenMainRecordOffsets = new HashSet<long>();
 
-        // Record header size is version-dependent: Oblivion's TES4 header is 20 bytes (no version-control
-        // trailer), FO3/FNV/Skyrim+ are 24. Detect it once from the file header so subrecord-data offsets
-        // (record.Offset + record.HeaderSize) land correctly for every game.
+        // Main-record header size is version-dependent: Oblivion's TES4 header is 20 bytes (no
+        // version-control trailer), FO3/FNV/Skyrim+ are 24. Detect it once so main-record data offsets
+        // are correct. This blind scanner's GRUP probe remains the modern 24-byte shape; authoritative
+        // whole-plugin Oblivion traversal uses EsmDescriptorScanner/PluginFormat instead.
         var headerSize = PluginFormat.Detect(data).RecordHeaderSize;
 
-        for (var i = 0; i <= data.Length - 24; i++)
+        for (var i = 0; i <= data.Length - headerSize; i++)
         {
-            // Check for main record headers first (24 bytes minimum)
+            // Check for main record headers first.
             TryAddMainRecordHeader(data, i, data.Length, result.MainRecords, seenMainRecordOffsets, headerSize);
 
             // Then check for subrecords
@@ -131,7 +132,8 @@ internal static class EsmRecordScanner
                 EsmMiscDetector.TryAddFormIdSubrecord(data, i, data.Length, "QNAM", result.QuestRefs);
             }
             // Condition data
-            else if (RecordValidator.MatchesSignature(data, i, "CTDA"u8))
+            else if (RecordValidator.MatchesSignature(data, i, "CTDA"u8) ||
+                     RecordValidator.MatchesSignature(data, i, "ADTC"u8))
             {
                 EsmActorDetector.TryAddConditionSubrecord(data, i, data.Length, result.Conditions);
             }
@@ -156,8 +158,9 @@ internal static class EsmRecordScanner
         var result = new EsmRecordScanResult();
         var dedup = new RecordScannerDispatch.ScanDedup(
             new HashSet<string>(), new HashSet<uint>(), new HashSet<long>());
-        // Record header size (20 Oblivion / 24 FO3+) from the file header. A memory dump with no clean
-        // TES4 header at offset 0 falls back to the 24-byte FNV layout (DMP carving is FO3/FNV).
+        // Main-record header size (20 Oblivion / 24 FO3+) from the file header. A memory dump with no
+        // clean TES4 header at offset 0 falls back to the 24-byte FNV layout (DMP carving is FO3/FNV).
+        // GRUP detection below intentionally remains the modern 24-byte probe.
         var headerProbe = new byte[(int)Math.Min(64L, fileSize)];
         accessor.ReadArray(0, headerProbe, 0, headerProbe.Length);
         var headerSize = PluginFormat.Detect(headerProbe).RecordHeaderSize;
@@ -174,7 +177,7 @@ internal static class EsmRecordScanner
                 accessor.ReadArray(offset, buffer, 0, toRead);
 
                 // Only search up to chunkSize unless this is the last chunk
-                var searchLimit = offset + chunkSize >= fileSize ? toRead - 24 : chunkSize;
+                var searchLimit = offset + chunkSize >= fileSize ? toRead - headerSize : chunkSize;
 
                 ScanChunkForSubrecords(buffer, toRead, searchLimit, offset,
                     result, dedup, excludeRanges, headerSize);
@@ -273,7 +276,7 @@ internal static class EsmRecordScanner
     private static DetectedMainRecord? TryParseMainRecordHeader(
         byte[] data, int i, int dataLength, bool isBigEndian, int headerSize)
     {
-        if (i + 24 > dataLength)
+        if (i + headerSize > dataLength)
         {
             return null;
         }
@@ -300,17 +303,26 @@ internal static class EsmRecordScanner
 
         // Read header fields with appropriate endianness
         uint dataSize, flags, formId;
+        ushort? formVersion = null;
         if (isBigEndian)
         {
             dataSize = BinaryUtils.ReadUInt32BE(data, i + 4);
             flags = BinaryUtils.ReadUInt32BE(data, i + 8);
             formId = BinaryUtils.ReadUInt32BE(data, i + 12);
+            if (headerSize >= 22)
+            {
+                formVersion = BinaryUtils.ReadUInt16BE(data, i + 20);
+            }
         }
         else
         {
             dataSize = BinaryUtils.ReadUInt32LE(data, i + 4);
             flags = BinaryUtils.ReadUInt32LE(data, i + 8);
             formId = BinaryUtils.ReadUInt32LE(data, i + 12);
+            if (headerSize >= 22)
+            {
+                formVersion = BinaryUtils.ReadUInt16LE(data, i + 20);
+            }
         }
 
         // Validate the header
@@ -340,6 +352,7 @@ internal static class EsmRecordScanner
         return new DetectedMainRecord(recordType, dataSize, flags, formId, i, isBigEndian)
         {
             HeaderSize = headerSize, // 20 for Oblivion (TES4 w/o version trailer), 24 for FO3/FNV/Skyrim+
+            FormVersion = formVersion
         };
     }
 
@@ -401,7 +414,7 @@ internal static class EsmRecordScanner
     private static void TryAddMainRecordHeader(byte[] data, int i, int dataLength,
         List<DetectedMainRecord> records, HashSet<long> seenOffsets, int headerSize)
     {
-        if (i + 24 > dataLength || seenOffsets.Contains(i))
+        if (i + headerSize > dataLength || seenOffsets.Contains(i))
         {
             return;
         }
@@ -469,7 +482,7 @@ internal static class EsmRecordScanner
         List<DetectedMainRecord> records, HashSet<long> seenOffsets, int action, int headerSize)
     {
         var globalOffset = baseOffset + i;
-        if (i + 24 > dataLength || seenOffsets.Contains(globalOffset))
+        if (i + headerSize > dataLength || seenOffsets.Contains(globalOffset))
         {
             return 0;
         }

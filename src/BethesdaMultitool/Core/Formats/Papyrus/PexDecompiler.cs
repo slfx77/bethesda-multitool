@@ -148,11 +148,32 @@ public static class PexDecompiler
             AppendUserFlags(header, obj.UserFlags);
             Line(header.ToString());
             WriteDocString(obj.DocumentationString.Value);
+            WriteFallout76TrailingStateReferences(obj);
 
             WriteStructs(obj);
             WriteVariables(obj);
             WriteProperties(obj);
             WriteStates(obj);
+        }
+
+        private void WriteFallout76TrailingStateReferences(PexObject obj)
+        {
+            if (!obj.HasFallout76TrailingStateReferenceTable)
+            {
+                return;
+            }
+
+            Line("; Unmapped Fallout 76 PEX trailing state references (raw order):");
+            if (obj.Fallout76TrailingStateReferences.IsDefaultOrEmpty)
+            {
+                Line("; (explicit empty table)");
+                return;
+            }
+
+            foreach (var reference in obj.Fallout76TrailingStateReferences)
+            {
+                Line($"; [{reference.Index}] \"{EscapeString(reference.Value)}\"");
+            }
         }
 
         public void Line(string text = "")
@@ -453,6 +474,13 @@ public static class PexDecompiler
             AppendUserFlags(declaration, function.UserFlags);
             Line(declaration.ToString());
             WriteDocString(function.DocumentationString.Value);
+            if (function.UnmappedFlags != 0)
+            {
+                Line(
+                    $"; Unmapped PEX function flag bits: 0x{function.UnmappedFlags:X2} " +
+                    $"(raw byte 0x{function.RawFlags:X2})");
+            }
+
             if (function.Flags.HasFlag(PexFunctionFlags.Native))
             {
                 return;

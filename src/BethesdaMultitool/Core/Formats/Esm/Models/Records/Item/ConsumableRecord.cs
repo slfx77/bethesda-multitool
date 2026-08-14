@@ -4,7 +4,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 
 /// <summary>
 ///     Parsed Consumable (ALCH) record.
-///     Aggregates data from ALCH main record header, DATA, ENIT, EFID/EFIT subrecords.
+///     Aggregates data from ALCH main record header, DATA, ENIT, and repeated
+///     EFID/EFIT/CTDA effect groups.
 /// </summary>
 public record ConsumableRecord
 {
@@ -37,7 +38,7 @@ public record ConsumableRecord
     /// <summary>Consume sound FormID (SOUN) — ENIT bytes 16-19.</summary>
     public uint? ConsumeSoundFormId { get; init; }
 
-    /// <summary>Effects with magnitude, area, duration (EFID + EFIT subrecords).</summary>
+    /// <summary>Effects and their conditions (EFID + EFIT + CTDA* groups).</summary>
     public List<EnchantmentEffect> Effects { get; init; } = [];
 
     /// <summary>Script FormID (SCRI subrecord).</summary>

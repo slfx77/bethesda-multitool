@@ -29,10 +29,16 @@ public record RuntimeEditorIdEntry
     /// <summary>File offset where the Editor ID string was found.</summary>
     public long StringOffset { get; init; }
 
-    /// <summary>File offset of the TESForm object (if pointer was followed).</summary>
+    /// <summary>
+    ///     File offset of the captured TESForm subobject. This equals the complete-object base
+    ///     only for layouts whose TESForm base begins at offset zero.
+    /// </summary>
     public long? TesFormOffset { get; init; }
 
-    /// <summary>Virtual address of the TESForm pointer (for debugging).</summary>
+    /// <summary>
+    ///     Virtual address of the captured TESForm subobject. Runtime readers use this address
+    ///     for VA-safe reads and rebase it when applying complete-object-relative PDB offsets.
+    /// </summary>
     public long? TesFormPointer { get; init; }
 
     /// <summary>Display name from TESFullName.cFullName (e.g., "Boone's Beret").</summary>

@@ -2,7 +2,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 /// <summary>
 ///     Main record header (24 bytes for FNV).
-///     Layout: Signature(4) + DataSize(4) + Flags(4) + FormId(4) + Timestamp(4) + VcsInfo(2) + Version(2)
+///     Layout: Signature(4) + DataSize(4) + Flags(4) + FormId(4) + VersionControlInfo1(4) +
+///     FormVersion(2) + VersionControlInfo2(2). The historical property names below are retained for
+///     API compatibility.
 /// </summary>
 /// <remarks>
 ///     ⚠ The trailing field NAMES are historically transposed relative to the engine's
@@ -22,9 +24,16 @@ public record MainRecordHeader
     public uint DataSize { get; init; }
     public uint Flags { get; init; }
     public uint FormId { get; init; }
+    /// <summary>xEdit's four-byte Version Control Info 1 field at offset 16.</summary>
     public uint Timestamp { get; init; }
     public ushort VcsInfo { get; init; }
     public ushort Version { get; init; }
+
+    /// <summary>
+    ///     Semantic form version from header offset 20. Null for formats without the version trailer;
+    ///     unlike <see cref="VcsInfo" />, this distinguishes an absent field from a present value of zero.
+    /// </summary>
+    public ushort? FormVersion { get; init; }
 
     public bool IsCompressed => (Flags & 0x00040000) != 0;
     public bool IsDeleted => (Flags & 0x00000020) != 0;

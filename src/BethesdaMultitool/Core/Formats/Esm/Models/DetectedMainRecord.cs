@@ -2,7 +2,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models;
 
 /// <summary>
 ///     Main record header detected in memory dump.
-///     Structure: [TYPE:4][SIZE:4][FLAGS:4][FORMID:4][VCS1:4][VCS2:4] = 24 bytes
+///     Modern structure: [TYPE:4][SIZE:4][FLAGS:4][FORMID:4][VERSION CONTROL INFO 1:4]
+///     [FORM VERSION:2][VERSION CONTROL INFO 2:2] = 24 bytes. Oblivion stops after version-control
+///     info 1 (20 bytes).
 /// </summary>
 public record DetectedMainRecord(
     string RecordType,
@@ -18,6 +20,13 @@ public record DetectedMainRecord(
     ///     20 for Oblivion. Defaults to 24 so existing call sites are unchanged.
     /// </summary>
     public int HeaderSize { get; init; } = 24;
+
+    /// <summary>
+    ///     Semantic record form version from header offset 20, endian-corrected. Null means the record
+    ///     has no version trailer (Oblivion/TES3) or was synthesized without an on-disk header; zero is
+    ///     a real modern-header value and must not be treated as unknown.
+    /// </summary>
+    public ushort? FormVersion { get; init; }
 
     /// <summary>Whether this is a compressed record.</summary>
     public bool IsCompressed => (Flags & 0x00040000) != 0;

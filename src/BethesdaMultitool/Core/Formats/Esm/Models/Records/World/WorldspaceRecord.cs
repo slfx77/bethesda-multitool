@@ -36,7 +36,10 @@ public record WorldspaceRecord
     /// <summary>Default land height from DNAM subrecord.</summary>
     public float? DefaultLandHeight { get; init; }
 
-    /// <summary>Default water height from DNAM subrecord (fallback for cells with sentinel XCLW).</summary>
+    /// <summary>
+    ///     Default water height from the WRLD DNAM subrecord. Exterior cells with sentinel XCLW fall
+    ///     back to this value; a sentinel here means the worldspace has no authored default water plane.
+    /// </summary>
     public float? DefaultWaterHeight { get; init; }
 
     /// <summary>

@@ -2,6 +2,8 @@ using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 
@@ -121,32 +123,90 @@ internal static class EsmScriptDiagnosticsResolvers
             .Select(s => Convert.ToHexString(s.Data)));
     }
 
-    public static string ResolveConditionFunctionName(ushort conditionFunctionIndex)
+    public static string ResolveConditionFunctionName(BethesdaGame game, ushort conditionFunctionIndex)
     {
-        var name = PerkConditionParameterResolver.ResolveScriptFunctionName(conditionFunctionIndex);
-        return string.IsNullOrWhiteSpace(name)
-            ? $"Func0x{conditionFunctionIndex:X4}"
-            : name;
+        var function = ConditionFunctionTable.For(game).Get(conditionFunctionIndex);
+        return function?.Name ?? $"Func0x{conditionFunctionIndex:X4}";
     }
 
     public static string ResolveParameterLabel(
         IReadOnlyDictionary<uint, EsmScriptFormIdInfo> index,
+        BethesdaGame game,
         ushort functionIndex,
         int parameterIndex,
-        uint rawValue)
+        uint rawValue,
+        byte conditionType,
+        uint? runOn,
+        uint? parameter1Value = null)
     {
-        var resolved = PerkConditionParameterResolver.ResolveParameter(functionIndex, parameterIndex, rawValue);
-        if (!string.IsNullOrWhiteSpace(resolved.Display))
+        var table = ConditionFunctionTable.For(game);
+        if (table.Get(functionIndex) is null)
         {
-            return resolved.Display;
+            return string.Empty;
         }
 
-        if (resolved.FormId.HasValue)
+        // Preserve the established FO3/FNV diagnostic presentation (notably ActorValue and Sex
+        // names), but only after the game-keyed raw-index table has admitted the function.
+        if (game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas)
         {
-            return ResolveLabel(index, resolved.FormId.Value);
+            var resolved = PerkConditionParameterResolver.ResolveParameter(
+                functionIndex, parameterIndex, rawValue);
+            if (!string.IsNullOrWhiteSpace(resolved.Display))
+            {
+                return resolved.Display;
+            }
+
+            return resolved.FormId.HasValue
+                ? ResolveLabel(index, resolved.FormId.Value)
+                : string.Empty;
         }
 
-        return ResolveLabel(index, rawValue);
+        if (!table.TryClassifyParam(
+                functionIndex,
+                parameterIndex,
+                conditionType,
+                runOn,
+                parameter1Value,
+                out var kind))
+        {
+            return string.Empty;
+        }
+
+        return kind == ConditionParamKind.FormId
+            ? ResolveLabel(index, rawValue)
+            : rawValue.ToString(CultureInfo.InvariantCulture);
+    }
+
+    public static bool IsFormIdConditionParameter(
+        BethesdaGame game,
+        ushort functionIndex,
+        int parameterIndex,
+        byte conditionType,
+        uint? runOn,
+        uint? parameter1Value = null)
+    {
+        var table = ConditionFunctionTable.For(game);
+        if (table.Get(functionIndex) is null)
+        {
+            return false;
+        }
+
+        // Preserve the richer classic-Fallout parameter resolver after the game-keyed membership
+        // gate; it agrees with the shared classifier that ActorValue is numeric and also supplies
+        // legacy enum distinctions used by the diagnostics display path.
+        if (game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas)
+        {
+            return PerkConditionParameterResolver.IsFormParameter(functionIndex, parameterIndex);
+        }
+
+        return table.TryClassifyParam(
+                   functionIndex,
+                   parameterIndex,
+                   conditionType,
+                   runOn,
+                   parameter1Value,
+                   out var kind)
+               && kind == ConditionParamKind.FormId;
     }
 
     public static string Truncate(string? value, int maxLength)

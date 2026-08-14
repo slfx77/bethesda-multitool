@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Script;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using static BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics.EsmScriptProvenanceClassifier;
 using ScriptReferenceSlot = BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics.EsmScriptBlockReader.ScriptReferenceSlot;
@@ -489,13 +490,105 @@ public static class EsmScriptProvenanceAnalyzer
 
             foreach (var sub in record.Subrecords)
             {
-                if (sub.Signature == "CTDA" && sub.Data.Length >= 28)
+                if (sub.Signature == "CTDA")
                 {
-                    var condition = CtdaParser.Decode(sub.Data, sub.BigEndian);
-                    AddLinkedTrace(rows, recordRow, "condition-parameter", condition.Parameter1, labels,
-                        $"CTDA fn=0x{condition.FunctionIndex:X} p1=0x{condition.Parameter1:X8} p2=0x{condition.Parameter2:X8} runOn={condition.RunOn} ref=0x{condition.Reference:X8}");
-                    AddLinkedTrace(rows, recordRow, "condition-reference", condition.Reference, labels,
-                        $"CTDA fn=0x{condition.FunctionIndex:X} reference");
+                    var layoutStatus = CtdaParser.GetLayoutStatus(diagnostics.Game, sub.Data.Length);
+                    if (layoutStatus != "valid" ||
+                        !CtdaParser.TryDecode(sub.Data, sub.BigEndian, out var condition, out var physical))
+                    {
+                        rows.Add(new EsmTargetStateTraceRow(
+                            recordRow.Target,
+                            "condition-invalid",
+                            recordRow.Relation,
+                            recordRow.RecordType,
+                            recordRow.FormId,
+                            recordRow.EditorId,
+                            0,
+                            string.Empty,
+                            $"CTDA length={sub.Data.Length} status={layoutStatus} " +
+                            $"raw={Convert.ToHexString(sub.Data)}"));
+                        continue;
+                    }
+
+                    var referenceSlotIsSemantic = physical.ReferenceStorage.HasValue &&
+                                                  DialogueConditionReferencePolicy.IsSemanticReferenceSlot(
+                                                      condition, diagnostics.Game);
+                    var hasSemanticReference = referenceSlotIsSemantic && condition.Reference != 0;
+                    var reference = condition.Reference;
+                    string referenceDetail;
+                    if (referenceSlotIsSemantic)
+                    {
+                        referenceDetail = $"ref=0x{reference:X8}";
+                    }
+                    else if (physical.ReferenceStorage is { } referenceStorage)
+                    {
+                        referenceDetail = $"reference_storage=0x{referenceStorage:X8}";
+                    }
+                    else
+                    {
+                        referenceDetail = "reference_storage=absent";
+                    }
+                    var runOnDetail = physical.RunOn is { } runOn ? runOn.ToString() : "absent";
+                    var parameter3Detail = physical.Parameter3 is { } parameter3
+                        ? parameter3.ToString()
+                        : "absent";
+                    var conditionDetail =
+                        $"CTDA fn=0x{condition.FunctionIndex:X} p1=0x{condition.Parameter1:X8} " +
+                        $"p2=0x{condition.Parameter2:X8} runOn={runOnDetail} {referenceDetail} " +
+                        $"p3={parameter3Detail}";
+                    rows.Add(new EsmTargetStateTraceRow(
+                        recordRow.Target,
+                        "condition-raw",
+                        recordRow.Relation,
+                        recordRow.RecordType,
+                        recordRow.FormId,
+                        recordRow.EditorId,
+                        0,
+                        string.Empty,
+                        conditionDetail));
+
+                    if (condition.Parameter1 != 0 &&
+                        EsmScriptDiagnosticsResolvers.IsFormIdConditionParameter(
+                            diagnostics.Game,
+                            condition.FunctionIndex,
+                            0,
+                            condition.Type,
+                            condition.RunOn,
+                            condition.Parameter1))
+                    {
+                        AddLinkedTrace(
+                            rows,
+                            recordRow,
+                            "condition-parameter",
+                            condition.Parameter1,
+                            labels,
+                            $"{conditionDetail} linked_slot=p1");
+                    }
+
+                    if (condition.Parameter2 != 0 &&
+                        EsmScriptDiagnosticsResolvers.IsFormIdConditionParameter(
+                            diagnostics.Game,
+                            condition.FunctionIndex,
+                            1,
+                            condition.Type,
+                            condition.RunOn,
+                            condition.Parameter1))
+                    {
+                        AddLinkedTrace(
+                            rows,
+                            recordRow,
+                            "condition-parameter",
+                            condition.Parameter2,
+                            labels,
+                            $"{conditionDetail} linked_slot=p2");
+                    }
+
+                    if (hasSemanticReference)
+                    {
+                        AddLinkedTrace(rows, recordRow, "condition-reference", reference, labels,
+                            $"CTDA fn=0x{condition.FunctionIndex:X} reference");
+                    }
+
                     continue;
                 }
 

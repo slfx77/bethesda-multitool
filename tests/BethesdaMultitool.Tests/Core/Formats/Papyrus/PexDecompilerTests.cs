@@ -147,6 +147,48 @@ public sealed class PexDecompilerTests
         Assert.DoesNotContain("JUMPF Condition 3", listing, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void DecompileAndDisassemble_Fallout76UnmappedMetadata_RemainsVisible()
+    {
+        var file = PexParser.Parse(PexParserTests.BuildFixture(
+            PexGameId.Fallout76,
+            15,
+            functionFlags: 0x28,
+            stateNameIndex: 4,
+            trailingStringReferences: [4]));
+
+        var source = PexDecompiler.Decompile(file);
+        var listing = PexDisassembler.Disassemble(file);
+
+        Assert.Contains(
+            "; Unmapped Fallout 76 PEX trailing state references (raw order):",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("; [4] \"Auto\"", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "; Unmapped PEX function flag bits: 0x28 (raw byte 0x28)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(".fallout76TrailingStateReference 4 \"Auto\"", listing,
+            StringComparison.Ordinal);
+        Assert.Contains(".fallout76TrailingStateReferenceCount 1", listing,
+            StringComparison.Ordinal);
+        Assert.Contains(".rawFlags 0x28", listing, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DecompileAndDisassemble_Fallout76ExplicitEmptyTail_RemainsVisible()
+    {
+        var file = PexParser.Parse(PexParserTests.BuildFixture(PexGameId.Fallout76, 15));
+
+        var source = PexDecompiler.Decompile(file);
+        var listing = PexDisassembler.Disassemble(file);
+
+        Assert.Contains("; (explicit empty table)", source, StringComparison.Ordinal);
+        Assert.Contains(".fallout76TrailingStateReferenceCount 0", listing,
+            StringComparison.Ordinal);
+    }
+
     private static PexFile File(PexObject obj)
     {
         return new PexFile(

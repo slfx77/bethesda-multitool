@@ -5,7 +5,8 @@
 //   https://github.com/Orvid/Caprica/tree/master/Caprica/pex
 //
 // Both projects read the same source-derived layout: endian-selecting magic, a version/game header,
-// a u16-length-prefixed string table, optional debug data, user flags, and size-delimited objects.
+// a u16-length-prefixed string table, optional debug data, user flags, and objects preceded by a
+// size field. The reference readers ignore that size field; this parser additionally enforces it.
 // Skyrim 3.1/3.2 is big-endian. Fallout 4 3.9 and Fallout 76 3.15 are little-endian and add const
 // flags, structs, extended debug tables, and game-specific opcode tails. This is a clean parser
 // implementation of that layout; no decompiler behavior is included here.
@@ -385,6 +386,21 @@ public static class PexParser
             var body = reader.PeekSubCursor(parseWindowSize, $"object {name.Value} body");
             var bodyStart = body.AbsolutePosition;
             var parsedObject = ReadObjectBody(ref body, gameId, strings, name, declaredSize);
+            if (gameId == PexGameId.Fallout76)
+            {
+                var trailingTable = ReadFallout76ObjectTail(
+                    ref body,
+                    strings,
+                    bodyStart,
+                    bethesdaBodySize,
+                    capricaBodySize);
+                parsedObject = parsedObject with
+                {
+                    HasFallout76TrailingStateReferenceTable = trailingTable.Present,
+                    Fallout76TrailingStateReferences = trailingTable.References
+                };
+            }
+
             var consumedBodySize = body.AbsolutePosition - bodyStart;
             if (consumedBodySize != bethesdaBodySize && consumedBodySize != capricaBodySize)
             {
@@ -434,6 +450,51 @@ public static class PexParser
             variables,
             properties,
             states);
+    }
+
+    private static (bool Present, ImmutableArray<PexStringReference> References)
+        ReadFallout76ObjectTail(
+        ref PexCursor reader,
+        ImmutableArray<string> strings,
+        int bodyStart,
+        int bethesdaBodySize,
+        int capricaBodySize)
+    {
+        // Every object in the retail Fallout 76 MiscClient corpus ends with this count followed
+        // by references to same-object state names. Preserve their order and indices; the table's
+        // runtime purpose and ordering semantics have not been established.
+        var schemaBodySize = reader.AbsolutePosition - bodyStart;
+        if (schemaBodySize == bethesdaBodySize || schemaBodySize == capricaBodySize)
+        {
+            // Boundary-safe support for writers that omit the retail tail: never probe beyond an
+            // already exact object boundary, where the next bytes may be another object's name.
+            return (false, ImmutableArray<PexStringReference>.Empty);
+        }
+
+        if (schemaBodySize > bethesdaBodySize)
+        {
+            throw reader.Invalid(
+                $"Fallout 76 object schema consumed {schemaBodySize} bytes before its tail; " +
+                $"the Bethesda body boundary is {bethesdaBodySize} bytes",
+                bodyStart);
+        }
+
+        var tailByteCount = bethesdaBodySize - schemaBodySize;
+        var tail = reader.PeekSubCursor(tailByteCount, "Fallout 76 object tail");
+        var count = tail.ReadUInt16("Fallout 76 object-tail string-reference count");
+        tail.ValidateCount(count, sizeof(ushort), "Fallout 76 object-tail string references");
+        var references = ImmutableArray.CreateBuilder<PexStringReference>(count);
+        for (var i = 0; i < count; i++)
+        {
+            references.Add(ReadStringReference(
+                ref tail,
+                strings,
+                "Fallout 76 object-tail string reference"));
+        }
+
+        tail.RequireEnd("Fallout 76 object tail");
+        reader.Skip(tailByteCount, "Fallout 76 object tail");
+        return (true, references.MoveToImmutable());
     }
 
     private static ImmutableArray<PexStruct> ReadStructs(
@@ -581,10 +642,9 @@ public static class PexParser
         var documentation = ReadStringReference(ref reader, strings, "function documentation");
         var userFlags = reader.ReadUInt32("function user flags");
         var rawFlags = reader.ReadByte("function flags");
-        if ((rawFlags & ~(byte)(PexFunctionFlags.Global | PexFunctionFlags.Native)) != 0)
-        {
-            throw reader.Invalid($"function has unknown flags 0x{rawFlags:X2}");
-        }
+        // Champollion retains the complete byte and interprets only Global and Native. Caprica
+        // reads the byte but maps only those two bits into its model. Preserve all eight bits here;
+        // the retail Fallout 76 corpus's observed 0x3F union is evidence, not a validity boundary.
 
         var parameters = ReadTypedNames(ref reader, strings, "parameter");
         var locals = ReadTypedNames(ref reader, strings, "local variable");

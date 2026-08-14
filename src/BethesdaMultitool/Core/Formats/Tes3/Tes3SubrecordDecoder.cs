@@ -36,6 +36,10 @@ internal static class Tes3SubrecordDecoder
                 return One("Description", c.ReadRemainingString());
             case "SCRI":
                 return One("Script", c.ReadRemainingString());
+            case "SCTX" when recordType == "SCPT":
+                // Script source is intentionally multiline. The generic printable-text fallback
+                // rejects CR/LF control bytes and used to reduce valid source to a hex preview.
+                return One("Script Source", DecodeScriptSource(data));
             case "ITEX" or "ICON":
                 return One("Icon", c.ReadRemainingString());
             case "RGNN":
@@ -396,6 +400,19 @@ internal static class Tes3SubrecordDecoder
         }
 
         return One("bytes", HexPreview(data));
+    }
+
+    private static string DecodeScriptSource(ReadOnlySpan<byte> data)
+    {
+        // Strip storage terminators, but preserve authored trailing line breaks/indentation. The
+        // general TES3 string cursor trims trailing whitespace, which is appropriate for fixed-width
+        // names but would subtly rewrite source text.
+        while (!data.IsEmpty && data[^1] == 0)
+        {
+            data = data[..^1];
+        }
+
+        return Encoding.ASCII.GetString(data);
     }
 
     private static bool IsMostlyPrintable(ReadOnlySpan<byte> data)

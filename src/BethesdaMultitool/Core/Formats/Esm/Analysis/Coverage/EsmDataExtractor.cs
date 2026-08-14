@@ -47,7 +47,10 @@ internal static class EsmDataExtractor
                 record.Header.Flags,
                 record.Header.FormId,
                 record.Offset,
-                bigEndian));
+                bigEndian)
+            {
+                FormVersion = record.Header.FormVersion
+            });
 
             // Extract subrecord data
             foreach (var sub in record.Subrecords)
@@ -87,7 +90,7 @@ internal static class EsmDataExtractor
                         positions.Add(ExtractPosition(sub.Data, record.Offset, bigEndian));
                         break;
 
-                    case "CTDA" when sub.Data.Length >= 24:
+                    case "CTDA" when ConditionSubrecordDecoder.IsSupportedBodyLength(sub.Data.Length):
                         conditions.Add(ExtractCondition(sub.Data, record.Offset, bigEndian));
                         break;
 
@@ -323,7 +326,10 @@ internal static class EsmDataExtractor
                 record.Header.Flags,
                 record.Header.FormId,
                 record.Offset,
-                bigEndian);
+                bigEndian)
+            {
+                FormVersion = record.Header.FormVersion
+            };
 
             scanResult.RefrRecords.Add(new ExtractedRefrRecord
             {
@@ -381,34 +387,7 @@ internal static class EsmDataExtractor
 
     internal static ConditionSubrecord ExtractCondition(byte[] data, long offset, bool bigEndian)
     {
-        uint ReadUInt32(int o)
-        {
-            return bigEndian
-                ? (uint)((data[o] << 24) | (data[o + 1] << 16) | (data[o + 2] << 8) | data[o + 3])
-                : (uint)(data[o] | (data[o + 1] << 8) | (data[o + 2] << 16) | (data[o + 3] << 24));
-        }
-
-        ushort ReadUInt16(int o)
-        {
-            return bigEndian
-                ? (ushort)((data[o] << 8) | data[o + 1])
-                : (ushort)(data[o] | (data[o + 1] << 8));
-        }
-
-        float ReadFloat(int o)
-        {
-            return BitConverter.UInt32BitsToSingle(ReadUInt32(o));
-        }
-
-        // CTDA structure: Type(1) + unused(3) + CompValue(4) + FuncIdx(2) + unused(2) + Param1(4) + Param2(4) + RunOn(4)
-        return new ConditionSubrecord(
-            data[0], // Type
-            (byte)((data[0] >> 5) & 0x7), // Operator (bits 5-7 of Type byte)
-            ReadFloat(4), // ComparisonValue
-            ReadUInt16(8), // FunctionIndex
-            ReadUInt32(12), // Param1
-            ReadUInt32(16), // Param2
-            offset);
+        return ConditionSubrecordDecoder.Decode(data, offset, bigEndian);
     }
 }
 

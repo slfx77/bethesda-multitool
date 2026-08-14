@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+using BethesdaMultitool.Core.Formats.Esm.Script;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -59,10 +60,16 @@ public sealed class DialogueProvenanceIntegrationTests(SampleFileFixture samples
     }
 
     [Fact]
-    public async Task ProtoEsm_MichelleBarterInfo_ContainsShowBarterMenuGroundTruth()
+    public async Task ProtoEsm_MichelleBarterInfo_ContainsCanonicalShowBarterMenuCommand()
     {
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(_samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
+
+        const ushort opcode = 0x1173;
+        var command = ScriptFunctionTable.Get(opcode);
+        Assert.NotNull(command);
+        Assert.Equal("ShowBarterMenu", command!.Name);
+        Assert.Equal("sbm", command.ShortName);
 
         var dialogue = await WithParsedEsmAsync(_samples.Xbox360ProtoEsm!,
             parsed => { return parsed.Dialogues.FirstOrDefault(info => info.FormId == 0x000E88EF); });
@@ -70,9 +77,37 @@ public sealed class DialogueProvenanceIntegrationTests(SampleFileFixture samples
         Assert.NotNull(dialogue);
         Assert.Contains(
             dialogue!.ResultScripts,
-            script => (script.SourceText ?? script.DecompiledText ?? string.Empty)
-                .Contains("Showbartermenu", StringComparison.OrdinalIgnoreCase));
+            script => ContainsCommandSpelling(script.SourceText, command.Name) ||
+                      ContainsCommandSpelling(script.SourceText, command.ShortName) ||
+                      ContainsCommandSpelling(script.DecompiledText, command.Name) ||
+                      ContainsCommandSpelling(script.DecompiledText, command.ShortName));
     }
+
+    private static bool ContainsCommandSpelling(string? text, string spelling)
+    {
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(spelling))
+        {
+            return false;
+        }
+
+        var start = 0;
+        while ((start = text.IndexOf(spelling, start, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            var end = start + spelling.Length;
+            var hasIdentifierBefore = start > 0 && IsIdentifierCharacter(text[start - 1]);
+            var hasIdentifierAfter = end < text.Length && IsIdentifierCharacter(text[end]);
+            if (!hasIdentifierBefore && !hasIdentifierAfter)
+            {
+                return true;
+            }
+
+            start++;
+        }
+
+        return false;
+    }
+
+    private static bool IsIdentifierCharacter(char value) => char.IsAsciiLetterOrDigit(value) || value == '_';
 
     private static async Task<T> WithParsedDumpAsync<T>(
         string dumpPath,

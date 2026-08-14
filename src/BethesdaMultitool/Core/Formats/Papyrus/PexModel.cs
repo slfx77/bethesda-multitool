@@ -87,7 +87,21 @@ public sealed record PexObject(
     ImmutableArray<PexStruct> Structs,
     ImmutableArray<PexVariable> Variables,
     ImmutableArray<PexProperty> Properties,
-    ImmutableArray<PexState> States);
+    ImmutableArray<PexState> States)
+{
+    /// <summary>
+    ///     Ordered references stored after the state table by Fallout 76 v3.15. Retail targets
+    ///     resolve to state names in the same object; the table's runtime purpose and ordering
+    ///     semantics remain unknown.
+    /// </summary>
+    public ImmutableArray<PexStringReference> Fallout76TrailingStateReferences { get; init; } = [];
+
+    /// <summary>
+    ///     Whether the Fallout 76 trailing state-reference count field was physically present.
+    ///     This distinguishes an explicit zero-count retail table from a writer that omits it.
+    /// </summary>
+    public bool HasFallout76TrailingStateReferenceTable { get; init; }
+}
 
 public sealed record PexStruct(
     PexStringReference Name,
@@ -147,7 +161,15 @@ public sealed record PexFunction(
     PexFunctionFlags Flags,
     ImmutableArray<PexTypedName> Parameters,
     ImmutableArray<PexTypedName> LocalVariables,
-    ImmutableArray<PexInstruction> Instructions);
+    ImmutableArray<PexInstruction> Instructions)
+{
+    /// <summary>The complete function-flag byte, including bits whose meaning is not mapped.</summary>
+    public byte RawFlags => (byte)Flags;
+
+    /// <summary>Raw flag bits other than the public Global and Native bits.</summary>
+    public byte UnmappedFlags => (byte)(RawFlags &
+        ~(byte)(PexFunctionFlags.Global | PexFunctionFlags.Native));
+}
 
 public readonly record struct PexTypedName(
     PexStringReference Name,

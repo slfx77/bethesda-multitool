@@ -403,9 +403,9 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
     }
 
     // Morrowind's land texturing is a flat 16×16 grid of land-texture indices (no TES4-style alpha
-    // blending). The 3D terrain renderer samples the resolved 16×16 FormId grid (VtexTextureFormIds)
-    // per vertex. The four per-quadrant dominant Base layers are still emitted for the 2D map (which
-    // consumes BTXT layers); they are a coarse fallback, not the 3D path.
+    // blending). Both terrain renderers prefer the resolved 16×16 FormId grid
+    // (VtexTextureFormIds). The four per-quadrant dominant Base layers remain a compatibility
+    // fallback for callers or records that lack a complete resolved grid.
     private static LandVisualData? BuildLandVisualData(Tes3LandDraft land, Dictionary<int, uint> ltexIndexToFormId)
     {
         // Native 65×65×3 vertex colors (no downsample) so they line up 1:1 with the native heightmap
@@ -418,8 +418,8 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
 
         if (land.TextureIndices is { Length: Tes3LandDraft.VtexSize * Tes3LandDraft.VtexSize } vtex)
         {
-            // Resolve the full 16×16 grid to LTEX FormIds (0 = engine-default land texture) for the 3D
-            // per-vertex path.
+            // Resolve the full 16×16 grid to LTEX FormIds (0 = engine-default land texture) for the
+            // shared 2D/3D terrain-texture paths.
             vtexFormIds = new uint[Tes3LandDraft.VtexSize * Tes3LandDraft.VtexSize];
             for (var k = 0; k < vtex.Length; k++)
             {

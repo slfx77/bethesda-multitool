@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Games;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 
 /// <summary>Aggregated script/dialogue diagnostics gathered for a set of target records in an ESM/ESP.</summary>
@@ -10,7 +12,14 @@ public sealed record EsmScriptDiagnosticsResult(
     IReadOnlyList<EsmScriptDialogueAuditRow> DialogueAudit,
     IReadOnlyList<EsmScriptConditionAuditRow> Conditions,
     IReadOnlyList<EsmScriptDiagnosticBlockRow> ScriptBlocks,
-    IReadOnlyList<EsmScriptDiagnosticReferenceRow> ScriptReferences);
+    IReadOnlyList<EsmScriptDiagnosticReferenceRow> ScriptReferences)
+{
+    /// <summary>
+    ///     Game identity used for condition-layout and semantic decoding. Unknown preserves the
+    ///     pre-game-aware constructor contract while making condition interpretation fail closed.
+    /// </summary>
+    public BethesdaGame Game { get; init; } = BethesdaGame.Unknown;
+}
 
 /// <summary>A record that matched one of the requested diagnostic targets, with the reason it matched.</summary>
 public sealed record EsmScriptDiagnosticTargetMatchRow(
@@ -68,7 +77,13 @@ public sealed record EsmScriptDialogueAuditRow(
     string FollowUpInfos,
     string ResponsePreview);
 
-/// <summary>One decoded CTDA condition on a target-related record (function, operands, run-on, raw bytes).</summary>
+/// <summary>
+///     One decoded CTDA condition on a target-related record. <c>ComparisonRawBits</c> preserves
+///     the exact serialized comparison union; <c>ComparisonValue</c> is its float projection and is
+///     numeric only when <c>UsesGlobalComparison</c> is false. Nullable tail fields distinguish an
+///     absent physical word from a serialized zero. <c>SemanticReferenceLabel</c> is populated only
+///     when the game-aware policy says present reference storage is a Reference FormID.
+/// </summary>
 public sealed record EsmScriptConditionAuditRow(
     string Target,
     string Relation,
@@ -80,14 +95,34 @@ public sealed record EsmScriptConditionAuditRow(
     ushort FunctionIndex,
     byte Type,
     float ComparisonValue,
+    uint ComparisonRawBits,
+    string ComparisonGlobalLabel,
     uint Parameter1,
     string Parameter1Label,
     uint Parameter2,
     string Parameter2Label,
-    uint RunOn,
-    uint Reference,
-    string ReferenceLabel,
-    string RawBytes);
+    uint? RunOn,
+    uint? ReferenceStorage,
+    string SemanticReferenceLabel,
+    string RawBytes,
+    int? Parameter3,
+    bool ReferenceStorageIsSemantic,
+    uint? SemanticReferenceFormId,
+    int BodyLength,
+    string LayoutStatus)
+{
+    /// <summary>Whether the comparison union is tagged as a GLOB FormID by CTDA Type bit 0x04.</summary>
+    public bool UsesGlobalComparison => (Type & 0x04) != 0;
+
+    /// <summary>The numeric comparison, or null when the union contains a GLOB FormID.</summary>
+    public float? NumericComparisonValue => UsesGlobalComparison ? null : ComparisonValue;
+
+    /// <summary>The comparison GLOB FormID, including zero, or null for a numeric comparison.</summary>
+    public uint? ComparisonGlobalFormId => UsesGlobalComparison ? ComparisonRawBits : null;
+
+    /// <summary>Stable discriminator used by diagnostics exports.</summary>
+    public string ComparisonKind => UsesGlobalComparison ? "global_form_id" : "numeric";
+}
 
 /// <summary>One compiled-script (SCDA) block on a target-related record, comparing SCHR-declared sizes against the walk.</summary>
 public sealed record EsmScriptDiagnosticBlockRow(

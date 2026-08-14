@@ -339,6 +339,19 @@ public sealed class CorpusCertificationScriptContractTests
         Assert.Contains("$scriptProvenanceAssessment.Pass", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void RunnerUsesTheCurrentCliContracts()
+    {
+        var source = ReadToolScript("Run-DmpCorpus.ps1");
+
+        Assert.Contains("'dmp', 'to-esm', $dump.FullName", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("--planner-types", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("planner types set to", source,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("'validate', 'deep', $esmPath", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("'validate-deep'", source, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("Run-DmpCorpus.ps1")]
     [InlineData("Verify-DmpCorpus.ps1")]

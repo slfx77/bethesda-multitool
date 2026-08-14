@@ -61,6 +61,10 @@ internal sealed class Program
         rootCommand.Subcommands.Add(TerrainCellCommand.Create());
         rootCommand.Subcommands.Add(PathgridSummaryCommand.Create());
         rootCommand.Subcommands.Add(LightAuditCommand.Create());
+        rootCommand.Subcommands.Add(HashCommands.CreateHashCommand());
+        rootCommand.Subcommands.Add(HashCommands.CreateHashCompareCommand());
+        rootCommand.Subcommands.Add(QuestCommands.CreateCompareQuestLinksCommand());
+        rootCommand.Subcommands.Add(RecordSchemaCommands.CreateValidateSubrecordsCommand());
         rootCommand.Subcommands.Add(NpcDialogueCoverageCommand.Create());
         rootCommand.Subcommands.Add(ExportCommands.CreateExportLandCommand());
         rootCommand.Subcommands.Add(ExportCommands.CreateWorldmapCommand());
@@ -178,6 +182,10 @@ internal sealed class Program
             _ = table.AddRow("[cyan]worldmap-diag[/]", "Diagnose world map category distribution and Unknown sources");
             _ = table.AddRow("[cyan]category-audit[/]", "Audit Unknown map categories and suggest ObjectBoundsIndex fixes");
             _ = table.AddRow("[cyan]map-stats[/]", "Per-worldspace placed object category counts (for color scheme tuning)");
+            _ = table.AddRow("[cyan]hash[/]", "Compute a file hash (SHA256 by default)");
+            _ = table.AddRow("[cyan]hash-compare[/]", "Compare hashes of two files");
+            _ = table.AddRow("[cyan]compare-quest-links[/]", "Compare QUST SCRI/QOBJ/QSTA links between ESM files");
+            _ = table.AddRow("[cyan]validate-subrecords[/]", "Report subrecords without a known conversion schema");
             _ = table.AddRow("[cyan]voice-heuristics[/]", "Cross-reference BSA voice files against ESM records");
             _ = table.AddRow("[cyan]transcript-diag[/]", "Diagnose .fnvtranscript.json key counts vs BSA voice files");
             _ = table.AddRow("[cyan]dialogue-qc[/]", "Clean transcriber CSV: double-space + proper-noun fixes vs ESM vocab");

@@ -243,7 +243,8 @@ public static class EsmParser
             FormId = formId,
             Timestamp = timestamp,
             VcsInfo = vcsInfo,
-            Version = version
+            Version = version,
+            FormVersion = fmt.HasRecordVersionTrailer ? vcsInfo : null
         };
     }
 

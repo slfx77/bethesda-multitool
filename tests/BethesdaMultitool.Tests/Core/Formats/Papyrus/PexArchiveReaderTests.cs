@@ -66,6 +66,40 @@ public sealed class PexArchiveReaderTests
     }
 
     [Fact]
+    public void Open_Ba2_ParsesFallout76ObjectTailAndRawFunctionFlags()
+    {
+        var archivePath = Path.Combine(Path.GetTempPath(), $"pex_archive_{Guid.NewGuid():N}.ba2");
+        var pexBytes = PexParserTests.BuildFixture(
+            PexGameId.Fallout76,
+            15,
+            functionFlags: 0x28,
+            stateNameIndex: 4,
+            trailingStringReferences: [4]);
+        File.WriteAllBytes(
+            archivePath,
+            ArchiveReaderTests.BuildGnrlBa2(
+                0x504558u,
+                "scripts\\Example76.pex",
+                pexBytes));
+        try
+        {
+            using var archive = PexArchiveReader.Open(archivePath);
+
+            var file = archive.Parse(Assert.Single(archive.Entries));
+            var obj = Assert.Single(file.Objects);
+            Assert.True(obj.HasFallout76TrailingStateReferenceTable);
+            Assert.Equal(["Auto"], obj.Fallout76TrailingStateReferences.Select(x => x.Value));
+            Assert.Equal(
+                (byte)0x28,
+                Assert.Single(Assert.Single(obj.States).Functions).RawFlags);
+        }
+        finally
+        {
+            File.Delete(archivePath);
+        }
+    }
+
+    [Fact]
     public void Find_AmbiguousSubstring_RequiresAUniqueSelector()
     {
         var archivePath = Path.Combine(Path.GetTempPath(), $"pex_archive_{Guid.NewGuid():N}.bsa");

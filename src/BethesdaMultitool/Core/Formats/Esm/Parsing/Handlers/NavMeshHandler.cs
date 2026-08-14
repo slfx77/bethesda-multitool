@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
@@ -171,7 +172,7 @@ internal sealed class NavMeshHandler(RecordParserContext context) : RecordHandle
         // Build the drift remap from drift-corrected editor-id entries. RuntimeBuildOffsets.
         // ApplyDriftCorrection populates OriginalFormType on entries whose raw heap-memory
         // FormType byte got remapped to a canonical value. The enumerator applies this remap
-        // to every raw byte it reads in Path 1's pAllForms walk + Path 2/3 cell validation so
+        // to every raw byte it reads in the pAllForms walk and heap-scan validation so
         // the canonical 0x39/0x41/0x43 constants work across early-build drift (e.g. Nov 2009
         // +1 shift at 0x46). Identity (null) when no drift was detected.
         var driftRemap = BuildDriftRemap(Context.ScanResult.RuntimeEditorIds);
@@ -186,14 +187,14 @@ internal sealed class NavMeshHandler(RecordParserContext context) : RecordHandle
             .Select(r => r.FormId)
             .ToHashSet();
         // navMeshes at this point contains only byte-stream NAVMs (Path 0/runtime merge has
-        // already run via MergeRuntimeRecords above). Their FormIDs anchor Path 4's NAVM-byte
+        // already run via MergeRuntimeRecords above). Their FormIDs anchor the pAllForms NAVM-byte
         // calibration so undetected-drift builds (e.g. xex.dmp) still classify NAVMs in
         // pAllForms even when the upstream drift detector returned null.
         var navmFormIds = navMeshes.Select(n => n.FormId).Where(id => id != 0).ToHashSet();
         var cells = enumerator?.Enumerate(Context.ScanResult.RuntimeEditorIds, wrldFormIds, navmFormIds)
                     ?? FallbackEnumerateEditorIdCellsOnly(Context.ScanResult.RuntimeEditorIds);
 
-        var perSourceAdds = new int[4];
+        var perSourceAdds = new int[3];
         var cellsWithNavm = 0;
         foreach (var hit in cells.Cells)
         {
@@ -217,12 +218,11 @@ internal sealed class NavMeshHandler(RecordParserContext context) : RecordHandle
             }
         }
 
-        // Path 4: walk pAllForms directly for NAVM entries. BSNavMesh is TESForm-derived so
+        // Direct path: walk pAllForms for NAVM entries. BSNavMesh is TESForm-derived so
         // each pAllForms value VA can be projected straight into a synthetic NavMeshRecord
         // without going through the cell graph. On dumps where the engine has detached
-        // NavMeshArrays from cells (empirically: every cell path tested on xex21 had
-        // pNavMeshes=null even for active grid cells), this is the only path that surfaces
-        // runtime NAVM data.
+        // NavMeshArrays from cells, or when the loaded-cell graph is not captured, this path
+        // can still surface runtime NAVM data.
         //
         // Two validator modes:
         //   * Permissive over NavMeshVas — calibration is anchored or drift-confirmed, so
@@ -279,13 +279,13 @@ internal sealed class NavMeshHandler(RecordParserContext context) : RecordHandle
         {
             Logger.Instance.Debug(
                 $"  [Semantic] Runtime NAVM discovery cells: editor-id={stats.FromEditorIdHash:N0}, " +
-                $"all-forms={stats.FromAllFormsHash:N0}, worldspace-grid={stats.FromWorldspaceGrid:N0}, " +
-                $"heap-scan={stats.FromHeapScan:N0} (unique={stats.UniqueTotal:N0}); " +
+                $"all-forms={stats.FromAllFormsHash:N0}, heap-scan={stats.FromHeapScan:N0} " +
+                $"(unique={stats.UniqueTotal:N0}); " +
                 $"direct-navm-vas={cells.NavMeshVas.Count:N0}, " +
                 $"speculative-navm-vas={cells.NavMeshVaCandidates.Count:N0}");
             Logger.Instance.Debug(
                 $"  [Semantic] Runtime NAVM discovery navmeshes: +{perSourceAdds[0]:N0}/+{perSourceAdds[1]:N0}/" +
-                $"+{perSourceAdds[2]:N0}/+{perSourceAdds[3]:N0} per-cell-source, " +
+                $"+{perSourceAdds[2]:N0} per-cell-source, " +
                 $"+{addedFromDirectNavm:N0} direct (-{rejectedFromDirectNavm:N0} rejected), " +
                 $"+{addedFromSpeculative:N0} speculative (-{rejectedFromSpeculative:N0} rejected), " +
                 $"+{addedFromSingleton:N0} NAVI singleton " +
@@ -346,7 +346,7 @@ internal sealed class NavMeshHandler(RecordParserContext context) : RecordHandle
     ///     upstream by <c>RuntimeBuildOffsets.ApplyDriftCorrection</c> only when an entry's
     ///     FormType byte was changed; absence means identity. The reconstructed dictionary
     ///     is passed into <see cref="RuntimeCellEnumerator" /> so its raw-heap reads
-    ///     (Path 1 pAllForms walk, Path 2/3 cell validators) use the same canonical FormType
+    ///     (pAllForms and heap-scan readers) use the same canonical FormType
     ///     space as the editor-id entries it shares with Path 0.
     /// </summary>
     private static Dictionary<byte, byte>? BuildDriftRemap(
@@ -383,7 +383,7 @@ internal sealed class NavMeshHandler(RecordParserContext context) : RecordHandle
 
         return new RuntimeCellEnumeration(
             hits,
-            new RuntimeCellEnumeratorStats(hits.Count, 0, 0, 0, hits.Count),
+            new RuntimeCellEnumeratorStats(hits.Count, 0, 0, hits.Count),
             [],
             []);
     }

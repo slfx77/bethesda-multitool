@@ -21,6 +21,15 @@ public record ImageSpaceRecord
     /// </summary>
     public ImageSpaceHdr? Hdr { get; init; }
 
+    /// <summary>
+    ///     Full FO3/FNV packed-DNAM data and its source layout. Its presence is the authoritative
+    ///     packed-layout provenance; <see cref="Hdr" />, <see cref="Cinematic" /> and
+    ///     <see cref="Tint" /> alone may instead have come from the legacy split compatibility layout.
+    ///     Those top-level semantic properties remain authoritative for writing so record-level
+    ///     <c>with</c> edits cannot be hidden by this parsed provenance snapshot.
+    /// </summary>
+    public ImageSpaceClassicData? ClassicDnam { get; init; }
+
     /// <summary>Semantic Skyrim or FO4-family HNAM/legacy-ENAM data, without ordinal aliasing.</summary>
     public ImageSpaceModernHdr? ModernHdr { get; init; }
 
@@ -128,15 +137,17 @@ public sealed record ImageSpaceDepthOfField
 public record ImageSpaceCinematic
 {
     /// <summary>
-    ///     Whether the source layout actually stored the FO3/FNV mask dword. Classic 132/148/152-byte
-    ///     DNAM records store it at layout-specific offsets; Creation-era CNAM blocks do not. The
-    ///     shipped classic pixel shaders do not consume the mask.
+    ///     Whether the source layout contains the FO3/FNV terminal flag-bearing dword.
+    ///     Classic 148/152-byte DNAM records store it at source offset 144/148 respectively;
+    ///     132-byte DNAM and Creation-era CNAM do not. The shipped classic pixel shaders do not
+    ///     consume these flags.
     /// </summary>
     public bool HasExplicitFlags { get; init; } = true;
 
     /// <summary>
     ///     FO3/FNV cinematic enable mask: bit 0 Saturation, bit 1 Contrast, bit 2 Tint,
-    ///     bit 3 Brightness. High bits in the source dword are non-semantic and are discarded.
+    ///     bit 3 Brightness. High bits in the source dword are non-semantic and remain preserved in
+    ///     <see cref="ImageSpaceClassicData.PostBodyWords" /> rather than projected into this enum.
     ///     Consult <see cref="HasExplicitFlags"/> because Skyrim-style CNAM has no stored mask.
     ///     This is source metadata, not a switch in the recovered shipped classic composite shader.
     /// </summary>
@@ -171,15 +182,66 @@ public record ImageSpaceTint
 }
 
 /// <summary>
-///     Semantic projection of one FO3/FNV 132/148/152-byte IMGS DNAM payload.
+///     Semantic projection of one FO3/FNV 132/148/152-byte on-disk IMGS DNAM payload.
 ///     <para>
-///         There is deliberately no fade block: the xEdit FO3/FNV IMGS definition has none, and the
-///         previous <c>ImageSpaceFade</c> was decoded from the four dwords past the cinematic tail —
-///         the mask plus the record's uninitialized engine stack. Removed 2026-08-11; it had no
-///         consumer outside the parser, model and its own test.
+///         No reliable authored on-disk fade block has been established. Although the normalized
+///         engine parameter storage names four post-body dwords as cinematic fade RGBA, retail DNAM
+///         tails contain values inconsistent with an authored float block. They remain opaque here.
+///     </para>
+///     <para>
+///         The source layout is retained as provenance, but writers canonicalize new form-version-15
+///         records to 152 bytes. <see cref="PostBodyWords" /> retains the source-endian-decoded opaque
+///         dword lanes after the semantic body: one word for a 132-byte source, or five words for a
+///         148/152-byte source.
 ///     </para>
 /// </summary>
-public sealed record ImageSpaceClassicData(
-    ImageSpaceHdr Hdr,
-    ImageSpaceCinematic Cinematic,
-    ImageSpaceTint Tint);
+public sealed record ImageSpaceClassicData
+{
+    public required ImageSpaceClassicDnamLayout SourceLayout { get; init; }
+
+    /// <summary>
+    ///     Parse-time semantic snapshots kept with the classic-only auxiliary blocks. The top-level
+    ///     <see cref="ImageSpaceRecord.Hdr" />, <see cref="ImageSpaceRecord.Cinematic" /> and
+    ///     <see cref="ImageSpaceRecord.Tint" /> properties are authoritative for writing.
+    /// </summary>
+    public required ImageSpaceHdr Hdr { get; init; }
+    public required ImageSpaceClassicBloom Bloom { get; init; }
+    public required ImageSpaceClassicGetHit GetHit { get; init; }
+    public required ImageSpaceClassicNightEye NightEye { get; init; }
+    public required ImageSpaceCinematic Cinematic { get; init; }
+    public required ImageSpaceTint Tint { get; init; }
+
+    /// <summary>
+    ///     Source-endian-decoded dword lanes after Tint.Amount. Length is one for
+    ///     <see cref="ImageSpaceClassicDnamLayout.Dnam132" /> and five for the 148/152-byte layouts.
+    ///     In the latter layouts the final word contains cinematic-enable flags in its low nibble.
+    /// </summary>
+    public required uint[] PostBodyWords { get; init; }
+}
+
+/// <summary>Exact packed-DNAM byte layout found in the source FO3/FNV record.</summary>
+public enum ImageSpaceClassicDnamLayout
+{
+    Dnam132 = 132,
+    Dnam148 = 148,
+    Dnam152 = 152,
+}
+
+/// <summary>Classic packed-DNAM Bloom block (three floats).</summary>
+public sealed record ImageSpaceClassicBloom(
+    float BlurRadius,
+    float AlphaAddInterior,
+    float AlphaAddExterior);
+
+/// <summary>Classic packed-DNAM Get Hit block (three floats).</summary>
+public sealed record ImageSpaceClassicGetHit(
+    float BlurRadius,
+    float BlurDampingConstant,
+    float DampingConstant);
+
+/// <summary>Classic packed-DNAM Night Eye block (RGB plus brightness).</summary>
+public sealed record ImageSpaceClassicNightEye(
+    float Red,
+    float Green,
+    float Blue,
+    float Brightness);

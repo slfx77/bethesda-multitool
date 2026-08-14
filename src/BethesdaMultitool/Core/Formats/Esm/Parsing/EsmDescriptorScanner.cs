@@ -373,7 +373,8 @@ internal static class EsmDescriptorScanner
             offset,
             bigEndian)
         {
-            HeaderSize = format.RecordHeaderSize
+            HeaderSize = format.RecordHeaderSize,
+            FormVersion = header.FormVersion
         };
         scanResult.MainRecords.Add(record);
 
@@ -490,7 +491,7 @@ internal static class EsmDescriptorScanner
                     record.IsBigEndian));
                 AddRefrField(sig, subData, record, refrStates);
                 break;
-            case "CTDA" when subData.Length >= 24:
+            case "CTDA" when ConditionSubrecordDecoder.IsSupportedBodyLength(subData.Length):
                 scanResult.Conditions.Add(EsmDataExtractor.ExtractCondition(subData.ToArray(), record.Offset,
                     record.IsBigEndian));
                 break;

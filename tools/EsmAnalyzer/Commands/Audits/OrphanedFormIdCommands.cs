@@ -87,10 +87,10 @@ public static class OrphanedFormIdCommands
                 .Select(r => r.FormId));
 
         // Well-known engine FormIDs
-        knownFormIds.Add(0x00000014); // Player base
-        knownFormIds.Add(0x00000007); // PlayerRef
+        knownFormIds.Add(0x00000007); // Player NPC base
+        knownFormIds.Add(0x00000014); // PlayerRef placed actor
 
-        AnsiConsole.MarkupLine($"[grey]Known FormIDs from ESM: {knownFormIds.Count:N0}[/]");
+        AnsiConsole.MarkupLine($"[grey]Known ESM/engine FormIDs: {knownFormIds.Count:N0}[/]");
 
         AnsiConsole.MarkupLine("[grey]Building EDID map...[/]");
         var edidMap = EsmHelpers.BuildFormIdToEdidMap(data, bigEndian);

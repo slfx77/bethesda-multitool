@@ -32,6 +32,7 @@ internal static class RecordScannerDispatch
     internal const uint SigSnam = 0x4D414E53;
     internal const uint SigQnam = 0x4D414E51;
     internal const uint SigCtda = 0x41445443;
+    internal const uint SigCtdaBigEndian = 0x43544441;
     internal const uint SigVhgt = 0x54474856;
     internal const uint SigTghv = 0x56484754;
     internal const uint SigXclc = 0x434C4358;
@@ -255,7 +256,7 @@ internal static class RecordScannerDispatch
             (SigName, 4), (SigData, 5), (SigAcbs, 6), (SigNam1, 7),
             (SigTrdt, 8), (SigFull, 9), (SigDesc, 10), (SigModl, 11),
             (SigIcon, 12), (SigMico, 13), (SigScri, 14), (SigEnam, 15),
-            (SigSnam, 16), (SigQnam, 17), (SigCtda, 18), (SigVhgt, 19),
+            (SigSnam, 16), (SigQnam, 17), (SigCtda, 18), (SigCtdaBigEndian, 18), (SigVhgt, 19),
             (SigTghv, 20), (SigXclc, 21), (SigClcx, 22)
         ];
 

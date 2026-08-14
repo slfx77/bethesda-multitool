@@ -3,10 +3,13 @@ using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 
 /// <summary>
-///     Generic ESM record for types that share a common structure:
-///     EDID + FULL + MODL + OBND + type-specific subrecords.
-///     Used for MSTT, TACT, CAMS, ANIO, IPDS, EFSH, RGDL, LSCR,
-///     ASPC, MSET, CHIP, CSNO, DOBJ, ADDN, TREE.
+///     Schema/identity carrier for records represented as
+///     EDID + FULL + MODL + OBND + type-specific subrecords. The hand-written FNV parser
+///     uses it for MSTT, TACT, CAMS, ANIO, IPDS, EFSH, RGDL, LSCR, ASPC, MSET, CHIP,
+///     CSNO, DOBJ, ADDN, IDLM, IMGS, GRAS, AMEF, and FLOR; schema-primary parsers also use
+///     it as their general decoded-record carrier. PWAT and TREE use dedicated typed models
+///     because their runtime data contains embedded pointers/arrays the generic reader does
+///     not reconstruct.
 /// </summary>
 public record GenericEsmRecord
 {

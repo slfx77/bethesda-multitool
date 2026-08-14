@@ -214,6 +214,10 @@ internal static class ObjectBoundsIndex
             {
                 "MSTT" => PlacedObjectCategory.Static,
                 "TACT" => PlacedObjectCategory.Activator,
+                // FLOR is an engine-authored flora identity. Treat it as vegetation even when MODL
+                // is absent or uses a bare file name; otherwise walk mode can synthesize collision
+                // from its OBND or alpha-card render mesh while the real game leaves it walk-through.
+                "FLOR" => PlacedObjectCategory.Plants,
                 // TREE is the engine-authoritative tree identity: covers every Gamebryo .spt tree
                 // (Oblivion/FO3/FNV MODLs are bare names like "\WastelandShrub01.spt" with no folder
                 // segment, so path logic can never classify them) and TREE-record NIF trees in
@@ -259,16 +263,21 @@ internal static class ObjectBoundsIndex
             }
         }
 
-        // Promote MSTT (Moveable Static) generic records with known GECK folder categories
+        // Promote MSTT from its model folder. FLOR has an authoritative vegetation record identity,
+        // so its path may refine Plants to Tree but must not re-home it into an unrelated category
+        // (for example, a misplaced architecture model must remain vegetation for collision).
         foreach (var gr in records.GenericRecords)
         {
-            if (gr.RecordType == "MSTT" && gr.ModelPath != null)
+            if (gr.ModelPath == null) continue;
+
+            var folderCategory = GetStaticCategoryFromModelPath(gr.ModelPath);
+            if (gr.RecordType == "MSTT" && folderCategory.HasValue)
             {
-                var folderCategory = GetStaticCategoryFromModelPath(gr.ModelPath);
-                if (folderCategory.HasValue)
-                {
-                    categories[gr.FormId] = folderCategory.Value;
-                }
+                categories[gr.FormId] = folderCategory.Value;
+            }
+            else if (gr.RecordType == "FLOR" && folderCategory == PlacedObjectCategory.Tree)
+            {
+                categories[gr.FormId] = PlacedObjectCategory.Tree;
             }
         }
 
@@ -319,6 +328,20 @@ internal static class ObjectBoundsIndex
             return PlacedObjectCategory.Tree;
         }
 
+        // Plant-family folders follow the same whole-segment rule. Modern games commonly nest them
+        // under landscape\plants\; first-segment matching mislabeled those as Landscape and made
+        // vegetation eligible for speculative collision.
+        if (ContainsWholeSegment(path, "plants") ||
+            ContainsWholeSegment(path, "shrubs") ||
+            ContainsWholeSegment(path, "flowers") ||
+            ContainsWholeSegment(path, "cactus") ||
+            ContainsWholeSegment(path, "grass") ||
+            ContainsWholeSegment(path, "bushes") ||
+            ContainsWholeSegment(path, "tumbleweed"))
+        {
+            return PlacedObjectCategory.Plants;
+        }
+
         // Find the first path segment
         var sepIndex = path.IndexOfAny('\\', '/');
         if (sepIndex <= 0)
@@ -338,17 +361,6 @@ internal static class ObjectBoundsIndex
             folder.Equals("rocks", StringComparison.OrdinalIgnoreCase))
         {
             return PlacedObjectCategory.Landscape;
-        }
-
-        if (folder.Equals("plants", StringComparison.OrdinalIgnoreCase) ||
-            folder.Equals("shrubs", StringComparison.OrdinalIgnoreCase) ||
-            folder.Equals("flowers", StringComparison.OrdinalIgnoreCase) ||
-            folder.Equals("cactus", StringComparison.OrdinalIgnoreCase) ||
-            folder.Equals("grass", StringComparison.OrdinalIgnoreCase) ||
-            folder.Equals("bushes", StringComparison.OrdinalIgnoreCase) ||
-            folder.Equals("tumbleweed", StringComparison.OrdinalIgnoreCase))
-        {
-            return PlacedObjectCategory.Plants;
         }
 
         if (folder.Equals("clutter", StringComparison.OrdinalIgnoreCase))

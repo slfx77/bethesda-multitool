@@ -4,7 +4,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Magic;
 
 /// <summary>
 ///     Parsed Spell record.
-///     Aggregates data from SPEL main record header, SPIT (16 bytes), EFID/EFIT subrecords.
+///     Aggregates data from SPEL main record header, SPIT (16 bytes), and repeated
+///     EFID/EFIT/CTDA effect groups.
 /// </summary>
 public record SpellRecord
 {
@@ -21,16 +22,22 @@ public record SpellRecord
     /// <summary>Spell type classification.</summary>
     public SpellType Type { get; init; }
 
-    /// <summary>Spell cost.</summary>
+    /// <summary>
+    ///     Historical name for the raw SPIT word at bytes 4..7. Fallout New Vegas xEdit labels
+    ///     this storage unused; it remains modeled so captured bytes are not silently discarded.
+    /// </summary>
     public uint Cost { get; init; }
 
-    /// <summary>Spell level.</summary>
+    /// <summary>
+    ///     Historical name for the raw SPIT word at bytes 8..11. Fallout New Vegas xEdit labels
+    ///     this storage unused; it remains modeled so captured bytes are not silently discarded.
+    /// </summary>
     public uint Level { get; init; }
 
     /// <summary>Spell flags.</summary>
     public byte Flags { get; init; }
 
-    /// <summary>Effects with magnitude, area, duration (EFID + EFIT subrecords).</summary>
+    /// <summary>Effects and their conditions (EFID + EFIT + CTDA* groups).</summary>
     public List<EnchantmentEffect> Effects { get; init; } = [];
 
     /// <summary>Offset in the dump where this record was found.</summary>

@@ -1,7 +1,12 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Plugin;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Formats.Esm.Subrecords;
+using BethesdaMultitool.Core.Games;
 using static BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics.EsmScriptDiagnosticsResolvers;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
@@ -26,15 +31,32 @@ public static class EsmScriptDiagnosticsAnalyzer
         IReadOnlySet<uint>? explicitRecordFormIds = null)
     {
         var data = File.ReadAllBytes(path);
+        var game = GameDetector.DetectFromBytes(data, Path.GetFileName(path)).Game;
         var records = EsmParser.EnumerateRecordsWithGrups(data).Records;
-        return AnalyzeRecords(path, records, targets, explicitRecordFormIds);
+        return AnalyzeRecords(path, records, targets, game, explicitRecordFormIds);
     }
 
     /// <summary>Runs script diagnostics for the requested targets against an already-parsed record set.</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell",
+        "S1133:Deprecated code should be removed",
+        Justification = "This overload remains as a source-compatibility bridge for callers that cannot yet provide game context.")]
+    [Obsolete("Pass an explicit BethesdaGame so CTDA layouts and parameter semantics can be decoded safely.")]
     public static EsmScriptDiagnosticsResult AnalyzeRecords(
         string sourcePath,
         IReadOnlyList<ParsedMainRecord> records,
         IReadOnlyList<string> targets,
+        IReadOnlySet<uint>? explicitRecordFormIds = null)
+    {
+        return AnalyzeRecords(sourcePath, records, targets, BethesdaGame.Unknown, explicitRecordFormIds);
+    }
+
+    /// <summary>Runs game-aware script diagnostics against an already-parsed record set.</summary>
+    public static EsmScriptDiagnosticsResult AnalyzeRecords(
+        string sourcePath,
+        IReadOnlyList<ParsedMainRecord> records,
+        IReadOnlyList<string> targets,
+        BethesdaGame game,
         IReadOnlySet<uint>? explicitRecordFormIds = null)
     {
         var normalizedTargets = targets
@@ -126,7 +148,8 @@ public static class EsmScriptDiagnosticsAnalyzer
                 }
             }
 
-            foreach (var info in records.Where(r => r.Header.Signature == "INFO" && IsInfoRelatedToActor(r, actorIds)))
+            foreach (var info in records.Where(r =>
+                         r.Header.Signature == "INFO" && IsInfoRelatedToActor(r, actorIds, game)))
             {
                 AddRelation(recordRelations, target, "INFO", info.Header.FormId, "actor-dialogue");
                 foreach (var topicId in ReadFormIdSubrecords(info, "TPIC"))
@@ -186,7 +209,7 @@ public static class EsmScriptDiagnosticsAnalyzer
             foreach (var pack in records.Where(r =>
                          r.Header.Signature == "PACK" &&
                          (LabelMatches(index.GetValueOrDefault(r.Header.FormId), target) ||
-                          ContainsAnyFormReference(r, actorIds))))
+                          ContainsAnyFormReference(r, actorIds, game))))
             {
                 AddRelation(recordRelations, target, "PACK", pack.Header.FormId, "target-ref-pack");
             }
@@ -194,16 +217,16 @@ public static class EsmScriptDiagnosticsAnalyzer
             foreach (var script in records.Where(r =>
                          r.Header.Signature == "SCPT" &&
                          (LabelMatches(index.GetValueOrDefault(r.Header.FormId), target) ||
-                          ContainsAnyFormReference(r, actorIds))))
+                          ContainsAnyFormReference(r, actorIds, game))))
             {
                 AddRelation(recordRelations, target, "SCPT", script.Header.FormId, "target-ref-script");
             }
         }
 
-        var recordRows = BuildRecordRows(recordRelations, byFormId, index);
-        var dialogueRows = BuildDialogueRows(recordRelations, byFormId, index);
+        var recordRows = BuildRecordRows(recordRelations, byFormId, index, game);
+        var dialogueRows = BuildDialogueRows(recordRelations, byFormId, index, game);
         var dialogueAuditRows = BuildDialogueAuditRows(dialogueRows, byFormId);
-        var conditionRows = BuildConditionRows(recordRows, byFormId, index);
+        var conditionRows = BuildConditionRows(recordRows, byFormId, index, game);
         var scriptBlocks = new List<EsmScriptDiagnosticBlockRow>();
         var scriptRefs = new List<EsmScriptDiagnosticReferenceRow>();
 
@@ -242,7 +265,10 @@ public static class EsmScriptDiagnosticsAnalyzer
                 .ThenBy(r => r.ParentFormId)
                 .ThenBy(r => r.BlockIndex)
                 .ThenBy(r => r.SlotIndex)
-                .ToList());
+                .ToList())
+        {
+            Game = game
+        };
     }
 
     /// <summary>Writes the diagnostics result as a set of CSV reports into the given output directory.</summary>
@@ -317,7 +343,8 @@ public static class EsmScriptDiagnosticsAnalyzer
     private static List<EsmScriptDiagnosticRecordRow> BuildRecordRows(
         Dictionary<(string Target, string RecordType, uint FormId), HashSet<string>> relations,
         Dictionary<uint, ParsedMainRecord> byFormId,
-        Dictionary<uint, EsmScriptFormIdInfo> index)
+        Dictionary<uint, EsmScriptFormIdInfo> index,
+        BethesdaGame game)
     {
         return relations
             .Select(kvp =>
@@ -331,7 +358,7 @@ public static class EsmScriptDiagnosticsAnalyzer
                     kvp.Key.FormId,
                     info?.EditorId ?? string.Empty,
                     info?.FullName ?? string.Empty,
-                    record is null ? string.Empty : BuildInterestingSubrecordSummary(record, index));
+                    record is null ? string.Empty : BuildInterestingSubrecordSummary(record, index, game));
             })
             .OrderBy(r => r.Target, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.RecordType, StringComparer.Ordinal)
@@ -342,7 +369,8 @@ public static class EsmScriptDiagnosticsAnalyzer
     private static List<EsmScriptDiagnosticDialogueRow> BuildDialogueRows(
         Dictionary<(string Target, string RecordType, uint FormId), HashSet<string>> relations,
         Dictionary<uint, ParsedMainRecord> byFormId,
-        IReadOnlyDictionary<uint, EsmScriptFormIdInfo> index)
+        IReadOnlyDictionary<uint, EsmScriptFormIdInfo> index,
+        BethesdaGame game)
     {
         var rows = new List<EsmScriptDiagnosticDialogueRow>();
         foreach (var ((target, recordType, formId), _) in relations)
@@ -356,7 +384,7 @@ public static class EsmScriptDiagnosticsAnalyzer
             var speakerId = ReadFirstFormIdSubrecord(info, "ANAM");
             if (speakerId == 0)
             {
-                speakerId = ReadSpeakerFromPositiveGetIsIdCondition(info);
+                speakerId = ReadSpeakerFromPositiveGetIsIdCondition(info, game);
             }
 
             var responses = info.Subrecords
@@ -498,7 +526,8 @@ public static class EsmScriptDiagnosticsAnalyzer
     private static List<EsmScriptConditionAuditRow> BuildConditionRows(
         IReadOnlyList<EsmScriptDiagnosticRecordRow> recordRows,
         Dictionary<uint, ParsedMainRecord> byFormId,
-        IReadOnlyDictionary<uint, EsmScriptFormIdInfo> index)
+        IReadOnlyDictionary<uint, EsmScriptFormIdInfo> index,
+        BethesdaGame game)
     {
         var results = new List<EsmScriptConditionAuditRow>();
         foreach (var recordRow in recordRows)
@@ -509,10 +538,55 @@ public static class EsmScriptDiagnosticsAnalyzer
             }
 
             var conditionIndex = 0;
-            foreach (var sub in record.Subrecords.Where(s => s.Signature == "CTDA" && s.Data.Length >= 28))
+            foreach (var sub in record.Subrecords.Where(s => s.Signature == "CTDA"))
             {
                 conditionIndex++;
-                var condition = CtdaParser.Decode(sub.Data, sub.BigEndian);
+                var layoutStatus = GetCtdaLayoutStatus(game, sub.Data.Length);
+                if (!CtdaParser.TryDecode(sub.Data, sub.BigEndian, out var condition, out var physical))
+                {
+                    results.Add(new EsmScriptConditionAuditRow(
+                        recordRow.Target,
+                        recordRow.Relation,
+                        recordRow.RecordType,
+                        recordRow.FormId,
+                        recordRow.EditorId,
+                        conditionIndex,
+                        "Invalid CTDA",
+                        0,
+                        0,
+                        0,
+                        0,
+                        string.Empty,
+                        0,
+                        string.Empty,
+                        0,
+                        string.Empty,
+                        null,
+                        null,
+                        string.Empty,
+                        Convert.ToHexString(sub.Data),
+                        null,
+                        false,
+                        null,
+                        sub.Data.Length,
+                        layoutStatus));
+                    continue;
+                }
+
+                var layoutIsValid = layoutStatus == "valid";
+                var comparisonRawBits = physical.ComparisonRawBits;
+                var comparisonGlobalLabel = layoutIsValid && condition.UsesGlobalComparison
+                    ? ResolveLabel(index, comparisonRawBits)
+                    : string.Empty;
+                var referenceStorageIsSemantic = layoutIsValid && physical.ReferenceStorage.HasValue &&
+                                                 DialogueConditionReferencePolicy.IsSemanticReferenceSlot(
+                                                     condition, game);
+                uint? semanticReferenceFormId = referenceStorageIsSemantic && condition.Reference != 0
+                    ? condition.Reference
+                    : null;
+                var referenceLabel = semanticReferenceFormId is { } reference
+                    ? ResolveLabel(index, reference)
+                    : string.Empty;
                 results.Add(new EsmScriptConditionAuditRow(
                     recordRow.Target,
                     recordRow.Relation,
@@ -520,18 +594,47 @@ public static class EsmScriptDiagnosticsAnalyzer
                     recordRow.FormId,
                     recordRow.EditorId,
                     conditionIndex,
-                    ResolveConditionFunctionName(condition.FunctionIndex),
+                    layoutIsValid
+                        ? ResolveConditionFunctionName(game, condition.FunctionIndex)
+                        : $"Func0x{condition.FunctionIndex:X4}",
                     condition.FunctionIndex,
                     condition.Type,
                     condition.ComparisonValue,
+                    comparisonRawBits,
+                    comparisonGlobalLabel,
                     condition.Parameter1,
-                    ResolveParameterLabel(index, condition.FunctionIndex, 0, condition.Parameter1),
+                    layoutIsValid
+                        ? ResolveParameterLabel(
+                            index,
+                            game,
+                            condition.FunctionIndex,
+                            0,
+                            condition.Parameter1,
+                            condition.Type,
+                            condition.RunOn,
+                            condition.Parameter1)
+                        : string.Empty,
                     condition.Parameter2,
-                    ResolveParameterLabel(index, condition.FunctionIndex, 1, condition.Parameter2),
-                    condition.RunOn,
-                    condition.Reference,
-                    ResolveLabel(index, condition.Reference),
-                    Convert.ToHexString(sub.Data)));
+                    layoutIsValid
+                        ? ResolveParameterLabel(
+                            index,
+                            game,
+                            condition.FunctionIndex,
+                            1,
+                            condition.Parameter2,
+                            condition.Type,
+                            condition.RunOn,
+                            condition.Parameter1)
+                        : string.Empty,
+                    physical.RunOn,
+                    physical.ReferenceStorage,
+                    referenceLabel,
+                    Convert.ToHexString(sub.Data),
+                    physical.Parameter3,
+                    referenceStorageIsSemantic,
+                    semanticReferenceFormId,
+                    sub.Data.Length,
+                    layoutStatus));
             }
         }
 
@@ -543,7 +646,10 @@ public static class EsmScriptDiagnosticsAnalyzer
             .ToList();
     }
 
-    private static bool IsInfoRelatedToActor(ParsedMainRecord record, HashSet<uint> actorIds)
+    private static bool IsInfoRelatedToActor(
+        ParsedMainRecord record,
+        HashSet<uint> actorIds,
+        BethesdaGame game)
     {
         if (actorIds.Count == 0)
         {
@@ -562,25 +668,41 @@ public static class EsmScriptDiagnosticsAnalyzer
                 return true;
             }
 
-            if (sub.Signature == "CTDA" && sub.Data.Length >= 28)
+            if (sub.Signature == "CTDA" &&
+                TryDecodeCtdaForGame(sub, game, out var condition, out _) &&
+                ((IsFormIdConditionParameter(
+                      game,
+                      condition.FunctionIndex,
+                      0,
+                      condition.Type,
+                      condition.RunOn,
+                      condition.Parameter1)
+                  && actorIds.Contains(condition.Parameter1))
+                 || (IsFormIdConditionParameter(
+                         game,
+                         condition.FunctionIndex,
+                         1,
+                         condition.Type,
+                         condition.RunOn,
+                         condition.Parameter1)
+                     && actorIds.Contains(condition.Parameter2))
+                 || (DialogueConditionReferencePolicy.TryGetSemanticReference(
+                         condition,
+                         game,
+                         out var reference)
+                     && actorIds.Contains(reference))))
             {
-                var condition = CtdaParser.Decode(sub.Data, sub.BigEndian);
-                if (condition.FunctionIndex == 0x48 && actorIds.Contains(condition.Parameter1))
-                {
-                    return true;
-                }
-
-                if (actorIds.Contains(condition.Parameter1) || actorIds.Contains(condition.Reference))
-                {
-                    return true;
-                }
+                return true;
             }
         }
 
         return false;
     }
 
-    private static bool ContainsAnyFormReference(ParsedMainRecord record, HashSet<uint> formIds)
+    private static bool ContainsAnyFormReference(
+        ParsedMainRecord record,
+        HashSet<uint> formIds,
+        BethesdaGame game)
     {
         if (formIds.Count == 0)
         {
@@ -594,13 +716,31 @@ public static class EsmScriptDiagnosticsAnalyzer
                 return true;
             }
 
-            if (sub.Signature == "CTDA" && sub.Data.Length >= 28)
+            if (sub.Signature == "CTDA" &&
+                TryDecodeCtdaForGame(sub, game, out var condition, out _) &&
+                ((IsFormIdConditionParameter(
+                      game,
+                      condition.FunctionIndex,
+                      0,
+                      condition.Type,
+                      condition.RunOn,
+                      condition.Parameter1)
+                  && formIds.Contains(condition.Parameter1))
+                 || (IsFormIdConditionParameter(
+                         game,
+                         condition.FunctionIndex,
+                         1,
+                         condition.Type,
+                         condition.RunOn,
+                         condition.Parameter1)
+                     && formIds.Contains(condition.Parameter2))
+                 || (DialogueConditionReferencePolicy.TryGetSemanticReference(
+                         condition,
+                         game,
+                         out var reference)
+                     && formIds.Contains(reference))))
             {
-                var condition = CtdaParser.Decode(sub.Data, sub.BigEndian);
-                if (formIds.Contains(condition.Parameter1) || formIds.Contains(condition.Reference))
-                {
-                    return true;
-                }
+                return true;
             }
         }
 
@@ -629,23 +769,39 @@ public static class EsmScriptDiagnosticsAnalyzer
         set.Add(relation);
     }
 
-    private static uint ReadSpeakerFromPositiveGetIsIdCondition(ParsedMainRecord info)
+    private static uint ReadSpeakerFromPositiveGetIsIdCondition(
+        ParsedMainRecord info,
+        BethesdaGame game)
     {
+        var candidates = new HashSet<uint>();
         foreach (var sub in info.Subrecords)
         {
-            if (sub.Signature != "CTDA" || sub.Data.Length < 28)
+            if (sub.Signature != "CTDA" ||
+                !TryDecodeCtdaForGame(sub, game, out var condition, out _))
             {
                 continue;
             }
 
-            var condition = CtdaParser.Decode(sub.Data, sub.BigEndian);
-            if (condition.FunctionIndex == 0x48)
+            var table = ConditionFunctionTable.For(game);
+            if (table.Get(condition.FunctionIndex)?.Name == "GetIsID"
+                && IsFormIdConditionParameter(
+                    game,
+                    condition.FunctionIndex,
+                    0,
+                    condition.Type,
+                    condition.RunOn,
+                    condition.Parameter1)
+                && DialogueSpeakerBinding.IsPositiveSubjectGetIsId(condition))
             {
-                return condition.Parameter1;
+                candidates.Add(condition.Parameter1);
+                if (candidates.Count > 1)
+                {
+                    return 0;
+                }
             }
         }
 
-        return 0;
+        return candidates.SingleOrDefault();
     }
 
     private static List<uint> ReadFormIdSubrecords(ParsedMainRecord record, string signature)
@@ -670,7 +826,8 @@ public static class EsmScriptDiagnosticsAnalyzer
 
     private static string BuildInterestingSubrecordSummary(
         ParsedMainRecord record,
-        IReadOnlyDictionary<uint, EsmScriptFormIdInfo> index)
+        IReadOnlyDictionary<uint, EsmScriptFormIdInfo> index,
+        BethesdaGame game)
     {
         var parts = new List<string>();
         foreach (var sub in record.Subrecords)
@@ -688,22 +845,90 @@ public static class EsmScriptDiagnosticsAnalyzer
             if (sub.Signature is "NAME" or "ANAM" or "SNAM" or "TPIC" or "QSTI" or "PNAM" or "TCLT" or
                 "TCLF" or "TCFU" or "PKID" or "SCRI" or "SCRO" or "SCRV" or "TNAM" or "PLDT" or "PTDT")
             {
-                var value = sub.Signature == "CTDA" && sub.Data.Length >= 28
-                    ? 0
-                    : sub.DataAsFormId;
+                var value = sub.DataAsFormId;
                 parts.Add(value == 0
                     ? sub.Signature
                     : $"{sub.Signature}=0x{value:X8}{ResolveLabelSuffix(index, value)}");
             }
-            else if (sub.Signature == "CTDA" && sub.Data.Length >= 28)
+            else if (sub.Signature == "CTDA")
             {
-                var condition = CtdaParser.Decode(sub.Data, sub.BigEndian);
+                var layoutStatus = GetCtdaLayoutStatus(game, sub.Data.Length);
+                if (!CtdaParser.TryDecode(sub.Data, sub.BigEndian, out var condition, out var physical) ||
+                    layoutStatus != "valid")
+                {
+                    parts.Add(
+                        $"CTDA(length={sub.Data.Length},status={layoutStatus},raw={Convert.ToHexString(sub.Data)})");
+                    continue;
+                }
+
+                var parameter1Suffix = IsFormIdConditionParameter(
+                    game,
+                    condition.FunctionIndex,
+                    0,
+                    condition.Type,
+                    condition.RunOn,
+                    condition.Parameter1)
+                    ? ResolveLabelSuffix(index, condition.Parameter1)
+                    : string.Empty;
+                var parameter2Suffix = IsFormIdConditionParameter(
+                    game,
+                    condition.FunctionIndex,
+                    1,
+                    condition.Type,
+                    condition.RunOn,
+                    condition.Parameter1)
+                    ? ResolveLabelSuffix(index, condition.Parameter2)
+                    : string.Empty;
+                var referenceSlotIsSemantic = physical.ReferenceStorage.HasValue &&
+                                              DialogueConditionReferencePolicy.IsSemanticReferenceSlot(
+                                                  condition, game);
+                string referenceSummary;
+                if (referenceSlotIsSemantic)
+                {
+                    referenceSummary =
+                        $"ref=0x{condition.Reference:X8}{ResolveLabelSuffix(index, condition.Reference)}";
+                }
+                else if (physical.ReferenceStorage is { } referenceStorage)
+                {
+                    referenceSummary = $"reference_storage=0x{referenceStorage:X8}";
+                }
+                else
+                {
+                    referenceSummary = "reference_storage=absent";
+                }
+                var runOnSummary = physical.RunOn is { } runOn ? runOn.ToString() : "absent";
+                var parameter3Summary = physical.Parameter3 is { } parameter3
+                    ? parameter3.ToString()
+                    : "absent";
                 parts.Add(
-                    $"CTDA(fn=0x{condition.FunctionIndex:X},p1=0x{condition.Parameter1:X8}{ResolveLabelSuffix(index, condition.Parameter1)},ref=0x{condition.Reference:X8}{ResolveLabelSuffix(index, condition.Reference)})");
+                    $"CTDA(fn=0x{condition.FunctionIndex:X},p1=0x{condition.Parameter1:X8}{parameter1Suffix}," +
+                    $"p2=0x{condition.Parameter2:X8}{parameter2Suffix},runOn={runOnSummary}," +
+                    $"{referenceSummary},p3={parameter3Summary})");
             }
         }
 
         return string.Join("; ", parts.Take(24));
+    }
+
+    private static bool TryDecodeCtdaForGame(
+        ParsedSubrecord subrecord,
+        BethesdaGame game,
+        out DialogueCondition condition,
+        out ConditionSubrecord physical)
+    {
+        if (!CtdaParser.IsSupportedBodyLength(game, subrecord.Data.Length))
+        {
+            condition = null!;
+            physical = null!;
+            return false;
+        }
+
+        return CtdaParser.TryDecode(subrecord.Data, subrecord.BigEndian, out condition, out physical);
+    }
+
+    private static string GetCtdaLayoutStatus(BethesdaGame game, int bodyLength)
+    {
+        return CtdaParser.GetLayoutStatus(game, bodyLength);
     }
 
     private static string FormatInfoFlags(ParsedMainRecord info)

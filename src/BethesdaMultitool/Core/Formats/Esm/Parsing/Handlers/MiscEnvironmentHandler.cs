@@ -925,24 +925,11 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         return alphas;
     }
 
-    // FO3/FNV/Skyrim/FO4/FO76/SF1 store a u16 "form version" at record-header offset 0x14 (20); Oblivion's
-    // 20-byte header has none. Read it (endian-aware) only for the modern games, where it gates NAM0's band
-    // width. Returns 0 when unavailable (scan-only path or a short/legacy header) — callers then take the
-    // narrow 4-band stride, the safe default for pre-111 records.
-    private int ReadRecordFormVersion(DetectedMainRecord record)
-    {
-        const int formVersionHeaderOffset = 20;
-        if (Context.Accessor is null || record.HeaderSize < formVersionHeaderOffset + 2)
-        {
-            return 0;
-        }
-
-        var buf = new byte[2];
-        Context.Accessor.ReadArray(record.Offset + formVersionHeaderOffset, buf, 0, 2);
-        return record.IsBigEndian
-            ? BinaryPrimitives.ReadUInt16BigEndian(buf)
-            : BinaryPrimitives.ReadUInt16LittleEndian(buf);
-    }
+    // FO3/FNV/Skyrim/FO4/FO76/SF1 store a u16 form version at record-header offset 20; Oblivion's
+    // 20-byte header has none. Scanners parse that field once into the semantic record descriptor so
+    // every decoder shares one endian-correct authority. Unknown/legacy records use zero, which keeps
+    // the narrow pre-111 weather layout as the safe fallback.
+    private static int ReadRecordFormVersion(DetectedMainRecord record) => record.FormVersion ?? 0;
 
     // The number of RGBA time bands per weather-color entry (4 for FO3, 6 for FNV). NAM0 carries a fixed
     // 10 color categories in both games, so its byte length / 10 gives the per-category stride and /4 the
@@ -1162,28 +1149,27 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         };
 
     /// <summary>
-    ///     FO3/FNV IMGS DNAM stores its cinematic-mask dword IMMEDIATELY AFTER the body, so the
-    ///     offset depends only on whether Skin Dimmer is present: 132 for the 152-byte (form
-    ///     version ≥ 14) layout and 128 for both the 148- and 132-byte layouts. Only the low nibble
-    ///     is semantic; read the full dword with source endianness so Xbox records do not select the
-    ///     wrong byte.
+    ///     Reads the low-nibble cinematic-enable flags from the terminal source-endian dword in the
+    ///     148/152-byte FO3/FNV layouts. The normalized in-memory parameter block stores the flags
+    ///     dword at offset 148; <c>TESImageSpace::Load</c>'s four-byte Skin Dimmer insertion maps a
+    ///     148-byte source's dword at 144 to that position.
     ///     <para>
-    ///         Corrected 2026-08-11 (was 148/144/128, i.e. past the mask and into the record's
-    ///         uninitialized stack tail — retail values there include 0x004BF276 and 0x11E3A4E0).
-    ///         Measured against both retail masters: <c>Tops13thFloorImageSpace</c> (152 B) carries
-    ///         0x0000000F at 132, <c>RCDefaultImageSpace</c> (148 B) carries 0x0F at 128.
+    ///         The dword immediately after Tint.Amount (offset 128/132) is a distinct unknown field,
+    ///         even though retail values there often resemble a mask. A 132-byte source ends after
+    ///         that unknown dword and therefore has no terminal flag-bearing lane.
     ///     </para>
     /// </summary>
     internal static ImageSpaceCinematicFlags ReadImageSpaceCinematicFlags(
-        ReadOnlySpan<byte> data, bool isBigEndian = false)
+        ReadOnlySpan<byte> data, bool isBigEndian)
     {
         var offset = data.Length switch
         {
-            >= 152 => 132,
-            >= 132 => 128,
+            148 => 144,
+            152 => 148,
             _ => -1,
         };
-        if (offset < 0 || data.Length < offset + sizeof(uint)) return ImageSpaceCinematicFlags.None;
+        if (offset < 0) return ImageSpaceCinematicFlags.None;
+
         var raw = isBigEndian
             ? BinaryPrimitives.ReadUInt32BigEndian(data.Slice(offset, sizeof(uint)))
             : BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(offset, sizeof(uint)));
@@ -1205,19 +1191,38 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     ///         (132 B = v1-9, 148 B = v11-13, 152 B = v14-15, measured across both masters).
     ///     </para>
     ///     <para>
-    ///         There is NO fade block in this layout. A previous reader invented one from the four
-    ///         dwords after the cinematic tail — that region is the mask plus uninitialized engine
-    ///         stack (retail values there include 0x00000DE8 and 0x11E3A4E0). Removed 2026-08-11.
+    ///         No reliable authored on-disk fade block is established. Normalized engine parameter
+    ///         storage names the four dwords before the terminal flags as cinematic fade RGBA, but
+    ///         retail DNAM tails do not reliably contain authored floats. The source-endian dword
+    ///         lanes are therefore retained opaquely rather than projected as semantic fade values.
     ///     </para>
     /// </summary>
     internal static ImageSpaceClassicData ReadClassicImageSpaceDnam(
         ReadOnlySpan<byte> data, bool isBigEndian)
     {
-        if (data.Length < 132)
-            throw new ArgumentException("FO3/FNV IMGS DNAM requires at least 132 bytes.", nameof(data));
-
-        var hasSkinDimmer = data.Length >= 152;
-        var cinematicBase = (hasSkinDimmer ? 60 : 56) + 40;
+        var sourceLayout = data.Length switch
+        {
+            132 => ImageSpaceClassicDnamLayout.Dnam132,
+            148 => ImageSpaceClassicDnamLayout.Dnam148,
+            152 => ImageSpaceClassicDnamLayout.Dnam152,
+            _ => throw new ArgumentException(
+                "FO3/FNV IMGS DNAM must use the measured 132-, 148-, or 152-byte layout.",
+                nameof(data)),
+        };
+        var hasSkinDimmer = sourceLayout == ImageSpaceClassicDnamLayout.Dnam152;
+        var auxiliaryBase = hasSkinDimmer ? 60 : 56;
+        var cinematicBase = auxiliaryBase + 40;
+        var postBodyOffset = cinematicBase + 32;
+        var hasExplicitFlags = sourceLayout != ImageSpaceClassicDnamLayout.Dnam132;
+        var postBodyWordCount = hasExplicitFlags ? 5 : 1;
+        var postBodyWords = new uint[postBodyWordCount];
+        for (var index = 0; index < postBodyWords.Length; index++)
+        {
+            var wordBytes = data.Slice(postBodyOffset + index * sizeof(uint), sizeof(uint));
+            postBodyWords[index] = isBigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(wordBytes)
+                : BinaryPrimitives.ReadUInt32LittleEndian(wordBytes);
+        }
         var hdr = new ImageSpaceHdr
         {
             EyeAdaptSpeed = ReadFloat(data, 0, isBigEndian),
@@ -1236,9 +1241,22 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             TreeDimmer = ReadFloat(data, 52, isBigEndian),
             SkinDimmer = hasSkinDimmer ? ReadFloat(data, 56, isBigEndian) : 1f,
         };
+        var bloom = new ImageSpaceClassicBloom(
+            ReadFloat(data, auxiliaryBase, isBigEndian),
+            ReadFloat(data, auxiliaryBase + 4, isBigEndian),
+            ReadFloat(data, auxiliaryBase + 8, isBigEndian));
+        var getHit = new ImageSpaceClassicGetHit(
+            ReadFloat(data, auxiliaryBase + 12, isBigEndian),
+            ReadFloat(data, auxiliaryBase + 16, isBigEndian),
+            ReadFloat(data, auxiliaryBase + 20, isBigEndian));
+        var nightEye = new ImageSpaceClassicNightEye(
+            ReadFloat(data, auxiliaryBase + 24, isBigEndian),
+            ReadFloat(data, auxiliaryBase + 28, isBigEndian),
+            ReadFloat(data, auxiliaryBase + 32, isBigEndian),
+            ReadFloat(data, auxiliaryBase + 36, isBigEndian));
         var cinematic = new ImageSpaceCinematic
         {
-            HasExplicitFlags = true,
+            HasExplicitFlags = hasExplicitFlags,
             Flags = ReadImageSpaceCinematicFlags(data, isBigEndian),
             Saturation = ReadFloat(data, cinematicBase, isBigEndian),
             ContrastAvgLum = ReadFloat(data, cinematicBase + 4, isBigEndian),
@@ -1252,7 +1270,17 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             Blue = ReadFloat(data, cinematicBase + 24, isBigEndian),
             Amount = ReadFloat(data, cinematicBase + 28, isBigEndian),
         };
-        return new ImageSpaceClassicData(hdr, cinematic, tint);
+        return new ImageSpaceClassicData
+        {
+            SourceLayout = sourceLayout,
+            Hdr = hdr,
+            Bloom = bloom,
+            GetHit = getHit,
+            NightEye = nightEye,
+            Cinematic = cinematic,
+            Tint = tint,
+            PostBodyWords = postBodyWords,
+        };
     }
 
     /// <summary>
@@ -1635,6 +1663,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
         string? editorId = null;
         ImageSpaceHdr? hdr = null;
+        ImageSpaceClassicData? classicDnam = null;
         ImageSpaceModernHdr? modernHdr = null;
         ImageSpaceCinematic? cinematic = null;
         ImageSpaceTint? tint = null;
@@ -1662,12 +1691,12 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 // 132 omit it and differ only in trailing padding. LENGTH is the discriminator —
                 // self-describing and overrun-safe — with the record's form version cross-checked
                 // for a warning only (see WarnOnImageSpaceLayoutVersionMismatch).
-                case "DNAM" when sub.DataLength >= 132:
+                case "DNAM" when sub.DataLength is 132 or 148 or 152:
                 {
-                    var classic = ReadClassicImageSpaceDnam(subData, record.IsBigEndian);
-                    hdr = classic.Hdr;
-                    cinematic = classic.Cinematic;
-                    tint = classic.Tint;
+                    classicDnam = ReadClassicImageSpaceDnam(subData, record.IsBigEndian);
+                    hdr = classicDnam.Hdr;
+                    cinematic = classicDnam.Cinematic;
+                    tint = classicDnam.Tint;
                     WarnOnImageSpaceLayoutVersionMismatch(
                         record.FormId, sub.DataLength, ReadRecordFormVersion(record), Context.Game);
                     break;
@@ -1747,6 +1776,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             FormId = record.FormId,
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             Hdr = hdr,
+            ClassicDnam = classicDnam,
             ModernHdr = modernHdr,
             Cinematic = cinematic,
             Tint = tint,

@@ -1,7 +1,12 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Records;
+using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Tes3;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Tes3;
@@ -102,6 +107,41 @@ public class Tes3ParsingTests
         var script = "MyScript\0"u8.ToArray();
         var fields = Tes3SubrecordDecoder.Decode("NPC_", "SCRI", script);
         Assert.Equal("MyScript", Field(fields, "Script"));
+    }
+
+    [Fact]
+    public void ParseAll_ScptMultilineSctx_SurfacesSourceInFieldsAndDecodedTree()
+    {
+        const string source = "begin test_script\r\nshort count\r\nset count to count + 1\r\nend test_script\r\n";
+        var payload = new List<byte>();
+        AppendSub(payload, "SCHD", ScriptHeader("test_script"));
+        AppendSub(payload, "SCTX", Encoding.ASCII.GetBytes(source + "\0"));
+
+        var file = new byte[16 + payload.Count];
+        Encoding.ASCII.GetBytes("SCPT", file);
+        BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(4), (uint)payload.Count);
+        payload.CopyTo(file, 16);
+
+        var descriptor = new DetectedMainRecord("SCPT", (uint)payload.Count, 0, 1, 0, false)
+        {
+            HeaderSize = 16
+        };
+        var scan = new EsmRecordScanResult
+        {
+            IsTes3 = true,
+            Game = BethesdaGame.Morrowind,
+            MainRecords = [descriptor]
+        };
+        var records = new RecordParser(
+            scan, null, new ByteArrayMemoryAccessor(file), file.LongLength, null).ParseAll();
+
+        var script = Assert.Single(records.GenericRecords);
+        Assert.Equal(source, script.Fields["SCTX.Script Source"]);
+
+        var sourceNode = Assert.Single(script.DecodedTree!, node => node.Signature == "SCTX");
+        Assert.Equal("Script Source", sourceNode.Label);
+        Assert.Equal(source, sourceNode.Value);
+        Assert.False(sourceNode.IsRaw);
     }
 
     [Fact]
@@ -277,6 +317,13 @@ public class Tes3ParsingTests
         BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(4), y);
         BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(8), z);
         BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(20), rotZ);
+        return data;
+    }
+
+    private static byte[] ScriptHeader(string name)
+    {
+        var data = new byte[52];
+        Encoding.ASCII.GetBytes(name, data);
         return data;
     }
 

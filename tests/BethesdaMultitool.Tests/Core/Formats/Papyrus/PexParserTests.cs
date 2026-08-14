@@ -101,6 +101,145 @@ public sealed class PexParserTests
     }
 
     [Fact]
+    public void Parse_Fallout7615_PreservesObjectTailAndUnmappedFunctionFlagBits()
+    {
+        var bytes = BuildFixture(
+            PexGameId.Fallout76,
+            15,
+            functionFlags: 0x28,
+            stateNameIndex: 4,
+            trailingStringReferences: [4]);
+
+        var file = PexParser.Parse(bytes);
+
+        var obj = Assert.Single(file.Objects);
+        var trailingReference = Assert.Single(obj.Fallout76TrailingStateReferences);
+        Assert.Equal((ushort)4, trailingReference.Index);
+        Assert.Equal("Auto", trailingReference.Value);
+        Assert.True(obj.HasFallout76TrailingStateReferenceTable);
+        Assert.Equal("Auto", Assert.Single(obj.States).Name.Value);
+        var function = Assert.Single(Assert.Single(obj.States).Functions);
+        Assert.Equal((byte)0x28, function.RawFlags);
+        Assert.Equal((byte)0x28, function.UnmappedFlags);
+        Assert.False(function.Flags.HasFlag(PexFunctionFlags.Global));
+        Assert.False(function.Flags.HasFlag(PexFunctionFlags.Native));
+        Assert.Equal(bytes.Length, file.BytesConsumed);
+    }
+
+    [Theory]
+    [InlineData(PexGameId.Skyrim, (byte)2, (byte)0xFF)]
+    [InlineData(PexGameId.Fallout4, (byte)9, (byte)0x80)]
+    [InlineData(PexGameId.Fallout76, (byte)15, (byte)0x40)]
+    [InlineData(PexGameId.Fallout76, (byte)15, (byte)0xFF)]
+    public void Parse_FunctionFlags_PreservesCompleteByteWithoutInventingSemantics(
+        PexGameId gameId,
+        byte minorVersion,
+        byte rawFlags)
+    {
+        var file = PexParser.Parse(BuildFixture(
+            gameId,
+            minorVersion,
+            functionFlags: rawFlags));
+
+        var function = Assert.Single(Assert.Single(Assert.Single(file.Objects).States).Functions);
+        Assert.Equal(rawFlags, function.RawFlags);
+        Assert.Equal((byte)(rawFlags & 0xFC), function.UnmappedFlags);
+    }
+
+    [Fact]
+    public void Parse_Fallout76CapricaSizedObjectWithoutRetailTail_IsAccepted()
+    {
+        var bytes = BuildFixture(
+            PexGameId.Fallout76,
+            15,
+            capricaObjectSize: true,
+            omitFallout76Tail: true);
+
+        var file = PexParser.Parse(bytes);
+
+        var obj = Assert.Single(file.Objects);
+        Assert.False(obj.HasFallout76TrailingStateReferenceTable);
+        Assert.Empty(obj.Fallout76TrailingStateReferences);
+        Assert.Equal(bytes.Length, file.BytesConsumed);
+    }
+
+    [Fact]
+    public void Parse_TwoFallout76ObjectsWithoutTails_DoesNotReadNextObjectAsTail()
+    {
+        var bytes = BuildFixture(
+            PexGameId.Fallout76,
+            15,
+            omitFallout76Tail: true,
+            objectCount: 2);
+
+        var file = PexParser.Parse(bytes);
+
+        Assert.Equal(2, file.Objects.Length);
+        Assert.All(file.Objects, obj =>
+        {
+            Assert.False(obj.HasFallout76TrailingStateReferenceTable);
+            Assert.Empty(obj.Fallout76TrailingStateReferences);
+        });
+        Assert.Equal(bytes.Length, file.BytesConsumed);
+    }
+
+    [Fact]
+    public void Parse_Fallout76ExplicitEmptyTail_RemainsDistinctFromOmittedTail()
+    {
+        var file = PexParser.Parse(BuildFixture(PexGameId.Fallout76, 15));
+
+        var obj = Assert.Single(file.Objects);
+        Assert.True(obj.HasFallout76TrailingStateReferenceTable);
+        Assert.Empty(obj.Fallout76TrailingStateReferences);
+    }
+
+    [Fact]
+    public void Parse_Fallout76ObjectTailWithOutOfRangeStringReference_IsRejected()
+    {
+        var bytes = BuildFixture(
+            PexGameId.Fallout76,
+            15,
+            stateNameIndex: 4,
+            trailingStringReferences: [ushort.MaxValue]);
+
+        var exception = Assert.Throws<PexParseException>(() => PexParser.Parse(bytes));
+
+        Assert.Contains("object-tail string reference string index 65535", exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Parse_TruncatedFallout76ObjectTail_IsRejectedWithinObjectBoundary()
+    {
+        var bytes = BuildFixture(
+            PexGameId.Fallout76,
+            15,
+            stateNameIndex: 4,
+            trailingStringReferences: [4]);
+
+        var exception = Assert.Throws<PexParseException>(() =>
+            PexParser.Parse(bytes.AsMemory(0, bytes.Length - 1)));
+
+        Assert.Contains("object ExampleScript body", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Parse_TamperedFallout76ObjectSizeCannotHidePartOfTail()
+    {
+        var bytes = BuildFixture(
+            PexGameId.Fallout76,
+            15,
+            objectSizeAdjustment: -2,
+            stateNameIndex: 4,
+            trailingStringReferences: [4]);
+
+        var exception = Assert.Throws<PexParseException>(() => PexParser.Parse(bytes));
+
+        Assert.Contains("Fallout 76 object-tail string references", exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Parse_EveryTruncatedPrefix_IsRejectedWithoutReadingPastEnd()
     {
         var bytes = BuildFixture(PexGameId.Fallout76, 15);
@@ -240,7 +379,12 @@ public sealed class PexParserTests
         int objectSizeAdjustment = 0,
         bool negativeVariadicCount = false,
         bool capricaObjectSize = false,
-        int? variadicCountOverride = null)
+        int? variadicCountOverride = null,
+        byte functionFlags = 0,
+        ushort stateNameIndex = 0,
+        ushort[]? trailingStringReferences = null,
+        bool omitFallout76Tail = false,
+        ushort objectCount = 1)
     {
         var bigEndian = gameId == PexGameId.Skyrim;
         using var writer = new EndianWriter(bigEndian);
@@ -289,14 +433,26 @@ public sealed class PexParserTests
         writer.WriteUInt16(11);
         writer.WriteByte(0);
 
-        writer.WriteUInt16(1); // objects
-        writer.WriteUInt16(invalidObjectName ? ushort.MaxValue : (ushort)1);
-        using var body = new EndianWriter(bigEndian);
-        WriteObjectBody(body, gameId, negativeVariadicCount, variadicCountOverride);
-        var bodyBytes = body.ToArray();
-        var declaredObjectSize = bodyBytes.Length + (capricaObjectSize ? 0 : sizeof(uint));
-        writer.WriteUInt32(checked((uint)(declaredObjectSize + objectSizeAdjustment)));
-        writer.WriteBytes(bodyBytes);
+        writer.WriteUInt16(objectCount);
+        for (var objectIndex = 0; objectIndex < objectCount; objectIndex++)
+        {
+            writer.WriteUInt16(invalidObjectName && objectIndex == 0 ? ushort.MaxValue : (ushort)1);
+            using var body = new EndianWriter(bigEndian);
+            WriteObjectBody(
+                body,
+                gameId,
+                negativeVariadicCount,
+                variadicCountOverride,
+                functionFlags,
+                stateNameIndex,
+                trailingStringReferences,
+                omitFallout76Tail);
+            var bodyBytes = body.ToArray();
+            var declaredObjectSize = bodyBytes.Length + (capricaObjectSize ? 0 : sizeof(uint));
+            writer.WriteUInt32(checked((uint)(declaredObjectSize + objectSizeAdjustment)));
+            writer.WriteBytes(bodyBytes);
+        }
+
         return writer.ToArray();
     }
 
@@ -304,7 +460,11 @@ public sealed class PexParserTests
         EndianWriter writer,
         PexGameId gameId,
         bool negativeVariadicCount,
-        int? variadicCountOverride)
+        int? variadicCountOverride,
+        byte functionFlags,
+        ushort stateNameIndex,
+        ushort[]? trailingStringReferences,
+        bool omitFallout76Tail)
     {
         var modern = gameId != PexGameId.Skyrim;
         writer.WriteUInt16(2); // parent
@@ -356,13 +516,13 @@ public sealed class PexParserTests
         }
 
         writer.WriteUInt16(1); // states
-        writer.WriteUInt16(0); // empty state name
+        writer.WriteUInt16(stateNameIndex);
         writer.WriteUInt16(1); // functions
         writer.WriteUInt16(7); // function name
         writer.WriteUInt16(8); // return type
         writer.WriteUInt16(3); // docs
         writer.WriteUInt32(0); // user flags
-        writer.WriteByte(0); // function flags
+        writer.WriteByte(functionFlags);
         writer.WriteUInt16(0); // params
         writer.WriteUInt16(1); // locals
         writer.WriteUInt16(9);
@@ -419,6 +579,16 @@ public sealed class PexParserTests
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(gameId));
+        }
+
+        if (gameId == PexGameId.Fallout76 && !omitFallout76Tail)
+        {
+            var references = trailingStringReferences ?? [];
+            writer.WriteUInt16(checked((ushort)references.Length));
+            foreach (var reference in references)
+            {
+                writer.WriteUInt16(reference);
+            }
         }
     }
 

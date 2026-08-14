@@ -3,6 +3,7 @@ using System.IO.MemoryMappedFiles;
 using System.Text;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Utils;
 
@@ -291,6 +292,8 @@ internal static class EsmEditorIdExtractor
         var extracted = 0;
         var chainErrors = 0;
         var bucketBuffer = new byte[4];
+        var memoryContext = new RuntimeMemoryContext(
+            new MmfMemoryAccessor(accessor), fileSize, minidumpInfo);
 
         // Pass 1: Walk every bucket, following linked-list chains to collect EditorID entries
         for (uint i = 0; i < candidate.HashSize; i++)
@@ -306,7 +309,7 @@ internal static class EsmEditorIdExtractor
 
             if (itemVa != 0)
             {
-                extracted += WalkBucketChain(accessor, fileSize, minidumpInfo, scanResult,
+                extracted += WalkBucketChain(accessor, memoryContext, scanResult,
                     itemVa, ref chainErrors);
             }
         }
@@ -315,7 +318,7 @@ internal static class EsmEditorIdExtractor
 
         // Pass 2: Detect INFO FormType from EditorID patterns, then extract dialogue lines
         EditorIdLookupTables.ExtractDialogueLinesForInfoEntries(
-            accessor, fileSize, minidumpInfo, scanResult, startIndex, log);
+            memoryContext, scanResult, startIndex, log);
 
         // Pass 3: Walk pAllForms hash table for LAND entries (LAND records lack editor IDs)
         if (candidate.AllFormsVa != 0)
@@ -337,19 +340,16 @@ internal static class EsmEditorIdExtractor
     /// </summary>
     private static int WalkBucketChain(
         MemoryMappedViewAccessor accessor,
-        long fileSize,
-        MinidumpInfo minidumpInfo,
+        RuntimeMemoryContext memoryContext,
         EsmRecordScanResult scanResult,
         uint itemVa,
         ref int chainErrors)
     {
+        var fileSize = memoryContext.FileSize;
+        var minidumpInfo = memoryContext.MinidumpInfo;
         var extracted = 0;
         var chainDepth = 0;
-        var itemBuffer = new byte[12]; // NiTMapItem: m_pkNext(4) + m_key(4) + m_val(4)
         var stringBuffer = new byte[256];
-        // Enlarged from 24 → 36 bytes so TesFormHeaderProbe can read iFormID at offset +32
-        // for MSTT-style classes whose TESForm base sits after TESFullName.
-        var tesFormBuffer = new byte[TesFormHeaderProbe.RequiredBufferSize];
 
         while (itemVa != 0 && chainDepth < 1000)
         {
@@ -357,24 +357,18 @@ internal static class EsmEditorIdExtractor
 
             var itemVaLong = Xbox360MemoryUtils.VaToLong(itemVa);
 
-            // Validate 12-byte NiTMapItem is fully within a captured memory region
-            if (!minidumpInfo.IsVaRangeCaptured(itemVaLong, 12))
+            // Read by VA so a logically contiguous item can cross minidump regions whose
+            // bytes are stored at non-contiguous file offsets, while a VA gap fails closed.
+            var itemBytes = memoryContext.ReadBytesAtVa(itemVaLong, 12);
+            if (itemBytes is null)
             {
                 chainErrors++;
                 break;
             }
 
-            var itemFileOffset = minidumpInfo.VirtualAddressToFileOffset(itemVaLong);
-            if (!itemFileOffset.HasValue || itemFileOffset.Value + 12 > fileSize)
-            {
-                chainErrors++;
-                break;
-            }
-
-            accessor.ReadArray(itemFileOffset.Value, itemBuffer, 0, 12);
-            var nextVa = BinaryUtils.ReadUInt32BE(itemBuffer); // m_pkNext
-            var keyVa = BinaryUtils.ReadUInt32BE(itemBuffer, 4); // m_key (const char*)
-            var valVa = BinaryUtils.ReadUInt32BE(itemBuffer, 8); // m_val (TESForm*)
+            var nextVa = BinaryUtils.ReadUInt32BE(itemBytes); // m_pkNext
+            var keyVa = BinaryUtils.ReadUInt32BE(itemBytes, 4); // m_key (const char*)
+            var valVa = BinaryUtils.ReadUInt32BE(itemBytes, 8); // m_val (TESForm*)
 
             // Read EditorID string from m_key
             string? editorId = null;
@@ -401,51 +395,46 @@ internal static class EsmEditorIdExtractor
                 }
             }
 
-            // Read FormID + FormType from the TESForm header at m_val. The probe handles
-            // multi-inheritance classes (MSTT, FLOR) where TESForm fields sit at non-default
-            // offsets — see TesFormHeaderProbe for the candidate-layout list.
+            // Read FormID + FormType from the TESForm subobject at m_val. Header fields are
+            // TESForm-relative even when the subobject is interior to MSTT, FLOR, or another
+            // multiply inherited complete object.
             uint formId = 0;
             byte formType = 0;
             long? tesFormFileOffset = null;
+            long? tesFormVa = null;
             if (valVa != 0 && Xbox360MemoryUtils.IsValidPointerInDump(valVa, minidumpInfo))
             {
                 var valVaLong = Xbox360MemoryUtils.VaToLong(valVa);
+                tesFormVa = valVaLong;
 
-                if (minidumpInfo.IsVaRangeCaptured(valVaLong, TesFormHeaderProbe.RequiredBufferSize))
+                var formFileOffset = minidumpInfo.VirtualAddressToFileOffset(valVaLong);
+                var tesFormBytes = memoryContext.ReadBytesAtVa(
+                    valVaLong, TesFormHeaderProbe.RequiredBufferSize);
+                if (formFileOffset.HasValue && tesFormBytes is not null)
                 {
-                    var formFileOffset = minidumpInfo.VirtualAddressToFileOffset(valVaLong);
-                    if (formFileOffset.HasValue
-                        && formFileOffset.Value + TesFormHeaderProbe.RequiredBufferSize <= fileSize)
-                    {
-                        tesFormFileOffset = formFileOffset.Value;
-                        accessor.ReadArray(formFileOffset.Value, tesFormBuffer, 0,
-                            TesFormHeaderProbe.RequiredBufferSize);
-                        TesFormHeaderProbe.TryProbe(tesFormBuffer, out formType, out formId);
-                    }
+                    tesFormFileOffset = formFileOffset.Value;
+                    TesFormHeaderProbe.TryProbe(tesFormBytes, out formType, out formId);
                 }
             }
 
-            // Read display name from TESForm fields (dialogue deferred to pass 2)
-            string? displayName = null;
-            if (tesFormFileOffset.HasValue
-                && EsmEditorIdConstants.FullNameOffsetByFormType.TryGetValue(formType, out var fullNameOffset))
-            {
-                displayName = EsmEditorIdStringReader.ReadBsStringT(accessor, fileSize, minidumpInfo,
-                    tesFormFileOffset.Value, fullNameOffset);
-            }
+            // Full-name offsets are complete-object-relative; rebase the captured TESForm*
+            // before applying them. Dialogue extraction remains deferred to pass 2.
+            var displayName = tesFormVa.HasValue
+                ? ReadDisplayName(memoryContext, formType, tesFormVa.Value)
+                : null;
 
             if (editorId != null && editorId.Length >= 4 && EsmEditorIdValidator.IsValidEditorId(editorId))
             {
-                scanResult.RuntimeEditorIds.Add(new RuntimeEditorIdEntry
+                var entry = new RuntimeEditorIdEntry
                 {
                     EditorId = editorId,
                     FormId = formId,
                     FormType = formType,
                     StringOffset = stringFileOffset,
                     TesFormOffset = tesFormFileOffset,
-                    TesFormPointer = Xbox360MemoryUtils.VaToLong(valVa),
-                    DisplayName = displayName
-                });
+                    TesFormPointer = tesFormVa
+                };
+                scanResult.RuntimeEditorIds.Add(WithDisplayName(entry, displayName));
                 extracted++;
             }
 
@@ -453,6 +442,48 @@ internal static class EsmEditorIdExtractor
         }
 
         return extracted;
+    }
+
+    /// <summary>
+    ///     Reads a display name from a complete runtime object when the retained address points
+    ///     at its TESForm subobject. PDB-derived cFullName offsets remain complete-object-relative.
+    /// </summary>
+    internal static EsmEditorIdStringReader.ReadResult? ReadDisplayName(
+        RuntimeMemoryContext context,
+        byte formType,
+        long tesFormVa)
+    {
+        if (!EsmEditorIdConstants.FullNameOffsetByFormType.TryGetValue(formType, out var fullNameOffset)
+            || PdbStructLayouts.Get(formType) is not { } layout)
+        {
+            return null;
+        }
+
+        var interiorOffset = PdbStructLayouts.GetTesFormInteriorOffset(layout);
+        if (tesFormVa == 0 || tesFormVa < long.MinValue + interiorOffset)
+        {
+            return null;
+        }
+
+        return EsmEditorIdStringReader.ReadBsStringTAtVa(
+            context, tesFormVa - interiorOffset, fullNameOffset);
+    }
+
+    /// <summary>
+    ///     Applies a validated display-name read to the immutable runtime entry, including the
+    ///     payload's mapped file offset used by downstream string-ownership analysis.
+    /// </summary>
+    internal static RuntimeEditorIdEntry WithDisplayName(
+        RuntimeEditorIdEntry entry,
+        EsmEditorIdStringReader.ReadResult? displayName)
+    {
+        return displayName is { } value
+            ? entry with
+            {
+                DisplayName = value.Text,
+                DisplayNameStringOffset = value.StringFileOffset
+            }
+            : entry;
     }
 
     /// <summary>

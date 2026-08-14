@@ -26,6 +26,12 @@ public record PerkEntry
     /// <summary>Entry point identifier for entry-point entries.</summary>
     public byte? EntryPoint { get; init; }
 
+    /// <summary>Entry-point result function stored in DATA byte 1.</summary>
+    public byte? EntryPointFunction { get; init; }
+
+    /// <summary>Number of entry-point condition tabs stored in DATA byte 2.</summary>
+    public byte? PerkConditionTabCount { get; init; }
+
     /// <summary>Entry point function type from EPFT.</summary>
     public byte? FunctionType { get; init; }
 
@@ -44,11 +50,8 @@ public record PerkEntry
     /// <summary>Raw EPFD payload for function types whose layout is not fully modeled.</summary>
     public byte[]? RawFunctionData { get; init; }
 
-    /// <summary>Condition-tab count from PRKC, when present.</summary>
-    public byte? ConditionTabCount { get; init; }
-
-    /// <summary>Conditions scoped to this perk entry.</summary>
-    public List<PerkCondition> Conditions { get; init; } = [];
+    /// <summary>Ordered PRKC + CTDA condition groups scoped to this perk entry.</summary>
+    public List<PerkConditionGroup> ConditionGroups { get; init; } = [];
 
     /// <summary>Human-readable entry type name.</summary>
     public string TypeName => Type switch

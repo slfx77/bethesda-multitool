@@ -588,9 +588,14 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                 case "SNAM" when sub.DataLength >= 4:
                     shotFormIds.Add(BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian));
                     break;
-                case "CTDA" when sub.DataLength >= 28:
-                    conditions.Add(CtdaParser.Decode(
-                        data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian));
+                case "CTDA":
+                    if (CtdaParser.TryDecode(
+                            data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian,
+                            out var cameraCondition, out _))
+                    {
+                        conditions.Add(cameraCondition);
+                    }
+
                     break;
             }
         }

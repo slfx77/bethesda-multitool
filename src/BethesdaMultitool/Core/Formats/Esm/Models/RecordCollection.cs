@@ -17,7 +17,7 @@ using BethesdaMultitool.Core.Games;
 namespace BethesdaMultitool.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Aggregated semantic parsing result from a memory dump.
+///     Aggregated semantic parsing result from a plugin, load order, or memory dump.
 /// </summary>
 public record RecordCollection
 {
@@ -419,7 +419,8 @@ public record RecordCollection
         GenericRecords.Count +
         Sounds.Count + MusicTypes.Count + TextureSets.Count + MaterialSwaps.Count + LandTextures.Count + Grasses.Count + ArmorAddons.Count + Water.Count +
         BodyPartData.Count + ActorValueInfos.Count + CombatStyles.Count +
-        LightingTemplates.Count + NavMeshes.Count + Weather.Count;
+        LightingTemplates.Count + NavMeshes.Count + Weather.Count + Climate.Count +
+        ImageSpaces.Count + ImageSpaceModifiers.Count;
 
     /// <summary>
     ///     Counts of record types that were detected but not fully parsed.
@@ -488,6 +489,8 @@ public record RecordCollection
             Explosions = MergeList(Explosions, overlay.Explosions, r => r.FormId),
             Messages = MergeList(Messages, overlay.Messages, r => r.FormId),
             Classes = MergeList(Classes, overlay.Classes, r => r.FormId),
+            Eyes = MergeList(Eyes, overlay.Eyes, r => r.FormId),
+            Hair = MergeList(Hair, overlay.Hair, r => r.FormId),
             HeadParts = MergeList(HeadParts, overlay.HeadParts, r => r.FormId),
             VoiceTypes = MergeList(VoiceTypes, overlay.VoiceTypes, r => r.FormId),
             MenuIcons = MergeList(MenuIcons, overlay.MenuIcons, r => r.FormId),

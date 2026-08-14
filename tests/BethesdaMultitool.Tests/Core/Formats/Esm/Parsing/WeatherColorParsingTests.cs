@@ -69,58 +69,65 @@ public class WeatherColorParsingTests
     }
 
     [Theory]
-    // Mask offset follows the body, not the record length: 132 once Skin Dimmer is present
-    // (152-byte layout), otherwise 128. A 148-byte record has no Skin Dimmer, so it reads at
-    // 128 like the 132-byte one — 144/148 were the pre-2026-08-11 invented offsets.
-    [InlineData(132, 128, false)]
-    [InlineData(132, 128, true)]
-    [InlineData(148, 128, false)]
-    [InlineData(148, 128, true)]
-    [InlineData(152, 132, false)]
-    [InlineData(152, 132, true)]
-    public void ReadImageSpaceCinematicFlags_PreservesLayoutOffsetsAndEndian(
-        int length, int offset, bool bigEndian)
+    // Flags occupy the terminal source-endian dword in the two longer layouts. The 132-byte layout ends at its
+    // immediate unknown dword and does not explicitly author cinematic-enable flags.
+    [InlineData(132, -1, false)]
+    [InlineData(132, -1, true)]
+    [InlineData(148, 144, false)]
+    [InlineData(148, 144, true)]
+    [InlineData(152, 148, false)]
+    [InlineData(152, 148, true)]
+    public void ReadImageSpaceCinematicFlags_UsesTerminalSourceEndianDword(
+        int length, int flagsOffset, bool bigEndian)
     {
         var data = new byte[length];
-        const uint rawWithNonSemanticHighBits = 0xA5F00007;
+        var immediateUnknownOffset = length == 152 ? 132 : 128;
+        const uint immediateUnknown = 0xA1B2_C302;
         if (bigEndian)
-            BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(offset, 4), rawWithNonSemanticHighBits);
+            BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(immediateUnknownOffset, sizeof(uint)), immediateUnknown);
         else
-            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(offset, 4), rawWithNonSemanticHighBits);
+            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(immediateUnknownOffset, sizeof(uint)), immediateUnknown);
+        const uint terminalFlagsLane = 0xA5F0_0007;
+        if (flagsOffset >= 0)
+        {
+            if (bigEndian)
+                BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(flagsOffset, sizeof(uint)), terminalFlagsLane);
+            else
+                BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(flagsOffset, sizeof(uint)), terminalFlagsLane);
+        }
 
-        Assert.Equal(
-            ImageSpaceCinematicFlags.Saturation | ImageSpaceCinematicFlags.Contrast | ImageSpaceCinematicFlags.Tint,
+        var expected = flagsOffset < 0
+            ? ImageSpaceCinematicFlags.None
+            : ImageSpaceCinematicFlags.Saturation |
+              ImageSpaceCinematicFlags.Contrast |
+              ImageSpaceCinematicFlags.Tint;
+        Assert.Equal(expected,
             MiscEnvironmentHandler.ReadImageSpaceCinematicFlags(data, bigEndian));
+        var decodedImmediateUnknown = bigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(immediateUnknownOffset, sizeof(uint)))
+            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(immediateUnknownOffset, sizeof(uint)));
+        Assert.Equal(0x02u, decodedImmediateUnknown & 0x0F);
     }
 
     [Fact]
-    public void ImageSpaceCinematic_PreservesWhetherMaskWasActuallyAuthored()
+    public void ImageSpaceCinematic_PreservesWhetherFlagsWereActuallyAuthored()
     {
-        // 148 bytes carries no Skin Dimmer, so its mask sits at 128 (see ReadImageSpaceCinematicFlags).
-        var newLayoutBytes = new byte[148];
-        newLayoutBytes[128] = 0x07;
-        var classic132 = new byte[132];
-        classic132[128] = 0x02;
-        var classicOldLayout = new ImageSpaceCinematic
-        {
-            HasExplicitFlags = true,
-            Flags = MiscEnvironmentHandler.ReadImageSpaceCinematicFlags(classic132)
-        };
-        var newLayout = new ImageSpaceCinematic
-        {
-            HasExplicitFlags = true,
-            Flags = MiscEnvironmentHandler.ReadImageSpaceCinematicFlags(newLayoutBytes)
-        };
+        var classic132Bytes = new byte[132];
+        classic132Bytes[128] = 0x02;
+        var classic148Bytes = new byte[148];
+        classic148Bytes[128] = 0x02;
+        classic148Bytes[144] = 0xA7;
+
+        var classic132 = MiscEnvironmentHandler.ReadClassicImageSpaceDnam(classic132Bytes, false);
+        var classic148 = MiscEnvironmentHandler.ReadClassicImageSpaceDnam(classic148Bytes, false);
         var modernCnam = new ImageSpaceCinematic { HasExplicitFlags = false };
 
-        Assert.True(classicOldLayout.HasExplicitFlags);
-        Assert.Equal(ImageSpaceCinematicFlags.Contrast, classicOldLayout.Flags);
-        Assert.True(newLayout.HasExplicitFlags);
+        Assert.False(classic132.Cinematic.HasExplicitFlags);
+        Assert.Equal(ImageSpaceCinematicFlags.None, classic132.Cinematic.Flags);
+        Assert.True(classic148.Cinematic.HasExplicitFlags);
         Assert.Equal(
-            ImageSpaceCinematicFlags.Saturation |
-            ImageSpaceCinematicFlags.Contrast |
-            ImageSpaceCinematicFlags.Tint,
-            newLayout.Flags);
+            ImageSpaceCinematicFlags.Saturation | ImageSpaceCinematicFlags.Contrast | ImageSpaceCinematicFlags.Tint,
+            classic148.Cinematic.Flags);
         Assert.False(modernCnam.HasExplicitFlags);
     }
 
@@ -128,12 +135,9 @@ public class WeatherColorParsingTests
     ///     FO3/FNV IMGS DNAM: Skin Dimmer exists only in the 152-byte (form version ≥ 14) layout and
     ///     shifts everything after +56; 148 and 132 omit it and differ only in trailing padding.
     ///     <para>
-    ///         Corrected 2026-08-11 against retail bytes. This test previously pinned the mask at
-    ///         148/144/128 and asserted a four-float "Fade" block at <c>cinematicBase + 32</c> —
-    ///         both wrong. The mask sits immediately after the body (132 for 152-byte records, else
-    ///         128), and no fade block exists in this layout: that region is the mask plus the
-    ///         record's uninitialized engine stack, so the old assertions were pinning the
-    ///         implementation's own invention rather than the format.
+    ///         No reliable authored on-disk fade block is established after Tint.Amount. The first
+    ///         dword remains opaque; the 148/152 layouts additionally carry three opaque lanes and
+    ///         terminal cinematic flags at source offset 144/148. The 132-byte layout ends earlier.
     ///     </para>
     /// </summary>
     [Theory]
@@ -169,12 +173,21 @@ public class WeatherColorParsingTests
         WriteFloat(cinematicBase + 24, 0.3f);
         WriteFloat(cinematicBase + 28, 0.4f);
 
-        // The mask dword sits immediately after the body: 132 when Skin Dimmer is present, else 128.
-        var maskOffset = hasSkin ? 132 : 128;
+        var postBodyOffset = hasSkin ? 132 : 128;
+        const uint immediateUnknown = 0xA1B2_C302;
         if (bigEndian)
-            BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(maskOffset, 4), 0x0F);
+            BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(postBodyOffset, sizeof(uint)), immediateUnknown);
         else
-            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(maskOffset, 4), 0x0F);
+            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(postBodyOffset, sizeof(uint)), immediateUnknown);
+        var hasExplicitFlags = length > 132;
+        const uint terminalFlags = 0xA5F0_000F;
+        if (hasExplicitFlags)
+        {
+            if (bigEndian)
+                BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(length - 4, sizeof(uint)), terminalFlags);
+            else
+                BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(length - 4, sizeof(uint)), terminalFlags);
+        }
 
         var decoded = MiscEnvironmentHandler.ReadClassicImageSpaceDnam(data, bigEndian);
 
@@ -188,35 +201,35 @@ public class WeatherColorParsingTests
         Assert.Equal(0.2f, decoded.Cinematic.ContrastAvgLum);
         Assert.Equal(1.3f, decoded.Cinematic.Contrast);
         Assert.Equal(0.9f, decoded.Cinematic.Brightness);
-        Assert.Equal(ImageSpaceCinematicFlags.All, decoded.Cinematic.Flags);
+        Assert.Equal(hasExplicitFlags, decoded.Cinematic.HasExplicitFlags);
+        Assert.Equal(hasExplicitFlags ? ImageSpaceCinematicFlags.All : ImageSpaceCinematicFlags.None,
+            decoded.Cinematic.Flags);
         Assert.Equal(0.1f, decoded.Tint.Red);
         Assert.Equal(0.4f, decoded.Tint.Amount);
+        Assert.Equal(length == 132 ? 1 : 5, decoded.PostBodyWords.Length);
+        Assert.Equal(immediateUnknown, decoded.PostBodyWords[0]);
+        if (hasExplicitFlags) Assert.Equal(terminalFlags, decoded.PostBodyWords[4]);
     }
 
     /// <summary>
-    ///     Retail-shaped guard for the corrected mask offset: a 148-byte record's trailing padding
-    ///     (which retail fills with uninitialized stack) must NOT be mistaken for the mask. Writing
-    ///     the real mask at 128 and junk at the old 144 must still decode to <c>All</c>.
+    ///     Retail-shaped guard against mistaking the plausible immediate unknown dword for the
+    ///     terminal flags dword. The two fields deliberately carry different low nibbles.
     /// </summary>
     [Theory]
     [InlineData(132)]
     [InlineData(148)]
     [InlineData(152)]
-    public void ReadImageSpaceCinematicFlags_ReadsTheMaskNotTheUninitializedTail(int length)
+    public void ReadImageSpaceCinematicFlags_IgnoresImmediateUnknownDword(int length)
     {
         var data = new byte[length];
-        var maskOffset = length >= 152 ? 132 : 128;
-        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(maskOffset, 4), 0x0F);
-
-        // Retail junk in the trailing dwords the old reader was pointing at.
-        for (var offset = maskOffset + 4; offset + 4 <= length; offset += 4)
-        {
-            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(offset, 4), 0x11E3A4E0);
-        }
+        var immediateUnknownOffset = length == 152 ? 132 : 128;
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(immediateUnknownOffset, sizeof(uint)), 0x0F);
+        if (length > 132)
+            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(length - 4, sizeof(uint)), 0x02);
 
         Assert.Equal(
-            ImageSpaceCinematicFlags.All,
-            MiscEnvironmentHandler.ReadImageSpaceCinematicFlags(data));
+            length == 132 ? ImageSpaceCinematicFlags.None : ImageSpaceCinematicFlags.Contrast,
+            MiscEnvironmentHandler.ReadImageSpaceCinematicFlags(data, false));
     }
 
     [Theory]

@@ -132,11 +132,11 @@ public sealed class RecordParser
             : new RecordParseProgressReporter(progress, _context.ScanResult.MainRecords, schemaPrimary);
 
         // Games whose record layouts diverge from the hand-written FNV/FO3 handlers but that have a
-        // generated record schema (Oblivion today; Skyrim/FO4/FO76 as their schemas are validated) are
+        // validated generated record schema (Oblivion, Skyrim, FO4, and FO76) are
         // read by the schema-driven parser — it decodes every record into a GenericEsmRecord with a
         // labeled field tree, so divergent types are read correctly instead of misparsed through FNV
         // offsets. Gated per game via EsmSchemas, so FNV/FO3 fall through to the typed handlers below.
-        // Schema-driven games (Oblivion today) decode EVERY record into a GenericEsmRecord with a labeled
+        // Schema-primary games decode EVERY record into a GenericEsmRecord with a labeled
         // field tree — the Records/Dialogue tabs read those (the typed handlers misparse Oblivion's complex
         // actor/item records through FNV offsets). But the 3D viewer + atmosphere need TYPED Worldspace/
         // Cell/Climate/Weather/Land/Static records, which the schema parser does NOT produce (and it skips
@@ -424,7 +424,7 @@ public sealed class RecordParser
         {
             WorldRecordHandler.AssignRuntimeCellMapOwners(cells, _context.RuntimeWorldspaceCellMaps);
             WorldRecordHandler.NormalizeStructurallyInteriorCells(cells);
-            // NOTE: co-located virtual-orphan-cell merge runs later in PluginBuilder, where the
+            // NOTE: co-located virtual-orphan-cell merge runs later in PluginConversionPipeline, where the
             // master FormID set is available to exclude master cells as keepers (merging orphan
             // refs into a live master persistent cell crashes the engine on GridCellArray attach).
         }

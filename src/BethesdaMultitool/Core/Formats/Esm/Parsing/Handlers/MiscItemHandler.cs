@@ -442,9 +442,9 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
     #region Constructible Objects
 
     /// <summary>
-    ///     Parse all Constructible Object (COBJ) records.
-    ///     fopdoc canonical subrecord order:
-    ///     EDID, OBND?, FULL?, MODL?, MODT?, COCT, CNTO*, CTDA*, CNAM, BNAM?.
+    ///     Parse COBJ records into the retained forensic hybrid model. This accepts the
+    ///     historical recipe-shaped probe fields in addition to FNV base-object fields;
+    ///     it is not authority for production FNV serialization.
     /// </summary>
     internal List<ConstructibleObjectRecord> ParseConstructibleObjects()
     {
@@ -472,12 +472,17 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
         ObjectBounds? bounds = null;
         var ingredients = new List<InventoryItem>();
         var conditions = new List<DialogueCondition>();
+        var conditionStrings = new ConditionStringSiblingBinder();
         uint? createdItem = null;
         uint? workbenchKeyword = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
             var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            if (conditionStrings.TryConsume(sub.Signature, subData))
+            {
+                continue;
+            }
 
             switch (sub.Signature)
             {
@@ -513,21 +518,14 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
                     ingredients.Add(new InventoryItem(itemId, count));
                     break;
                 }
-                case "CTDA" when sub.DataLength >= 28:
-                    conditions.Add(CtdaParser.Decode(subData, record.IsBigEndian));
+                case "CTDA":
+                    if (CtdaParser.TryDecode(subData, record.IsBigEndian, out var recipeCondition, out _))
+                    {
+                        conditions.Add(recipeCondition);
+                        conditionStrings.Begin(conditions);
+                    }
+
                     break;
-                case "CIS1" when conditions.Count > 0:
-                {
-                    var s = EsmStringUtils.ReadNullTermString(subData);
-                    conditions[^1] = conditions[^1] with { Parameter1String = s };
-                    break;
-                }
-                case "CIS2" when conditions.Count > 0:
-                {
-                    var s = EsmStringUtils.ReadNullTermString(subData);
-                    conditions[^1] = conditions[^1] with { Parameter2String = s };
-                    break;
-                }
                 case "CNAM" when sub.DataLength == 4:
                     createdItem = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
@@ -709,7 +707,8 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
                     modelPath =
                         EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
-                case "DATA" when sub.DataLength >= 8:
+                // FNV INGR DATA is one float. Value/flags are stored separately in ENIT.
+                case "DATA" when sub.DataLength >= 4:
                     weight = BinaryUtils.ReadFloat(data, sub.DataOffset, record.IsBigEndian);
                     break;
                 case "ETYP" when sub.DataLength >= 4:

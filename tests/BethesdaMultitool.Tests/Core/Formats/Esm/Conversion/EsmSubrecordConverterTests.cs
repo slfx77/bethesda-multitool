@@ -634,14 +634,38 @@ public class EsmSubrecordConverterTests
 
     #region PERK DATA Special Cases
 
-    [Fact]
-    public void ConvertSubrecordData_PerkData5Bytes_TruncatesTo4()
+    [Theory]
+    [InlineData(0x00)]
+    [InlineData(0xFF)]
+    public void ConvertSubrecordData_PerkData5Bytes_PreservesOptionalHiddenByte(byte hidden)
     {
-        // PERK DATA(5): Xbox has trailing 0x00, PC uses 4 bytes
-        byte[] data = [0x01, 0x02, 0x03, 0x04, 0x00];
+        // FNV permits a four-byte DATA prefix plus the optional Hidden byte. Presence is
+        // semantically distinct from a legacy four-byte payload, even when Hidden is zero.
+        byte[] data = [0x01, 0x02, 0x03, 0x04, hidden];
         var result = EsmSubrecordConverter.ConvertSubrecordData("DATA", data, "PERK");
-        Assert.Equal(4, result.Length);
-        Assert.Equal(new byte[] { 0x01, 0x02, 0x03, 0x04 }, result);
+        Assert.Equal(data, result);
+    }
+
+    [Fact]
+    public void ConvertSubrecordData_PerkAbilityEntry4Bytes_SwapsFormId()
+    {
+        // The backward-compatible stateless default treats DATA(4) as the type-1 PRKE
+        // ability FormID. Record conversion passes explicit PRKE..PRKF scope.
+        byte[] data = [0x11, 0x22, 0x33, 0x44];
+        var result = EsmSubrecordConverter.ConvertSubrecordData("DATA", data, "PERK");
+
+        Assert.Equal(new byte[] { 0x44, 0x33, 0x22, 0x11 }, result);
+    }
+
+    [Fact]
+    public void ConvertSubrecordData_PerkTopLevelData4_PreservesUInt8Fields()
+    {
+        byte[] data = [0x01, 0x02, 0x03, 0x04];
+
+        var result = EsmSubrecordConverter.ConvertSubrecordData(
+            "DATA", data, "PERK", PerkDataScope.TopLevel);
+
+        Assert.Equal(data, result);
     }
 
     [Fact]

@@ -15,8 +15,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 ///     A game-agnostic record parser driven entirely by a generated <see cref="RecordDef" /> schema
 ///     (<see cref="RecordModel.EsmSchemas" />). It decodes <em>every</em> top-level record of a plugin into
 ///     a <see cref="GenericEsmRecord" /> carrying an ordered, labeled <see cref="DecodedNode" /> tree, so a
-///     game whose layouts diverge from the hand-written FNV handlers (Oblivion today; Skyrim/FO4/FO76
-///     next) is read correctly without a bespoke typed handler per type. Mirrors the role of
+///     game whose layouts diverge from the hand-written FNV handlers (Oblivion, Skyrim, FO4, and
+///     FO76) is read correctly without a bespoke typed handler per type. Mirrors the role of
 ///     <see cref="Tes3.Tes3RecordParser" /> for the post-TES3 (6-byte subrecord) family.
 /// </summary>
 internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IReadOnlyList<RecordDef> schema)
@@ -161,7 +161,8 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
         IReadOnlyList<DecodedNode>? tree = null;
         if (_byType.TryGetValue(record.RecordType, out var def))
         {
-            tree = SchemaRecordDecoder.Decode(def, subrecords, record.IsBigEndian, game: _context.Game);
+            tree = SchemaRecordDecoder.Decode(
+                def, subrecords, record.IsBigEndian, game: _context.Game, formVersion: record.FormVersion);
         }
 
         if (!string.IsNullOrEmpty(fullName))
@@ -196,22 +197,26 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
         switch (record.RecordType)
         {
             case "DIAL":
-                _topics.Add(BuildTopic(record.FormId, editorId, subrecords));
+                _topics.Add(BuildTopic(record.FormId, editorId, subrecords, record.IsBigEndian));
                 break;
             case "INFO":
                 var link = _infoLink.TryGetValue(record.FormId, out var l) ? l : default;
                 var topic = link.Topic == 0 ? (uint?)null : link.Topic;
-                _infos.Add(BuildInfo(record.FormId, editorId, topic, link.Index, subrecords));
+                _infos.Add(BuildInfo(
+                    record.FormId, editorId, topic, link.Index, subrecords, record.IsBigEndian));
                 break;
         }
     }
 
-    private DialogTopicRecord BuildTopic(uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs) =>
-        DialogueExtractors.For(_context.Game).BuildTopic(formId, editorId, subs, _context);
+    private DialogTopicRecord BuildTopic(
+        uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs, bool isBigEndian) =>
+        DialogueExtractors.For(_context.Game).BuildTopic(formId, editorId, subs, isBigEndian, _context);
 
     private DialogueRecord BuildInfo(
-        uint formId, string? editorId, uint? topic, ushort index, IReadOnlyList<RawSubrecord> subs) =>
-        DialogueExtractors.For(_context.Game).BuildInfo(formId, editorId, topic, index, subs, _context);
+        uint formId, string? editorId, uint? topic, ushort index, IReadOnlyList<RawSubrecord> subs,
+        bool isBigEndian) =>
+        DialogueExtractors.For(_context.Game).BuildInfo(
+            formId, editorId, topic, index, subs, isBigEndian, _context);
 
     private static Dictionary<string, RecordDef> BuildIndex(IReadOnlyList<RecordDef> schema)
     {

@@ -3,6 +3,7 @@ using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
 using static BethesdaMultitool.Tests.Helpers.EsmTestRecordBuilder;
@@ -89,8 +90,8 @@ public class RecordParserHandlerTests
         var scanResult = MakeScanResult();
         var parser = new RecordParser(scanResult);
 
-        Assert.Equal("PlayerRef", parser.GetEditorId(0x00000007));
-        Assert.Equal("Player", parser.GetEditorId(0x00000014));
+        Assert.Equal("Player", parser.GetEditorId(0x00000007));
+        Assert.Equal("PlayerRef", parser.GetEditorId(0x00000014));
     }
 
     [Fact]
@@ -526,8 +527,72 @@ public class RecordParserHandlerTests
         Assert.Equal([projectileOneFormId, projectileTwoFormId], ammo.ProjectileFormIds.OrderBy(id => id));
     }
 
+    [Theory]
+    [InlineData(4, null)]
+    [InlineData(5, 0)]
+    [InlineData(5, 0xFF)]
+    public void ParsePerks_WithAccessor_PreservesOptionalHiddenByte(
+        int dataLength,
+        int? expectedHidden)
+    {
+        var dataField = new byte[] { 0x01, 0x02, 0x03, 0x04, (byte)(expectedHidden ?? 0) };
+        Array.Resize(ref dataField, dataLength);
+
+        var recordBytes = BuildRecordBytes(0x00060000, "PERK", false,
+            ("EDID", NullTermString("HiddenShapePerk")),
+            ("DATA", dataField));
+        var mainRecord = new DetectedMainRecord("PERK",
+            (uint)(recordBytes.Length - 24), 0, 0x00060000, 0, false);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(MakeScanResult([mainRecord]),
+            accessor: accessor, fileSize: recordBytes.Length);
+        var perk = Assert.Single(parser.ParsePerks());
+
+        Assert.Equal((byte)0x01, perk.Trait);
+        Assert.Equal((byte)0x02, perk.MinLevel);
+        Assert.Equal((byte)0x03, perk.Ranks);
+        Assert.Equal((byte)0x04, perk.Playable);
+        Assert.Equal(expectedHidden.HasValue ? (byte?)expectedHidden.Value : null, perk.Hidden);
+        Assert.Equal(expectedHidden is > 0, perk.IsHidden);
+
+        var encodedData = Assert.Single(PerkEncoder.EncodeNew(perk).Subrecords,
+            subrecord => subrecord.Signature == "DATA").Bytes;
+        Assert.Equal(dataField, encodedData);
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(6)]
+    public void ParsePerks_WithAccessor_DoesNotPartiallyDecodeUnsupportedTopLevelDataWidths(int dataLength)
+    {
+        var dataField = Enumerable.Repeat((byte)0x7F, dataLength).ToArray();
+        var recordBytes = BuildRecordBytes(0x00060003, "PERK", false,
+            ("EDID", NullTermString("InvalidDataWidthPerk")),
+            ("DATA", dataField));
+        var mainRecord = new DetectedMainRecord("PERK",
+            (uint)(recordBytes.Length - 24), 0, 0x00060003, 0, false);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(MakeScanResult([mainRecord]),
+            accessor: accessor, fileSize: recordBytes.Length);
+        var perk = Assert.Single(parser.ParsePerks());
+
+        Assert.Equal((byte)0, perk.Trait);
+        Assert.Equal((byte)0, perk.MinLevel);
+        Assert.Equal((byte)1, perk.Ranks);
+        Assert.Equal((byte)1, perk.Playable);
+        Assert.Null(perk.Hidden);
+    }
+
     [Fact]
-    public void ParsePerks_WithAccessor_ParsesEsmConditionsAndEntryEffects()
+    public void ParsePerks_WithAccessor_RoundTripsRepeatedSignedPrkcGroups()
     {
         var dataField = new byte[] { 0x00, 0x08, 0x01, 0x01, 0x00 };
 
@@ -537,28 +602,39 @@ public class RecordParserHandlerTests
         BinaryPrimitives.WriteUInt16LittleEndian(topCondition.AsSpan(8), 0x46); // GetIsSex
         BinaryPrimitives.WriteUInt32LittleEndian(topCondition.AsSpan(12), 0x00000000); // Male
 
-        var entryData = new byte[] { 0x03, 0x03, 0x00 };
-        var entryCondition = new byte[28];
-        entryCondition[0] = 0x00; // ==
-        BinaryPrimitives.WriteSingleLittleEndian(entryCondition.AsSpan(4), 1.0f);
-        BinaryPrimitives.WriteUInt16LittleEndian(entryCondition.AsSpan(8), 0x1C1); // HasPerk
-        BinaryPrimitives.WriteUInt32LittleEndian(entryCondition.AsSpan(12), 0x0000ABCD);
+        var entryData = new byte[] { 0x03, 0x03, 0x02 };
+        var firstEntryCondition = new byte[28];
+        firstEntryCondition[0] = 0x00; // ==
+        BinaryPrimitives.WriteSingleLittleEndian(firstEntryCondition.AsSpan(4), 1.0f);
+        BinaryPrimitives.WriteUInt16LittleEndian(firstEntryCondition.AsSpan(8), 0x1C1); // HasPerk
+        BinaryPrimitives.WriteUInt32LittleEndian(firstEntryCondition.AsSpan(12), 0x0000ABCD);
+
+        var secondEntryCondition = new byte[28];
+        secondEntryCondition[0] = 0x80; // <
+        BinaryPrimitives.WriteSingleLittleEndian(secondEntryCondition.AsSpan(4), 25.0f);
+        BinaryPrimitives.WriteUInt16LittleEndian(secondEntryCondition.AsSpan(8), 0x0E); // GetActorValue
+        BinaryPrimitives.WriteUInt32LittleEndian(secondEntryCondition.AsSpan(12), 0x00000005);
 
         var epfd = new byte[4];
         BinaryPrimitives.WriteSingleLittleEndian(epfd, 1.1f);
 
-        var recordBytes = BuildRecordBytes(0x00060001, "PERK", false,
+        (string sig, byte[] data)[] sourceSubrecords =
+        [
             ("EDID", NullTermString("TestPerk")),
             ("FULL", NullTermString("Test Perk")),
-            ("DATA", dataField),
             ("CTDA", topCondition),
+            ("DATA", dataField),
             ("PRKE", [0x02, 0x00, 0x05]),
             ("DATA", entryData),
-            ("PRKC", [0x02]),
-            ("CTDA", entryCondition),
+            ("PRKC", [0x00]),
+            ("CTDA", firstEntryCondition),
+            ("PRKC", [0xFF]),
+            ("CTDA", secondEntryCondition),
             ("EPFT", [0x01]),
             ("EPFD", epfd),
-            ("PRKF", []));
+            ("PRKF", []),
+        ];
+        var recordBytes = BuildRecordBytes(0x00060001, "PERK", false, sourceSubrecords);
 
         var mainRecord = new DetectedMainRecord("PERK",
             (uint)(recordBytes.Length - 24), 0, 0x00060001, 0, false);
@@ -573,19 +649,39 @@ public class RecordParserHandlerTests
         var perk = Assert.Single(parser.ParsePerks());
 
         Assert.Equal("TestPerk", perk.EditorId);
-        Assert.Equal("GetIsSex", perk.Conditions[0].FunctionName);
-        Assert.Equal("Male", perk.Conditions[0].Parameter1Display);
-        Assert.Equal("HasPerk", perk.Conditions[1].FunctionName);
-        Assert.Equal(0x0000ABCDu, perk.Conditions[1].Parameter1FormId);
+        var parsedTopCondition = Assert.Single(perk.Conditions);
+        Assert.Equal("GetIsSex", parsedTopCondition.FunctionName);
+        Assert.Equal("Male", parsedTopCondition.Parameter1Display);
 
         var entry = Assert.Single(perk.Entries);
         Assert.Equal(5, entry.Priority);
         Assert.Equal((byte)3, entry.EntryPoint);
+        Assert.Equal((byte)3, entry.EntryPointFunction);
+        Assert.Equal((byte)2, entry.PerkConditionTabCount);
         Assert.Equal((byte)1, entry.FunctionType);
         Assert.Equal("Add Value", entry.FunctionTypeName);
         Assert.Equal(1.1f, entry.EffectValue.GetValueOrDefault(), 3);
-        Assert.Equal((byte)2, entry.ConditionTabCount);
-        Assert.Single(entry.Conditions);
+        Assert.Equal(2, entry.ConditionGroups.Count);
+
+        var firstGroup = entry.ConditionGroups[0];
+        Assert.Equal((sbyte)0, firstGroup.RunOn);
+        var parsedFirstEntryCondition = Assert.Single(firstGroup.Conditions);
+        Assert.Equal("HasPerk", parsedFirstEntryCondition.FunctionName);
+        Assert.Equal(0x0000ABCDu, parsedFirstEntryCondition.Parameter1FormId);
+
+        var secondGroup = entry.ConditionGroups[1];
+        Assert.Equal((sbyte)-1, secondGroup.RunOn);
+        var parsedSecondEntryCondition = Assert.Single(secondGroup.Conditions);
+        Assert.Equal("GetActorValue", parsedSecondEntryCondition.FunctionName);
+        Assert.Equal(0x00000005u, parsedSecondEntryCondition.Parameter1);
+
+        var encoded = PerkEncoder.EncodeNew(perk);
+        Assert.Equal(sourceSubrecords.Select(subrecord => subrecord.sig),
+            encoded.Subrecords.Select(subrecord => subrecord.Signature));
+        for (var i = 0; i < sourceSubrecords.Length; i++)
+        {
+            Assert.Equal(sourceSubrecords[i].data, encoded.Subrecords[i].Bytes);
+        }
     }
 
     [Fact]
@@ -1270,10 +1366,9 @@ public class RecordParserHandlerTests
         var parser = new RecordParser(scanResult, correlations);
         var result = parser.ParseAll();
 
-        // The FormIdToEditorId should include the well-known PlayerRef/Player even
-        // though they weren't in the main records
-        Assert.Equal("PlayerRef", result.FormIdToEditorId[0x00000007]);
-        Assert.Equal("Player", result.FormIdToEditorId[0x00000014]);
+        // The map keeps both well-known identities even when neither was present in this scan.
+        Assert.Equal("Player", result.FormIdToEditorId[0x00000007]);
+        Assert.Equal("PlayerRef", result.FormIdToEditorId[0x00000014]);
     }
 
     #endregion

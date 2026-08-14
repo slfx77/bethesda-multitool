@@ -204,6 +204,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
         var curVariables = new List<ScriptVariableInfo>();
         var curReferencedObjects = new List<uint>();
         var curConditions = new List<DialogueCondition>();
+        var conditionStrings = new ConditionStringSiblingBinder();
         SerializedScriptLocalTableParser? curSerializedLocals = null;
         var curHasMenuItem = false;
         var curHasSerializedHeader = false;
@@ -309,6 +310,11 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
             var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            if (conditionStrings.TryConsume(sub.Signature, subData))
+            {
+                continue;
+            }
+
             if (curHasMenuItem)
             {
                 curSerializedLocals!.ObserveSubrecord(
@@ -361,25 +367,14 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                 case "ANAM" when sub.DataLength >= 1 && curHasMenuItem:
                     curActionType = subData[0];
                     break;
-                case "CTDA" when sub.DataLength >= 28 && curHasMenuItem:
-                    curConditions.Add(CtdaParser.Decode(subData, record.IsBigEndian));
+                case "CTDA" when curHasMenuItem:
+                    if (CtdaParser.TryDecode(subData, record.IsBigEndian, out var terminalCondition, out _))
+                    {
+                        curConditions.Add(terminalCondition);
+                        conditionStrings.Begin(curConditions);
+                    }
+
                     break;
-                case "CIS1" when curHasMenuItem && curConditions.Count > 0:
-                {
-                    // CIS1 — string param replacing Parameter1 on the preceding CTDA condition.
-                    var s = EsmStringUtils.ReadNullTermString(subData);
-                    var last = curConditions[^1];
-                    curConditions[^1] = last with { Parameter1String = s };
-                    break;
-                }
-                case "CIS2" when curHasMenuItem && curConditions.Count > 0:
-                {
-                    // CIS2 — string param replacing Parameter2 on the preceding CTDA condition.
-                    var s = EsmStringUtils.ReadNullTermString(subData);
-                    var last = curConditions[^1];
-                    curConditions[^1] = last with { Parameter2String = s };
-                    break;
-                }
                 case "RNAM" when curHasMenuItem:
                     // FNV RNAM is always the menu item's result text, including when its
                     // encoded byte length happens to be four. It is not a FormID field.
