@@ -645,7 +645,7 @@ The placed reference type for all objects in the game world. Every placed NPC, c
 - `r31+0x4C` (offset 76) confirmed as `fRefScale` — float load/store in SaveGame_v2
 - `r31+0x54` (offset 84) confirmed as `m_Extra` — ExtraDataList Save/Load calls
 - `r31+0x74` (offset 116) confirmed as `pLoadedData` — pointer dereference in SaveGame_v2
-  **Validation:** TESForm base fields (+4/+8/+12) proven across 17 form types. TESObjectREFR-specific offsets validated by 3 independent Ghidra confirmations. Full DMP struct read validation pending for RuntimeRefrReader implementation.
+  **Validation:** TESForm base fields (+4/+8/+12) proven across 17 form types. TESObjectREFR-specific offsets have three independent Ghidra confirmations. `RuntimeRefrReader` is implemented, with synthetic tests for the final 8-byte and early 4-byte variants plus parity tests for placement extras; broader real-DMP field-by-field cross-validation remains evidence work, not an implementation prerequisite.
 
 #### OBJ_REFR — Embedded data sub-struct at offset +48
 
@@ -775,7 +775,7 @@ TESObjectREFR (+120 bytes)
 
 ---
 
-## Unimplemented / Partially Explored
+## Runtime Dialogue Structures: Implemented and Open Evidence
 
 ### TESResponse (PDB: 44 bytes)
 

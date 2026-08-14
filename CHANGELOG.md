@@ -17,10 +17,35 @@ decompilation added Papyrus.
 #### Multi-game ESM/ESP reading (schema-driven)
 
 - **Schema-driven multi-game reader**: record/subrecord decoding extended from Fallout 3/NV to
-  Oblivion (TES4), Morrowind (TES3), Skyrim LE, Fallout 4, and Fallout 76. A per-game, version-gated
-  `RecordSchema` drives decode with no-data-loss passthrough (`RawMemberDef`/`UnusedDef` verbatim).
+  Oblivion (TES4), Morrowind (TES3), Skyrim LE, Fallout 4, and Fallout 76. A per-game
+  `RecordSchema` drives ordered read-only decode; unmatched subrecords and undecodable inline tails
+  remain visible as raw nodes. This is not a no-data-loss editing contract: inline `UnusedDef` bytes
+  are consumed without individual retention, and no generic schema writer exists.
+- **FO4 and Skyrim form-version bounds**: `wbFromVersion` inclusive lower thresholds and
+  `wbBelowVersion` exclusive upper thresholds now flow through generator IR, emitted `MemberDef`
+  metadata, semantic header offset 20, and both generic decode
+  paths. FO4 pre-/post-v97 `EXPL.DATA` alignment is pinned. A separately reviewed Skyrim refresh
+  parses 124 records with zero source-parser failures, recovers `SMQN` and `MOVT`, emits ten minimum
+  gates and two exclusive upper gates, lowers the sole source `wbBelowVersion` wrapper for
+  `SNDR.FNAM` (present below v35), and pins the 40-byte v27 / 44-byte v28 `MOVT.SPED` layout. The
+  direct literal `ECZN.DATA` decider now selects exact 8-byte `<34` and 12-byte `>=34` arms for both
+  endian modes; unknown header versions or version/size contradictions preserve the whole DATA raw.
+  Other ordinary member gates still fail open when the header version is unknown, preserving their
+  historical length-bounded behavior; known zero is evaluated as a real version. Numeric division metadata
+  (`1/24`, `180/pi`) no longer drops those records or becomes a false scalar byte width. Skyrim's
+  Worldspace Bounds signatures are recovered, but their inner `IsSF1` conditionals deliberately
+  remain raw. This is not blanket version support: Skyrim's `IsSSE` v43 wrapper, other-game
+  regeneration, and write-side member selection remain open. Classic FO3/FNV IMGS continues to use measured retail
+  layouts rather than xEdit's contradicted v10 declaration.
 - **`tools/EsmSchemaGen`**: generates the per-game C# record schemas from xEdit `wbDefinitions*.pas`
   definitions, so games are added by regenerating schemas rather than hand-writing decoders.
+- **Typed CTDA string preservation**: physically adjacent CIS1/CIS2 strings are bound to their exact
+  condition in INFO, PACK, QUST, COBJ, TERM, and ALCH/ENCH/SPEL effect parsing, including present empty
+  strings. Intervening or out-of-order subrecords terminate the association instead of mutating an older
+  condition. Pinned FNV xEdit's condition-bearing effect grammar now survives all three typed paths through
+  plan-owned FormID resolution and 28-byte CTDA output. A dangling EFID omits one complete effect; a dangling
+  condition member replaces that effect's complete expression with a deterministic never-fire CTDA. Modern
+  CIS/Parameter3 writing remains outside the Fallout New Vegas target format.
 
 #### DMP→ESM converter (renamed from DMP→ESP)
 
@@ -28,6 +53,12 @@ decompilation added Papyrus.
   before writing, covering actor merge/move policy, duplicate-actor merge, override-door cloning,
   persistent-cell reparenting, dialogue exit-topic relink + master-topic stub gating, navmesh
   NVCI/NVEX reconstruction, and default-on leveled-spawn recovery.
+- **Sparse runtime NAVM discovery and cell enumeration**: heap/map/cell/array reads now preserve VA-contiguous objects
+  stored in noncontiguous dump-file regions and fail closed at missing VA pages. Incomplete declared
+  geometry no longer becomes an emit-eligible zero-count NAVM, and readable `NavMeshInfoMap` entries
+  now project their `BSNavMesh` bodies instead of always collapsing to identity-only stubs. The
+  unsupported `TESWorldSpace+16` loaded-grid inference was removed after the PDB showed that the
+  grid belongs to the separate `TES` singleton.
 - **`report validate` / `report consistency`**: field-domain sanity checks and cross-build agreement
   diffs over converter output.
 
@@ -38,15 +69,39 @@ decompilation added Papyrus.
   layered cloud rendering, and per-game ambient/DALC lighting.
 - **Water & effects**: per-game water shaders plus authored NIF-water geometry, the particle system,
   and SpeedTree weather-driven wind animation.
-- **Collision**: NIF Havok collision decoding and walk-mode ground/wall collision.
+- **Collision**: NIF Havok collision decoding and walk-mode ground/wall collision. Independently
+  evicted collision entries can now recover from the exact resident mesh variant's bounded decoded
+  cache/disk/source payload without a second GPU upload. Authoritative no-collision and terminal
+  decode failure remain distinct: the latter keeps conservative OBND fallback while no longer
+  consuming the bounded cold-warmup quota every frame.
 - **Projection & export**: orthographic/isometric/trimetric modes with sky backdrop; internal
-  tile-and-stitch raises the non-tiled PNG export cap to 16384px. Many features are env-flag gated
+  tile-and-stitch raises the non-tiled PNG export cap to 16384px. Cell-grid loads now reset their
+  world-specific vertical extent when the new scene has no finite Z census, and grid alpha composes
+  source-over instead of overwriting transparent-export coverage. Many features are env-flag gated
   (`FALLOUT_VIEWER_*`).
 
 #### Script decompilation
 
 - **Papyrus (`.pex`)** decompiler for Skyrim, Fallout 4, and Fallout 76; **ObScript** extended to
-  Oblivion. Per-game condition/command function tables back the decode.
+  Oblivion. Game-keyed opcode tables back ObScript decode for FO3/FNV/Oblivion; Papyrus uses its own
+  format metadata. Fallout 76 v3.15 now preserves its post-state reference table (including the
+  physical distinction between an explicit empty table and no table) and the complete function-flag
+  byte. A hash-pinned retail gate parses and decompiles all 7,194 scripts in the shipped MiscClient
+  archive; uninterpreted flag bits and references remain visible rather than being assigned guessed
+  semantics. CTDA condition lookup is independently keyed: FO4, FNV, Oblivion, Skyrim, and Fallout 76
+  have explicit raw-index tables, while FO3 alone retains a documented compatibility projection and the
+  remaining unsupported games fail closed. Skyrim's condition-only generator reconciles 391 pinned LE engine
+  rows against the executable/map, retains six later xEdit-only rows plus five explicit SKSE rows as
+  separate provenance tiers, applies exact TES5 alias/packdata eligibility, and resolves the
+  value-dependent `GetVATSValue` second parameter. Fallout 76's condition-only generator preserves all 638
+  hash-pinned xEdit raw indices—including 49 above `0x0FFF` and eight pairs that collide under the former
+  opcode projection—while explicitly retaining community/MPL provenance and an empty script-opcode domain.
+  Source-derived Starfield raw diagnostics likewise use a condition-only 610-row pinned xEdit table,
+  including its distinct
+  `ptForm` and AVIF-backed `ptActorValue` union semantics; schema-primary Starfield dialogue and retail/
+  engine identity remain explicitly unsupported.
+  FO3/FNV ActorValue parameters are consistently treated
+  as numeric enum indices rather than FormIDs across dialogue display, schema decoding, and usage indexing.
 
 #### Archives & textures
 
@@ -64,6 +119,19 @@ decompilation added Papyrus.
   `DmpToEspInputs`→`DmpToEsmInputs`). No behavior change from the rename itself.
 - **`runtime-parity-matrix.json` moved** from `docs/` to `tests/BethesdaMultitool.Tests/Resources/`. It's a load-bearing test fixture (consumed by `RuntimeParityMatrixTests`), not documentation.
 - **Documentation & comment pass**: README CLI table updated (`archive` documented as canonical with `bsa`/`ba2` as deprecated aliases; `papyrus` and `report` added), ACRONYMS expanded (GECK, xEdit, EDID, SCDA/SCTX/SCRO/SCRV, CTDA, FOS/STFS), format docs' sample-path citations corrected, and source comments scrubbed of stale references and development-history narration.
+- **Schema-incomplete emission quarantined for FNV**: the retained COBJ model/byte builder mixes FNV base-object fields with a modern recipe layout, while the partial INGR model omits the required ENIT/effect group and its old builder incorrectly folded Value into an eight-byte DATA. The production planner now warns and skips unexpected COBJ/INGR captures. INGR forensic parsing and its direct diagnostic builder remain available, with the latter corrected to the actual four-byte Weight DATA and separate-effect contract.
+- **Complete CLI typed-record inventory**: `list`/`show` now flatten every semantic typed collection in
+  `RecordCollection`, and `stats` reports the same set instead of silently hiding 39 and 32 collection
+  types respectively. Leveled NPC/creature lists retain their physical `LVLN`/`LVLC` signatures rather
+  than being relabeled `LVLI`; CLMT, IMGS, and IMAD now contribute to `TotalRecordsParsed`. A
+  reflection-driven contract test makes future typed collections fail until all three presentation/count
+  paths are wired. The same inventory audit found and fixed `MergeWith` dropping EYES and HAIR from
+  load-order views; every semantic typed list now has an overlay-survival contract as well.
+- **Generic runtime float recovery**: the PDB layout resource labels its 160 single-precision fields
+  `float32`; the generic reader now recognizes that actual tag (while retaining the old `float` alias),
+  so plausible big-endian runtime values are no longer silently omitted. Exact zero and IEEE-normal
+  values are retained; NaN, infinities, and pointer-like subnormal misreads are rejected consistently by
+  both field decoding and layout probes.
 
 ### Removed
 
@@ -107,7 +175,9 @@ First alpha release of the 3.x line. The headline additions are the **DMP→ESP 
 - **PdbStructView abstraction**: data-driven runtime struct reading via PDB-derived field layouts; `PdbStructView.WithShift(owner, shift)` for offset adjustments. ~30 specialized readers migrated.
 - **Typed runtime readers** for every remaining FormType the converter touches; coverage tracked in a parity-matrix JSON consumed by `RuntimeParityMatrixTests` (ratchet asserts the matrix matches `RecordCollection`).
 - **`BsNavMeshStructuralValidator`** + **`RuntimeCellEnumerator`** + **`RuntimeNavMeshDiscovery`**: per-cell nav-mesh walk with NULL-parent + stale-pointer rejection.
-- **`TesFormHeaderProbe`**: candidate-offset header probing unblocks MSTT/FLOR multi-inheritance reads.
+- **`TesFormHeaderProbe` + PDB rebasing**: map values are validated at the canonical
+  `TESForm*` +4/+12 identity; MSTT/FLOR complete-object fields are reached by subtracting the
+  PDB-derived TESForm interior offset in VA space.
 
 #### New CLI / analysis commands
 
@@ -170,7 +240,10 @@ First alpha release of the 3.x line. The headline additions are the **DMP→ESP 
 
 ### Known limitations (alpha)
 
-- DMP→ESP master-cell NAVM augmentation gated off by default (`PluginBuildOptions.EmitMasterCellNavmAugmentation`); some new NAVM cells require an extended NAVI override that the planner doesn't yet emit.
+- DMP→ESM master-cell NAVM augmentation is gated off by default
+  (`PluginBuildOptions.EmitMasterCellNavmAugmentation`). The planner does emit extended NAVI/NVCI
+  entries for emitted NAVMs; runtime topology/connectivity reconstruction and in-game AI validation
+  remain safety-sensitive rather than a missing-NAVI implementation gap.
 - WastelandNV-specific crash under investigation (other worldspaces render fine).
 - v3 viewer's reference renderer is in alpha — texture / material support limited to diffuse, no shader effects.
 - Treat the alpha as "use, file issues, expect rough edges" — many edge cases are still under investigation.

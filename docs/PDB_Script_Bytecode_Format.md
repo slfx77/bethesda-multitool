@@ -1,15 +1,21 @@
 # PDB Script Bytecode Format — Fallout: New Vegas (Xbox 360)
 
-All data sourced from PDB symbol dumps and game executables. Verified 2026-02-06.
+All data is sourced from PDB symbols and game executables. The command/callback oracle was
+reverified against the pinned final Xbox build on 2026-08-13.
 
 ## Source Files
 
-| File                | Path                                                                     | Notes                                                    |
-| ------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------- |
-| PDB types (debug)   | `Sample/PDB/Proto/Fallout_Debug/types_full.txt`                                      | Primary source for struct/enum definitions               |
-| PDB globals (debug) | `Sample/PDB/Proto/Fallout_Debug/globals.txt`                                         | Global variable addresses and function offsets           |
-| Final build exe     | `Sample/Full_Builds/Fallout New Vegas (Aug 22, 2010)/Diskuild_1.0.0.252/Fallout.exe` | Xbox 360 PowerPC PE (machine 0x1F2), XEX base 0x82000000 |
-| Prototype exe       | `Sample/Full_Builds/Fallout New Vegas (July 21, 2010)/FalloutNV/Fallout.exe`         | Earlier prototype (2 param differences vs final)         |
+| File                      | Path                                                                                     | Notes                                                    |
+| ------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Prototype debug type dump | `Sample/PDB/Proto/Fallout_Debug/types_full.txt`                                            | Historical supporting struct/enum source                |
+| Prototype debug globals   | `Sample/PDB/Proto/Fallout_Debug/globals.txt`                                               | Historical supporting symbols                           |
+| Final build PDB           | `Sample/Full_Builds/Fallout New Vegas (Aug 22, 2010)/Diskuild_1.0.0.252/Fallout.pdb`      | Generator authority for layouts and table globals       |
+| Final build executable    | `Sample/Full_Builds/Fallout New Vegas (Aug 22, 2010)/Diskuild_1.0.0.252/Fallout.exe`      | Xbox 360 PowerPC PE (machine 0x1F2), base 0x82000000    |
+| Prototype executable      | `Sample/Full_Builds/Fallout New Vegas (July 21, 2010)/FalloutNV/Fallout.exe`               | Earlier prototype (2 parameter differences vs final)    |
+
+The reproducible generator pins the final executable SHA-256 to
+`A43DFE9025A0FACD0EF862E89A83C05C11A5CB3A9FE53EFEEC18C0278F75F0A6` and the paired PDB
+SHA-256 to `EC702DC52F42A9C14037B800871D727AF2B54ED191D68AE5FCDE3BFCE65E6F00`.
 
 ### Executable Layout (Aug 22, 2010 Final Build)
 
@@ -18,12 +24,12 @@ All data sourced from PDB symbol dumps and game executables. Verified 2026-02-06
 | .data   | 0x00FE0400 | 0x00FD1800 | scriptConsole at +0x27008, scriptFunctions at +0x29038 |
 | .rdata  | 0x00000600 | 0x00000600 | Function name strings, parameter name strings          |
 
-### Key Global Addresses (from globals.txt)
+### Key Global Addresses (from the pinned final PDB)
 
-| Global          | Address         | Type                               | Count                                      |
-| --------------- | --------------- | ---------------------------------- | ------------------------------------------ |
-| scriptConsole   | [0007:00027058] | SCRIPT_FUNCTION[]                  | 205 entries (opcodes 0x100-0x1CC)          |
-| scriptFunctions | [0007:00029088] | SCRIPT_FUNCTION[625] (25000 bytes) | 624 game functions (opcodes 0x1000-0x126F) |
+| Global          | Address         | Type                               | Count                                                        |
+| --------------- | --------------- | ---------------------------------- | ------------------------------------------------------------ |
+| scriptConsole   | [0007:00027008] | SCRIPT_FUNCTION[]                  | 205 entries (opcodes 0x100-0x1CC)                            |
+| scriptFunctions | [0007:00029038] | SCRIPT_FUNCTION[625] (25000 bytes) | 624 commands plus the terminal 0x1270 sentinel; 250 callbacks |
 
 ### Key Function Addresses (for disassembly verification)
 
@@ -171,7 +177,7 @@ Has `Endian()` method for byte-swapping.
 ### SCRIPT_FUNCTION (Size=40, 12 members)
 
 - Defines a single script-callable function (opcode definition).
-- Source: types_full.txt line 750229 (field list 0x1fc5e, struct 0x1fc5f)
+- Final-PDB source: type 0x1FE1B, field list 0x1FE1A.
 
 | Offset | Type               | Name                 | Notes                             |
 | ------ | ------------------ | -------------------- | --------------------------------- |
@@ -187,6 +193,13 @@ Has `Endian()` method for byte-swapping.
 | 32     | pConditionFunction | Condition callback   |                                   |
 | 36     | bool               | bEditorFilter        |                                   |
 | 37     | bool               | bInvalidatesCellList |                                   |
+
+Exactly 250 of the 624 game commands have a non-null `pConditionFunction` in the pinned final
+executable. Those entries form the FNV CTDA function table. Its keys are raw condition indices
+(`game opcode - 0x1000`) and its values reuse the corresponding command definitions. A script
+command alone is not evidence of condition support: raw index 0 (`UnusedFunction0`) and raw index 2
+(`AddItem`) both have null callbacks and are deliberately absent. The terminal 625th structure is
+opcode 0x1270 (`ADD NEW FUNCTIONS BEFORE THIS ONE!!!`) and is not a command or condition.
 
 #### pExecuteFunction Signature
 
@@ -217,7 +230,7 @@ bool pCompileFunction(
 ### SCRIPT_PARAMETER (Size=12, 3 members)
 
 - Defines one parameter of a script function.
-- Source: types_full.txt line 718646 (field list 0x1e730, struct 0x1e731)
+- Final-PDB source: type 0x1E8ED, field list 0x1E8EC.
 
 | Offset | Type              | Name           | Notes                         |
 | ------ | ----------------- | -------------- | ----------------------------- |

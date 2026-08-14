@@ -80,7 +80,7 @@ Requires [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 git clone --recursive https://github.com/slfx77/fallout-xbox-360-utils.git
 cd fallout-xbox-360-utils
 
-# Build all targets
+# Build the projects in BethesdaMultitool.slnx
 dotnet build -c Release
 
 # Run GUI (Windows only)
@@ -90,7 +90,7 @@ dotnet run --project src/BethesdaMultitool -f net10.0-windows10.0.19041.0
 dotnet run --project src/BethesdaMultitool -f net10.0 -- --help
 
 # Run tests
-dotnet test -p:CollectCoverage=false
+dotnet test
 ```
 
 ## Usage
@@ -291,7 +291,7 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 ### Tools & Libraries
 
-- [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) - Direct3D 11/12 + DXGI bindings for GPU rendering (MIT)
+- [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) - Direct3D 12 + DXGI bindings for GPU rendering (MIT)
 - [SharpGLTF](https://github.com/vpenades/SharpGLTF) - glTF/GLB model export (MIT)
 - [Spectre.Console](https://github.com/spectreconsole/spectre.console) - CLI output formatting (MIT)
 - [System.CommandLine](https://github.com/dotnet/command-line-api) - CLI argument parsing (MIT)

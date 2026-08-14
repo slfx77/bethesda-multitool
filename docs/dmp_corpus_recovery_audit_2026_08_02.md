@@ -13,6 +13,16 @@ BethesdaMultitool.exe dmp gap-inventory   Sample\MemoryDump -o artifacts\dmp-aud
 
 Artifacts: `artifacts/dmp-audit/{dump_inventory,formtype_by_dump,esm_record_by_dump,mapping_coverage}.csv`.
 
+> **Current-state errata (2026-08-13).** This report preserves the converter state and
+> findings from 2026-08-02/03; its historical gap lists are not the current backlog. Since
+> the audit, the per-model legacy emitter was deleted and `PluginBuilder` was renamed to
+> `PluginConversionPipeline`. `EnumerateModelsByType` remains as the top-level serialization
+> iterator, but `EsmPlanner` now settles every decision and `PlanWriter` performs the encoding.
+> PWAT and TREE also gained dedicated typed ESM/runtime readers, `DmpRecordSource` extractors,
+> and planned-encoder rows; they are constructed and emitted today. PGRE now emits through the
+> planner-owned cell-child path. Dated statements below are labeled or corrected in place so
+> they remain useful as audit history without masquerading as current architecture.
+
 ## 0. Corpus shape
 
 50 dumps, **27 unique PE timestamps**, spanning **2009-11-17 → 2010-04-21**.
@@ -91,7 +101,7 @@ now report drift-**corrected** codes; without that, an enum shift is indistingui
 "this content did not exist yet". Correcting removed six phantom rows (INFO, LAND, LVSP,
 TOFT, ARMA, PCBE) that were pure drift artifacts.
 
-## 4. Mapping gaps — types we can see but cannot emit
+## 4. Historical mapping gaps — types visible but not emittable on 2026-08-02
 
 Present in the runtime of all 32 usable dumps, **no encoder** (so unrecoverable into an ESM):
 
@@ -107,7 +117,8 @@ Present in the runtime of all 32 usable dumps, **no encoder** (so unrecoverable 
 | TACT | 74 | | DOBJ | 1 |
 | IPDS | 48 | | | |
 
-**Encoder but no planner**: GRAS, IMGS, PWAT, RADS, TREE.
+**At audit time, encoder but no planner**: GRAS, IMGS, PWAT, RADS, TREE. All five later
+received planner routing; PWAT and TREE additionally needed dedicated typed producers.
 
 **Visible only as embedded ESM record bytes** (no live form ever seen — these types carry no
 EditorID, so they never enter the EditorID-keyed hash table):
@@ -140,11 +151,22 @@ EditorID, so they never enter the EditorID-keyed hash table):
 > So the original "LAND and NAVM are the Phase C/D blockers" claim was **wrong** — both are
 > false positives. Every other `has_encoder = NO` row in §4 is therefore also unverified
 > against the planner / static / byte-rewriter paths and is being re-checked before any
-> implementation work. A third case is already known to be subtler than the column suggests:
-> `PgreEncoder` **and** `PlannedPgreEncoder` both exist, but
-> [CellChildAllocator.cs:201](src/BethesdaMultitool/Core/Formats/Esm/Planner/Cells/CellChildAllocator.cs#L201)
-> notes PGRE has "no production caller" — implemented but unreachable, which is a wiring
-> problem, not a missing encoder.
+> implementation work. A third case was already known to be subtler than the column suggested:
+> PGRE had top-level `PgreEncoder` / `PlannedPgreEncoder` implementations but no production
+> caller. That historical wiring gap is closed: those unreachable top-level encoders were
+> removed, and captured PGREs have emitted through the planner-owned cell-child path since
+> 2026-08-10.
+>
+> **2026-08-14 inverse correction:** an encoder entry is not proof that a type is safe to emit.
+> FNV's sole retail INGR (`0x0003135B`, EDID
+> `DoNotCreateNewIngredientsWeArentUsingThemInFallout`) is physically
+> `EDID, ETYP(4), DATA(4), ENIT(8), EFID, EFIT`; the current typed/runtime model retains only
+> identity, weight, and equipment type. Its former direct builder
+> incorrectly described DATA as Value+Weight and could not produce the required ENIT/effect group.
+> INGR therefore remains discoverable for forensics but is excluded from production planning, so
+> Phase 3 warns and skips an unexpected new capture instead of writing a schema-incomplete record.
+> The census `emission_status` now uses that planned-encoder gate; the retained direct registry and
+> diagnostic dispatcher no longer make COBJ/INGR appear production-emittable.
 
 **`runtime_land_forms` is 0 in all 50 dumps.** This is a deliberate bail, not silent
 breakage: `EditorIdLookupTables` uses a 0xFF sentinel meaning "LAND FormType detection did
@@ -152,10 +174,21 @@ not reach confidence — populate nothing rather than wrong entries" (a previous
 0x45 mis-classified DIAL as LAND). The consequence is that the runtime LAND path is dead
 corpus-wide; only embedded ESM LAND records are available.
 
-## 5. Script text (SCTX) — the largest single recovery gap
+## 5. Script text (SCTX) — dated gap, now resolved by runtime-object recovery
 
-The SCTX detector finds **≤2 script sources per dump**, including in Debug builds. The raw
-data says otherwise:
+> **2026-08-14 correction:** the framed-subrecord scan below is no longer the runtime-source
+> recovery path. `RuntimeScriptReader` now follows each captured `Script.m_text` pointer from
+> the same runtime object, reads across captured VA regions, and accepts text only when its
+> terminating NUL is present. A fresh `dmp scripts audit` run against the three Debug captures
+> found **1,213/1,213**, **1,213/1,213**, and **1,214/1,214** raw runtime objects with
+> `runtime-nul-proven` source. The same-dump merged models retained **825**, **825**, and
+> **824** sources respectively, with **0 hard contradictions** in every capture. The old
+> substring counts were not unique script identities and must not be used as a recovery
+> denominator. Framed `SCTX` fragment detection remains useful for carved record bytes, but it
+> no longer measures runtime script-source completeness.
+
+At the time of the original audit, the framed SCTX detector found **≤2 script sources per
+dump**, including in Debug builds. The raw substring probe suggested more text was present:
 
 | Probe | Debug dumps | Release dumps |
 |---|---:|---:|
@@ -163,16 +196,17 @@ data says otherwise:
 | `begin GameMode` | **162** | 2 |
 | `begin OnActivate` | **135** | — |
 
-Cause: `EsmMiscDetector.TryAddSctxRecord` only matches text framed inside an `SCTX`
-subrecord header. Runtime-resident script source lives as **bare strings in heap buffers**,
-with no subrecord framing, so essentially none of it is detected.
+The then-active limitation was that `EsmMiscDetector.TryAddSctxRecord` only matched text
+framed inside an `SCTX` subrecord header. Runtime-resident script source lives as **bare
+strings in heap buffers**, with no subrecord framing, so that detector did not find it.
 
 Two consequences:
 
-1. Script source text is a **Debug-build-only** asset — the 3 dumps of the 2010-01-27 build
+1. In this corpus, script source text is a **Debug-build-only** asset — the 3 dumps of the 2010-01-27 build
    (`Fallout_Debug.xex{,1,2}.dmp`) are the only ones carrying it. Every Release dump has 2
    hits (static strings in the executable).
-2. We currently recover roughly **1%** of what is there (~2 of ~158).
+2. The historical framed scan recovered roughly **1%** of the raw substring-probe count
+   (~2 of ~158). That statement does not describe the current same-object runtime reader.
 
 ## 6. Recoverable volume varies enormously per capture — and the baselines are poor
 
@@ -249,19 +283,23 @@ These must be distinguished before acting. Either way it compounds §5: **the De
 simultaneously our only source of script source text and the builds where gap-based recovery
 currently returns nothing.**
 
-## Encoder gaps — resolved 2026-08-03
+## Encoder gaps — historical fixes from 2026-08-03
 
 A 30-agent verification pass (8 verifiers × 3 types, then one adversarial refuter per claimed
 gap) checked every candidate against **five** emission surfaces. **Zero of 21 gap claims were
 overturned.** Findings and fixes:
 
-**The structural cause.** Every top-level GRUP reaches disk only through a key in
-`grupBytesByType`, and the only encoder-gated writer is the `EnumerateModelsByType` loop in
-[PluginBuilder.cs](src/BethesdaMultitool/Core/Formats/Esm/Plugin/Pipeline/PluginBuilder.cs).
-A type absent from that yield set is **structurally unemittable regardless of what encoders
-exist** — and because the drop happens *before* the encoder gate, `stats.IncrementSkipped` and
-the `"No encoder for {type}"` warning never fire. **These records vanished with zero
-diagnostic.** That is why GRAS/IMGS/PWAT/TREE had registered encoders and emitted nothing.
+**The historical structural cause.** At the time, every top-level GRUP reached disk only
+through a key in `grupBytesByType`, driven by `EnumerateModelsByType` in the then-named
+`PluginBuilder` (now
+[PluginConversionPipeline.cs](../src/BethesdaMultitool/Core/Formats/Esm/Plugin/Pipeline/PluginConversionPipeline.cs)).
+A type absent from that yield set was **structurally unemittable regardless of what encoders
+existed** — and because the drop happened *before* the encoder gate, `stats.IncrementSkipped`
+and the `"No encoder for {type}"` warning never fired. **Those records vanished with zero
+diagnostic.** That is why GRAS/IMGS/PWAT/TREE had registered encoders and emitted nothing in
+this audit. The iterator still defines top-level serializer reachability, but its deleted
+per-model legacy branch no longer decides or encodes records: the current path is
+`EsmPlanner` → `PlanWriter`.
 
 **Fixed — 8 types now emit** (each: encoder + registry row + dispatcher row + yield):
 
@@ -283,30 +321,37 @@ refs resolve).
 GRAS additionally needed `"GRAS"` adding to `RecordScannerDispatch.RuntimeRecordTypes` —
 `RecordCollection.Grasses` was empty for *every* dump, so its encoder could never have fired.
 
-**Still open** (11 runtime-present types, all blocked on runtime *decode* work rather than
-encoders — `RuntimeGenericReader.ReadEmbeddedStruct` returns a descriptor string, not bytes,
-for structs >8 B): CAMS 229, IDLM 185, LSCR 153, MSET 79, IPDS 48, RGDL 37, EFSH 32, PGRE 21,
-CHIP 5, CSNO 5, DOBJ 1. Plus PWAT (72) and TREE (10), which have encoders but whose
-`PlaceableWaterRecord`/`TreeRecord` models are never constructed — they need a
-`GenericEsmRecord` adapter.
+**Still open on 2026-08-03** was a mixed decode backlog, not one shared root cause. Ten
+runtime-present types were listed: CAMS 229, IDLM 185, LSCR 153, MSET 79, IPDS 48, RGDL 37,
+EFSH 32, CHIP 5, CSNO 5, DOBJ 1. Embedded structs larger than 8 bytes blocked several of them;
+IDLM and MSET also exposed the generic reader's then-missing `float32` kind handling. PGRE 21
+was ESM-only in this corpus and therefore did not belong in the runtime-present count. At that
+point PWAT (72) and TREE (10) had encoders but no constructed
+`PlaceableWaterRecord`/`TreeRecord` models. The proposed `GenericEsmRecord` adapter was not the
+eventual solution: dedicated `RuntimePlaceableWaterReader` / `RuntimeTreeReader` and typed ESM
+parsers now populate `RecordCollection.PlaceableWaters` / `Trees`, which feed
+`DmpRecordSource` and `PlannedEncoders`.
 
-**Tooling fixed at the root.** `PluginBuilder.EmittableTopLevelRecordTypes` now exposes the
+**Tooling fixed at the root.** `PluginConversionPipeline.EmittableTopLevelRecordTypes` now exposes the
 yield set, and `mapping_coverage.csv` reports a real `emission_status` (plus separate
 `has_encoder` / `reachable` / `has_dispatcher` columns) instead of the misleading
 registry-only boolean that produced the LAND/NAVM false positives.
 
-## Summary of gaps found
+## Summary of gaps found in the dated audit
+
+This table is a snapshot, not an active backlog. Later-resolved rows remain visible to preserve
+the evidence trail.
 
 | # | Gap | Evidence | Severity |
 |---|---|---|---|
-| 1 | Script source text unrecovered | 158 present vs 2 detected, Debug builds | High — Debug-only asset, ~99% lost |
+| 1 | ~~Script source text unrecovered~~ | **RESOLVED for captured runtime `Script` objects** — current Debug audits recover NUL-proven source for 1,213/1,213, 1,213/1,213, and 1,214/1,214 raw objects; 825/825/824 same-dump merged sources; 0 hard contradictions | — |
 | 2 | ~~LAND/NAVM have no encoder~~ | **RETRACTED** — both fully wired (see §4 correction) | — |
-| 3 | Types identified but not encodable | MSTT 323, CAMS 229, IDLM 185, … — count pending re-verification against all four emission paths | Medium |
+| 3 | Types identified but not encodable | Historical list began with ~~MSTT 323~~, CAMS 229, IDLM 185, …; MSTT is now decoded and emitted, while the dated remainder still needs current-state re-verification | Historical |
 | 4 | Runtime LAND path dead corpus-wide | `runtime_land_forms` = 0 in 50/50 | Medium |
 | 5 | Baselines are record-byte-poor | xex21 6,901 BE vs xex44 12,829 | Medium |
 | 6 | v137 census ran on a Ulysses-poor dump | xex21 = 39 hits vs 502 available | Medium |
 | 7 | Gap scanner yields 0 on Debug builds | 0 candidates vs 6.7k–85k on Release | High — compounds #1 |
-| 8 | 5 types have encoder but no planner | GRAS, IMGS, PWAT, RADS, TREE | Low |
+| 8 | ~~5 types have encoder but no planner~~ | Historical: GRAS, IMGS, PWAT, RADS, TREE; all now planner-routed | Resolved |
 | 9 | 75.5% of bytes unattributed (avg) | ~3,005 gaps/dump, 77k candidates inside | Context |
 
 **Not gaps** (verified clean): FormType identification is complete (no unknown bytes);

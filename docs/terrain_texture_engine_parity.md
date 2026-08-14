@@ -443,22 +443,25 @@ so the Xbox PDB enum names can be used to label the PC records.
   loaded cell set, applies every inverse edge, and uses an actual visited set so
   malformed self/multi-node loops fail disabled without the former depth-16
   parity artifact. The selected-reference inspector's session-only
-  `Authored / On / Off` override affects rendering, picking, walk collision, and
-  the collision overlay. It does not simulate later quest/script state changes.
+  `Authored / Shown / Hidden` preview applies to viewer-supported placed meshes
+  and LIGH emitters. It now reaches reference pixels and shadows, picking,
+  placed-light emission, embedded NIF water, walk collision, and the collision
+  overlay; independent layer/category/lighting/water switches still win. It does
+  not simulate later quest/script state changes.
 - The renderable Hoover Dam gate is REFR `0x0015E4A5` in `HooverDamExtMid`:
   MSTT `FXFireMed01`, model `Effects\Ambient\FXFireMed01.NIF`, normally linked
   to authored-disabled `VHDBattleEffectsMarker` `0x0015D98C`. Authored state
-  hides it, `On` reveals the drawable reference, and `Off` suppresses it. The
+  hides it, `Shown` reveals the drawable reference, and `Hidden` suppresses it. The
   older `0x0017A277` example was only a SOUN reference with no `MODL` and is not
   used as renderability evidence.
-- Collision lookup is tri-state—unresolved, resolved mesh, or authoritative
-  resolved-none—and its negative entries live in the existing byte-bounded LRU.
-  Authored Havok always wins, including for an Effects-category placement or an
-  `effects\...` path. Only synthesized visual-triangle and OBND fallbacks are
-  suppressed for effects. A cold effect may therefore decode once to discover
-  real Havok; a decoded visual-only effect does not consume the warmup budget on
-  later frames. The ordinary/effects admission results are stored separately
-  per normalized model path so one placement category cannot poison another.
+- Collision lookup now carries two independent decisions: authoritative resolution
+  (mesh/none/unresolved) and cold-warmup eligibility. Authored Havok wins over
+  category/path exclusions. Lightweight node-lifetime state can republish an
+  independently evicted collision entry from the exact resident variant without a
+  second GPU upload; terminal decode failures retain OBND but stop consuming warmup
+  slots. Visual fallback is still keyed by plain path rather than material-swap
+  variant, and Windows forced-eviction validation remains active in
+  `docs/backlog/shared-collision-walk.md`.
 - Retail collision fixtures pin both sides: `NVLimestoneDustStormHalfViz.NIF`
   and `IndFXLightRaysRight01.NIF` contain no authored Havok and remain
   non-solid, while `effects\box03.nif` retains its authored 16-vertex,

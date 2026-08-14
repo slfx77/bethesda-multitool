@@ -6,7 +6,7 @@ document records *why the v4 architecture deliberately keeps the door open for e
 future v5 would still owe. (Mirrors the format of the former `docs/v3-scope.md`, which was pruned in a
 docs cleanup — see CHANGELOG.)
 **Owner:** slfx77
-**Last updated:** 2026-06-25
+**Last updated:** 2026-08-13 (FO4 + Skyrim read-side form-version slices and round-trip claim audit)
 
 ## Vision
 
@@ -14,9 +14,13 @@ Let the user edit record fields in the Records / Actors tabs and save the result
 plugin (ESM/ESP), across every supported game (Morrowind → Fallout 76), **without a per-game
 hand-written encoder**.
 
-Editing is the natural mirror of the v4 reader: a schema describes a *byte layout*, which is inherently
-bidirectional. The same per-game, version-gated schema that drives decoding drives encoding — one
-source of truth, both directions.
+Editing is the natural mirror of the v4 reader: a schema describes a *byte layout*. The same per-game
+schema should eventually drive decoding and encoding — one source of truth, both directions. The
+FO4 and reviewed Skyrim generated read paths now retain and apply `wbFromVersion` inclusive minimum
+gates. Skyrim also applies its `wbBelowVersion(35)` exclusive `SNDR.FNAM` ceiling and the literal
+two-arm `ECZN.DATA` form-version decider (`<34` / `>=34`). That does not make the model bidirectional:
+other games need reviewed regeneration and there is no generic writer or captured byte value for
+every opaque/unused member.
 
 ## Why this is a v5 feature
 
@@ -35,26 +39,34 @@ properties of `RecordSchema`
 ([Core/Formats/Esm/RecordModel/Schema/RecordSchema.cs](../src/BethesdaMultitool/Core/Formats/Esm/RecordModel/Schema/RecordSchema.cs))
 were chosen with round-trip in mind:
 
-- **No-data-loss decode.** `RawMemberDef` and `UnusedDef` are preserved verbatim — "coverage gaps never
-  lose data, only structure." A record can be edited and re-saved even where the schema only *partially*
-  models it: known fields change; unmodeled bytes pass through byte-for-byte.
+- **Read-side gap visibility, not lossless editing.** Unmatched signed subrecords stay visible as raw
+  nodes. An unmodeled inline `RawMemberDef` exposes the remaining tail as one raw node; `UnusedDef`
+  advances without retaining an individual byte value. No generic re-emitter currently exists.
 - **Dynamic counts modeled.** `ArrayDef.Count` / `CountRef` capture length-prefixed and count-referenced
   arrays, so a writer can recompute counts after an edit.
-- **One source of truth, both directions.** Reader and writer walk the same `RecordDef`; the
-  version-gating added in v4 tells the writer exactly which fields to emit for a given record version.
+- **One source of truth, both directions.** Reader and a future writer should walk the same
+  `RecordDef`. The FO4 and reviewed Skyrim readers carry inclusive lower gates; Skyrim's sole
+  `wbBelowVersion` wrapper is an exclusive upper gate, while the direct `ECZN` decider contributes
+  complementary lower/upper arm gates. Both use the nullable semantic header form version; write-side
+  selection and the remaining conditional families still need an explicit contract.
 
-**Cheap choices made during v4 (read-only) that keep v5 a small addition rather than a rewrite — make
-these now:**
-- decode into an *ordered, structurally faithful* tree (preserves member order on re-serialize);
-- keep *original bytes per opaque/unused member* (verbatim passthrough);
-- capture the record's *form version* at decode time.
+**Read-side foundations and remaining prerequisites:**
+- decoded nodes remain ordered, but byte-faithful re-serialization has not been demonstrated;
+- original bytes still need explicit capture per opaque/unused member before verbatim passthrough is possible;
+- `DetectedMainRecord.FormVersion` now distinguishes unknown/absent from known zero and reaches both
+  generic decode paths; FO4 and Skyrim generated outputs have received reviewed refreshes. Skyrim's
+  ten emitted minimum gates, two emitted exclusive upper gates, `MOVT` v27/v28 boundary,
+  `SNDR.FNAM` v34/v35 boundary, and exact `ECZN.DATA` v33/v34 arm switch are pinned. The remaining
+  `IsSSE` wrapper is edition-keyed, not a v43 form-version gate: its nested `wbFromVersion(43)` arm
+  cannot be lowered safely until the reader carries a distinct LE/SE identity, so it intentionally
+  remains raw. Other-game regeneration and write-side member selection remain open.
 
 ## Current state — what already exists and is reusable
 
 | Subsystem | Location | Reusable for v5 |
 |---|---|---|
-| Bidirectional schema | [RecordSchema.cs](../src/BethesdaMultitool/Core/Formats/Esm/RecordModel/Schema/RecordSchema.cs) | Yes — same `RecordDef` drives decode and encode; `RawMemberDef`/`UnusedDef` verbatim; `ArrayDef.CountRef` for dynamic counts |
-| Schema generator | [tools/EsmSchemaGen](../tools/EsmSchemaGen) | Yes — produces the per-game, version-gated schemas; no hand-written per-game encoders |
+| Schema model | [RecordSchema.cs](../src/BethesdaMultitool/Core/Formats/Esm/RecordModel/Schema/RecordSchema.cs) | Partial — `RecordDef` drives ordered decode; raw tails remain visible, but unused bytes are not individually retained and no generic schema-driven encoder exists |
+| Schema generator | [tools/EsmSchemaGen](../tools/EsmSchemaGen) | Partial — retains inclusive `wbFromVersion` minimums, exclusive `wbBelowVersion` ceilings, and exact literal two-arm `wbFormVersionDecider` gates; FO4 and Skyrim are reviewed and runtime-gated, while Skyrim's platform wrapper and reviewed regeneration of other games remain |
 | Write-side precedent | [Conversion/Processing/EsmRecordWriter.cs](../src/BethesdaMultitool/Core/Formats/Esm/Conversion/Processing/EsmRecordWriter.cs), `EsmGrupWriter.cs`, `RecordHeaderProcessor.cs` | Yes — the DMP→ESM converter already writes records, GRUPs, and headers; the schema-driven writer reuses this framing |
 | Compression | `EsmRecordCompression` (Conversion) | Yes — re-compress modified Skyrim/FO4 records on save |
 | Localized strings (read) | `LocalizedStringTables` + `.STRINGS` loader | Partial — read side exists; v5 needs the matching string-table *writer* |
