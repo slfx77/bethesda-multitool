@@ -20,7 +20,7 @@
          keeps most of that work off the UI thread. Both CLI and GUI benefit. -->
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
-    <!-- Required for the renderer's Map/Unmap helpers that write to D3D11 mapped memory via
+    <!-- Required for the renderer's Map/Unmap helpers that write to D3D12 mapped memory via
          raw pointers. Marshal.StructureToPtr<T> boxes the value type per call — unacceptable
          at ~1500 draws/frame. Limited to the renderer helpers; not for general use. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -88,7 +88,6 @@
     <PackageReference Include="SharpGLTF.Toolkit" />
     <PackageReference Include="System.CommandLine" />
     <PackageReference Include="Spectre.Console" />
-    <PackageReference Include="Vortice.Direct3D11" />
     <PackageReference Include="Vortice.Direct3D12" />
     <PackageReference Include="Vortice.DXGI" />
     <PackageReference Include="Vortice.D3DCompiler" />

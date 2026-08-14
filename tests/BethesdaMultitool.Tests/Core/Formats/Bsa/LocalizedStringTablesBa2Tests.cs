@@ -68,6 +68,34 @@ public class LocalizedStringTablesBa2Tests
         }
     }
 
+    [Fact]
+    public void TryLoad_EarlierArchiveFallbackSuffixBeatsLaterArchivePreferredSuffix()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"ba2strlayers_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var esm = Path.Combine(dir, "MyMod.esm");
+            File.WriteAllBytes(esm, BuildLocalizedTes4Stub());
+
+            File.WriteAllBytes(
+                Path.Combine(dir, "bbb.ba2"),
+                BuildGnrlBa2("strings\\mymod_en.strings", BuildStringsTable(8u, "Earlier fallback")));
+            File.WriteAllBytes(
+                Path.Combine(dir, "zzz.ba2"),
+                BuildGnrlBa2("strings\\mymod_English.strings", BuildStringsTable(8u, "Later preferred")));
+
+            var tables = LocalizedStringTables.TryLoad(esm);
+
+            Assert.NotNull(tables);
+            Assert.Equal("Earlier fallback", tables!.Resolve(8u, LStringKind.Strings));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
     private static byte[] BuildLocalizedTes4Stub()
     {
         using var ms = new MemoryStream();

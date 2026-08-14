@@ -23,7 +23,6 @@
          pulls in (its 1.1.2 wrapper depends on base 2.2.0). -->
     <PackageVersion Include="BCnEncoder.Net" Version="2.2.0" />
     <PackageVersion Include="SharpGLTF.Toolkit" Version="1.0.6" />
-    <PackageVersion Include="Vortice.Direct3D11" Version="3.8.3" />
     <PackageVersion Include="Vortice.Direct3D12" Version="3.8.2" />
     <PackageVersion Include="Vortice.DXGI" Version="3.8.3" />
     <PackageVersion Include="Vortice.D3DCompiler" Version="3.8.3" />

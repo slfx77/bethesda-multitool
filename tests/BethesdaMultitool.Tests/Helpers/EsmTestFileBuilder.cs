@@ -279,6 +279,11 @@ internal sealed class EsmTestFileBuilder
 
     /// <summary>Build a LE record with subrecords.</summary>
     public static byte[] BuildRecord(string sig, uint formId, uint flags,
+        params (string sig, byte[] data)[] subrecords) =>
+        BuildRecord(sig, formId, flags, 0, subrecords);
+
+    /// <summary>Build a LE record with an explicit form-version word at header offset 20.</summary>
+    public static byte[] BuildRecord(string sig, uint formId, uint flags, ushort formVersion,
         params (string sig, byte[] data)[] subrecords)
     {
         var dataSize = subrecords.Sum(s => 6 + s.data.Length);
@@ -289,6 +294,7 @@ internal sealed class EsmTestFileBuilder
         BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(4), (uint)dataSize);
         BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(8), flags);
         BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(12), formId);
+        BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(20), formVersion);
 
         var offset = 24;
         foreach (var (subSig, data) in subrecords)

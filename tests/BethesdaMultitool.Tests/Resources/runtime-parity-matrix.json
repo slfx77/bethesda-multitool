@@ -597,13 +597,13 @@
         "trait",
         "min level",
         "ranks",
-        "playable"
+        "playable",
+        "hidden"
       ],
       "derived": [],
       "esmOnly": [
         "description (lFileOffset-backed)",
-        "perk entry chains (BGSPerkEntry linked list — complex condition/function data)",
-        "alignment byte (DATA+4)"
+        "perk entry chains (BGSPerkEntry linked list — complex condition/function data)"
       ]
     },
     "evidence": [
@@ -1042,12 +1042,7 @@
       ],
       "derived": [],
       "esmOnly": [
-        "full name (TESFullName at +68)",
-        "model path (TESModel at +80)",
-        "texture hashes (TESModel MODT)",
-        "ingredient list (CNTO inline list — pRequiredItems is the materialized BGSListForm with anonymous FormID)",
-        "conditions (CTDA + CIS1/CIS2 — not stored as separate runtime field)",
-        "workbench keyword FormID (BNAM — stored elsewhere in BGSConstructibleObject)"
+        "FNV base-object fields not recovered by the typed runtime reader (FULL/model/ICON/SCRI/YNAM/ZNAM/DATA)"
       ]
     },
     "evidence": [
@@ -1055,8 +1050,8 @@
       "MiscItemHandler.ParseConstructibleObjects (MergeRuntimeRecords 0x32)",
       "PDB BGSConstructibleObject: 196 bytes, FormType 0x32, pRequiredItems (BGSListForm) at +188, pCreatedItem (TESBoundObject) at +192"
     ],
-    "confidence": "high",
-    "nextAction": "Created item FormID covered. pRequiredItems is the materialized inline ingredient list (typically anonymous FormID 0), not parity-relevant. NOTE: Fallout: New Vegas uses RCPE/RCCT for recipes; COBJ has 0 records in the FNV main ESM. Reader is dormant on FNV data but forward-compatible with Fallout 4 dumps."
+    "confidence": "medium",
+    "nextAction": "Forensic runtime pointer recovery only. Current FNV xEdit defines COBJ as a MISC-like base object and has no CNTO/CTDA/CNAM/BNAM recipe layout; the PDB pointers do not prove a serialized mapping. The audited corpus contains no COBJ records, and production COBJ emission is suppressed pending a real capture plus an explicit omit/FNV-COBJ/RCPE conversion policy. No Fallout 4 dump compatibility is claimed."
   },
   {
     "semanticModel": "ChallengeRecord",
@@ -1895,9 +1890,9 @@
     "recordCodes": [
       "NAVM"
     ],
-    "typedRuntimeReader": "RuntimeNavMeshReader.ReadRuntimeNavMesh",
+    "typedRuntimeReader": "RuntimeNavMeshReader.ReadRuntimeNavMesh + RuntimeNavMeshDiscovery",
     "genericLayoutAvailable": true,
-    "currentMergeMode": "esm + typed runtime overlay",
+    "currentMergeMode": "esm + typed runtime overlay + captured-heap discovery projection",
     "status": "typed-runtime",
     "highValueFields": {
       "exact": [
@@ -1906,18 +1901,21 @@
         "triangle count (BSSimpleArray)",
         "door portal count (BSSimpleArray)"
       ],
-      "derived": [],
+      "derived": [
+        "captured runtime vertices and triangles projected to NVVX/NVTR",
+        "captured door portals projected to the currently supported NVDP prefix"
+      ],
       "esmOnly": [
-        "full vertex/triangle/edge geometry (per-element arrays — engine refines mesh at load, so per-element parity isn't meaningful)"
+        "authored NVEX/NVCA and complete NVDP/NVCI connectivity semantics"
       ]
     },
     "evidence": [
       "RuntimeNavMeshReader.ReadRuntimeNavMesh",
-      "MiscGameSystemHandler.ParseNavMeshes (MergeRuntimeRecords 0x43)",
-      "PDB NavMesh: 280 bytes, FormType 0x43, pParentCell at +52, Vertices BSSimpleArray at +56 (count at +64), Triangles BSSimpleArray at +72 (count at +80), DoorPortals BSSimpleArray at +104 (count at +112). BSSimpleArray layout: data ptr +0, capacity +4, count +8, reserved +12."
+      "RuntimeNavMeshDiscovery + NavMeshHandler.ParseNavMeshes (MergeRuntimeRecords 0x43)",
+      "PDB NavMesh: 280 bytes, FormType 0x43, pParentCell at +52, Vertices BSSimpleArray at +56 (count at +64), Triangles BSSimpleArray at +72 (count at +80), DoorPortals BSSimpleArray at +104 (count at +112). BSSimpleArray layout: allocator vfptr +0, data pointer +4, count +8, reserved +12."
     ],
     "confidence": "high",
-    "nextAction": "Tier-1 fields covered (cell link + array counts). Per-element geometry remains ESM-sufficient — runtime navmesh diverges from ESM by design (engine rebakes mesh on load). Consider walking the per-element arrays only if AI pathfinding analysis is needed."
+    "nextAction": "Discovery and the enumerator-owned pAllForms/heap paths now use sparse-VA-safe reads. The invalid TESWorldSpace+16 grid inference was removed; any loaded-grid path needs a reproducible TES-singleton locator. Remaining NAVM work is semantic: NVEX/NVCA and complete NVDP/NVCI recovery, topology validation, and in-game AI evidence."
   },
   {
     "semanticModel": "WeatherRecord",
@@ -2456,10 +2454,10 @@
     "evidence": [
       "RuntimeIngredientReader.ReadRuntimeIngredient",
       "MiscItemHandler.ParseIngredients (MergeRuntimeRecords 0x1D)",
-      "PDB IngredientItem: 180 bytes, FormType 0x1D — FNV has 1 record but forward-compatible with Oblivion-era ingredients"
+      "PDB IngredientItem: 180 bytes, FormType 0x1D; retail FalloutNV.esm has one INGR, 0x0003135B DoNotCreateNewIngredientsWeArentUsingThemInFallout"
     ],
     "confidence": "high",
-    "nextAction": "Identity + weight + equip type covered. FNV only has 1 INGR record; ALCH is the primary consumable type."
+    "nextAction": "Identity + 4-byte weight + equip type are readable. Keep new FNV INGR emission disabled until required ENIT/effect semantics are modeled; the sole retail record explicitly says not to create new ingredients."
   },
   {
     "semanticModel": "NavMeshInfoMapRecord",

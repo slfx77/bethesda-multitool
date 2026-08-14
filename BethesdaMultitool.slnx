@@ -5,6 +5,11 @@
   <Folder Name="/DDXConv/">
     <Project Path="src/DDXConv/DDXConv/DDXConv.csproj" />
   </Folder>
+  <Folder Name="/Tools/">
+    <Project Path="tools/EsmAnalyzer/EsmAnalyzer.csproj" />
+    <Project Path="tools/Shared/Shared.csproj" />
+  </Folder>
+  <Project Path="src/BethesdaMultitool/BethesdaMultitool.csproj" />
   <Project Path="tests/BethesdaMultitool.Tests/BethesdaMultitool.Tests.csproj" />
   <Project Path="src/BethesdaAudioTranscriber/BethesdaAudioTranscriber.csproj">
     <Platform Project="x64" />

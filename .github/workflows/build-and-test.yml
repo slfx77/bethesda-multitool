@@ -30,8 +30,9 @@ jobs:
     
     # The test project runs on the Microsoft.Testing.Platform runner (xunit.v3);
     # report/filter options are MTP-style and must come after the `--` separator.
-    # Code coverage is intentionally absent: both instrumentation engines fail on
-    # this codebase today (see CLAUDE.md, "Code coverage").
+    # Coverage is kept out of this blocking job. The separate non-blocking job below uses coverlet's
+    # static IL instrumentation; Microsoft's dynamic-instrumentation engines deadlock on this assembly
+    # (see CLAUDE.md, "Code coverage").
     - name: Run Tests
       # RUN_SHADER_COMPILE_TESTS=1 is set here and nowhere else in CI. Without it every test behind
       # ShaderCompileTestGuard is SKIPPED, and the only HLSL CI ever fed to FXC was
@@ -50,6 +51,26 @@ jobs:
           --report-xunit-trx-filename test-results.trx `
           --results-directory ./TestResults `
           --minimum-expected-tests 6000
+
+    # These test projects are intentionally not members of BethesdaMultitool.slnx, so neither the
+    # solution build nor the main test command above discovers them. Run them explicitly instead of
+    # letting healthy local suites silently have zero CI coverage.
+    - name: Run Auxiliary Tool Tests
+      run: |
+        dotnet test --project tools/EsmSchemaGen.Tests/EsmSchemaGen.Tests.csproj `
+          --configuration Release `
+          -- `
+          --report-xunit-trx `
+          --report-xunit-trx-filename esm-schema-gen-test-results.trx `
+          --results-directory ./TestResults `
+          --minimum-expected-tests 15
+        dotnet test --project src/DDXConv/DDXConv.Tests/DDXConv.Tests.csproj `
+          --configuration Release `
+          -- `
+          --report-xunit-trx `
+          --report-xunit-trx-filename ddxconv-test-results.trx `
+          --results-directory ./TestResults `
+          --minimum-expected-tests 65
 
     - name: Upload Test Results
       uses: actions/upload-artifact@v4

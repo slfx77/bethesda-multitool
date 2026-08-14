@@ -9,10 +9,8 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
-    <!-- CA1707: underscore naming is the standard xUnit test-method convention.
-         CS0618: several suites intentionally exercise the deprecated-but-still-shipping PluginBuilder
-         (the conversion orchestrator slated for replacement by PluginConversionPipeline). -->
-    <NoWarn>$(NoWarn);CA1707;S3267;S3878;CS0618</NoWarn>
+    <!-- CA1707: underscore naming is the standard xUnit test-method convention. -->
+    <NoWarn>$(NoWarn);CA1707;S3267;S3878</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

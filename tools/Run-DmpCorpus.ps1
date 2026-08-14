@@ -3,8 +3,8 @@
 Builds and validates the complete DMP-to-ESM corpus sequentially.
 
 .DESCRIPTION
-Converts every selected .dmp under Sample/MemoryDump with planner types set to
-all, converter validation enabled, and the July then April dialogue CSVs. Each
+Converts every selected .dmp under Sample/MemoryDump with converter validation
+enabled and the July then April dialogue CSVs. Each
 successful output is subsequently deep-validated, parsed for dialogue stats,
 and analyzed for ESM coverage. Every input also receives a same-dump script
 source/bytecode audit, while emitted SCTX/SCDA payload hashes are reconciled
@@ -1172,7 +1172,6 @@ foreach ($dump in $dumps) {
         'dmp', 'to-esm', $dump.FullName,
         '--pc-esm', $MasterEsm,
         '--output', $esmPath,
-        '--planner-types', 'all',
         '--validate',
         '--cell-authority', $CellAuthority,
         '--event-log-jsonl', $eventLog,
@@ -1186,7 +1185,7 @@ foreach ($dump in $dumps) {
 
     if (Test-Path -LiteralPath $esmPath -PathType Leaf) {
         $deep = Invoke-DotnetDll $DotnetPath $EsmAnalyzerDll @(
-            'validate-deep', $esmPath
+            'validate', 'deep', $esmPath
         ) $deepLog
         $dialogue = Invoke-DotnetDll $DotnetPath $BethesdaMultitoolDll @(
             'dialogue', 'stats', $esmPath

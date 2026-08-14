@@ -51,6 +51,9 @@ public sealed class DedicatedWorkerThreadTests : IDisposable
         }
 
         Assert.True(done.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        // The final callback signals before Run's finally block increments ProcessedCount. Join the
+        // draining worker so this assertion observes completed work rather than racing that finally.
+        worker.Stop();
         Assert.Equal([0, 1, 2], results);
         Assert.Equal(3, worker.ProcessedCount);
     }

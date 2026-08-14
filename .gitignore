@@ -60,7 +60,13 @@ artifacts/
 tools/*
 !tools/disasm_shader.py
 !tools/run_decompile_speedtree_pc.py
+!tools/extract_script_functions.py
+!tools/extract_fo3_condition_functions.py
 !tools/extract_tes4_script_functions.py
+!tools/extract_fo4_script_functions.py
+!tools/extract_skyrim_condition_functions.py
+!tools/extract_fo76_condition_functions.py
+!tools/extract_starfield_condition_functions.py
 !tools/compare_tes4_condition_functions.py
 !tools/Shared/
 tools/Shared/bin/
