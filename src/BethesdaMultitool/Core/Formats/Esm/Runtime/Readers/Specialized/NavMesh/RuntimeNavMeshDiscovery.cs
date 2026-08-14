@@ -8,7 +8,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.NavMesh
 
 /// <summary>
 ///     Walks the engine's NavMeshInfoMap.InfoMap (a <c>NiTPointerMap&lt;uint32, NavMeshInfo*&gt;</c>)
-///     to discover every loaded BSNavMesh struct in DMP memory and reconstruct synthetic ESM
+///     to discover captured, reachable BSNavMesh structs in DMP memory and reconstruct synthetic ESM
 ///     RawSubrecord bytes (DATA + NVER + NVVX + NVTR + NVDP) for each one.
 ///
 ///     The in-DMP ESM byte stream typically only carries 5-30 navmeshes (the active cell grid),
@@ -66,8 +66,9 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
     private const int BsNavMeshDoorPortalsOffset = 104;
     private const int BsNavMeshSize = 280;
 
-    // TESObjectCELL.pNavMeshes is an inline NavMeshArray (16-byte BSSimpleArray<NavMeshPtr, 1024>)
-    // at +0x74 per Aug_RB MemDebug PDB. Hardcoded because the VA-based discovery path doesn't
+    // TESObjectCELL.pNavMeshes is a 4-byte pointer at +0x74 to a separately allocated
+    // NavMeshArray whose sole field is a 16-byte BSSimpleArray<NavMeshPtr, 1024>.
+    // Hardcoded because the VA-based discovery path doesn't
     // have access to a RuntimeEditorIdEntry to drive the PDB struct accessor; the offset has
     // been stable across every targeted build (xex2/4/21/22/43/44).
     private const int CellNavMeshArrayOffset = 116;
@@ -118,13 +119,9 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
             return [];
         }
 
-        var bucketArrayOffset = context.VaToFileOffset(bucketArrayVa);
-        if (bucketArrayOffset is not long bucketBase)
-        {
-            return [];
-        }
-
-        var bucketBytes = context.ReadBytes(bucketBase, (int)(hashSize * 4));
+        var bucketBytes = context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(bucketArrayVa),
+            checked((int)hashSize * sizeof(uint)));
         if (bucketBytes is null)
         {
             return [];
@@ -135,15 +132,17 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
         for (var b = 0; b < hashSize; b++)
         {
             var itemVa = BinaryUtils.ReadUInt32BE(bucketBytes, b * 4);
-            for (var hops = 0; hops < MaxNavMeshesPerCell && itemVa != 0 && context.IsValidPointer(itemVa); hops++)
+            var seenItemVas = new HashSet<uint>();
+            for (var hops = 0;
+                 hops < MaxNavMeshesPerCell
+                 && itemVa != 0
+                 && context.IsValidPointer(itemVa)
+                 && seenItemVas.Add(itemVa);
+                 hops++)
             {
-                var itemOffset = context.VaToFileOffset(itemVa);
-                if (itemOffset is not long itemFileOffset)
-                {
-                    break;
-                }
-
-                var itemBytes = context.ReadBytes(itemFileOffset, NiTMapItemSize);
+                var itemBytes = context.ReadBytesAtVa(
+                    Xbox360MemoryUtils.VaToLong(itemVa),
+                    NiTMapItemSize);
                 if (itemBytes is null)
                 {
                     break;
@@ -212,16 +211,12 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
             return [];
         }
 
-        var cellOffset = context.VaToFileOffset(cellVa);
-        if (cellOffset is not long cellFileOffset)
-        {
-            return [];
-        }
-
         // Step 1: read the 4-byte pNavMeshes pointer at TESObjectCELL+116. A null pointer
         // means "this cell has no NavMeshArray allocated" — common for cells outside the
         // active grid; not an error, just no navmeshes to surface.
-        var pNavMeshesBytes = context.ReadBytes(cellFileOffset + CellNavMeshArrayOffset, 4);
+        var pNavMeshesBytes = context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(cellVa) + CellNavMeshArrayOffset,
+            sizeof(uint));
         if (pNavMeshesBytes is null)
         {
             return [];
@@ -234,13 +229,9 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
         }
 
         // Step 2: read the 16-byte BSSimpleArray header at NavMeshArray+0 (NavMeshArray.NavMeshes).
-        var navMeshArrayOffset = context.VaToFileOffset(navMeshArrayVa);
-        if (navMeshArrayOffset is not long navMeshArrayFileOffset)
-        {
-            return [];
-        }
-
-        var arrayBytes = context.ReadBytes(navMeshArrayFileOffset, BsSimpleArraySize);
+        var arrayBytes = context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(navMeshArrayVa),
+            BsSimpleArraySize);
         if (arrayBytes is null)
         {
             return [];
@@ -248,19 +239,20 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
 
         var dataPtrVa = BinaryUtils.ReadUInt32BE(arrayBytes, BsSimpleArrayDataPtrOffset);
         var count = BinaryUtils.ReadUInt32BE(arrayBytes, BsSimpleArrayCountOffset);
-        if (count == 0 || count > MaxNavMeshesPerCell || !context.IsValidPointer(dataPtrVa))
+        var reserved = BinaryUtils.ReadUInt32BE(arrayBytes, BsSimpleArrayCountOffset + sizeof(uint));
+        if (count == 0
+            || count > MaxNavMeshesPerCell
+            || reserved > MaxNavMeshesPerCell
+            || reserved < count
+            || !context.IsValidPointer(dataPtrVa))
         {
             return [];
         }
 
         // Step 3: read the count×4 byte pointer-array of NavMesh* and walk each pointer.
-        var dataOffset = context.VaToFileOffset(dataPtrVa);
-        if (dataOffset is not long dataFileOffset)
-        {
-            return [];
-        }
-
-        var pointerArrayBytes = context.ReadBytes(dataFileOffset, (int)count * 4);
+        var pointerArrayBytes = context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(dataPtrVa),
+            checked((int)count * sizeof(uint)));
         if (pointerArrayBytes is null)
         {
             return [];
@@ -288,7 +280,7 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
     /// <summary>
     ///     VA-driven entry point that reads a single BSNavMesh struct at the given runtime VA
     ///     and projects it into a <see cref="NavMeshRecord" />. Used by the direct
-    ///     pAllForms-walk path (Phase 2c Path 4): pAllForms holds 4-byte
+    ///     pAllForms-walk path: pAllForms holds 4-byte
     ///     <c>BSNavMesh*</c> values keyed by FormID, and BSNavMesh inherits from TESForm so
     ///     each entry is self-describing without needing a parent cell.
     /// </summary>
@@ -306,7 +298,9 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
             return null;
         }
 
-        var infoBytes = context.ReadBytes(infoFileOffset, NavMeshInfoSize);
+        var infoBytes = context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(navMeshInfoVa),
+            NavMeshInfoSize);
         if (infoBytes is null)
         {
             return null;
@@ -323,17 +317,22 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
         var parentSpaceFormId = BinaryUtils.ReadUInt32BE(infoBytes, NavMeshInfoParentSpaceOffset);
         var navMeshVa = BinaryUtils.ReadUInt32BE(infoBytes, NavMeshInfoNavMeshPointerOffset);
 
-        var seen = new HashSet<uint> { expectedFormId };
-        return TryReadNavMeshAtVa(navMeshVa, parentSpaceFormId, seen)
-            ?? new NavMeshRecord
-            {
-                // pNavMesh was null/unmapped — return a count-only stub so the FormID is still
-                // surfaced (the discovery has found it, but the actual struct is paged out).
-                FormId = expectedFormId,
-                CellFormId = parentSpaceFormId,
-                Offset = infoFileOffset,
-                IsBigEndian = true
-            };
+        var projected = TryReadNavMeshAtVa(navMeshVa, parentSpaceFormId, []);
+        if (projected?.FormId == expectedFormId)
+        {
+            return projected;
+        }
+
+        return new NavMeshRecord
+        {
+            // pNavMesh was null, unmapped, incomplete, or pointed at a different form.
+            // Preserve the trusted InfoMap identity as a count-only stub; its empty
+            // RawSubrecords keep it out of NAVM emission.
+            FormId = expectedFormId,
+            CellFormId = parentSpaceFormId,
+            Offset = infoFileOffset,
+            IsBigEndian = true
+        };
     }
 
     /// <summary>
@@ -363,7 +362,9 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
             return null;
         }
 
-        var navmBytes = context.ReadBytes(navmFileOffset, BsNavMeshSize);
+        var navmBytes = context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(navMeshVa),
+            BsNavMeshSize);
         if (navmBytes is null)
         {
             return null;
@@ -371,7 +372,7 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
 
         // TESForm.iFormID at +12 (all TESForm-derived structs share the same prefix).
         var navmFormId = BinaryUtils.ReadUInt32BE(navmBytes, TesFormIdOffset);
-        if (navmFormId is 0 or 0xFFFFFFFF || !seenFormIds.Add(navmFormId))
+        if (navmFormId is 0 or 0xFFFFFFFF || seenFormIds.Contains(navmFormId))
         {
             return null;
         }
@@ -382,13 +383,20 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
         var parentCellVa = BinaryUtils.ReadUInt32BE(navmBytes, BsNavMeshParentCellOffset);
         var parentCellFormId = TryDereferenceFormId(parentCellVa) ?? fallbackParentCellFormId;
 
-        var verticesBytes = ReadArrayPayload(navmBytes, BsNavMeshVerticesOffset, NavmeshVertexSize);
-        var trianglesBytes = ReadArrayPayload(navmBytes, BsNavMeshTrianglesOffset, NavmeshTriangleSize);
-        var doorPortalsBytes = ReadArrayPayload(navmBytes, BsNavMeshDoorPortalsOffset, NavmeshDoorPortalSize);
+        if (!TryReadArrayPayload(navmBytes, BsNavMeshVerticesOffset, NavmeshVertexSize, out var verticesBytes)
+            || !TryReadArrayPayload(navmBytes, BsNavMeshTrianglesOffset, NavmeshTriangleSize, out var trianglesBytes)
+            || !TryReadArrayPayload(navmBytes, BsNavMeshDoorPortalsOffset, NavmeshDoorPortalSize,
+                out var doorPortalsBytes))
+        {
+            // A declared runtime array whose payload is not fully captured cannot be safely
+            // rewritten as an authored zero-count array. Reject the projection instead of
+            // manufacturing a degenerate NAVM that the planner could later emit.
+            return null;
+        }
 
-        var vertexCount = verticesBytes is null ? 0u : (uint)(verticesBytes.Length / NavmeshVertexSize);
-        var triangleCount = trianglesBytes is null ? 0u : (uint)(trianglesBytes.Length / NavmeshTriangleSize);
-        var doorPortalCount = doorPortalsBytes is null ? 0 : doorPortalsBytes.Length / NavmeshDoorPortalSize;
+        var vertexCount = (uint)(verticesBytes.Length / NavmeshVertexSize);
+        var triangleCount = (uint)(trianglesBytes.Length / NavmeshTriangleSize);
+        var doorPortalCount = doorPortalsBytes.Length / NavmeshDoorPortalSize;
 
         var nvvx = ProjectVerticesToNvvx(verticesBytes);
         var nvtr = ProjectTrianglesToNvtr(trianglesBytes);
@@ -415,6 +423,7 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
             rawSubrecords.Add(new NavMeshSubrecord("NVDP", nvdp));
         }
 
+        seenFormIds.Add(navmFormId);
         return new NavMeshRecord
         {
             FormId = navmFormId,
@@ -428,27 +437,56 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
         };
     }
 
-    private byte[]? ReadArrayPayload(byte[] navmBytes, int arrayHeaderOffset, int elementSize)
+    private bool TryReadArrayPayload(
+        byte[] navmBytes,
+        int arrayHeaderOffset,
+        int elementSize,
+        out byte[] payload)
     {
+        payload = [];
         if (arrayHeaderOffset + BsSimpleArraySize > navmBytes.Length)
         {
-            return null;
+            return false;
         }
 
         var dataPtrVa = BinaryUtils.ReadUInt32BE(navmBytes, arrayHeaderOffset + BsSimpleArrayDataPtrOffset);
         var count = BinaryUtils.ReadUInt32BE(navmBytes, arrayHeaderOffset + BsSimpleArrayCountOffset);
-        if (count == 0 || count > MaxArrayCount || !context.IsValidPointer(dataPtrVa))
+        var reserved = BinaryUtils.ReadUInt32BE(
+            navmBytes,
+            arrayHeaderOffset + BsSimpleArrayCountOffset + sizeof(uint));
+        if (count > MaxArrayCount || reserved > MaxArrayCount || reserved < count)
         {
-            return null;
+            return false;
         }
 
-        var dataOffset = context.VaToFileOffset(dataPtrVa);
-        if (dataOffset is not long dataFileOffset)
+        if (count == 0)
         {
-            return null;
+            return true;
         }
 
-        return context.ReadBytes(dataFileOffset, (int)count * elementSize);
+        if (!context.IsValidPointer(dataPtrVa))
+        {
+            return false;
+        }
+
+        int byteCount;
+        try
+        {
+            byteCount = checked((int)count * elementSize);
+        }
+        catch (OverflowException)
+        {
+            return false;
+        }
+
+        var bytes = context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(dataPtrVa), byteCount);
+        if (bytes is null)
+        {
+            return false;
+        }
+
+        payload = bytes;
+        return true;
     }
 
     private uint? TryDereferenceFormId(uint formVa)
@@ -458,13 +496,9 @@ internal sealed class RuntimeNavMeshDiscovery(RuntimeMemoryContext context)
             return null;
         }
 
-        var fileOffset = context.VaToFileOffset(formVa);
-        if (fileOffset is not long offset)
-        {
-            return null;
-        }
-
-        var bytes = context.ReadBytes(offset + TesFormIdOffset, 4);
+        var bytes = context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(formVa) + TesFormIdOffset,
+            sizeof(uint));
         if (bytes is null)
         {
             return null;

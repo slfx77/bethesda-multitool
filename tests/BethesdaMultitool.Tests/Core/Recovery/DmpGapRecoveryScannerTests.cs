@@ -20,6 +20,7 @@ public sealed class DmpGapRecoveryScannerTests
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(4, 4), 4);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(8, 4), 0);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(12, 4), 0x01001234);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(20, 2), 97);
         WriteAscii(data, 24, "LNAM"); // data begins with a real FLST subrecord (first-subrecord gate)
 
         var result = Scan(data);
@@ -30,6 +31,7 @@ public sealed class DmpGapRecoveryScannerTests
         Assert.Equal(0x01001234u, candidate.FormId);
         Assert.Equal(DmpGapRecoveryDisposition.PromoteRawRecord, candidate.Disposition);
         Assert.False(candidate.IsBigEndian);
+        Assert.Equal((ushort)97, candidate.FormVersion);
         Assert.Equal(28, candidate.Length);
     }
 
@@ -41,6 +43,7 @@ public sealed class DmpGapRecoveryScannerTests
         BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(4, 4), 4);
         BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(8, 4), 0);
         BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(12, 4), 0x01004567);
+        BinaryPrimitives.WriteUInt16BigEndian(data.AsSpan(20, 2), 111);
         WriteAscii(data, 24, "ATAD"); // Xbox-reversed "DATA" — a real RGDL subrecord
 
         var result = Scan(data);
@@ -50,6 +53,7 @@ public sealed class DmpGapRecoveryScannerTests
         Assert.Equal("RGDL", candidate.RecordType);
         Assert.Equal(0x01004567u, candidate.FormId);
         Assert.True(candidate.IsBigEndian);
+        Assert.Equal((ushort)111, candidate.FormVersion);
         Assert.Equal(DmpGapRecoveryDisposition.PromoteRawRecord, candidate.Disposition);
     }
 
@@ -131,7 +135,8 @@ public sealed class DmpGapRecoveryScannerTests
             Disposition = DmpGapRecoveryDisposition.PromoteRawRecord,
             RawDataSize = 4,
             RawFlags = 0,
-            IsBigEndian = true
+            IsBigEndian = true,
+            FormVersion = 123
         };
         var scanResult = new EsmRecordScanResult();
 
@@ -149,6 +154,7 @@ public sealed class DmpGapRecoveryScannerTests
         var promoted = Assert.Single(scanResult.MainRecords);
         Assert.Equal("FLST", promoted.RecordType);
         Assert.Equal(0x01001234u, promoted.FormId);
+        Assert.Equal((ushort)123, promoted.FormVersion);
     }
 
     private static DmpGapRecoveryResult Scan(

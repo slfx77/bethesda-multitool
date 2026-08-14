@@ -80,6 +80,56 @@ public sealed class ImadOffsetReaderTests
     }
 
     [Fact]
+    public void RuntimeNameHeader_StitchesVaContiguousObjectAcrossFileDiscontinuity()
+    {
+        var contiguous = Build(Early, _ => 0);
+        const string editorId = "HVSimISFX";
+        const int namePayloadSourceOffset = 0x0F00;
+        const int objectSuffixFileOffset = 0x3000;
+        const int namePayloadFileOffset = 0x6000;
+        var split = Early.Name + 3;
+        var bytes = new byte[0x7000];
+        Array.Copy(contiguous.Bytes, 0, bytes, 0, split);
+        Array.Copy(contiguous.Bytes, split, bytes, objectSuffixFileOffset, Early.Size - split);
+        Array.Copy(contiguous.Bytes, namePayloadSourceOffset, bytes, namePayloadFileOffset, editorId.Length);
+        var context = new RuntimeMemoryContext(
+            new ByteArrayMemoryAccessor(bytes),
+            bytes.Length,
+            new MinidumpInfo
+            {
+                IsValid = true,
+                ProcessorArchitecture = 0x03,
+                MemoryRegions =
+                [
+                    new MinidumpMemoryRegion
+                    {
+                        VirtualAddress = BaseVa,
+                        FileOffset = 0,
+                        Size = split,
+                    },
+                    new MinidumpMemoryRegion
+                    {
+                        VirtualAddress = BaseVa + (uint)split,
+                        FileOffset = objectSuffixFileOffset,
+                        Size = Early.Size - split,
+                    },
+                    new MinidumpMemoryRegion
+                    {
+                        VirtualAddress = BaseVa + (uint)namePayloadSourceOffset,
+                        FileOffset = namePayloadFileOffset,
+                        Size = editorId.Length,
+                    },
+                ],
+            });
+
+        var result = new RuntimeImageSpaceModifierReader(context, true)
+            .ReadRuntimeImageSpaceModifier(contiguous.Entry);
+
+        Assert.NotNull(result);
+        Assert.Equal(editorId, result.EditorId);
+    }
+
+    [Fact]
     public void FinalPdbLoadGroundedLayout_MapsIntroAndOutroSoundPointersInCorrectDirection()
     {
         const uint introFormId = 0x00010001;

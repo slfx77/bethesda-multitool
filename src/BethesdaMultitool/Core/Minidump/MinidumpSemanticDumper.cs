@@ -290,8 +290,29 @@ internal static class MinidumpSemanticDumper
                 5 => "<=",
                 _ => $"op{cond.Operator}"
             };
+
+            var comparison = cond.UsesGlobalComparison
+                ? $"GLOB[0x{cond.ComparisonRawBits:X8}]"
+                : cond.ComparisonValue.ToString("G9", CultureInfo.InvariantCulture);
+            var tail = new List<string>(3);
+            if (cond.RunOn is uint runOn)
+            {
+                tail.Add($"RunOn={runOn}");
+            }
+
+            if (cond.ReferenceStorage is uint referenceStorage)
+            {
+                tail.Add($"ReferenceStorage=0x{referenceStorage:X8}");
+            }
+
+            if (cond.Parameter3 is int parameter3)
+            {
+                tail.Add($"Parameter3={parameter3}");
+            }
+
+            var tailText = tail.Count == 0 ? string.Empty : $" [{string.Join(", ", tail)}]";
             sb.AppendLine(CultureInfo.InvariantCulture,
-                $"  0x{cond.Offset:X8}: Func[{cond.FunctionIndex}]({cond.Param1:X}, {cond.Param2:X}) {opStr} {cond.ComparisonValue}");
+                $"  0x{cond.Offset:X8}: Func[{cond.FunctionIndex}]({cond.Param1:X}, {cond.Param2:X}) {opStr} {comparison}{tailText}");
         }
 
         if (esm.Conditions.Count > 30)

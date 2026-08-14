@@ -120,7 +120,10 @@ internal static class DmpGapRecoveryPromoter
             candidate.RawFlags.GetValueOrDefault(),
             formId,
             candidate.FileOffset,
-            candidate.IsBigEndian));
+            candidate.IsBigEndian)
+        {
+            FormVersion = candidate.FormVersion
+        });
         return true;
     }
 

@@ -357,8 +357,8 @@ public sealed class RuntimeStructReader
     }
 
     /// <summary>
-    ///     Read a runtime MSTT (BGSMovableStatic) base form. Activated by the
-    ///     multi-inheritance probe in <see cref="Records.TesFormHeaderProbe" />.
+    ///     Read a runtime MSTT (BGSMovableStatic) base form. Its retained TESForm
+    ///     subobject pointer is rebased to the complete object by the PDB field accessor.
     /// </summary>
     public GenericEsmRecord? ReadRuntimeMstt(RuntimeEditorIdEntry entry)
     {
@@ -366,8 +366,8 @@ public sealed class RuntimeStructReader
     }
 
     /// <summary>
-    ///     Read a runtime FLOR (TESFlora) base form. Activated by the
-    ///     multi-inheritance probe in <see cref="Records.TesFormHeaderProbe" />.
+    ///     Read a runtime FLOR (TESFlora) base form. Its retained TESForm
+    ///     subobject pointer is rebased to the complete object by the PDB field accessor.
     /// </summary>
     public GenericEsmRecord? ReadRuntimeFlor(RuntimeEditorIdEntry entry)
     {
@@ -858,7 +858,7 @@ public sealed class RuntimeStructReader
     }
 
     /// <summary>
-    ///     Walk a TESObjectCELL's per-cell NavMeshArray (the BSSimpleArray inlined at +0x74)
+    ///     Walk a TESObjectCELL's per-cell NavMeshArray (pointed to by <c>pNavMeshes</c> at +0x74)
     ///     and surface every BSNavMesh the engine has loaded for that cell. This is the actual
     ///     reachable entry point for runtime NAVM discovery — the NAVI singleton has no editor
     ///     ID so the InfoMap walk via <see cref="DiscoverNavMeshesFromInfoMap" /> currently
@@ -872,8 +872,8 @@ public sealed class RuntimeStructReader
     /// <summary>
     ///     VA-driven companion to <see cref="DiscoverNavMeshesForCell" />: walks the cell's
     ///     <c>NavMeshArray</c> without requiring a <see cref="RuntimeEditorIdEntry" />. Used by
-    ///     <c>MiscGameSystemHandler</c> when handing off cells discovered via paths
-    ///     other than the editor-id hash (pAllForms walk, worldspace grid, heap-scan).
+    ///     <c>NavMeshHandler</c> when handing off cells discovered via paths
+    ///     other than the editor-id hash (pAllForms walk or heap-scan).
     /// </summary>
     public List<NavMeshRecord> DiscoverNavMeshesForCellVa(uint cellVa, uint cellFormId)
     {
@@ -883,7 +883,7 @@ public sealed class RuntimeStructReader
     /// <summary>
     ///     Direct BSNavMesh projection: reads a single BSNavMesh struct at the given VA and
     ///     returns its synthetic <see cref="NavMeshRecord" /> without going through a cell
-    ///     parent. Used by Path 4 in <c>MiscGameSystemHandler</c> to surface
+    ///     parent. Used by <c>NavMeshHandler</c>'s direct pAllForms path to surface
     ///     runtime-only NAVMs from pAllForms (FormType 0x43) when the cell graph has detached
     ///     NavMeshArrays.
     /// </summary>
@@ -911,8 +911,8 @@ public sealed class RuntimeStructReader
     }
 
     /// <summary>
-    ///     Factory for the BSNavMesh structural validator used by Phase 2d to filter Path 4
-    ///     candidates. Holds a snapshot of the cell VAs surfaced by
+    ///     Factory for the BSNavMesh structural validator that filters speculative direct
+    ///     pAllForms candidates. Holds a snapshot of the cell VAs surfaced by
     ///     <see cref="RuntimeCellEnumerator" /> so Strict mode can cross-reference each
     ///     candidate's <c>pParentCell</c> field against a trusted runtime cell set.
     /// </summary>

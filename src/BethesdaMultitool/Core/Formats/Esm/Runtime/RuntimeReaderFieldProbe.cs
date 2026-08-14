@@ -22,10 +22,13 @@ internal static class RuntimeReaderFieldProbe
         /// <summary>Follow pointer → must resolve to TESForm with specific FormType. CheckArg = (byte) expectedType.</summary>
         PointerToFormType,
 
-        /// <summary>Read 4-byte BE float, must not be NaN or Infinity.</summary>
+        /// <summary>Read 4-byte BE float, must be IEEE-normal or exact zero.</summary>
         NormalFloat,
 
-        /// <summary>Read 4-byte BE float, must be within [min, max]. CheckArg = (float min, float max).</summary>
+        /// <summary>
+        ///     Read 4-byte BE float, must be IEEE-normal or exact zero and within [min, max].
+        ///     CheckArg = (float min, float max).
+        /// </summary>
         RangedFloat,
 
         /// <summary>Read 4-byte BE uint32, must be non-zero.</summary>
@@ -76,7 +79,8 @@ internal static class RuntimeReaderFieldProbe
         string probeName,
         int maxSamples = 12,
         Action<string>? log = null,
-        IReadOnlyDictionary<uint, RuntimeEditorIdEntry>? editorIdsByFormId = null)
+        IReadOnlyDictionary<uint, RuntimeEditorIdEntry>? editorIdsByFormId = null,
+        int tesFormInteriorOffset = 0)
     {
         // Filter to entries with valid offsets
         var samples = entries
@@ -97,7 +101,7 @@ internal static class RuntimeReaderFieldProbe
             samples,
             candidates,
             (sample, candidate) => ScoreSample(context, sample, fields, candidate.Layout,
-                baseStructSize, editorIdsByFormId),
+                baseStructSize, editorIdsByFormId, tesFormInteriorOffset),
             probeName,
             log,
             sample => $"0x{sample.FormId:X8} ({sample.EditorId})");
@@ -169,14 +173,18 @@ internal static class RuntimeReaderFieldProbe
         IReadOnlyList<FieldSpec> fields,
         int[] shifts,
         int baseStructSize,
-        IReadOnlyDictionary<uint, RuntimeEditorIdEntry>? editorIdsByFormId = null)
+        IReadOnlyDictionary<uint, RuntimeEditorIdEntry>? editorIdsByFormId = null,
+        int tesFormInteriorOffset = 0)
     {
         if (entry.TesFormOffset == null)
         {
             return new RuntimeLayoutProbeScore(0);
         }
 
-        var offset = entry.TesFormOffset.Value;
+        if (tesFormInteriorOffset < 0)
+        {
+            return new RuntimeLayoutProbeScore(0);
+        }
 
         // Compute effective struct size: base + max shift applied to any group
         var maxShift = 0;
@@ -189,23 +197,39 @@ internal static class RuntimeReaderFieldProbe
         }
 
         var effectiveSize = baseStructSize + maxShift;
-        if (offset + effectiveSize > context.FileSize)
+        var tesFormVa = entry.TesFormPointer is { } pointer && pointer != 0
+            ? pointer
+            : context.MinidumpInfo.FileOffsetToVirtualAddress(entry.TesFormOffset.Value);
+        long? objectVa = tesFormVa.HasValue ? tesFormVa.Value - tesFormInteriorOffset : null;
+        var objectFileOffset = entry.TesFormOffset.Value - tesFormInteriorOffset;
+        if (objectVa.HasValue)
+        {
+            var mappedObjectBase = context.MinidumpInfo.VirtualAddressToFileOffset(objectVa.Value);
+            if (!mappedObjectBase.HasValue)
+            {
+                return new RuntimeLayoutProbeScore(0);
+            }
+
+            objectFileOffset = mappedObjectBase.Value;
+        }
+
+        var buffer = objectVa.HasValue
+            ? context.ReadBytesAtVa(objectVa.Value, effectiveSize)
+            : context.ReadBytes(objectFileOffset, effectiveSize);
+        if (buffer == null)
         {
             return new RuntimeLayoutProbeScore(0);
         }
 
-        var buffer = new byte[effectiveSize];
-        try
-        {
-            context.Accessor.ReadArray(offset, buffer, 0, effectiveSize);
-        }
-        catch
+        // The entry points at TESForm, while generic PDB field offsets are relative to the
+        // complete object. TESForm-first callers retain the default +12 anchor.
+        var formIdOffset = tesFormInteriorOffset + 12;
+        if (formIdOffset > buffer.Length - 4)
         {
             return new RuntimeLayoutProbeScore(0);
         }
 
-        // Verify FormID anchor (always at offset 12, group 0)
-        var formId = BinaryUtils.ReadUInt32BE(buffer, 12);
+        var formId = BinaryUtils.ReadUInt32BE(buffer, formIdOffset);
         if (formId != entry.FormId || formId == 0)
         {
             return new RuntimeLayoutProbeScore(0);
@@ -228,7 +252,7 @@ internal static class RuntimeReaderFieldProbe
             }
 
             maxPoints += field.Weight;
-            points += ScoreField(context, offset, buffer, effectiveOffset, field, editorIdsByFormId);
+            points += ScoreField(context, buffer, effectiveOffset, field, editorIdsByFormId);
         }
 
         return new RuntimeLayoutProbeScore(points, maxPoints);
@@ -236,7 +260,6 @@ internal static class RuntimeReaderFieldProbe
 
     private static int ScoreField(
         RuntimeMemoryContext context,
-        long structFileOffset,
         byte[] buffer,
         int effectiveOffset,
         FieldSpec field,
@@ -264,7 +287,7 @@ internal static class RuntimeReaderFieldProbe
             case FieldCheck.NormalFloat:
             {
                 var value = BinaryUtils.ReadFloatBE(buffer, effectiveOffset);
-                return RuntimeMemoryContext.IsNormalFloat(value) ? field.Weight : 0;
+                return RuntimeMemoryContext.IsNormalOrZeroFloat(value) ? field.Weight : 0;
             }
 
             case FieldCheck.RangedFloat:
@@ -275,7 +298,7 @@ internal static class RuntimeReaderFieldProbe
                 }
 
                 var value = BinaryUtils.ReadFloatBE(buffer, effectiveOffset);
-                return RuntimeMemoryContext.IsNormalFloat(value) && value >= min && value <= max
+                return RuntimeMemoryContext.IsNormalOrZeroFloat(value) && value >= min && value <= max
                     ? field.Weight
                     : 0;
             }
@@ -315,7 +338,7 @@ internal static class RuntimeReaderFieldProbe
 
             case FieldCheck.BSStringT:
             {
-                var str = context.ReadBsStringT(structFileOffset, effectiveOffset);
+                var str = context.ReadBSStringTDiag(buffer, effectiveOffset, out _);
                 return !string.IsNullOrEmpty(str) ? field.Weight : 0;
             }
 

@@ -8,7 +8,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Runtime.Readers;
 
 /// <summary>
 ///     Synthetic in-memory tests for <see cref="BsNavMeshStructuralValidator" />: the
-///     shape-only predicate that gates Phase 2d's speculative Path 4 candidates. Each
+///     shape-only predicate that gates speculative direct pAllForms candidates. Each
 ///     test plants a 280-byte BSNavMesh-shaped struct with controlled vfptr / array
 ///     headers / parent pointer, then asserts the validator's verdict.
 /// </summary>

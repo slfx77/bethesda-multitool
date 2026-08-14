@@ -116,12 +116,31 @@ public sealed class IntenseTrainingPerkRankRegressionTests
         Assert.Empty(perk.Entries);
     }
 
-    private static byte[] BuildPerk(uint formId, uint entriesHeadItemVa)
+    [Fact]
+    public void ReadRuntimePerk_ReadsNonZeroHiddenByteFromPerkData()
+    {
+        const uint perkFormId = 0x000A1237;
+        const byte expectedHidden = 0xFF;
+        var perkBuffer = BuildPerk(perkFormId, 0, expectedHidden);
+
+        var fixture = RuntimeReaderTestFixture.Default().WithStruct(perkBuffer, PerkVa);
+        var reader = new RuntimeMagicReader(fixture.BuildContext());
+
+        var perk = reader.ReadRuntimePerk(
+            RuntimeReaderTestFixture.MakeEntry(perkFormId, PerkFormType, PerkVa));
+
+        Assert.NotNull(perk);
+        Assert.Equal((byte?)expectedHidden, perk.Hidden);
+        Assert.True(perk.IsHidden);
+    }
+
+    private static byte[] BuildPerk(uint formId, uint entriesHeadItemVa, byte hidden = 0)
     {
         var buf = new byte[PerkStructSize];
         WriteFormHeader(buf, 0, PerkFormType, formId);
 
-        // PerkData (5 bytes at +72): trait, minLevel, ranks, playable, +1 pad — left zero.
+        // PerkData (5 bytes at +72): trait, minLevel, ranks, playable, hidden.
+        buf[72 + 4] = hidden;
 
         // PerkEntries BSSimpleList head at +88: m_item + m_pkNext.
         WriteUInt32BE(buf, PerkEntriesListOffset, entriesHeadItemVa);

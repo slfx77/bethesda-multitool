@@ -6,8 +6,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.Items;
 
 /// <summary>
 ///     Typed runtime reader for IngredientItem (INGR, FormType 0x1D).
-///     Legacy Oblivion-era ingredient — FNV only has 1 record but provides
-///     forward-compatibility.
+///     Recovers the identity/weight/equipment subset available through the current PDB
+///     layout; ENIT and effect-list ownership remain outside this partial projection.
 /// </summary>
 internal sealed class RuntimeIngredientReader(RuntimeMemoryContext context)
 {

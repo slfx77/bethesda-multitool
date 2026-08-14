@@ -1,5 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.Script;
@@ -29,7 +31,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.Script;
 ///                 padding(2),
 ///                 <c>pParam</c> @ +4 (<c>void*[2]</c>, 8 bytes)),
 ///             <c>eObject</c> @ +20 (uint32 enum — RunOn: 0=Subject 1=Target 2=Reference 3=CombatTarget 4=LinkedRef),
-///             <c>pRunOnRef</c> @ +24 (TESObjectREFR* or null).</item>
+///             <c>pRunOnRef</c> @ +24 (TESObjectREFR* only when the game-aware semantic
+///                 Reference policy selects the slot; otherwise ignored raw storage).</item>
 ///     </list>
 ///
 ///     <para>Runtime <c>pParam</c> entries are <i>either</i> a TESForm* (when the function's
@@ -137,7 +140,12 @@ internal static class TesConditionListWalker
         var parameter1 = ResolveConditionParameter(context, itemBytes, CitemParam1Offset, functionIndex, 0);
         var parameter2 = ResolveConditionParameter(context, itemBytes, CitemParam2Offset, functionIndex, 1);
         var runOn = BinaryUtils.ReadUInt32BE(itemBytes, CitemRunOnOffset);
-        var reference = context.FollowPointerToFormId(itemBytes, CitemRunOnRefOffset) ?? 0u;
+        var reference = DialogueConditionReferencePolicy.IsSemanticReferenceSlot(
+            functionIndex,
+            runOn,
+            BethesdaGame.FalloutNewVegas)
+            ? context.FollowPointerToFormId(itemBytes, CitemRunOnRefOffset) ?? 0u
+            : 0u;
 
         return new DialogueCondition
         {

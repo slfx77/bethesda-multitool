@@ -8,10 +8,10 @@ using static BethesdaMultitool.Tests.Helpers.BinaryTestWriter;
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Runtime.Readers;
 
 /// <summary>
-///     Synthetic in-memory tests for <see cref="RuntimeCellEnumerator" />: the four-source
-///     <c>TESObjectCELL</c> discovery pipeline used by Phase 2c NAVM enumeration. Each test
+///     Synthetic in-memory tests for <see cref="RuntimeCellEnumerator" />: the three-source
+///     <c>TESObjectCELL</c> discovery pipeline used by runtime NAVM enumeration. Each test
 ///     builds a single contiguous "heap" byte[], lays out a planned set of structs (pAllForms
-///     hash table, TESForms, TESWorldSpace + GridCellArray, decoy heap allocations), wraps it
+///     hash table, TESForms, and decoy heap allocations), wraps it
 ///     in a <see cref="SparseMemoryAccessor" /> as a single range covering the synthetic
 ///     region, and asserts the enumerator's output.
 /// </summary>
@@ -28,10 +28,6 @@ public sealed class RuntimeCellEnumeratorTests
     private const byte WeapFormType = 0x28;
 
     private const int CellStructSize = 256;
-    private const int WrldStructSize = 256;
-    private const int WrldGridCellArrayPtrOffset = 16;
-    private const int GridCellArrayPointersSize = 25 * 4;
-
     // ============================================================================
     // Path 0: Editor-id hash filter
     // ============================================================================
@@ -110,73 +106,260 @@ public sealed class RuntimeCellEnumeratorTests
         Assert.Equal(0x20000001u, result.Cells[0].FormId);
     }
 
-    // ============================================================================
-    // Path 2: TESWorldSpace.pGridCellA walk
-    // ============================================================================
-
     [Fact]
-    public void WorldspaceGrid_EmitsNonNullCellsFromGrid()
+    public void AllFormsHash_StitchesMapItemAndTesFormHeaderAcrossDiscontiguousFileOffsets()
     {
-        var heap = new HeapBuilder(0x6000);
+        const uint hashVa = HeapBaseVa + 0x100;
+        const uint itemVa = HeapBaseVa + 0x200;
+        const uint formVa = HeapBaseVa + 0x300;
+        const uint formId = 0x20000002;
+        var accessor = new SparseMemoryAccessor();
+        var regions = new List<MinidumpMemoryRegion>();
 
-        // Eight cells, placed into slots 0, 3, 7, 11, 15, 19, 22, 24 (mixed-null pattern).
-        var occupiedSlots = new[] { 0, 3, 7, 11, 15, 19, 22, 24 };
-        var cellVas = new uint[occupiedSlots.Length];
-        for (var i = 0; i < occupiedSlots.Length; i++)
-        {
-            cellVas[i] = heap.PlaceCell(0x30000001 + (uint)i);
-        }
+        var hash = CreateSingleBucketHash(hashVa, itemVa);
+        accessor.AddRange(16, hash);
+        regions.Add(Region(hashVa, 16, hash.Length));
 
-        var gridSlots = new uint[25];
-        for (var i = 0; i < occupiedSlots.Length; i++)
-        {
-            gridSlots[occupiedSlots[i]] = cellVas[i];
-        }
+        var item = CreateMapItem(formId, formVa);
+        accessor.AddRange(96, item[..6]);
+        accessor.AddRange(192, item[6..]);
+        regions.Add(Region(itemVa, 96, 6));
+        regions.Add(Region(itemVa + 6, 192, 6));
 
-        var gridArrayVa = heap.PlaceGridCellArray(gridSlots);
-        var wrldVa = heap.PlaceWorldspace(0x000000DA, gridArrayVa);
+        var form = CreateTesFormHeader(CellFormType, formId);
+        accessor.AddRange(288, form[..8]);
+        accessor.AddRange(400, form[8..]);
+        regions.Add(Region(formVa, 288, 8));
+        regions.Add(Region(formVa + 8, 400, 8));
 
-        // Single hash-table entry pointing at the worldspace.
-        var wrldNode = heap.PlaceMapItem(0x000000DA, wrldVa, 0);
-        var hashTableVa = heap.PlaceHashTable([wrldNode]);
+        var enumerator = BuildSparseEnumerator(accessor, regions, hashVa);
+        var result = enumerator.Enumerate([], []);
 
-        var enumerator = heap.BuildEnumerator(hashTableVa);
-        var result = enumerator.Enumerate(
-            [],
-            new HashSet<uint> { 0x000000DA });
-
-        Assert.Equal(8, result.Stats.FromWorldspaceGrid);
-        Assert.Equal(8, result.Stats.UniqueTotal);
-        Assert.All(result.Cells, c => Assert.Equal(RuntimeCellSource.WorldspaceGrid, c.Source));
-        var formIds = result.Cells.Select(c => c.FormId).OrderBy(x => x).ToArray();
-        Assert.Equal(
-            occupiedSlots.Select((_, i) => 0x30000001u + (uint)i).ToArray(),
-            formIds);
+        var cell = Assert.Single(result.Cells);
+        Assert.Equal(formId, cell.FormId);
+        Assert.Equal(formVa, cell.CellVa);
+        Assert.Equal(RuntimeCellSource.AllFormsHash, cell.Source);
     }
 
     [Fact]
-    public void WorldspaceGrid_DetectsWrldFormTypeFromKnownFormIds()
+    public void AllFormsHash_RejectsMapItemAcrossVaGapEvenWhenFlatBytesLookValid()
     {
-        var heap = new HeapBuilder(0x4000);
+        const uint hashVa = HeapBaseVa + 0x100;
+        const uint itemVa = HeapBaseVa + 0x200;
+        const uint formVa = HeapBaseVa + 0x300;
+        const uint formId = 0x20000003;
+        var accessor = new SparseMemoryAccessor();
+        var regions = new List<MinidumpMemoryRegion>();
 
-        var gridArrayVa = heap.PlaceGridCellArray(new uint[25]); // all null
-        var wrldVa = heap.PlaceWorldspace(0x000000E0, gridArrayVa);
+        var hash = CreateSingleBucketHash(hashVa, itemVa);
+        accessor.AddRange(16, hash);
+        regions.Add(Region(hashVa, 16, hash.Length));
 
-        // WRLD form lands in the pAllForms walk because its FormID is in knownWrldFormIds.
-        var wrldNode = heap.PlaceMapItem(0x000000E0, wrldVa, 0);
-        var hashTableVa = heap.PlaceHashTable([wrldNode]);
+        // The flat file bytes form a valid item, but VA +6 is absent.
+        var item = CreateMapItem(formId, formVa);
+        accessor.AddRange(96, item);
+        regions.Add(Region(itemVa, 96, 6));
+        regions.Add(Region(itemVa + 7, 102, 6));
 
-        var enumerator = heap.BuildEnumerator(hashTableVa);
-        var result = enumerator.Enumerate(
-            [],
-            new HashSet<uint> { 0x000000E0 });
+        var form = CreateTesFormHeader(CellFormType, formId);
+        accessor.AddRange(288, form);
+        regions.Add(Region(formVa, 288, form.Length));
 
-        // No cells in the grid -> 0 hits. But the WRLD was discovered (path didn't crash).
-        Assert.Equal(0, result.Stats.UniqueTotal);
+        var enumerator = BuildSparseEnumerator(accessor, regions, hashVa);
+        var result = enumerator.Enumerate([], []);
+
+        Assert.Empty(result.Cells);
+    }
+
+    [Fact]
+    public void AllFormsHash_RejectsTesFormHeaderAcrossVaGapEvenWhenFlatBytesLookValid()
+    {
+        const uint hashVa = HeapBaseVa + 0x100;
+        const uint itemVa = HeapBaseVa + 0x200;
+        const uint formVa = HeapBaseVa + 0x300;
+        const uint formId = 0x20000004;
+        var accessor = new SparseMemoryAccessor();
+        var regions = new List<MinidumpMemoryRegion>();
+
+        var hash = CreateSingleBucketHash(hashVa, itemVa);
+        accessor.AddRange(16, hash);
+        regions.Add(Region(hashVa, 16, hash.Length));
+
+        var item = CreateMapItem(formId, formVa);
+        accessor.AddRange(96, item);
+        regions.Add(Region(itemVa, 96, item.Length));
+
+        // The flat file bytes form a valid TESForm header, but VA +8 is absent.
+        var form = CreateTesFormHeader(CellFormType, formId);
+        accessor.AddRange(288, form);
+        regions.Add(Region(formVa, 288, 8));
+        regions.Add(Region(formVa + 9, 296, 8));
+
+        var enumerator = BuildSparseEnumerator(accessor, regions, hashVa);
+        var result = enumerator.Enumerate([], []);
+
+        Assert.Empty(result.Cells);
+    }
+
+    [Fact]
+    public void AllFormsHash_StitchesHeaderAcrossDiscontiguousFileOffsets()
+    {
+        const uint hashVa = HeapBaseVa + 0x100;
+        const uint itemVa = HeapBaseVa + 0x200;
+        const uint formVa = HeapBaseVa + 0x300;
+        const uint formId = 0x20000005;
+        var accessor = new SparseMemoryAccessor();
+        var regions = new List<MinidumpMemoryRegion>();
+
+        var hash = CreateSingleBucketHash(hashVa, itemVa);
+        accessor.AddRange(16, hash[..8]);
+        accessor.AddRange(128, hash[8..]);
+        regions.Add(Region(hashVa, 16, 8));
+        regions.Add(Region(hashVa + 8, 128, 12));
+
+        var item = CreateMapItem(formId, formVa);
+        accessor.AddRange(192, item);
+        regions.Add(Region(itemVa, 192, item.Length));
+
+        var form = CreateTesFormHeader(CellFormType, formId);
+        accessor.AddRange(256, form);
+        regions.Add(Region(formVa, 256, form.Length));
+
+        var result = BuildSparseEnumerator(accessor, regions, hashVa).Enumerate([], []);
+
+        Assert.Equal(formId, Assert.Single(result.Cells).FormId);
+    }
+
+    [Fact]
+    public void AllFormsHash_RejectsHeaderAcrossVaGapEvenWhenFlatBytesLookValid()
+    {
+        const uint hashVa = HeapBaseVa + 0x100;
+        const uint itemVa = HeapBaseVa + 0x200;
+        const uint formVa = HeapBaseVa + 0x300;
+        const uint formId = 0x20000006;
+        var accessor = new SparseMemoryAccessor();
+        var regions = new List<MinidumpMemoryRegion>();
+
+        // The complete hash is valid at flat file offset 16, but VA +8 is missing.
+        var hash = CreateSingleBucketHash(hashVa, itemVa);
+        accessor.AddRange(16, hash);
+        regions.Add(Region(hashVa, 16, 8));
+        regions.Add(Region(hashVa + 9, 25, 11));
+
+        var item = CreateMapItem(formId, formVa);
+        accessor.AddRange(96, item);
+        regions.Add(Region(itemVa, 96, item.Length));
+
+        var form = CreateTesFormHeader(CellFormType, formId);
+        accessor.AddRange(192, form);
+        regions.Add(Region(formVa, 192, form.Length));
+
+        var result = BuildSparseEnumerator(accessor, regions, hashVa).Enumerate([], []);
+
+        Assert.Empty(result.Cells);
+    }
+
+    [Fact]
+    public void AllFormsHash_StitchesBucketArrayAcrossDiscontiguousFileOffsets()
+    {
+        const uint hashVa = HeapBaseVa + 0x100;
+        const uint bucketVa = HeapBaseVa + 0x180;
+        const uint itemVa = HeapBaseVa + 0x200;
+        const uint formVa = HeapBaseVa + 0x300;
+        const uint formId = 0x20000007;
+        var accessor = new SparseMemoryAccessor();
+        var regions = new List<MinidumpMemoryRegion>();
+
+        var header = CreateHashHeader(2, bucketVa);
+        accessor.AddRange(16, header);
+        regions.Add(Region(hashVa, 16, header.Length));
+
+        var buckets = new byte[8];
+        WriteUInt32BE(buckets, 4, itemVa);
+        accessor.AddRange(96, buckets[..4]);
+        accessor.AddRange(160, buckets[4..]);
+        regions.Add(Region(bucketVa, 96, 4));
+        regions.Add(Region(bucketVa + 4, 160, 4));
+
+        var item = CreateMapItem(formId, formVa);
+        accessor.AddRange(224, item);
+        regions.Add(Region(itemVa, 224, item.Length));
+
+        var form = CreateTesFormHeader(CellFormType, formId);
+        accessor.AddRange(288, form);
+        regions.Add(Region(formVa, 288, form.Length));
+
+        var result = BuildSparseEnumerator(accessor, regions, hashVa).Enumerate([], []);
+
+        Assert.Equal(formId, Assert.Single(result.Cells).FormId);
+    }
+
+    [Fact]
+    public void AllFormsHash_RejectsBucketArrayAcrossVaGapEvenWhenFlatBytesLookValid()
+    {
+        const uint hashVa = HeapBaseVa + 0x100;
+        const uint bucketVa = HeapBaseVa + 0x180;
+        const uint itemVa = HeapBaseVa + 0x200;
+        const uint formVa = HeapBaseVa + 0x300;
+        const uint formId = 0x20000008;
+        var accessor = new SparseMemoryAccessor();
+        var regions = new List<MinidumpMemoryRegion>();
+
+        var header = CreateHashHeader(2, bucketVa);
+        accessor.AddRange(16, header);
+        regions.Add(Region(hashVa, 16, header.Length));
+
+        // Flat bytes contain the valid second bucket, but bucket VA +4 is absent.
+        var buckets = new byte[8];
+        WriteUInt32BE(buckets, 4, itemVa);
+        accessor.AddRange(96, buckets);
+        regions.Add(Region(bucketVa, 96, 4));
+        regions.Add(Region(bucketVa + 5, 101, 3));
+
+        var item = CreateMapItem(formId, formVa);
+        accessor.AddRange(160, item);
+        regions.Add(Region(itemVa, 160, item.Length));
+
+        var form = CreateTesFormHeader(CellFormType, formId);
+        accessor.AddRange(224, form);
+        regions.Add(Region(formVa, 224, form.Length));
+
+        var result = BuildSparseEnumerator(accessor, regions, hashVa).Enumerate([], []);
+
+        Assert.Empty(result.Cells);
+    }
+
+    [Fact]
+    public void AllFormsHash_StopsAtSelfReferentialMapItem()
+    {
+        const uint hashVa = HeapBaseVa + 0x100;
+        const uint itemVa = HeapBaseVa + 0x200;
+        const uint formVa = HeapBaseVa + 0x300;
+        const uint formId = 0x20000009;
+        var sparse = new SparseMemoryAccessor();
+        var regions = new List<MinidumpMemoryRegion>();
+
+        var hash = CreateSingleBucketHash(hashVa, itemVa);
+        sparse.AddRange(16, hash);
+        regions.Add(Region(hashVa, 16, hash.Length));
+
+        var item = CreateMapItem(formId, formVa, itemVa);
+        sparse.AddRange(96, item);
+        regions.Add(Region(itemVa, 96, item.Length));
+
+        var form = CreateTesFormHeader(CellFormType, formId);
+        sparse.AddRange(160, form);
+        regions.Add(Region(formVa, 160, form.Length));
+
+        var counting = new CountingMemoryAccessor(sparse);
+        var result = BuildSparseEnumerator(counting, regions, hashVa).Enumerate([], []);
+
+        Assert.Equal(formId, Assert.Single(result.Cells).FormId);
+        Assert.True(counting.ReadCount < 20, $"Expected cycle termination, observed {counting.ReadCount} reads.");
     }
 
     // ============================================================================
-    // Path 3: Heap-scan vtable
+    // Path 2: Heap-scan vtable
     // ============================================================================
 
     [Fact]
@@ -251,12 +434,100 @@ public sealed class RuntimeCellEnumeratorTests
     }
 
     [Fact]
+    public void HeapScan_StitchesCandidateAcrossDiscontiguousFileOffsets()
+    {
+        const uint seedVa = HeapBaseVa + 0x100;
+        const uint targetVa = HeapBaseVa + 0x300;
+        const uint seedFormId = 0x60000010;
+        const uint targetFormId = 0x60000011;
+        var accessor = new SparseMemoryAccessor();
+        var regions = new List<MinidumpMemoryRegion>();
+
+        var seed = CreateCell(seedFormId);
+        accessor.AddRange(16, seed);
+        regions.Add(Region(seedVa, 16, seed.Length));
+
+        var target = CreateCell(targetFormId);
+        accessor.AddRange(160, target[..60]);
+        accessor.AddRange(352, target[60..]);
+        regions.Add(Region(targetVa, 160, 60));
+        regions.Add(Region(targetVa + 60, 352, 60));
+
+        var result = BuildSparseEnumerator(accessor, regions, 0).Enumerate(
+            [MakeEntry(seedFormId, CellFormType, seedVa)],
+            []);
+
+        var heapHit = Assert.Single(result.Cells, c => c.Source == RuntimeCellSource.HeapScan);
+        Assert.Equal(targetFormId, heapHit.FormId);
+        Assert.Equal(targetVa, heapHit.CellVa);
+    }
+
+    [Fact]
+    public void HeapScan_FindsVtableSplitAcrossVaContiguousRegions()
+    {
+        const uint seedVa = HeapBaseVa + 0x100;
+        const uint targetVa = HeapBaseVa + 0x300;
+        const uint seedFormId = 0x60000012;
+        const uint targetFormId = 0x60000013;
+        var accessor = new SparseMemoryAccessor();
+        var regions = new List<MinidumpMemoryRegion>();
+
+        var seed = CreateCell(seedFormId);
+        accessor.AddRange(16, seed);
+        regions.Add(Region(seedVa, 16, seed.Length));
+
+        // Split inside the four-byte vfptr and store the continuation elsewhere in the file.
+        // A per-region signature search cannot see this candidate; the VA overlap can.
+        var target = CreateCell(targetFormId);
+        accessor.AddRange(160, target[..2]);
+        accessor.AddRange(352, target[2..]);
+        regions.Add(Region(targetVa, 160, 2));
+        regions.Add(Region(targetVa + 2, 352, target.Length - 2));
+
+        var result = BuildSparseEnumerator(accessor, regions, 0).Enumerate(
+            [MakeEntry(seedFormId, CellFormType, seedVa)],
+            []);
+
+        var heapHit = Assert.Single(result.Cells, c => c.Source == RuntimeCellSource.HeapScan);
+        Assert.Equal(targetFormId, heapHit.FormId);
+        Assert.Equal(targetVa, heapHit.CellVa);
+    }
+
+    [Fact]
+    public void HeapScan_RejectsCandidateAcrossVaGapEvenWhenFlatBytesLookValid()
+    {
+        const uint seedVa = HeapBaseVa + 0x100;
+        const uint targetVa = HeapBaseVa + 0x300;
+        const uint seedFormId = 0x60000020;
+        const uint targetFormId = 0x60000021;
+        var accessor = new SparseMemoryAccessor();
+        var regions = new List<MinidumpMemoryRegion>();
+
+        var seed = CreateCell(seedFormId);
+        accessor.AddRange(16, seed);
+        regions.Add(Region(seedVa, 16, seed.Length));
+
+        // All 120 bytes are physically present, but only the first half has a VA mapping.
+        // The former file-offset read accepted this bait as a complete TESObjectCELL.
+        var target = CreateCell(targetFormId);
+        accessor.AddRange(160, target);
+        regions.Add(Region(targetVa, 160, 60));
+
+        var result = BuildSparseEnumerator(accessor, regions, 0).Enumerate(
+            [MakeEntry(seedFormId, CellFormType, seedVa)],
+            []);
+
+        Assert.DoesNotContain(result.Cells, c => c.FormId == targetFormId);
+        Assert.Equal(0, result.Stats.FromHeapScan);
+    }
+
+    [Fact]
     public void HeapScan_SkipsWhenNoSeedAvailable()
     {
         var heap = new HeapBuilder(0x4000);
 
         // A real cell in heap, but no seed entry is provided to the enumerator so
-        // Path 3 has no vtable to harvest. Must return zero rather than scanning.
+        // Path 2 has no vtable to harvest. Must return zero rather than scanning.
         heap.PlaceCell(0x70000001);
 
         var enumerator = heap.BuildEnumerator(0);
@@ -276,7 +547,7 @@ public sealed class RuntimeCellEnumeratorTests
         var heap = new HeapBuilder(0x4000);
 
         // One cell, but it's reachable via TWO paths: editor-id hash (Path 0) AND
-        // heap-scan (Path 3, harvesting vtable from the same cell). Path 0 wins.
+        // heap-scan (Path 2, harvesting vtable from the same cell). Path 0 wins.
         var cellVa = heap.PlaceCell(0x80000001);
 
         var enumerator = heap.BuildEnumerator(0);
@@ -302,38 +573,28 @@ public sealed class RuntimeCellEnumeratorTests
         // Path 1 cell (in pAllForms, but NOT in editor-id entries).
         var path1CellVa = heap.PlaceCell(0x91000002);
 
-        // Path 2 cell (only reachable via worldspace grid).
+        // Path 2 cell (only reachable via heap-scan).
         var path2CellVa = heap.PlaceCell(0x91000003);
 
-        // Path 3 cell (only reachable via heap-scan: not in pAllForms, not in grid).
-        heap.PlaceCell(0x91000004);
-
-        // Worldspace whose grid contains path2 cell only.
-        var gridSlots = new uint[25];
-        gridSlots[0] = path2CellVa;
-        var gridArrayVa = heap.PlaceGridCellArray(gridSlots);
-        var wrldVa = heap.PlaceWorldspace(0x00FF00FF, gridArrayVa);
-
-        // pAllForms: chain { path1Cell -> wrld -> end }.
-        var wrldNode = heap.PlaceMapItem(0x00FF00FF, wrldVa, 0);
-        var path1Node = heap.PlaceMapItem(0x91000002, path1CellVa, wrldNode);
+        // pAllForms contains only the Path 1 cell. The third cell is found by its vtable.
+        var path1Node = heap.PlaceMapItem(0x91000002, path1CellVa, 0);
         var hashTableVa = heap.PlaceHashTable([path1Node]);
 
         var enumerator = heap.BuildEnumerator(hashTableVa);
         var result = enumerator.Enumerate(
             [MakeEntry(0x91000001, CellFormType, path0CellVa)],
-            new HashSet<uint> { 0x00FF00FF });
+            []);
 
         Assert.Equal(1, result.Stats.FromEditorIdHash);
         Assert.Equal(1, result.Stats.FromAllFormsHash);
-        Assert.Equal(1, result.Stats.FromWorldspaceGrid);
         Assert.Equal(1, result.Stats.FromHeapScan);
-        Assert.Equal(4, result.Stats.UniqueTotal);
-        Assert.Equal(4, result.Cells.Count);
+        Assert.Equal(3, result.Stats.UniqueTotal);
+        Assert.Equal(3, result.Cells.Count);
+        Assert.Contains(result.Cells, c => c.FormId == 0x91000003 && c.CellVa == path2CellVa);
     }
 
     // ============================================================================
-    // Path 4: direct NAVM VA collection from pAllForms
+    // Direct NAVM VA collection from pAllForms
     // ============================================================================
 
     [Fact]
@@ -356,7 +617,7 @@ public sealed class RuntimeCellEnumeratorTests
         var enumerator = heap.BuildEnumerator(hashTableVa);
         // Provide a byte-stream anchor (one of the NAVM FormIDs) so calibration succeeds
         // and the canonical-byte entries route to NavMeshVas. Without an anchor the new
-        // Phase 2d behavior would send them to NavMeshVaCandidates instead — that path
+        // speculative behavior would send them to NavMeshVaCandidates instead — that path
         // is exercised by Uncalibrated_EmitsNavMeshVaCandidatesAcrossByteWindow.
         var result = enumerator.Enumerate(
             [],
@@ -387,8 +648,7 @@ public sealed class RuntimeCellEnumeratorTests
         var heap = new HeapBuilder(0x4000);
         var navmVa = heap.PlaceTesForm(rawNavm, 0xD0000001);
         var cellVa = heap.PlaceCustomCell(rawCell, 0xD0000002);
-        var wrldVa = heap.PlaceCustomWorldspace(rawWrld, 0x000000DA,
-            heap.PlaceGridCellArray(new uint[25]));
+        var wrldVa = heap.PlaceTesForm(rawWrld, 0x000000DA);
 
         var wrldNode = heap.PlaceMapItem(0x000000DA, wrldVa, 0);
         var cellNode = heap.PlaceMapItem(0xD0000002, cellVa, wrldNode);
@@ -453,7 +713,7 @@ public sealed class RuntimeCellEnumeratorTests
         // No drift dictionary supplied — bytes in heap pass through unchanged. Equivalent
         // to a final-build dump where FormType bytes are already canonical.
         //
-        // Phase 2d note: without ALSO an anchor or drift-confirmed NAVM byte, the canonical
+        // Without ALSO an anchor or drift-confirmed NAVM byte, the canonical
         // 0x43 entries route to NavMeshVaCandidates (speculative), not NavMeshVas. This
         // test exercises that fallback path; the calibrated-canonical path is covered by
         // AllFormsHash_CollectsNavMeshVas_ByFormTypeByte (which provides an anchor).
@@ -471,7 +731,7 @@ public sealed class RuntimeCellEnumeratorTests
     }
 
     // ============================================================================
-    // Phase 2d: speculative NavMeshVaCandidates for uncalibrated builds
+    // Speculative NavMeshVaCandidates for uncalibrated builds
     // ============================================================================
 
     [Fact]
@@ -578,6 +838,87 @@ public sealed class RuntimeCellEnumeratorTests
         };
     }
 
+    private static RuntimeCellEnumerator BuildSparseEnumerator(
+        IMemoryAccessor accessor,
+        List<MinidumpMemoryRegion> regions,
+        uint pAllFormsVa)
+    {
+        const int fileSize = 512;
+        var minidumpInfo = new MinidumpInfo
+        {
+            IsValid = true,
+            ProcessorArchitecture = 0x03,
+            MemoryRegions = regions
+        };
+        var context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
+        return new RuntimeCellEnumerator(context, minidumpInfo, pAllFormsVa);
+    }
+
+    private static byte[] CreateSingleBucketHash(uint hashVa, uint itemVa)
+    {
+        var bytes = new byte[20];
+        WriteUInt32BE(bytes, 4, 1);
+        WriteUInt32BE(bytes, 8, hashVa + 16);
+        WriteUInt32BE(bytes, 16, itemVa);
+        return bytes;
+    }
+
+    private static byte[] CreateHashHeader(uint hashSize, uint bucketVa)
+    {
+        var bytes = new byte[16];
+        WriteUInt32BE(bytes, 4, hashSize);
+        WriteUInt32BE(bytes, 8, bucketVa);
+        return bytes;
+    }
+
+    private static byte[] CreateMapItem(uint formId, uint formVa, uint nextVa = 0)
+    {
+        var bytes = new byte[12];
+        WriteUInt32BE(bytes, 0, nextVa);
+        WriteUInt32BE(bytes, 4, formId);
+        WriteUInt32BE(bytes, 8, formVa);
+        return bytes;
+    }
+
+    private static byte[] CreateTesFormHeader(byte formType, uint formId)
+    {
+        var bytes = new byte[16];
+        WriteUInt32BE(bytes, 0, CellVtable);
+        bytes[4] = formType;
+        WriteUInt32BE(bytes, 12, formId);
+        return bytes;
+    }
+
+    private static byte[] CreateCell(uint formId)
+    {
+        var bytes = new byte[120];
+        WriteUInt32BE(bytes, 0, CellVtable);
+        bytes[4] = CellFormType;
+        WriteUInt32BE(bytes, 12, formId);
+        return bytes;
+    }
+
+    private static MinidumpMemoryRegion Region(uint va, long fileOffset, int size)
+    {
+        return new MinidumpMemoryRegion
+        {
+            VirtualAddress = va,
+            FileOffset = fileOffset,
+            Size = size
+        };
+    }
+
+    private sealed class CountingMemoryAccessor(IMemoryAccessor inner) : IMemoryAccessor
+    {
+        public int ReadCount { get; private set; }
+
+        public int ReadArray(long position, byte[] array, int offset, int count)
+        {
+            ReadCount++;
+            return inner.ReadArray(position, array, offset, count);
+        }
+    }
+
     /// <summary>
     ///     Single contiguous "heap" buffer with bump-allocator placement. Every struct
     ///     placed by <c>PlaceXxx</c> lives at file-offset = (returned VA - HeapBaseVa)
@@ -656,39 +997,6 @@ public sealed class RuntimeCellEnumeratorTests
                 WriteUInt32BE(_buffer, offset + headerSize + i * 4, buckets[i]);
             }
 
-            return va;
-        }
-
-        public uint PlaceGridCellArray(uint[] cellPtrs)
-        {
-            if (cellPtrs.Length != 25)
-            {
-                throw new ArgumentException("GridCellArray expects exactly 25 slots", nameof(cellPtrs));
-            }
-
-            var va = AllocateAligned(GridCellArrayPointersSize);
-            var offset = OffsetForVa(va);
-            for (var i = 0; i < 25; i++)
-            {
-                WriteUInt32BE(_buffer, offset + i * 4, cellPtrs[i]);
-            }
-
-            return va;
-        }
-
-        public uint PlaceWorldspace(uint formId, uint gridCellArrayVa)
-        {
-            return PlaceCustomWorldspace(WrldFormType, formId, gridCellArrayVa);
-        }
-
-        public uint PlaceCustomWorldspace(byte formTypeByte, uint formId, uint gridCellArrayVa)
-        {
-            var va = AllocateAligned(WrldStructSize);
-            var offset = OffsetForVa(va);
-            WriteUInt32BE(_buffer, offset + 0, CellVtable);
-            _buffer[offset + 4] = formTypeByte;
-            WriteUInt32BE(_buffer, offset + 12, formId);
-            WriteUInt32BE(_buffer, offset + WrldGridCellArrayPtrOffset, gridCellArrayVa);
             return va;
         }
 

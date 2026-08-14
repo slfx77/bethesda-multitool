@@ -8,17 +8,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///     Typed runtime reader for TESFlora (FLOR, FormType 0x26). Harvestable plants:
 ///     xander roots, broc flowers, mutfruit, etc.
 ///
-///     FLOR is a multi-inheritance class — TESProduceForm + TESScriptableForm sit before
-///     TESForm in the C++ layout, so cFormType lives at +16 and iFormID at +24 (not the
-///     standard +4 / +12). The PDB layout records these offsets accurately, and
-///     <c>RuntimePdbFieldAccessor.ReadStruct</c> resolves the cFormType / iFormID
-///     positions from the layout itself — so the regular OpenStructView flow now works
-///     for FLOR without any reader-side offset gymnastics.
-///
-///     Activated by the multi-inheritance probe in
-///     <see cref="BethesdaMultitool.Core.Formats.Esm.Records.TesFormHeaderProbe" />,
-///     which populates <c>entry.FormId</c> with the FormID read from the FLOR-specific
-///     iFormID offset before the reader runs.
+///     FLOR is a multiple-inheritance class whose TESForm subobject begins at +12 in
+///     the complete object. Its identity therefore sits at complete-object offsets
+///     +16/+24, while the TESForm pointer stored in runtime maps reads the same fields at
+///     canonical subobject offsets +4/+12. <c>RuntimePdbFieldAccessor.ReadStruct</c>
+///     rebases that retained subobject pointer by the PDB-derived +12 before applying
+///     complete-object-relative fields.
 /// </summary>
 internal sealed class RuntimeFlorReader(RuntimeMemoryContext context)
 {

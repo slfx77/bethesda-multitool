@@ -12,7 +12,6 @@ internal enum RuntimeCellSource
 {
     EditorIdHash,
     AllFormsHash,
-    WorldspaceGrid,
     HeapScan
 }
 
@@ -21,7 +20,6 @@ internal readonly record struct RuntimeCellHit(uint FormId, uint CellVa, Runtime
 internal readonly record struct RuntimeCellEnumeratorStats(
     int FromEditorIdHash,
     int FromAllFormsHash,
-    int FromWorldspaceGrid,
     int FromHeapScan,
     int UniqueTotal);
 
@@ -32,21 +30,22 @@ internal readonly record struct RuntimeCellEnumeration(
     IReadOnlyList<uint> NavMeshVaCandidates);
 
 /// <summary>
-///     Aggregates runtime <c>TESObjectCELL</c> instances from up to four discovery paths so
+///     Aggregates runtime <c>TESObjectCELL</c> instances from three evidence-backed discovery paths so
 ///     downstream consumers (currently NAVM discovery; later REFR / ACHR enumeration) can
 ///     hand off cell VAs without caring which source produced them. Dedups by FormID with
-///     first-source-wins ordering (EditorIdHash &gt; AllFormsHash &gt; WorldspaceGrid &gt; HeapScan)
+///     first-source-wins ordering (EditorIdHash &gt; AllFormsHash &gt; HeapScan)
 ///     so each FormID's <see cref="RuntimeCellHit.Source" /> preserves its earliest provenance.
 ///
 ///     PDB-derived layouts (verified on Aug_RB MemDebug PDB):
 ///     <list type="bullet">
 ///         <item><description><c>NiTMapBase</c> (16B): vfptr(+0), m_uiHashSize(+4 uint32), m_ppkHashTable(+8 NiTMapItem**), m_kAllocator(+12).</description></item>
 ///         <item><description><c>NiTMapItem&lt;uint, TESForm*&gt;</c> (12B): m_pkNext(+0), m_key(+4 FormID), m_val(+8 TESForm*).</description></item>
-///         <item><description><c>TESForm</c> prefix: cFormType(+1 byte), iFormID(+12 uint32). All TESForm-derived classes share this prefix at +0 of their layout.</description></item>
-///         <item><description><c>TESObjectCELL</c>: pNavMeshes(+116 BSSimpleArray, 16B inline) — used to validate heap-scan candidates without dereferencing.</description></item>
-///         <item><description><c>TESWorldSpace</c> (244B): pGridCellA(+16) — pointer to a GridCellArray.</description></item>
-///         <item><description><c>GridCellArray</c> (40B): 25-slot fixed array of TESObjectCELL* in [+0..+100), grid-center metadata (+36 iCurrentGridX, +40 iCurrentGridY).</description></item>
+///         <item><description><c>TESForm</c> subobject prefix: cFormType(byte @ +4), iFormID(uint32 @ +12). <c>NiTMapItem.m_val</c> points at this subobject even when it is interior to the complete object.</description></item>
+///         <item><description><c>TESObjectCELL</c>: pNavMeshes(+116 NavMeshArray*) — used to validate heap-scan candidates without dereferencing.</description></item>
 ///     </list>
+///     The loaded exterior grid is owned by the separate <c>TES</c> singleton through its
+///     <c>GridCellArray*</c>. It is deliberately not inferred from a <c>TESWorldSpace*</c>;
+///     no reproducible singleton locator is currently available to this reader.
 /// </summary>
 internal sealed class RuntimeCellEnumerator
 {
@@ -56,8 +55,8 @@ internal sealed class RuntimeCellEnumerator
     /// <summary>
     ///     Raw-byte → canonical-byte FormType remap built from
     ///     <see cref="RuntimeEditorIdEntry.OriginalFormType" /> on drift-corrected entries.
-    ///     Applied to every raw FormType byte we read from heap memory (Path 1 pAllForms walk
-    ///     plus Path 2/3 cell validators) so the canonical constants
+    ///     Applied to every raw FormType byte we read from heap memory (the pAllForms walk
+    ///     plus heap-scan validation) so the canonical constants
     ///     <see cref="CellFormType" />, <see cref="WrldFormType" />, and
     ///     <see cref="NavmFormType" /> work uniformly across early-build drift (e.g. Nov 2009
     ///     +1 shift at 0x46) and the final layout. Empty when no drift is present, in which
@@ -108,29 +107,16 @@ internal sealed class RuntimeCellEnumerator
     private const int NiTMapItemValueOffset = 8;
     private const int NiTMapItemSize = 12;
 
-    // Standard TESForm prefix: cFormType at +4, iFormID at +12. Used by Path 0's
-    // editor-id entries (which already carry FormType from upstream) and Path 2/3 validation.
-    // The pAllForms walk in Path 1 uses TesFormHeaderProbe instead to handle multi-inheritance
-    // classes — TESWorldSpace is TESFullName-first (FormType +24, FormID +32) so the standard
-    // offsets miss every WRLD entry, breaking worldspace-grid discovery.
+    // TESForm-subobject prefix: cFormType at +4, iFormID at +12. pAllForms stores TESForm*,
+    // so these offsets are canonical for every map value, including interior TESForm bases in
+    // multiply inherited complete objects. Complete-object PDB fields are rebased downstream.
     private const int TesFormTypeByteOffset = 4;
     private const int TesFormIdOffset = 12;
-    private const int TesFormReadWindow = 16;
-    private const int TesFormProbeReadWindow = TesFormHeaderProbe.RequiredBufferSize;
-
     // TESObjectCELL: pNavMeshes is a 4-byte NavMeshArray pointer (PDB UDT 0x0002C7DB) at
     // offset 116. NavMeshArray is a separate 16-byte allocation, NOT inline in TESObjectCELL.
     // See RuntimeNavMeshDiscovery.DiscoverForCellVa for the full dereference chain.
     private const int CellNavMeshPointerOffset = 116;
     private const int CellHeapScanReadWindow = CellNavMeshPointerOffset + 4;
-
-    // TESWorldSpace
-    private const int WorldspaceGridCellArrayPtrOffset = 16;
-    private const int WorldspaceReadWindow = 24;
-
-    // GridCellArray
-    private const int GridCellArraySlotCount = 25;
-    private const int GridCellArrayPointersSize = GridCellArraySlotCount * 4;
 
     // Bucket walk guard
     private const int MaxBucketsHardLimit = 262144;
@@ -146,16 +132,14 @@ internal sealed class RuntimeCellEnumerator
     ///     by <see cref="CellFormType" /> to surface named cells (most interiors).
     /// </param>
     /// <param name="knownWrldFormIds">
-    ///     Optional FormIDs of parsed WRLD records from the ESM byte stream. Augments the
-    ///     editor-id hash as a WRLD source for Path 2 — Path 2 always picks up worldspaces
-    ///     via <see cref="WrldFormType" /> entries in <paramref name="editorIdEntries" /> as
-    ///     well, so this can be empty (e.g., a DMP whose byte stream doesn't carry WRLD records)
-    ///     without losing grid coverage. Pass
+    ///     Optional FormIDs of parsed WRLD records from the ESM byte stream. These anchor the
+    ///     runtime WRLD FormType byte so worldspaces are excluded from speculative NAVM
+    ///     candidates; this reader does not infer a loaded grid from a WRLD object. Pass
     ///     <c>scanResult.MainRecords.Where(r => r.RecordType == "WRLD").Select(r => r.FormId)</c>.
     /// </param>
     /// <param name="knownNavmFormIds">
     ///     Optional FormIDs of parsed NAVM records from the ESM byte stream. Used as a
-    ///     calibration anchor for Path 4: each byte-stream NAVM whose FormID is also present
+    ///     calibration anchor for direct NAVM discovery: each byte-stream NAVM whose FormID is also present
     ///     in pAllForms lets us read the build's actual raw FormType byte for NAVMs, which
     ///     matters when <c>RuntimeBuildOffsets.DetectFormTypeDrift</c> couldn't confirm the
     ///     drift (typically because the byte stream lacks DIAL/INFO cross-references). The
@@ -167,15 +151,13 @@ internal sealed class RuntimeCellEnumerator
         IReadOnlyCollection<uint>? knownNavmFormIds = null)
     {
         var hits = new Dictionary<uint, RuntimeCellHit>();
-        var counts = new int[4];
+        var counts = new int[3];
         var navMeshVas = new List<uint>();
         var navMeshVaCandidates = new List<uint>();
 
         CollectFromEditorIdHash(hits, counts, editorIdEntries);
-        var wrldVas = CollectFromAllFormsHash(hits, counts, knownWrldFormIds,
+        CollectFromAllFormsHash(hits, counts, knownWrldFormIds,
             knownNavmFormIds ?? [], navMeshVas, navMeshVaCandidates);
-        AddWorldspacesFromEditorIdHash(wrldVas, editorIdEntries);
-        CollectFromWorldspaceGrid(hits, counts, wrldVas);
         CollectFromHeapScan(hits, counts);
 
         var ordered = new List<RuntimeCellHit>(hits.Count);
@@ -183,7 +165,6 @@ internal sealed class RuntimeCellEnumerator
                  [
                      RuntimeCellSource.EditorIdHash,
                      RuntimeCellSource.AllFormsHash,
-                     RuntimeCellSource.WorldspaceGrid,
                      RuntimeCellSource.HeapScan
                  ])
         {
@@ -205,7 +186,7 @@ internal sealed class RuntimeCellEnumerator
 
         return new RuntimeCellEnumeration(
             ordered,
-            new RuntimeCellEnumeratorStats(counts[0], counts[1], counts[2], counts[3], hits.Count),
+            new RuntimeCellEnumeratorStats(counts[0], counts[1], counts[2], hits.Count),
             navMeshVas,
             navMeshVaCandidates);
     }
@@ -242,16 +223,15 @@ internal sealed class RuntimeCellEnumerator
         }
     }
 
-    // ---- Path 1 (with bonus WRLD discovery): walk pAllForms once ----
+    // ---- Path 1: walk pAllForms once ----
 
     /// <summary>
     ///     Single pass over the pAllForms hash table that (a) adds any FormType==CELL entry
-    ///     not already present in <paramref name="hits" />, and (b) records every TESForm
-    ///     pointer whose FormID matches a known WRLD FormID so Path 2 can walk the GridCellArray
-    ///     of each loaded worldspace. Returns the list of worldspace VAs for Path 2's
-    ///     consumption.
+    ///     not already present in <paramref name="hits" />, (b) calibrates the build's raw
+    ///     CELL/WRLD/NAVM FormType bytes from known FormIDs, and (c) returns trusted or
+    ///     speculative NAVM object VAs through the dedicated output lists.
     /// </summary>
-    private List<uint> CollectFromAllFormsHash(
+    private void CollectFromAllFormsHash(
         Dictionary<uint, RuntimeCellHit> hits,
         int[] counts,
         IReadOnlyCollection<uint> knownWrldFormIds,
@@ -259,53 +239,37 @@ internal sealed class RuntimeCellEnumerator
         List<uint> navMeshVas,
         List<uint> navMeshVaCandidates)
     {
-        var wrldVas = new List<uint>();
         if (_pAllFormsVa == 0)
         {
-            return wrldVas;
+            return;
         }
 
-        var headerOffset = _context.VaToFileOffset(_pAllFormsVa);
-        if (headerOffset is not long headerFile)
-        {
-            return wrldVas;
-        }
-
-        var header = _context.ReadBytes(headerFile, NiTMapHeaderSize);
+        var header = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(_pAllFormsVa), NiTMapHeaderSize);
         if (header is null)
         {
-            return wrldVas;
+            return;
         }
 
         var hashSize = BinaryUtils.ReadUInt32BE(header, NiTMapHashSizeOffset);
         var bucketArrayVa = BinaryUtils.ReadUInt32BE(header, NiTMapBucketArrayOffset);
         if (hashSize == 0 || hashSize > MaxBucketsHardLimit || !_context.IsValidPointer(bucketArrayVa))
         {
-            return wrldVas;
+            return;
         }
 
-        var bucketArrayOffset = _context.VaToFileOffset(bucketArrayVa);
-        if (bucketArrayOffset is not long bucketBase)
-        {
-            return wrldVas;
-        }
-
-        var bucketBytes = _context.ReadBytes(bucketBase, (int)(hashSize * 4));
+        var bucketBytes = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(bucketArrayVa), checked((int)(hashSize * 4)));
         if (bucketBytes is null)
         {
-            return wrldVas;
+            return;
         }
 
         var wrldSet = knownWrldFormIds as HashSet<uint> ?? [..knownWrldFormIds];
         var navmSet = knownNavmFormIds as HashSet<uint> ?? [..knownNavmFormIds];
-        // TesFormHeaderProbe.RequiredBufferSize is enough to probe every candidate layout
-        // (FormID at +32 needs 36 bytes); the standard layout's CELL FormType byte at +4
-        // also falls within this window. Using one wider buffer keeps the walk straight.
-        var formBuffer = new byte[TesFormProbeReadWindow];
-
         // Pass 1: walk pAllForms, collect raw (rawFormType, formId, formVa) for every valid
         // entry, plus track raw bytes that map to NAVM/CELL/WRLD via byte-stream FormID
-        // anchors. This calibration lets Path 4 surface runtime NAVMs in dumps where the
+        // anchors. This calibration lets direct runtime-NAVM discovery work in dumps where the
         // upstream drift detector (RuntimeBuildOffsets.DetectFormTypeDrift) couldn't confirm
         // the shift — e.g. xex.dmp's Dec 2009 +1 shift at 0x42 that the cross-reference
         // misses when the byte stream lacks DIAL/INFO records.
@@ -313,19 +277,23 @@ internal sealed class RuntimeCellEnumerator
         var navmRawBytes = new HashSet<byte>();
         var cellRawBytes = new HashSet<byte>();
         var wrldRawBytes = new HashSet<byte>();
+        var knownCellFormIds = hits.Keys.ToHashSet();
 
         for (var b = 0; b < hashSize; b++)
         {
             var itemVa = BinaryUtils.ReadUInt32BE(bucketBytes, b * 4);
+            var seenItemVas = new HashSet<uint>();
             for (var hops = 0; hops < MaxChainHops && itemVa != 0 && _context.IsValidPointer(itemVa); hops++)
             {
-                var itemOffset = _context.VaToFileOffset(itemVa);
-                if (itemOffset is not long itemFile)
+                if (!seenItemVas.Add(itemVa))
                 {
                     break;
                 }
 
-                var itemBytes = _context.ReadBytes(itemFile, NiTMapItemSize);
+                // VA-based reading stitches adjacent captured regions even when their file
+                // offsets are discontiguous, and refuses to bridge a missing VA byte.
+                var itemBytes = _context.ReadBytesAtVa(
+                    Xbox360MemoryUtils.VaToLong(itemVa), NiTMapItemSize);
                 if (itemBytes is null)
                 {
                     break;
@@ -340,23 +308,16 @@ internal sealed class RuntimeCellEnumerator
                     continue;
                 }
 
-                var formOffset = _context.VaToFileOffset(formVa);
-                if (formOffset is not long formFile)
+                var formBytes = _context.ReadBytesAtVa(
+                    Xbox360MemoryUtils.VaToLong(formVa), TesFormHeaderProbe.RequiredBufferSize);
+                if (formBytes is null)
                 {
                     continue;
                 }
 
-                if (!TryReadInto(formFile, formBuffer))
-                {
-                    continue;
-                }
-
-                // TesFormHeaderProbe walks three candidate layouts: standard (+4,+12),
-                // TESFullName-first (+24,+32, used by MSTT and TESWorldSpace), and
-                // TESProduceForm-first (+16,+24, used by FLOR). It picks the layout
-                // whose iFormID matches keyFormId — a strict (+4,+12) read
-                // misses every WRLD entry since TESWorldSpace puts iFormID at +32.
-                if (!TesFormHeaderProbe.TryProbe(formBuffer, out var rawFormType, out var formId,
+                // The map value is already TESForm*, so its identity is always +4/+12.
+                // Requiring keyFormId prevents a damaged header from being accepted.
+                if (!TesFormHeaderProbe.TryProbe(formBytes, out var rawFormType, out var formId,
                         expectedFormId: keyFormId))
                 {
                     continue;
@@ -372,7 +333,7 @@ internal sealed class RuntimeCellEnumerator
                     navmRawBytes.Add(rawFormType);
                 }
 
-                if (cellSet().Contains(formId))
+                if (knownCellFormIds.Contains(formId))
                 {
                     cellRawBytes.Add(rawFormType);
                 }
@@ -448,13 +409,15 @@ internal sealed class RuntimeCellEnumerator
             }
             else if (wrldRawBytes.Contains(rawByte) || wrldSet.Contains(formId))
             {
-                wrldVas.Add(formVa);
+                // WRLD is a calibration/exclusion category only. The loaded exterior grid
+                // belongs to the TES singleton, not to TESWorldSpace at a fixed offset.
+                continue;
             }
             else if (navmRawBytes.Contains(rawByte) || navmSet.Contains(formId))
             {
                 // Direct BSNavMesh VA from calibrated bytes. pAllForms holds BSNavMesh
                 // pointers keyed by FormID; each entry is a self-describing TESForm-derived
-                // BSNavMesh struct. Captured here so Path 4 in MiscGameSystemHandler can
+                // BSNavMesh struct. Captured here so NavMeshHandler can
                 // project each into a synthetic NavMeshRecord without needing a cell parent.
                 navMeshVas.Add(formVa);
             }
@@ -468,21 +431,6 @@ internal sealed class RuntimeCellEnumerator
             }
         }
 
-        return wrldVas;
-
-        // Local function: the existing CollectFromEditorIdHash population isn't available
-        // here, so we derive the CELL FormID anchor set from the hits dict itself (any
-        // Path 0 cell whose FormID we already trust IS a CELL by construction).
-        HashSet<uint> cellSet()
-        {
-            var set = new HashSet<uint>(hits.Count);
-            foreach (var hit in hits.Values)
-            {
-                set.Add(hit.FormId);
-            }
-
-            return set;
-        }
     }
 
     /// <summary>
@@ -504,157 +452,7 @@ internal sealed class RuntimeCellEnumerator
         return canonical;
     }
 
-    private bool TryReadInto(long fileOffset, byte[] buffer)
-    {
-        if (fileOffset + buffer.Length > _context.FileSize)
-        {
-            return false;
-        }
-
-        try
-        {
-            _context.Accessor.ReadArray(fileOffset, buffer, 0, buffer.Length);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
-    ///     The pAllForms walk is the canonical worldspace source, but proto DMPs sometimes
-    ///     ship without WRLD MainRecords in their in-DMP ESM byte stream (the parsed
-    ///     <c>scanResult.MainRecords</c> list is empty for WRLD), which strands
-    ///     <see cref="CollectFromAllFormsHash" />'s cross-reference set. Drift-corrected
-    ///     editor-id entries already carry <see cref="WrldFormType" />=0x41 reliably, so this
-    ///     pass guarantees Path 2 always has a worldspace to walk when one exists in the dump.
-    ///     Deduplication by VA prevents double-walking when both sources yield the same WRLD.
-    /// </summary>
-    private static void AddWorldspacesFromEditorIdHash(
-        List<uint> wrldVas,
-        IReadOnlyList<RuntimeEditorIdEntry> editorIdEntries)
-    {
-        if (editorIdEntries.Count == 0)
-        {
-            return;
-        }
-
-        var existing = wrldVas.ToHashSet();
-        foreach (var entry in editorIdEntries)
-        {
-            if (entry.FormType != WrldFormType || entry.TesFormPointer is not { } ptr || ptr == 0)
-            {
-                continue;
-            }
-
-            var wrldVa = unchecked((uint)ptr);
-            if (existing.Add(wrldVa))
-            {
-                wrldVas.Add(wrldVa);
-            }
-        }
-    }
-
-    // ---- Path 2: walk each loaded TESWorldSpace's GridCellArray ----
-
-    private void CollectFromWorldspaceGrid(
-        Dictionary<uint, RuntimeCellHit> hits,
-        int[] counts,
-        List<uint> wrldVas)
-    {
-        if (wrldVas.Count == 0)
-        {
-            return;
-        }
-
-        var cellFormBuffer = new byte[TesFormReadWindow];
-
-        foreach (var wrldVa in wrldVas)
-        {
-            var wrldOffset = _context.VaToFileOffset(wrldVa);
-            if (wrldOffset is not long wrldFile)
-            {
-                continue;
-            }
-
-            var wrldBytes = _context.ReadBytes(wrldFile, WorldspaceReadWindow);
-            if (wrldBytes is null)
-            {
-                continue;
-            }
-
-            var gridCellArrayVa = BinaryUtils.ReadUInt32BE(wrldBytes, WorldspaceGridCellArrayPtrOffset);
-            if (!_context.IsValidPointer(gridCellArrayVa))
-            {
-                continue;
-            }
-
-            var gridOffset = _context.VaToFileOffset(gridCellArrayVa);
-            if (gridOffset is not long gridFile)
-            {
-                continue;
-            }
-
-            var slotBytes = _context.ReadBytes(gridFile, GridCellArrayPointersSize);
-            if (slotBytes is null)
-            {
-                continue;
-            }
-
-            for (var i = 0; i < GridCellArraySlotCount; i++)
-            {
-                var cellVa = BinaryUtils.ReadUInt32BE(slotBytes, i * 4);
-                if (!_context.IsValidPointer(cellVa))
-                {
-                    continue;
-                }
-
-                var cellOffset = _context.VaToFileOffset(cellVa);
-                if (cellOffset is not long cellFile)
-                {
-                    continue;
-                }
-
-                if (!TryReadInto(cellFile, cellFormBuffer))
-                {
-                    continue;
-                }
-
-                if (ToCanonical(cellFormBuffer[TesFormTypeByteOffset]) != CellFormType)
-                {
-                    continue;
-                }
-
-                var formId = BinaryUtils.ReadUInt32BE(cellFormBuffer, TesFormIdOffset);
-                if (formId == 0 || formId == 0xFFFFFFFF)
-                {
-                    continue;
-                }
-
-                if (hits.TryAdd(formId, new RuntimeCellHit(formId, cellVa, RuntimeCellSource.WorldspaceGrid)))
-                {
-                    counts[(int)RuntimeCellSource.WorldspaceGrid]++;
-                }
-                else
-                {
-                    // FormID already in hits via Path 0 or Path 1, but Path 2's grid-slot VA
-                    // is the engine's canonical TESObjectCELL pointer. If the existing VA
-                    // differs (e.g., editor-id hash stored a TESForm sub-object pointer), we
-                    // upgrade the entry's CellVa to the grid VA so downstream
-                    // DiscoverNavMeshesForCellVa reads the correct cell base. Source stays
-                    // first-source-wins for provenance.
-                    var existing = hits[formId];
-                    if (existing.CellVa != cellVa)
-                    {
-                        hits[formId] = existing with { CellVa = cellVa };
-                    }
-                }
-            }
-        }
-    }
-
-    // ---- Path 3: heap-scan for TESObjectCELL vtable ----
+    // ---- Path 2: heap-scan for TESObjectCELL vtable ----
 
     private void CollectFromHeapScan(Dictionary<uint, RuntimeCellHit> hits, int[] counts)
     {
@@ -681,8 +479,6 @@ internal sealed class RuntimeCellEnumerator
         matcher.AddPattern("CELL_VTABLE", vtablePattern);
         matcher.Build();
 
-        var validateBuffer = new byte[CellHeapScanReadWindow];
-
         foreach (var region in _minidumpInfo.MemoryRegions)
         {
             var regionVa = unchecked((uint)region.VirtualAddress);
@@ -691,29 +487,49 @@ internal sealed class RuntimeCellEnumerator
                 continue;
             }
 
-            if (region.Size <= 0 || region.FileOffset + region.Size > _context.FileSize)
+            if (region.Size <= 0 || region.Size > int.MaxValue)
             {
                 continue;
             }
 
-            var regionBytes = _context.ReadBytes(region.FileOffset, checked((int)region.Size));
+            // Scan three bytes past a captured region when the following VAs are present so a
+            // four-byte vfptr split at the boundary remains discoverable. Only matches whose
+            // first byte belongs to this region are accepted, avoiding duplicates in the next
+            // region's scan. ReadBytesAtVa handles noncontiguous file storage and VA gaps.
+            var regionSize = checked((int)region.Size);
+            var scanSize = regionSize;
+            if (regionSize <= int.MaxValue - (sizeof(uint) - 1) &&
+                _minidumpInfo.IsVaRangeCaptured(
+                    Xbox360MemoryUtils.VaToLong(regionVa), regionSize + (sizeof(uint) - 1)))
+            {
+                scanSize += sizeof(uint) - 1;
+            }
+
+            var regionBytes = _context.ReadBytesAtVa(
+                Xbox360MemoryUtils.VaToLong(regionVa), scanSize);
             if (regionBytes is null)
             {
                 continue;
             }
 
-            var matches = matcher.Search(regionBytes, region.FileOffset);
+            var matches = matcher.Search(regionBytes, 0);
             foreach (var (_, _, position) in matches)
             {
-                // position is the file offset of the vtable match (cellVa + 0 in struct terms).
-                var fileOffsetInRegion = position - region.FileOffset;
-                if ((fileOffsetInRegion & 3) != 0)
+                // position is the byte offset of the vtable match in this VA-based scan.
+                if (position < 0 || position >= regionSize)
                 {
                     continue;
                 }
 
-                var cellVa = unchecked(regionVa + (uint)fileOffsetInRegion);
-                if (!TryReadInto(position, validateBuffer))
+                var cellVa = unchecked(regionVa + (uint)position);
+                if ((cellVa & 3) != 0)
+                {
+                    continue;
+                }
+
+                var validateBuffer = _context.ReadBytesAtVa(
+                    Xbox360MemoryUtils.VaToLong(cellVa), CellHeapScanReadWindow);
+                if (validateBuffer is null)
                 {
                     continue;
                 }
@@ -744,16 +560,11 @@ internal sealed class RuntimeCellEnumerator
 
     private uint? TryHarvestVtableFromHits(Dictionary<uint, RuntimeCellHit> hits)
     {
-        var vfptrBuffer = new byte[4];
         foreach (var hit in hits.Values)
         {
-            var offset = _context.VaToFileOffset(hit.CellVa);
-            if (offset is not long file)
-            {
-                continue;
-            }
-
-            if (!TryReadInto(file, vfptrBuffer))
+            var vfptrBuffer = _context.ReadBytesAtVa(
+                Xbox360MemoryUtils.VaToLong(hit.CellVa), sizeof(uint));
+            if (vfptrBuffer is null)
             {
                 continue;
             }

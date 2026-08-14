@@ -275,7 +275,7 @@ internal sealed class RuntimeImageSpaceModifierReader(
         }
 
         var value = _context.ReadBSStringTDiag(
-            view.FileOffset,
+            view.Buffer,
             nameOffset.Value,
             out var failure,
             out var pointer,

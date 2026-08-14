@@ -15,7 +15,10 @@ internal sealed class RuntimeMemoryContext(
     long fileSize,
     MinidumpInfo minidumpInfo)
 {
-    /// <summary>Maximum number of items to read from linked lists (cycle prevention).</summary>
+    /// <summary>
+    ///     Maximum number of logical list nodes to visit. The inline head consumes one slot,
+    ///     even when its item pointer is null.
+    /// </summary>
     public const int MaxListItems = 50;
 
     public IMemoryAccessor Accessor { get; } = accessor;
@@ -63,11 +66,22 @@ internal sealed class RuntimeMemoryContext(
     }
 
     /// <summary>
-    ///     Check if a float is a normal (non-NaN, non-Infinity) value.
+    ///     Historical helper name for the broad runtime-float check: accepts every finite value,
+    ///     including zero and subnormals, and rejects only NaN/infinity.
     /// </summary>
     public static bool IsNormalFloat(float value)
     {
-        return !float.IsNaN(value) && !float.IsInfinity(value);
+        return float.IsFinite(value);
+    }
+
+    /// <summary>
+    ///     Accepts IEEE-normal values and exact zero. Use this stricter plausibility check only
+    ///     where a subnormal is evidence of a misaligned pointer/field read.
+    /// </summary>
+    public static bool IsNormalOrZeroFloat(float value)
+    {
+        var magnitudeBits = BitConverter.SingleToUInt32Bits(value) & 0x7FFF_FFFFu;
+        return magnitudeBits == 0 || float.IsNormal(value);
     }
 
     /// <summary>
@@ -210,18 +224,29 @@ internal sealed class RuntimeMemoryContext(
     /// <summary>
     ///     Walk an inline BSSimpleList where the struct stores the first item pointer
     ///     at <paramref name="listOffset" /> and the first heap node pointer at +4.
-    ///     Heap nodes are 8 bytes: item pointer, next node pointer.
+    ///     Heap nodes are 8 bytes: item pointer, next node pointer. The traversal budget
+    ///     counts the inline head and every successfully read heap node, including nodes
+    ///     whose item pointer is null.
     /// </summary>
     public IEnumerable<uint> WalkInlineBSSimpleListItemPointers(
         byte[] structBuffer,
         int listOffset,
         int maxItems = MaxListItems)
     {
-        if (listOffset < 0 || listOffset + 8 > structBuffer.Length || maxItems <= 0)
+        ArgumentNullException.ThrowIfNull(structBuffer);
+        if (listOffset < 0 || listOffset > structBuffer.Length - 8 || maxItems <= 0)
         {
-            yield break;
+            return [];
         }
 
+        return WalkInlineBSSimpleListItemPointersCore(structBuffer, listOffset, maxItems);
+    }
+
+    private IEnumerable<uint> WalkInlineBSSimpleListItemPointersCore(
+        byte[] structBuffer,
+        int listOffset,
+        int maxItems)
+    {
         var itemPtr = BinaryUtils.ReadUInt32BE(structBuffer, listOffset);
         var nextPtr = BinaryUtils.ReadUInt32BE(structBuffer, listOffset + 4);
         if (itemPtr != 0)
@@ -230,30 +255,24 @@ internal sealed class RuntimeMemoryContext(
         }
 
         var visited = new HashSet<uint>();
-        var count = itemPtr != 0 ? 1 : 0;
+        var nodeCount = 1;
         while (nextPtr != 0 &&
-               count < maxItems &&
+               nodeCount < maxItems &&
                IsValidPointer(nextPtr) &&
                visited.Add(nextPtr))
         {
-            var nodeFileOffset = VaToFileOffset(nextPtr);
-            if (nodeFileOffset == null)
-            {
-                yield break;
-            }
-
-            var nodeBuffer = ReadBytes(nodeFileOffset.Value, 8);
+            var nodeBuffer = ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(nextPtr), 8);
             if (nodeBuffer == null)
             {
                 yield break;
             }
 
+            nodeCount++;
             itemPtr = BinaryUtils.ReadUInt32BE(nodeBuffer);
             nextPtr = BinaryUtils.ReadUInt32BE(nodeBuffer, 4);
             if (itemPtr != 0)
             {
                 yield return itemPtr;
-                count++;
             }
         }
     }
@@ -279,7 +298,7 @@ internal sealed class RuntimeMemoryContext(
         // is never a legitimate game float — it is the signature of a misread, typically a pointer's
         // low bytes decoded as a float when a struct offset is wrong for the captured build. Exact zero
         // stays valid (IsSubnormal(0) is false).
-        if (!IsNormalFloat(value) || float.IsSubnormal(value) || value < min || value > max)
+        if (!IsNormalOrZeroFloat(value) || value < min || value > max)
         {
             return 0;
         }
@@ -326,18 +345,8 @@ internal sealed class RuntimeMemoryContext(
             return null;
         }
 
-        var fileOffset = MinidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(pointer));
-        if (!fileOffset.HasValue || fileOffset.Value + 24 > FileSize)
-        {
-            return null;
-        }
-
-        var tesFormBuffer = new byte[24];
-        try
-        {
-            Accessor.ReadArray(fileOffset.Value, tesFormBuffer, 0, 24);
-        }
-        catch
+        var tesFormBuffer = ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(pointer), 24);
+        if (tesFormBuffer == null)
         {
             return null;
         }
@@ -389,13 +398,7 @@ internal sealed class RuntimeMemoryContext(
             return null;
         }
 
-        var fileOffset = VaToFileOffset(va);
-        if (fileOffset == null)
-        {
-            return null;
-        }
-
-        var formBuf = ReadBytes(fileOffset.Value, 16);
+        var formBuf = ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(va), 16);
         if (formBuf == null)
         {
             return null;
@@ -425,19 +428,58 @@ internal sealed class RuntimeMemoryContext(
 
     /// <summary>
     ///     Read BSStringT header to extract the string file offset and VA.
-    ///     Returns null if the BSStringT pointer is invalid or unmapped.
+    ///     When the header file offset maps to a captured VA, the full header is read through
+    ///     that VA and fails closed across capture gaps. Flat header reads are attempted only
+    ///     by lightweight synthetic contexts with no memory-region map.
     /// </summary>
     public (long StringFileOffset, uint StringVa)? ReadBSStringTInfo(long tesFormFileOffset, int fieldOffset)
     {
-        var bstOffset = tesFormFileOffset + fieldOffset;
-        if (bstOffset + 8 > FileSize)
+        if (fieldOffset < 0 || tesFormFileOffset < 0 || tesFormFileOffset > long.MaxValue - fieldOffset)
         {
             return null;
         }
 
-        var bstBuffer = new byte[8];
-        Accessor.ReadArray(bstOffset, bstBuffer, 0, 8);
+        var bstOffset = tesFormFileOffset + fieldOffset;
+        if (bstOffset > FileSize - 8)
+        {
+            return null;
+        }
 
+        var headerVa = MinidumpInfo.FileOffsetToVirtualAddress(bstOffset);
+        byte[]? bstBuffer;
+        if (headerVa.HasValue)
+        {
+            bstBuffer = ReadBytesAtVa(headerVa.Value, 8);
+        }
+        else if (MinidumpInfo.MemoryRegions.Count == 0)
+        {
+            bstBuffer = ReadBytes(bstOffset, 8);
+        }
+        else
+        {
+            return null;
+        }
+
+        return bstBuffer == null ? null : ReadBSStringTInfoHeader(bstBuffer);
+    }
+
+    /// <summary>
+    ///     Read BSStringT ownership metadata from a complete-object buffer that was already
+    ///     captured safely. The pointed-to payload is still validated through its VA.
+    /// </summary>
+    public (long StringFileOffset, uint StringVa)? ReadBSStringTInfo(byte[] structData, int fieldOffset)
+    {
+        ArgumentNullException.ThrowIfNull(structData);
+        if (fieldOffset < 0 || fieldOffset > structData.Length - 8)
+        {
+            return null;
+        }
+
+        return ReadBSStringTInfoHeader(structData.AsSpan(fieldOffset, 8));
+    }
+
+    private (long StringFileOffset, uint StringVa)? ReadBSStringTInfoHeader(ReadOnlySpan<byte> bstBuffer)
+    {
         var pString = BinaryUtils.ReadUInt32BE(bstBuffer);
         var sLen = BinaryUtils.ReadUInt16BE(bstBuffer, 4);
 
@@ -447,7 +489,7 @@ internal sealed class RuntimeMemoryContext(
         }
 
         var strFileOffset = MinidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(pString));
-        if (!strFileOffset.HasValue || strFileOffset.Value + sLen > FileSize)
+        if (!strFileOffset.HasValue || ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(pString), sLen) == null)
         {
             return null;
         }
@@ -481,22 +523,63 @@ internal sealed class RuntimeMemoryContext(
     public string? ReadBSStringTDiag(long tesFormFileOffset, int fieldOffset, out BSStringFailure failureReason,
         out uint rawPointer, out ushort rawLength, out string? rawHex, out string? partialData)
     {
-        failureReason = BSStringFailure.None;
-        rawPointer = 0;
-        rawLength = 0;
-        rawHex = null;
-        partialData = null;
-
         var bstOffset = tesFormFileOffset + fieldOffset;
-        if (bstOffset + 8 > FileSize)
+        if (bstOffset < 0 || bstOffset > FileSize - 8)
         {
             failureReason = BSStringFailure.StructOutOfBounds;
+            rawPointer = 0;
+            rawLength = 0;
+            rawHex = null;
+            partialData = null;
             return null;
         }
 
         var bstBuffer = new byte[8];
         Accessor.ReadArray(bstOffset, bstBuffer, 0, 8);
+        return DecodeBSStringTHeader(bstBuffer, out failureReason,
+            out rawPointer, out rawLength, out rawHex, out partialData);
+    }
+
+    /// <summary>
+    ///     Read a BSStringT whose 8-byte header is already present in a VA-safe struct buffer.
+    ///     The pointed-to string payload is still resolved through its virtual address.
+    /// </summary>
+    public string? ReadBSStringTDiag(byte[] structData, int fieldOffset, out BSStringFailure failureReason)
+    {
+        return ReadBSStringTDiag(structData, fieldOffset, out failureReason,
+            out _, out _, out _, out _);
+    }
+
+    /// <summary>
+    ///     Read a BSStringT from a captured struct buffer with diagnostic raw values for sampling.
+    /// </summary>
+    public string? ReadBSStringTDiag(byte[] structData, int fieldOffset, out BSStringFailure failureReason,
+        out uint rawPointer, out ushort rawLength, out string? rawHex, out string? partialData)
+    {
+        ArgumentNullException.ThrowIfNull(structData);
+        if (fieldOffset < 0 || fieldOffset > structData.Length - 8)
+        {
+            failureReason = BSStringFailure.StructOutOfBounds;
+            rawPointer = 0;
+            rawLength = 0;
+            rawHex = null;
+            partialData = null;
+            return null;
+        }
+
+        var bstBuffer = structData.AsSpan(fieldOffset, 8).ToArray();
+        return DecodeBSStringTHeader(bstBuffer, out failureReason,
+            out rawPointer, out rawLength, out rawHex, out partialData);
+    }
+
+    private string? DecodeBSStringTHeader(byte[] bstBuffer, out BSStringFailure failureReason,
+        out uint rawPointer, out ushort rawLength, out string? rawHex, out string? partialData)
+    {
+        failureReason = BSStringFailure.None;
+        rawPointer = 0;
+        rawLength = 0;
         rawHex = Convert.ToHexString(bstBuffer);
+        partialData = null;
 
         var pString = BinaryUtils.ReadUInt32BE(bstBuffer);
         var sLen = BinaryUtils.ReadUInt16BE(bstBuffer, 4);
@@ -534,14 +617,12 @@ internal sealed class RuntimeMemoryContext(
             return null;
         }
 
-        if (strFileOffset.Value + sLen > FileSize)
+        var strBuffer = ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(pString), sLen);
+        if (strBuffer == null)
         {
             failureReason = BSStringFailure.DataBeyondFile;
             return null;
         }
-
-        var strBuffer = new byte[sLen];
-        Accessor.ReadArray(strFileOffset.Value, strBuffer, 0, sLen);
 
         var result = EsmStringUtils.ValidateAndDecodeGameText(strBuffer, sLen);
         if (result == null)

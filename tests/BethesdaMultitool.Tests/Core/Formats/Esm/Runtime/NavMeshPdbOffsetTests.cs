@@ -32,7 +32,7 @@ public sealed class NavMeshPdbOffsetTests
         AssertFieldAtOffset(layout, "Triangles", 72);
         AssertFieldAtOffset(layout, "DoorPortals", 104);
 
-        // BSSimpleArray<T> layout: data ptr (+0), capacity (+4), count (+8), reserved (+12).
+        // BSSimpleArray<T> layout: allocator vfptr (+0), data ptr (+4), count (+8), reserved (+12).
         // RuntimeNavMeshReader.ArrayCountFieldOffset is +8.
         Assert.Equal(8, BSSimpleArrayCountFieldOffset);
     }

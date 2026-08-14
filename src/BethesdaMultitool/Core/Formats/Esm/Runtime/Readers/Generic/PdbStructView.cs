@@ -196,16 +196,16 @@ internal sealed class PdbStructView
     }
 
     /// <summary>
-    ///     Reads a BSStringT at the named field. Wires through the accessor's
-    ///     diagnostic-sample variant when the view was opened with a
-    ///     <see cref="RuntimeEditorIdEntry" />.
+    ///     Reads a BSStringT header from the view's already VA-stitched object buffer.
+    ///     Wires through the accessor's diagnostic-sample variant when the view was
+    ///     opened with a <see cref="RuntimeEditorIdEntry" />.
     /// </summary>
     public string? BsString(string field, string? owner = null)
     {
         var off = ResolveOffset(field, owner);
         return _entry != null
-            ? _accessor.ReadBsStringAtOffset(FileOffset, field, off, _entry)
-            : _accessor.ReadBsStringAtOffset(FileOffset, field, off);
+            ? _accessor.ReadBsStringAtOffset(Buffer, FileOffset, field, off, _entry)
+            : _accessor.ReadBsStringAtOffset(Buffer, field, off);
     }
 
     /// <summary>

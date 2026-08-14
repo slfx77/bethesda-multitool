@@ -105,7 +105,7 @@ internal sealed class RuntimeActorReader
 
         // Read script pointer before ACBS validation so it's available even for minimal NPCs.
         // When pFormScript is null we leave the binding null and let
-        // PluginBuilder.AttachOrphanScriptsByEditorId resolve it from the parsed SCPT set
+        // PluginConversionPipeline.AttachOrphanScriptsByEditorId resolve it from the parsed SCPT set
         // via the exact `{npcEditorId}Script` / `{npcEditorId}SCRIPT` naming convention.
         // The previous brute-force scan walked every 4-byte slot of the TESNPC struct and
         // accepted any Script* whose EditorId merely *started* with the NPC's EditorId —

@@ -46,6 +46,8 @@ public sealed record DmpGapRecoveryCandidate
     public bool IsBigEndian { get; init; }
     public uint? RawDataSize { get; init; }
     public uint? RawFlags { get; init; }
+    /// <summary>Endian-correct record form version from raw ESM header offset 20, when present.</summary>
+    public ushort? FormVersion { get; init; }
     public string? DecodedText { get; init; }
     public uint? TopicFormId { get; init; }
     public uint? QuestFormId { get; init; }

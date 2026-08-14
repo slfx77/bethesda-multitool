@@ -78,6 +78,26 @@ internal static class PdbStructLayouts
     }
 
     /// <summary>
+    ///     Returns the offset of the embedded <c>TESForm</c> subobject from the complete-object base.
+    ///     PDB field offsets are complete-object-relative, while runtime form maps store <c>TESForm*</c>.
+    /// </summary>
+    internal static int GetTesFormInteriorOffset(PdbTypeLayout layout)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+
+        var cFormType = layout.Fields.FirstOrDefault(
+            field => field is { Owner: "TESForm", Name: "cFormType" });
+        if (cFormType == null || cFormType.Offset < 4 || cFormType.Offset >= layout.StructSize)
+        {
+            return 0;
+        }
+
+        // cFormType is four bytes into TESForm on Xbox 360. Subtracting that local offset
+        // converts its complete-object-relative PDB offset into the TESForm interior offset.
+        return cFormType.Offset - 4;
+    }
+
+    /// <summary>
     ///     Returns true if the given FormType has a hand-written specialized reader.
     /// </summary>
     public static bool HasSpecializedReader(byte formType)

@@ -374,6 +374,10 @@ public sealed class RuntimeParityStructReaderTests : RuntimeStructReaderTestBase
         const int stageOffset = 1024;
         const int stageItemOffset = 1280;
         const int conditionItemOffset = 1536;
+        const int factionOffset = 1792;
+        const int ignoredReferenceOffset = 2048;
+        const uint factionFormId = 0x00002601;
+        const uint ignoredReferenceFormId = 0x00002602;
 
         WriteTesFormHeader(data, structOffset, 0x82010000, 0x47, questFormId);
         WriteUInt32BE(data, structOffset + 84, FileOffsetToVa(stageOffset));
@@ -388,13 +392,19 @@ public sealed class RuntimeParityStructReaderTests : RuntimeStructReaderTestBase
         // TESConditionItem (28 bytes per CONDITION_ITEM_DATA layout in TesConditionListWalker):
         //   +0  iFlags (Type byte) = 0x00 (operator ==, no OR, no swap, no UseGlobal)
         //   +4  fValue (float)     = 1.0f
-        //   +8  iFunction (u16)    = 0x0014 (GetInFaction)
-        //   +12 pParam[0] (u32)    = 0x000ED239u (non-form param: faction FormID-shaped value)
+        //   +8  iFunction (u16)    = 0x0047 (GetInFaction)
+        //   +12 pParam[0] (u32)    = TESFaction* (runtime pointer, not an on-disk FormID)
         //   +20 eObject (u32)      = 0 (Subject)
         WriteUInt32BE(data, conditionItemOffset + 4, BitConverter.SingleToUInt32Bits(1.0f));
         data[conditionItemOffset + 8] = 0x00;
-        data[conditionItemOffset + 9] = 0x14;
-        WriteUInt32BE(data, conditionItemOffset + 12, 0x000ED239u);
+        data[conditionItemOffset + 9] = 0x47;
+        WriteUInt32BE(data, conditionItemOffset + 12, FileOffsetToVa(factionOffset));
+        WriteTesFormHeader(data, factionOffset, 0x82010000, 0x08, factionFormId);
+        // Run On=Linked Reference (4) does not make offset 24 semantic. Point it at a
+        // valid TESForm so this fails if the runtime walker follows ignored storage.
+        WriteUInt32BE(data, conditionItemOffset + 20, 4u);
+        WriteUInt32BE(data, conditionItemOffset + 24, FileOffsetToVa(ignoredReferenceOffset));
+        WriteTesFormHeader(data, ignoredReferenceOffset, 0x82010000, 0x31, ignoredReferenceFormId);
 
         var reader = CreateReader(data);
         var result =
@@ -405,8 +415,48 @@ public sealed class RuntimeParityStructReaderTests : RuntimeStructReaderTestBase
         Assert.Equal(30, stage.Index);
         Assert.Equal((byte)0x02, stage.Flags);
         var condition = Assert.Single(stage.Conditions);
-        Assert.Equal((ushort)0x0014, condition.FunctionIndex);
+        Assert.Equal((ushort)0x0047, condition.FunctionIndex);
         Assert.Equal(1.0f, condition.ComparisonValue);
+        Assert.Equal(factionFormId, condition.Parameter1);
+        Assert.Equal(4u, condition.RunOn);
+        Assert.Equal(0u, condition.Reference);
+    }
+
+    [Fact]
+    public void ReadRuntimeQuest_WithScriptOnlyOpcodeInCtda_LeavesPointerShapedParameterRaw()
+    {
+        var data = new byte[DataSize];
+        const uint questFormId = 0x00002610;
+        const int structOffset = 0;
+        const int stageOffset = 1024;
+        const int stageItemOffset = 1280;
+        const int conditionItemOffset = 1536;
+        const int pointerTargetOffset = 1792;
+        const uint pointerTargetFormId = 0x00002611;
+
+        WriteTesFormHeader(data, structOffset, 0x82010000, 0x47, questFormId);
+        WriteUInt32BE(data, structOffset + 84, FileOffsetToVa(stageOffset));
+        WriteQuestStage(data, stageOffset, 30, FileOffsetToVa(stageItemOffset));
+        WriteQuestStageItem(data, stageItemOffset, 0x02, FileOffsetToVa(structOffset), false);
+        WriteUInt32BE(data, stageItemOffset + 4, FileOffsetToVa(conditionItemOffset));
+
+        // Raw 0x0014 is the script-only LoopGroup opcode and is absent from the exact FNV
+        // condition callback map. Even pointer-shaped storage must therefore remain raw.
+        WriteUInt32BE(data, conditionItemOffset + 4, BitConverter.SingleToUInt32Bits(1.0f));
+        WriteUInt16BE(data, conditionItemOffset + 8, 0x0014);
+        var rawParameter = FileOffsetToVa(pointerTargetOffset);
+        WriteUInt32BE(data, conditionItemOffset + 12, rawParameter);
+        WriteTesFormHeader(data, pointerTargetOffset, 0x82010000, 0x08, pointerTargetFormId);
+
+        var reader = CreateReader(data);
+        var result = reader.ReadRuntimeQuest(MakeEntry("QuestScriptOnlyCondition", questFormId, 0x47, structOffset));
+
+        Assert.NotNull(result);
+        var condition = Assert.Single(Assert.Single(result.Stages).Conditions);
+        Assert.False(PerkConditionParameterResolver.IsKnownConditionFunction(0x0014));
+        Assert.Equal((ushort)0x0014, condition.FunctionIndex);
+        Assert.Equal(rawParameter, condition.Parameter1);
+        Assert.NotEqual(pointerTargetFormId, condition.Parameter1);
     }
 
     [Fact]

@@ -5,10 +5,10 @@ using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.Items;
 
 /// <summary>
-///     Typed runtime reader for BGSConstructibleObject (COBJ, FormType 0x32).
+///     Forensic FNV runtime reader for BGSConstructibleObject (COBJ, FormType 0x32).
 ///     Reads the CreatedItem FormID by following the pCreatedItem pointer at +192.
-///     pRequiredItems (+188, BGSListForm) is the materialized inline ingredient list —
-///     typically anonymous (FormID 0), so we don't expose it.
+///     The adjacent pRequiredItems pointer is runtime-layout evidence only: it does not
+///     establish CNTO quantities or any safe FNV on-disk recipe serialization.
 /// </summary>
 internal sealed class RuntimeConstructibleObjectReader(RuntimeMemoryContext context)
 {
@@ -16,7 +16,7 @@ internal sealed class RuntimeConstructibleObjectReader(RuntimeMemoryContext cont
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
-    /// <summary>Reads the runtime constructible-object (recipe) record for the given DMP entry, or null if it can't be read.</summary>
+    /// <summary>Reads the runtime constructible-object probe for the given DMP entry, or null if it can't be read.</summary>
     public ConstructibleObjectRecord? ReadRuntimeConstructibleObject(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != CobjFormType)

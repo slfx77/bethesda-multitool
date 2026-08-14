@@ -274,6 +274,7 @@ internal sealed class RuntimeMagicReader
         var minLevel = buffer[perkData + 1];
         var ranks = buffer[perkData + 2];
         var playable = buffer[perkData + 3];
+        var hidden = buffer[perkData + 4];
 
         // Walk PerkEntries BSSimpleList
         var entriesListOffset = view.Offset("PerkEntries", "BGSPerk") ?? -1;
@@ -297,6 +298,7 @@ internal sealed class RuntimeMagicReader
             MinLevel = minLevel,
             Ranks = ranks,
             Playable = playable,
+            Hidden = hidden,
             Entries = entries,
             Conditions = conditions,
             Offset = view.FileOffset,

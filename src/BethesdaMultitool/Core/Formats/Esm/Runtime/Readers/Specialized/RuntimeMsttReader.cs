@@ -10,16 +10,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///     pSoundLoop) — the fields that connect MSTT base forms to the audio markers
 ///     placed in cells.
 ///
-///     MSTT uses an unusual multi-inheritance order in BGSMovableStatic where
-///     TESFullName + BGSDestructibleObjectForm are laid out BEFORE TESForm in the
-///     C++ class. That puts <c>cFormType</c> at offset +24 and <c>iFormID</c> at
-///     offset +32 within the object. <c>RuntimePdbFieldAccessor.ReadStruct</c>
-///     resolves these offsets from the PDB layout itself, so the regular
-///     OpenStructView flow handles MSTT without reader-side gymnastics — but the
-///     reader still depends on
-///     <see cref="BethesdaMultitool.Core.Formats.Esm.Records.TesFormHeaderProbe" />
-///     having populated <c>entry.FormId</c> from the FLOR/MSTT-specific iFormID
-///     offset before invocation.
+///     MSTT uses an unusual multiple-inheritance order in BGSMovableStatic where
+///     its TESForm subobject begins at +20 in the complete object. Thus the identity
+///     fields are at complete-object offsets +24/+32, but a runtime form-map value is
+///     already <c>TESForm*</c> and reads them at canonical subobject offsets +4/+12.
+///     <c>RuntimePdbFieldAccessor.ReadStruct</c> uses the PDB layout to rebase that
+///     retained subobject pointer to the complete-object base before applying fields.
 /// </summary>
 internal sealed class RuntimeMsttReader(RuntimeMemoryContext context)
 {

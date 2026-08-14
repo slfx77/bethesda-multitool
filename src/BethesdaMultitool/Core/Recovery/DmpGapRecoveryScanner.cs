@@ -260,6 +260,9 @@ internal static class DmpGapRecoveryScanner
         var formId = xboxEndian
             ? BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(offset + 12, 4))
             : BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(offset + 12, 4));
+        var formVersion = xboxEndian
+            ? BinaryPrimitives.ReadUInt16BigEndian(buffer.AsSpan(offset + 20, 2))
+            : BinaryPrimitives.ReadUInt16LittleEndian(buffer.AsSpan(offset + 20, 2));
 
         if (!RecordValidator.IsValidMainRecordHeader(signature, sizeField, flags, formId))
         {
@@ -299,7 +302,8 @@ internal static class DmpGapRecoveryScanner
             GapContext = gap.Context,
             IsBigEndian = xboxEndian,
             RawDataSize = sizeField,
-            RawFlags = flags
+            RawFlags = flags,
+            FormVersion = formVersion
         };
     }
 

@@ -42,33 +42,61 @@ internal sealed class RuntimeGenericReader(
             return null;
         }
 
-        // pAllForms is NiTMapBase<uint, TESForm*>, so entry.TesFormOffset is the address of the
-        // TESForm SUBOBJECT, not the object base. For TESForm-first classes the two coincide and
-        // this is a no-op. For classes whose layout puts other bases before TESForm — MSTT's
-        // TESFullName+BGSDestructibleObjectForm push TESForm to +20, ASPC sits at +4 — reading
-        // PDB object-relative offsets from the interior pointer shifts EVERY field read high by
-        // that amount. Ground-truthing v138 against proto-360 caught it red-handed: all 92 MSTT
-        // OBNDs decoded as (strlen, strlen, …) of the model path, i.e. the bounds read landed on
-        // cModel's BSStringT length words, while identity fields stayed correct because
-        // TesFormHeaderProbe reads them TESForm-relative. Rebase to the object base so the PDB
-        // offsets mean what they say. TESForm's own cFormType is at +4 within TESForm.
-        // (ASPC is NOT such a class — BGSAcousticSpace is TESForm-first, cFormType@4, so this is a
-        // no-op for it. An earlier revision of this comment claimed "ASPC sits at +4", which is
-        // wrong and misreads every ASPC offset by four bytes.)
-        var tesFormField = layout.Fields.FirstOrDefault(f => f is { Owner: "TESForm", Name: "cFormType" });
-        var interiorOffset = tesFormField is { Offset: > 4 } ? tesFormField.Offset - 4 : 0;
+        // pAllForms is NiTMapBase<uint, TESForm*>, so the retained file offset / VA identifies
+        // the TESForm subobject, not necessarily the complete-object base. Identity was read at
+        // canonical TESForm-relative +4/+12 upstream. PDB field offsets, however, are relative
+        // to the complete object: MSTT's TESForm begins at +20 and FLOR's at +12 in the verified
+        // layout. Recover that base before applying any PDB field offset. TESForm-first classes
+        // such as WRLD and ASPC have an interior offset of zero, making this a no-op for them.
+        var interiorOffset = PdbStructLayouts.GetTesFormInteriorOffset(layout);
+        // Resolve the complete object in VA space when the dump provides a mapping. The hash-table
+        // entry points at the TESForm subobject, so apply the same interior-base correction to its
+        // VA before mapping the real object base back to a file offset. Prefer the captured pointer;
+        // TesFormOffset is only used to recover the VA when no pointer was retained on the entry.
+        var tesFormVa = entry.TesFormPointer is { } pointer && pointer != 0
+            ? pointer
+            : _context.MinidumpInfo.FileOffsetToVirtualAddress(entry.TesFormOffset.Value);
+        long? objectVa = tesFormVa.HasValue ? tesFormVa.Value - interiorOffset : null;
         var objectBase = entry.TesFormOffset.Value - interiorOffset;
+        if (objectVa.HasValue)
+        {
+            var mappedObjectBase = _context.MinidumpInfo.VirtualAddressToFileOffset(objectVa.Value);
+            if (!mappedObjectBase.HasValue)
+            {
+                return null;
+            }
 
-        // Apply per-type shift if probed, then try per-record correction via BSStringT validation
+            // Keep a file offset as the downstream base: BSStringT diagnostics and the recovered
+            // record's Offset are file-oriented even though the top-level read is VA-oriented.
+            objectBase = mappedObjectBase.Value;
+        }
+
+        // Read the type-shift range before probing per-record correction. This makes the VA-range
+        // check authoritative: a validator must never inspect flat bytes across a capture gap.
         var shift = _typeShifts.TryGetValue(formType, out var s) ? s : 0;
-        shift = TryCorrectShift(layout, shift, objectBase);
-
-        var effectiveSize = layout.StructSize + Math.Max(shift, 0) + 8; // +8 headroom for shift correction
-        var structData = _context.ReadBytes(objectBase, effectiveSize);
+        var effectiveSize = GetEffectiveSize(layout, shift);
+        var structData = objectVa.HasValue
+            ? _context.ReadBytesAtVa(objectVa.Value, effectiveSize)
+            : _context.ReadBytes(objectBase, effectiveSize);
         if (structData == null)
         {
             return null;
         }
+
+        var correctedShift = TryCorrectShift(layout, shift, structData);
+        var correctedSize = GetEffectiveSize(layout, correctedShift);
+        if (correctedSize > structData.Length)
+        {
+            structData = objectVa.HasValue
+                ? _context.ReadBytesAtVa(objectVa.Value, correctedSize)
+                : _context.ReadBytes(objectBase, correctedSize);
+            if (structData == null)
+            {
+                return null;
+            }
+        }
+
+        shift = correctedShift;
 
         var fields = ReadFields(structData, readableFields, objectBase, shift);
 
@@ -78,7 +106,7 @@ internal sealed class RuntimeGenericReader(
         if (fullNameField != null)
         {
             var nameOffset = ApplyFieldShift(fullNameField, shift);
-            fullName = _context.ReadBSStringTDiag(objectBase, nameOffset, out var nameFailure,
+            fullName = _context.ReadBSStringTDiag(structData, nameOffset, out var nameFailure,
                 out var namePtr, out var nameLen, out var nameHex, out var namePartial);
             BSStringDiagnostics.RecordWithSample("cFullName", nameFailure,
                 new BSStringDiagnostics.DiagSample(entry.FormId, entry.EditorId, entry.FormType,
@@ -91,7 +119,7 @@ internal sealed class RuntimeGenericReader(
         if (modelField != null)
         {
             var modelOffset = ApplyFieldShift(modelField, shift);
-            modelPath = _context.ReadBSStringTDiag(objectBase, modelOffset, out var modelFailure,
+            modelPath = _context.ReadBSStringTDiag(structData, modelOffset, out var modelFailure,
                 out var modelPtr, out var modelLen, out var modelHex, out var modelPartial);
             BSStringDiagnostics.RecordWithSample("cModel", modelFailure,
                 new BSStringDiagnostics.DiagSample(entry.FormId, entry.EditorId, entry.FormType,
@@ -165,7 +193,7 @@ internal sealed class RuntimeGenericReader(
     ///     and return the corrected shift. This fixes ~5% of records where the uniform
     ///     per-type shift is wrong for an individual record.
     /// </summary>
-    private int TryCorrectShift(PdbTypeLayout layout, int typeShift, long objectBase)
+    private int TryCorrectShift(PdbTypeLayout layout, int typeShift, byte[] structData)
     {
         // Find a BSStringT field to use as a validator (prefer cModel — higher success rate)
         var probeField = layout.Fields.FirstOrDefault(f => f is { Name: "cModel", Owner: "TESModel" })
@@ -177,7 +205,12 @@ internal sealed class RuntimeGenericReader(
 
         // Test the type-level shift first
         var baseOffset = ApplyFieldShift(probeField, typeShift);
-        _context.ReadBSStringTDiag(objectBase, baseOffset, out var baseFailure);
+        if (!ContainsBsStringHeader(structData, baseOffset))
+        {
+            return typeShift;
+        }
+
+        _context.ReadBSStringTDiag(structData, baseOffset, out var baseFailure);
 
         // Only attempt correction for shift-related failures
         if (baseFailure is not (RuntimeMemoryContext.BSStringFailure.LengthTooLarge
@@ -192,9 +225,12 @@ internal sealed class RuntimeGenericReader(
         foreach (var candidateShift in corrections)
         {
             var candidateOffset = ApplyFieldShift(probeField, candidateShift);
-            if (candidateOffset < 0) continue;
+            if (!ContainsBsStringHeader(structData, candidateOffset))
+            {
+                continue;
+            }
 
-            var result = _context.ReadBSStringTDiag(objectBase, candidateOffset, out var failure);
+            var result = _context.ReadBSStringTDiag(structData, candidateOffset, out var failure);
             if (result != null && failure == RuntimeMemoryContext.BSStringFailure.None)
             {
                 return candidateShift;
@@ -202,6 +238,16 @@ internal sealed class RuntimeGenericReader(
         }
 
         return typeShift;
+    }
+
+    private static int GetEffectiveSize(PdbTypeLayout layout, int shift)
+    {
+        return layout.StructSize + Math.Max(shift, 0) + 8; // +8 headroom for shift correction
+    }
+
+    private static bool ContainsBsStringHeader(byte[] structData, int offset)
+    {
+        return offset >= 0 && offset <= structData.Length - 8;
     }
 
     /// <summary>
@@ -259,14 +305,7 @@ internal sealed class RuntimeGenericReader(
                     continue; // Anchored, don't probe
                 }
 
-                var check = field.Kind switch
-                {
-                    "pointer" => RuntimeReaderFieldProbe.FieldCheck.PointerToForm,
-                    "float" => RuntimeReaderFieldProbe.FieldCheck.NormalFloat,
-                    "struct" when field.TypeDetail is "BSStringT<char>" =>
-                        RuntimeReaderFieldProbe.FieldCheck.BSStringT,
-                    _ => (RuntimeReaderFieldProbe.FieldCheck?)null
-                };
+                var check = GetFieldProbeCheck(field);
 
                 if (check == null)
                 {
@@ -283,9 +322,11 @@ internal sealed class RuntimeGenericReader(
             }
 
             var samples = group.Take(10).ToList();
+            var interiorOffset = PdbStructLayouts.GetTesFormInteriorOffset(layout);
             var result = RuntimeReaderFieldProbe.Probe(
                 context, samples, fieldSpecs, 1, shiftOptions,
-                layout.StructSize, $"Generic_{RuntimeBuildOffsets.GetRecordTypeCode(formType) ?? $"0x{formType:X2}"}");
+                layout.StructSize, $"Generic_{RuntimeBuildOffsets.GetRecordTypeCode(formType) ?? $"0x{formType:X2}"}",
+                tesFormInteriorOffset: interiorOffset);
 
             if (result is { Margin: >= 2 } && result.Winner.Layout[1] != 0)
             {
@@ -296,10 +337,22 @@ internal sealed class RuntimeGenericReader(
         return shifts.Count > 0 ? shifts : null;
     }
 
+    internal static RuntimeReaderFieldProbe.FieldCheck? GetFieldProbeCheck(PdbFieldLayout field)
+    {
+        return field.Kind switch
+        {
+            "pointer" => RuntimeReaderFieldProbe.FieldCheck.PointerToForm,
+            "float32" or "float" => RuntimeReaderFieldProbe.FieldCheck.NormalFloat,
+            "struct" when field.TypeDetail is "BSStringT<char>" =>
+                RuntimeReaderFieldProbe.FieldCheck.BSStringT,
+            _ => null
+        };
+    }
+
     /// <summary>
     ///     Read a single field value from the struct data based on its PDB type kind.
     /// </summary>
-    private object? ReadFieldValue(byte[] data, PdbFieldLayout field, long tesFormFileOffset,
+    internal object? ReadFieldValue(byte[] data, PdbFieldLayout field, long tesFormFileOffset,
         int effectiveOffset = -1)
     {
         var offset = effectiveOffset >= 0 ? effectiveOffset : field.Offset;
@@ -313,20 +366,20 @@ internal sealed class RuntimeGenericReader(
             "uint8" => data[offset],
             "int8" => (sbyte)data[offset],
             "bool" => data[offset] != 0,
-            "float" => ReadValidatedFloat(data, offset),
+            "float32" or "float" => ReadValidatedFloat(data, offset),
             "pointer" => ReadPointerField(data, field, offset),
-            "struct" => ReadEmbeddedStruct(data, field, tesFormFileOffset, offset),
+            "struct" => ReadEmbeddedStruct(data, field, offset),
             _ => null
         };
     }
 
     /// <summary>
-    ///     Read a float field, returning null for NaN/Infinity values (likely garbage data).
+    ///     Read a float field, returning null for non-finite or subnormal values (likely garbage data).
     /// </summary>
     private static float? ReadValidatedFloat(byte[] data, int offset)
     {
         var value = BinaryUtils.ReadFloatBE(data, offset);
-        if (float.IsNaN(value) || float.IsInfinity(value))
+        if (!RuntimeMemoryContext.IsNormalOrZeroFloat(value))
         {
             return null;
         }
@@ -368,8 +421,7 @@ internal sealed class RuntimeGenericReader(
     ///     For small embedded structs, read as a formatted hex string.
     ///     For larger ones, just note the type name and size.
     /// </summary>
-    private string? ReadEmbeddedStruct(byte[] data, PdbFieldLayout field, long tesFormFileOffset,
-        int effectiveOffset)
+    private string? ReadEmbeddedStruct(byte[] data, PdbFieldLayout field, int effectiveOffset)
     {
         if (field.Size <= 0 || effectiveOffset + field.Size > data.Length)
         {
@@ -392,7 +444,7 @@ internal sealed class RuntimeGenericReader(
         // BSStringT<char> is 8 bytes (4B pointer + 2B length + 2B maxLength) — try to resolve
         if (field.TypeDetail is "BSStringT<char>")
         {
-            var str = _context.ReadBsStringT(tesFormFileOffset, effectiveOffset);
+            var str = _context.ReadBSStringTDiag(data, effectiveOffset, out _);
             if (str != null)
             {
                 return str;

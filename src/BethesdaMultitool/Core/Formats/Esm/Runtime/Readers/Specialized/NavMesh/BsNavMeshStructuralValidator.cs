@@ -29,7 +29,7 @@ internal enum BsNavMeshValidationMode
 ///     struct into a <c>NavMeshRecord</c> — that's the caller's responsibility once the
 ///     candidate passes validation.
 ///
-///     Used by Phase 2d to gate Path 4's direct pAllForms NAVM walk. When the
+///     Used to gate the direct pAllForms NAVM walk. When the
 ///     <see cref="RuntimeCellEnumerator" />'s NAVM-byte calibration falls back to canonical
 ///     (no anchor + no drift remap), it emits a speculative candidate list at raw bytes
 ///     <c>[NavmFormType-2..NavmFormType+2]</c>; this validator filters out the false positives
@@ -78,13 +78,9 @@ internal sealed class BsNavMeshStructuralValidator
             return false;
         }
 
-        var fileOffset = _context.VaToFileOffset(navMeshVa);
-        if (fileOffset is not long offset)
-        {
-            return false;
-        }
-
-        var navmBytes = _context.ReadBytes(offset, BsNavMeshSize);
+        var navmBytes = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(navMeshVa),
+            BsNavMeshSize);
         if (navmBytes is null || navmBytes.Length < BsNavMeshSize)
         {
             return false;

@@ -56,30 +56,44 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
             return null;
         }
 
-        // Prefer a VA-based read so structs split across VA-contiguous minidump regions are
-        // stitched correctly even when those regions are stored at unrelated file offsets.
-        // A mapped VA is also fail-closed across capture gaps; falling back to a flat file read
-        // there would silently consume the next region's unrelated bytes.
-        var structVa = entry.TesFormPointer is { } pointer && pointer != 0
+        // Runtime form maps store TESForm*, which can point inside the complete object. PDB field
+        // offsets are complete-object-relative, so recover the object base before reading or
+        // validating any field. Doing the subtraction in VA space is essential: VA-contiguous
+        // minidump regions need not be adjacent in the dump file.
+        var tesFormVa = entry.TesFormPointer is { } pointer && pointer != 0
             ? pointer
             : _context.MinidumpInfo.FileOffsetToVirtualAddress(entry.TesFormOffset.Value);
-        var structFileOffset = entry.TesFormOffset.Value;
+        var interiorOffset = PdbStructLayouts.GetTesFormInteriorOffset(layout);
+        var objectFileOffset = entry.TesFormOffset.Value;
         byte[]? buffer;
-        if (structVa.HasValue)
+        if (tesFormVa.HasValue)
         {
-            var mappedOffset = _context.MinidumpInfo.VirtualAddressToFileOffset(structVa.Value);
+            if (tesFormVa.Value < long.MinValue + interiorOffset)
+            {
+                return null;
+            }
+
+            var objectVa = tesFormVa.Value - interiorOffset;
+            var mappedOffset = _context.MinidumpInfo.VirtualAddressToFileOffset(objectVa);
             if (!mappedOffset.HasValue)
             {
                 return null;
             }
 
-            structFileOffset = mappedOffset.Value;
-            buffer = _context.ReadBytesAtVa(structVa.Value, layout.StructSize);
+            objectFileOffset = mappedOffset.Value;
+            buffer = _context.ReadBytesAtVa(objectVa, layout.StructSize);
         }
         else
         {
-            // Lightweight synthetic callers may not provide a minidump region map.
-            buffer = _context.ReadBytes(structFileOffset, layout.StructSize);
+            // Lightweight synthetic callers may not provide a minidump region map. Preserve the
+            // flat-read fallback for them, but still honor the TESForm-interior contract.
+            if (objectFileOffset < interiorOffset)
+            {
+                return null;
+            }
+
+            objectFileOffset -= interiorOffset;
+            buffer = _context.ReadBytes(objectFileOffset, layout.StructSize);
         }
 
         if (buffer == null)
@@ -87,11 +101,8 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
             return null;
         }
 
-        // Resolve cFormType / iFormID offsets from the PDB layout. Most classes have
-        // TESForm at offset 0 (cFormType @ +4, iFormID @ +12) but multi-inheritance
-        // classes like TESFlora (cFormType @ +16) and BGSMovableStatic (cFormType @ +24)
-        // put base-class members before TESForm. Looking up the PDB-resolved offsets
-        // makes the validation work for both layouts.
+        // The buffer now starts at the complete-object base, so the flattened PDB offsets are the
+        // authoritative validation positions for both TESForm-first and multi-inheritance layouts.
         var cFormTypeOff = FindFieldOffset(layout, "cFormType", "TESForm");
         var iFormIdOff = FindFieldOffset(layout, "iFormID", "TESForm");
         if (cFormTypeOff is not { } ftOff || iFormIdOff is not { } fidOff
@@ -112,7 +123,7 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
             return null;
         }
 
-        return (layout, buffer, structFileOffset);
+        return (layout, buffer, objectFileOffset);
     }
 
     internal static int? FindFieldOffset(PdbTypeLayout layout, string name, string? owner = null)
@@ -133,34 +144,45 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
         return bounds is { X1: 0, Y1: 0, Z1: 0, X2: 0, Y2: 0, Z2: 0 } ? null : bounds;
     }
 
-    internal string? ReadBsString(long fileOffset, PdbTypeLayout layout, string name, string? owner = null)
-    {
-        return ReadBsStringAtOffset(fileOffset, name, FindFieldOffset(layout, name, owner));
-    }
-
-    internal string? ReadBsString(long fileOffset, PdbTypeLayout layout, string name, string? owner,
+    internal string? ReadBsString(
+        byte[] structData,
+        long fileOffset,
+        PdbTypeLayout layout,
+        string name,
+        string? owner,
         RuntimeEditorIdEntry entry)
     {
-        return ReadBsStringAtOffset(fileOffset, name, FindFieldOffset(layout, name, owner), entry);
+        return ReadBsStringAtOffset(
+            structData,
+            fileOffset,
+            name,
+            FindFieldOffset(layout, name, owner),
+            entry);
     }
 
     /// <summary>
-    ///     Pre-computed-offset overload — used by <see cref="PdbStructView" /> when a
+    ///     Pre-computed-offset overload for a struct buffer already read through the VA-safe
+    ///     complete-object path. Used by <see cref="PdbStructView" /> when a
     ///     <see cref="PdbStructView.WithShift(int,int,int)" /> band has adjusted the field offset.
+    ///     The pointed-to payload remains VA-validated by the context.
     /// </summary>
-    internal string? ReadBsStringAtOffset(long fileOffset, string name, int? fieldOffset)
+    internal string? ReadBsStringAtOffset(byte[] structData, string name, int? fieldOffset)
     {
         if (!fieldOffset.HasValue)
         {
             return null;
         }
 
-        var result = _context.ReadBSStringTDiag(fileOffset, fieldOffset.Value, out var failure);
+        var result = _context.ReadBSStringTDiag(structData, fieldOffset.Value, out var failure);
         BSStringDiagnostics.Record(name, failure);
         return result;
     }
 
-    internal string? ReadBsStringAtOffset(long fileOffset, string name, int? fieldOffset,
+    internal string? ReadBsStringAtOffset(
+        byte[] structData,
+        long fileOffset,
+        string name,
+        int? fieldOffset,
         RuntimeEditorIdEntry entry)
     {
         if (!fieldOffset.HasValue)
@@ -168,7 +190,7 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
             return null;
         }
 
-        var result = _context.ReadBSStringTDiag(fileOffset, fieldOffset.Value, out var failure,
+        var result = _context.ReadBSStringTDiag(structData, fieldOffset.Value, out var failure,
             out var ptr, out var len, out var hex, out var partial);
         BSStringDiagnostics.RecordWithSample(name, failure,
             new BSStringDiagnostics.DiagSample(entry.FormId, entry.EditorId, entry.FormType,
@@ -208,33 +230,9 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
         int maxItems = RuntimeMemoryContext.MaxListItems)
     {
         var formIds = new List<uint>();
-        if (listHeadOffset + 8 > structBuffer.Length)
+        foreach (var itemPtr in _context.WalkInlineBSSimpleListItemPointers(
+                     structBuffer, listHeadOffset, maxItems))
         {
-            return formIds;
-        }
-
-        var itemPtr = BinaryUtils.ReadUInt32BE(structBuffer, listHeadOffset);
-        var nextPtr = BinaryUtils.ReadUInt32BE(structBuffer, listHeadOffset + 4);
-
-        AddPointerFormId(formIds, itemPtr, expectedFormType);
-
-        var visited = new HashSet<uint>();
-        while (nextPtr != 0 && formIds.Count < maxItems && _context.IsValidPointer(nextPtr) && visited.Add(nextPtr))
-        {
-            var nodeFileOffset = _context.VaToFileOffset(nextPtr);
-            if (nodeFileOffset == null)
-            {
-                break;
-            }
-
-            var nodeBuffer = _context.ReadBytes(nodeFileOffset.Value, 8);
-            if (nodeBuffer == null)
-            {
-                break;
-            }
-
-            itemPtr = BinaryUtils.ReadUInt32BE(nodeBuffer);
-            nextPtr = BinaryUtils.ReadUInt32BE(nodeBuffer, 4);
             AddPointerFormId(formIds, itemPtr, expectedFormType);
         }
 
@@ -249,33 +247,9 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
         where T : class
     {
         var results = new List<T>();
-        if (listHeadOffset + 8 > structBuffer.Length)
+        foreach (var itemPtr in _context.WalkInlineBSSimpleListItemPointers(
+                     structBuffer, listHeadOffset, maxItems))
         {
-            return results;
-        }
-
-        var itemPtr = BinaryUtils.ReadUInt32BE(structBuffer, listHeadOffset);
-        var nextPtr = BinaryUtils.ReadUInt32BE(structBuffer, listHeadOffset + 4);
-
-        AddListItem(results, itemPtr, itemReader);
-
-        var visited = new HashSet<uint>();
-        while (nextPtr != 0 && results.Count < maxItems && _context.IsValidPointer(nextPtr) && visited.Add(nextPtr))
-        {
-            var nodeFileOffset = _context.VaToFileOffset(nextPtr);
-            if (nodeFileOffset == null)
-            {
-                break;
-            }
-
-            var nodeBuffer = _context.ReadBytes(nodeFileOffset.Value, 8);
-            if (nodeBuffer == null)
-            {
-                break;
-            }
-
-            itemPtr = BinaryUtils.ReadUInt32BE(nodeBuffer);
-            nextPtr = BinaryUtils.ReadUInt32BE(nodeBuffer, 4);
             AddListItem(results, itemPtr, itemReader);
         }
 
