@@ -47,22 +47,40 @@ internal static class HavokCollisionExtractor
     private const int CapsuleHemisphereRings = 4;
 
     private static readonly HashSet<string> CollisionObjectTypes =
+    [
+        "bhkCollisionObject",
+        "bhkBlendCollisionObject",
+        "bhkSPCollisionObject",
+        // Known collision-object variants that this extractor does not decode. They must still
+        // participate in the every-object proof below: omitting one could let a sibling layer-15
+        // body falsely turn a mixed file into authoritative authored-none.
+        "bhkPCollisionObject",
+        "bhkNPCollisionObject",
+        "NiCollisionObject",
+        // Legacy NetImmerse collision attached directly to an AV object. It is not Havok and has a
+        // different layout, but it is still an authored collision peer that prevents an all-object
+        // NONCOLLIDABLE proof until explicitly decoded.
+        "NiCollisionData"
+    ];
+
+    private static readonly HashSet<string> SupportedCollisionObjectTypes =
         ["bhkCollisionObject", "bhkBlendCollisionObject", "bhkSPCollisionObject"];
 
     /// <summary>
-    ///     Extracts the collision soup using the NIF's own endianness — the live path, where
-    ///     <paramref name="data" />/<paramref name="nif" /> are the post-conversion little-endian buffer.
+    ///     Extracts collision with source provenance using the NIF's own endianness — the live path,
+    ///     where <paramref name="data" />/<paramref name="nif" /> are the post-conversion
+    ///     little-endian buffer.
     /// </summary>
-    public static HavokTriangleSoup? TryExtract(byte[] data, NifInfo nif)
-        => TryExtract(data, nif, nif.IsBigEndian);
+    public static HavokCollisionExtractionResult Extract(byte[] data, NifInfo nif)
+        => Extract(data, nif, nif.IsBigEndian);
 
     /// <summary>
-    ///     Extracts the collision soup with an explicit endianness, for the raw-file diagnostic (which
-    ///     may feed a big-endian Xbox NIF with compressed vertices straight in).
+    ///     Extracts collision with an explicit endianness, for the raw-file diagnostic (which may feed
+    ///     a big-endian Xbox NIF with compressed vertices straight in).
     /// </summary>
-    internal static HavokTriangleSoup? TryExtract(byte[] data, NifInfo nif, bool bigEndian)
+    internal static HavokCollisionExtractionResult Extract(byte[] data, NifInfo nif, bool bigEndian)
     {
-        if (nif.Blocks.Count == 0) return null;
+        if (nif.Blocks.Count == 0) return HavokCollisionExtractionResult.AbsentOrUnsupported;
 
         // Early-out: most decorative NIFs carry no bhk collision at all. Skip the scene-graph transform
         // walk below unless there's at least one collision object to attach geometry to.
@@ -72,7 +90,7 @@ internal static class HavokCollisionExtractor
             if (CollisionObjectTypes.Contains(block.TypeName)) { hasCollisionObject = true; break; }
         }
 
-        if (!hasCollisionObject) return null;
+        if (!hasCollisionObject) return HavokCollisionExtractionResult.AbsentOrUnsupported;
 
         // Per-node world transforms in the SAME frame the visual mesh uses (treatRootsAsIdentity), so
         // the collision triangles overlay the visual submeshes and the placement world matrix applies
@@ -91,18 +109,40 @@ internal static class HavokCollisionExtractor
 
         var positions = new List<Vector3>();
         var triangles = new List<int>();
+        var noncollidableBodies = 0;
+        var everyCollisionObjectIsNoncollidable = true;
 
         for (var i = 0; i < nif.Blocks.Count; i++)
         {
             if (!CollisionObjectTypes.Contains(nif.Blocks[i].TypeName)) continue;
-            if (!TryReadCollisionObject(data, nif.Blocks[i], bigEndian, out var targetIdx, out var bodyIdx)) continue;
-            if (bodyIdx < 0 || bodyIdx >= nif.Blocks.Count) continue;
+            if (!SupportedCollisionObjectTypes.Contains(nif.Blocks[i].TypeName))
+            {
+                everyCollisionObjectIsNoncollidable = false;
+                continue;
+            }
+            if (!TryReadCollisionObject(data, nif.Blocks[i], bigEndian, out var targetIdx, out var bodyIdx))
+            {
+                everyCollisionObjectIsNoncollidable = false;
+                continue;
+            }
+            if (bodyIdx < 0 || bodyIdx >= nif.Blocks.Count)
+            {
+                everyCollisionObjectIsNoncollidable = false;
+                continue;
+            }
+            if (!TryResolveCollisionTargetWorld(
+                    targetIdx, nif, worldTransforms, out var nodeWorld))
+            {
+                everyCollisionObjectIsNoncollidable = false;
+                continue;
+            }
 
             var bodyBlock = nif.Blocks[bodyIdx];
-            if (bodyBlock.TypeName is not ("bhkRigidBody" or "bhkRigidBodyT")) continue;
-
-            // bhkWorldObject.Shape is the rigid body's first field.
-            if (!TryReadInt32(data, bodyBlock, 0, bigEndian, out var shapeRef)) continue;
+            if (bodyBlock.TypeName is not ("bhkRigidBody" or "bhkRigidBodyT"))
+            {
+                everyCollisionObjectIsNoncollidable = false;
+                continue;
+            }
 
             // bhkWorldObject.HavokFilter.Layer is the byte immediately after the shape ref. A body
             // on the NONCOLLIDABLE layer is registered with the Havok world but collides with
@@ -113,10 +153,18 @@ internal static class HavokCollisionExtractor
             if (TryReadByte(data, bodyBlock, 4, out var havokLayer) &&
                 havokLayer == NoncollidableHavokLayer)
             {
+                noncollidableBodies++;
                 continue;
             }
 
-            var nodeWorld = worldTransforms.TryGetValue(targetIdx, out var w) ? w : Matrix4x4.Identity;
+            // A missing layer byte preserves the extractor's pre-provenance behavior: attempt the
+            // shape rather than inventing an authored-none verdict. Any non-layer-15 body also makes
+            // a mixed/unsupported file fallback-eligible when no soup can be decoded.
+            everyCollisionObjectIsNoncollidable = false;
+
+            // bhkWorldObject.Shape is the rigid body's first field.
+            if (!TryReadInt32(data, bodyBlock, 0, bigEndian, out var shapeRef)) continue;
+
             Matrix4x4 rbTransform;
             if (bodyBlock.TypeName == "bhkRigidBodyT")
             {
@@ -140,17 +188,50 @@ internal static class HavokCollisionExtractor
                 new HashSet<int>(), depth: 0);
         }
 
-        if (triangles.Count < 3) return null;
-
-        // A soup with any non-finite vertex is worse than no soup: it is preferred over the visual-mesh
-        // fallback yet draws nothing and fails every raycast (NaN poisons the AABB slab test). Degrade
-        // to null so callers fall back to the visual mesh.
-        foreach (var p in positions)
+        if (triangles.Count < 3)
         {
-            if (!float.IsFinite(p.X) || !float.IsFinite(p.Y) || !float.IsFinite(p.Z)) return null;
+            return noncollidableBodies > 0 && everyCollisionObjectIsNoncollidable
+                ? HavokCollisionExtractionResult.AuthoredNoncollidable
+                : HavokCollisionExtractionResult.AbsentOrUnsupported;
         }
 
-        return new HavokTriangleSoup(positions.ToArray(), triangles.ToArray());
+        // A soup with any non-finite vertex is worse than no soup: it is preferred over the visual-mesh
+        // fallback yet draws nothing and fails every raycast (NaN poisons the AABB slab test). Preserve
+        // the former fallback-eligible behavior instead of treating malformed geometry as authored-none.
+        foreach (var p in positions)
+        {
+            if (!float.IsFinite(p.X) || !float.IsFinite(p.Y) || !float.IsFinite(p.Z))
+            {
+                return HavokCollisionExtractionResult.AbsentOrUnsupported;
+            }
+        }
+
+        return HavokCollisionExtractionResult.FromSoup(
+            new HavokTriangleSoup(positions.ToArray(), triangles.ToArray()));
+    }
+
+    private static bool TryResolveCollisionTargetWorld(
+        int targetIndex,
+        NifInfo nif,
+        Dictionary<int, Matrix4x4> worldTransforms,
+        out Matrix4x4 world)
+    {
+        world = Matrix4x4.Identity;
+        if (targetIndex < 0 || targetIndex >= nif.Blocks.Count)
+        {
+            return false;
+        }
+
+        // Collision is normally attached to a NiAVObject. A recognized scene node/shape with no
+        // transform in the completed walk is malformed/orphaned, not proof of authored-none.
+        var type = nif.Blocks[targetIndex].TypeName;
+        if (!NifSceneGraphWalker.NodeTypes.Contains(type) &&
+            !NifSceneGraphWalker.ShapeTypes.Contains(type))
+        {
+            return false;
+        }
+
+        return worldTransforms.TryGetValue(targetIndex, out world);
     }
 
     // bhkCollisionObject: Target int32 @0, Flags ushort @4, Body int32 @6 (needs 10 bytes).

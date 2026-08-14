@@ -166,6 +166,39 @@ public sealed class CollisionReferencePriorityResolverTests
     }
 
     [Fact]
+    public void Resolve_TerminalUnavailableRetainsColdFallbackStateWithoutConsumingWarmupBudget()
+    {
+        var resolver = new CollisionReferencePriorityResolver();
+        var warmedMesh = TriangleMesh();
+        var warmups = new List<string>();
+        List<CollisionReferenceCandidate> candidates =
+        [
+            Candidate("terminal.nif", 1, 1, 0),
+            Candidate("cold.nif", 2, 4, 1)
+        ];
+        var selected = new List<CollisionWireframeInstance>();
+
+        var result = resolver.Resolve(
+            candidates,
+            (path, _) => path == "terminal.nif"
+                ? CollisionMeshResolution.TerminalUnavailable
+                : CollisionMeshResolution.Unresolved,
+            (path, _, _) =>
+            {
+                warmups.Add(path);
+                return Resolved(warmedMesh);
+            },
+            1,
+            6,
+            selected);
+
+        Assert.Equal(["cold.nif"], warmups);
+        Assert.Equal(1, result.WarmupRequests);
+        Assert.Single(selected);
+        Assert.Same(warmedMesh, selected[0].Mesh);
+    }
+
+    [Fact]
     public void Resolve_PreservesCandidateCategoryThroughResolverAndWarmup()
     {
         var resolver = new CollisionReferencePriorityResolver();

@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -22,11 +23,11 @@ public sealed class HavokCollisionExtractorTests
     private static readonly int[] RebasedTriangleIndices = [0, 1, 2, 3, 4, 5];
 
     [Fact]
-    public void TryExtract_UncompressedPackedTriStrips_ScalesBySevenAndPreservesIndices()
+    public void Extract_UncompressedPackedTriStrips_ScalesBySevenAndPreservesIndices()
     {
         var (data, nif) = BuildNif(
             false,
-            CollisionObject(99, 1, false), // target out of range → identity transform
+            CollisionObject(5, 1, false),
             RigidBody(2, false),
             Mopp(3, 1f, false),
             PackedShape(4, Vector3.One, false),
@@ -34,10 +35,13 @@ public sealed class HavokCollisionExtractorTests
                 [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)],
                 [(0, 1, 2)],
                 false,
-                false));
+                false),
+            TargetNode(false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+        var extraction = HavokCollisionExtractor.Extract(data, nif, false);
+        var soup = extraction.Soup;
 
+        Assert.Equal(HavokCollisionProvenance.AuthoredMesh, extraction.Provenance);
         Assert.True(soup.HasValue);
         Assert.Equal(SingleTriangleIndices, soup!.Value.Triangles);
         VectorAssert.Equal(new Vector3(7, 0, 0), soup.Value.Positions[0], Tol);
@@ -46,7 +50,7 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
-    public void TryExtract_ShapeScale_MultipliesOnTopOfHavokScale()
+    public void Extract_ShapeScale_MultipliesOnTopOfHavokScale()
     {
         var (data, nif) = BuildNif(
             false,
@@ -55,14 +59,14 @@ public sealed class HavokCollisionExtractorTests
             PackedShape(3, new Vector3(2, 2, 2), false), // ×2 on top of ×7 = ×14
             PackedData([new Vector3(1, 0, 0)], [(0, 0, 0)], false, false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+        var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
         VectorAssert.Equal(new Vector3(14, 0, 0), soup!.Value.Positions[0], Tol);
     }
 
     [Fact]
-    public void TryExtract_PackedShapeScaleCopy_WinsOverByteOrderPoisonedPrimaryScale()
+    public void Extract_PackedShapeScaleCopy_WinsOverByteOrderPoisonedPrimaryScale()
     {
         var (data, nif) = BuildNif(
             false,
@@ -71,14 +75,14 @@ public sealed class HavokCollisionExtractorTests
             PackedShape(3, Vector3.One, false, new Vector3(4.6e-41f)),
             PackedData([new Vector3(1, 0, 0)], [(0, 0, 0)], false, false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+        var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
         VectorAssert.Equal(new Vector3(7, 0, 0), soup!.Value.Positions[0], Tol);
     }
 
     [Fact]
-    public void TryExtract_BigEndianCompressedVertices_DecodesHalfFloats()
+    public void Extract_BigEndianCompressedVertices_DecodesHalfFloats()
     {
         var (data, nif) = BuildNif(
             true,
@@ -91,7 +95,7 @@ public sealed class HavokCollisionExtractorTests
                 true,
                 true));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, true);
+        var soup = HavokCollisionExtractor.Extract(data, nif, true).Soup;
 
         Assert.True(soup.HasValue);
         // Half-float precision → looser tolerance.
@@ -100,7 +104,7 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
-    public void TryExtract_ListShape_ConcatenatesSubShapesWithRebasedIndices()
+    public void Extract_ListShape_ConcatenatesSubShapesWithRebasedIndices()
     {
         var (data, nif) = BuildNif(
             false,
@@ -114,7 +118,7 @@ public sealed class HavokCollisionExtractorTests
             PackedData([new Vector3(2, 0, 0), new Vector3(0, 2, 0), new Vector3(0, 0, 2)], [(0, 1, 2)],
                 false, false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+        var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
         Assert.Equal(6, soup!.Value.Positions.Length);
@@ -124,7 +128,7 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
-    public void TryExtract_RigidBodyT_AppliesTranslation()
+    public void Extract_RigidBodyT_AppliesTranslation()
     {
         var (data, nif) = BuildNif(
             false,
@@ -133,7 +137,7 @@ public sealed class HavokCollisionExtractorTests
             PackedShape(3, Vector3.One, false),
             PackedData([new Vector3(1, 0, 0)], [(0, 0, 0)], false, false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+        var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
         // Vertex ×7 = (7,0,0); translation ×7 = (70,0,0); rotate-then-translate → (77,0,0).
@@ -141,7 +145,7 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
-    public void TryExtract_RigidBodyT_NonFiniteTransform_ReturnsNull()
+    public void Extract_RigidBodyT_NonFiniteTransform_ReturnsNoSoup()
     {
         // A bhkRigidBodyT whose authored transform is garbage must degrade to "no Havok soup" (so the
         // visual-mesh fallback engages) — NOT emit geometry at identity or a NaN-poisoned soup.
@@ -152,11 +156,11 @@ public sealed class HavokCollisionExtractorTests
             PackedShape(3, Vector3.One, false),
             PackedData([new Vector3(1, 0, 0)], [(0, 0, 0)], false, false));
 
-        Assert.Null(HavokCollisionExtractor.TryExtract(data, nif, false));
+        Assert.Null(HavokCollisionExtractor.Extract(data, nif, false).Soup);
     }
 
     [Fact]
-    public void TryExtract_InvalidRigidBodyT_DoesNotDiscardAnotherValidBody()
+    public void Extract_InvalidRigidBodyT_DoesNotDiscardAnotherValidBody()
     {
         // Collision objects are independent. A corrupt transform must suppress only that body; a
         // second valid body still provides authoritative collision instead of forcing visual fallback.
@@ -171,7 +175,7 @@ public sealed class HavokCollisionExtractorTests
             PackedShape(7, Vector3.One, false),
             PackedData([new Vector3(2, 0, 0)], [(0, 0, 0)], false, false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+        var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
         Assert.Single(soup.Value.Positions);
@@ -179,7 +183,7 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
-    public void TryExtract_NonFiniteVertex_ReturnsNull()
+    public void Extract_NonFiniteVertex_ReturnsNoSoup()
     {
         // Same policy at the vertex level: any non-finite decoded position invalidates the soup.
         var (data, nif) = BuildNif(
@@ -190,11 +194,11 @@ public sealed class HavokCollisionExtractorTests
             PackedData([new Vector3(1, 0, 0), new Vector3(float.NaN, 1, 0), new Vector3(0, 0, 1)],
                 [(0, 1, 2)], false, false));
 
-        Assert.Null(HavokCollisionExtractor.TryExtract(data, nif, false));
+        Assert.Null(HavokCollisionExtractor.Extract(data, nif, false).Soup);
     }
 
     [Fact]
-    public void TryExtract_BigEndianConvexVertices_TriangulatesAuthoredHalfSpaces()
+    public void Extract_BigEndianConvexVertices_TriangulatesAuthoredHalfSpaces()
     {
         Vector3[] vertices =
         [
@@ -213,7 +217,7 @@ public sealed class HavokCollisionExtractorTests
             RigidBody(2, true),
             ConvexVerticesShape(vertices, planes, true));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, true);
+        var soup = HavokCollisionExtractor.Extract(data, nif, true).Soup;
 
         Assert.True(soup.HasValue);
         Assert.Equal(8, soup.Value.Positions.Length);
@@ -222,7 +226,7 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
-    public void TryExtract_BoxShape_EmitsExactHalfExtentsInWorldUnits()
+    public void Extract_BoxShape_EmitsExactHalfExtentsInWorldUnits()
     {
         var (data, nif) = BuildNif(
             false,
@@ -230,7 +234,7 @@ public sealed class HavokCollisionExtractorTests
             RigidBody(2, false),
             BoxShape(new Vector3(1, 2, 3), false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+        var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
         Assert.Equal(8, soup.Value.Positions.Length);
@@ -239,7 +243,7 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
-    public void TryExtract_SphereShape_TessellatesInheritedRadius()
+    public void Extract_SphereShape_TessellatesInheritedRadius()
     {
         var (data, nif) = BuildNif(
             false,
@@ -247,7 +251,7 @@ public sealed class HavokCollisionExtractorTests
             RigidBody(2, false),
             SphereShape(2, false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+        var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
         Assert.Equal(62, soup.Value.Positions.Length);
@@ -256,7 +260,7 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
-    public void TryExtract_BigEndianCapsuleShape_TessellatesAxisAndEndpointRadii()
+    public void Extract_BigEndianCapsuleShape_TessellatesAxisAndEndpointRadii()
     {
         var (data, nif) = BuildNif(
             true,
@@ -264,7 +268,7 @@ public sealed class HavokCollisionExtractorTests
             RigidBody(2, true),
             CapsuleShape(new Vector3(0, 0, -2), 0.5f, new Vector3(0, 0, 3), 1f, true));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, true);
+        var soup = HavokCollisionExtractor.Extract(data, nif, true).Soup;
 
         Assert.True(soup.HasValue);
         Assert.Equal(98, soup.Value.Positions.Length);
@@ -275,7 +279,7 @@ public sealed class HavokCollisionExtractorTests
     [Theory]
     [InlineData("bhkTransformShape")]
     [InlineData("bhkConvexTransformShape")]
-    public void TryExtract_TransformShape_AppliesColumnMajorMatrixAndWorldUnitTranslation(string shapeType)
+    public void Extract_TransformShape_AppliesColumnMajorMatrixAndWorldUnitTranslation(string shapeType)
     {
         var transform = Matrix4x4.CreateRotationZ(MathF.PI * 0.5f) *
                         Matrix4x4.CreateTranslation(100, 200, 300);
@@ -286,7 +290,7 @@ public sealed class HavokCollisionExtractorTests
             TransformShape(3, transform, shapeType, true),
             BoxShape(new Vector3(1, 2, 3), true));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, true);
+        var soup = HavokCollisionExtractor.Extract(data, nif, true).Soup;
 
         Assert.True(soup.HasValue);
         // Child half-extents become (7,14,21), rotate 90 degrees around Z, then receive the
@@ -295,7 +299,7 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
-    public void TryExtract_TwoTransformsSharingOnePrimitive_EmitsBothInstances()
+    public void Extract_TwoTransformsSharingOnePrimitive_EmitsBothInstances()
     {
         var (data, nif) = BuildNif(
             false,
@@ -306,7 +310,7 @@ public sealed class HavokCollisionExtractorTests
             TransformShape(5, Matrix4x4.CreateTranslation(100, 0, 0), "bhkConvexTransformShape", false),
             BoxShape(Vector3.One, false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+        var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
         Assert.Equal(16, soup.Value.Positions.Length);
@@ -315,7 +319,7 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
-    public void TryExtract_Tes4PackedShape_ReadsSubShapePrefixedOffsets()
+    public void Extract_Tes4PackedShape_ReadsSubShapePrefixedOffsets()
     {
         // TES4-era (≤20.0.0.5) bhkPackedNiTriStripsShape carries a Num Sub Shapes ushort +
         // hkSubPartData[] prefix that shifts every field by 2 + N*12. With two sub-shapes the
@@ -331,7 +335,7 @@ public sealed class HavokCollisionExtractorTests
                 [(0, 1, 2)],
                 false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+        var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
         Assert.Equal(SingleTriangleIndices, soup!.Value.Triangles);
@@ -342,7 +346,7 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
-    public void TryExtract_Tes4PackedData_TwentyByteStrideSkipsNormalsAndCompressedFlag()
+    public void Extract_Tes4PackedData_TwentyByteStrideSkipsNormalsAndCompressedFlag()
     {
         // TES4 TriangleData entries end with a Vector3 normal (stride 20, no Compressed flag). The
         // builder poisons those normals with NaN, so a regression to the modern 8-byte stride (or
@@ -358,7 +362,7 @@ public sealed class HavokCollisionExtractorTests
                 [(0, 1, 2)],
                 false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+        var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
         Assert.Equal(SingleTriangleIndices, soup!.Value.Triangles);
@@ -368,7 +372,7 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
-    public void TryExtract_Tes4RigidBodyT_Pre10100_ReadsTranslationAt36()
+    public void Extract_Tes4RigidBodyT_Pre10100_ReadsTranslationAt36()
     {
         // The rigid-body CInfo's five leading header fields are since="10.1.0.0"; Oblivion's oldest
         // 10.0.1.x meshes store Translation @36 / Rotation @52. The 68-byte fixture is too short for
@@ -381,7 +385,7 @@ public sealed class HavokCollisionExtractorTests
             Tes4PackedShape(3, Vector3.One, false, 0),
             Tes4PackedData([new Vector3(1, 0, 0)], [(0, 0, 0)], false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+        var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
         // Vertex ×7 = (7,0,0); translation ×7 = (70,0,0); rotate-then-translate → (77,0,0).
@@ -389,14 +393,29 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
-    public void TryExtract_NoCollisionObject_ReturnsNull()
+    public void Extract_NoCollisionObject_RemainsAbsentOrUnsupported()
     {
         var (data, nif) = BuildNif(false, ("NiAlphaProperty", new byte[16]));
-        Assert.Null(HavokCollisionExtractor.TryExtract(data, nif, false));
+        var extraction = HavokCollisionExtractor.Extract(data, nif, false);
+
+        Assert.Equal(HavokCollisionProvenance.AbsentOrUnsupported, extraction.Provenance);
+        Assert.Null(extraction.Soup);
     }
 
     [Fact]
-    public void TryExtract_TruncatedPackedData_ReturnsNullWithoutThrowing()
+    public void GeometryExtractor_PreserveEmptyModelIsExplicitOptIn()
+    {
+        var (data, nif) = BuildNif(false, ("NiAlphaProperty", new byte[16]));
+
+        Assert.Null(NifGeometryExtractor.Extract(data, nif));
+        var preserved = Assert.IsType<NifRenderableModel>(
+            NifGeometryExtractor.Extract(data, nif, preserveEmptyModel: true));
+        Assert.False(preserved.HasGeometry);
+        Assert.Empty(preserved.Submeshes);
+    }
+
+    [Fact]
+    public void Extract_TruncatedPackedData_RemainsAbsentOrUnsupported()
     {
         var (data, nif) = BuildNif(
             false,
@@ -406,7 +425,118 @@ public sealed class HavokCollisionExtractorTests
             // Claims one triangle but the block ends right after the count.
             ("hkPackedNiTriStripsData", TruncatedPackedDataPayload(false)));
 
-        Assert.Null(HavokCollisionExtractor.TryExtract(data, nif, false));
+        var extraction = HavokCollisionExtractor.Extract(data, nif, false);
+
+        Assert.Equal(HavokCollisionProvenance.AbsentOrUnsupported, extraction.Provenance);
+        Assert.Null(extraction.Soup);
+    }
+
+    [Fact]
+    public void Extract_Layer15OnlyBody_ReturnsAuthoritativeAuthoredNone()
+    {
+        var (data, nif) = BuildNif(
+            false,
+            CollisionObject(3, 1, false),
+            RigidBodyWithLayer(2, layer: 15, be: false),
+            BoxShape(Vector3.One, false),
+            TargetNode(false));
+
+        var extraction = HavokCollisionExtractor.Extract(data, nif, false);
+
+        Assert.Equal(HavokCollisionProvenance.AuthoredNoncollidable, extraction.Provenance);
+        Assert.Null(extraction.Soup);
+    }
+
+    [Fact]
+    public void Extract_UnsupportedOrdinaryBody_RemainsFallbackEligible()
+    {
+        var (data, nif) = BuildNif(
+            false,
+            CollisionObject(3, 1, false),
+            RigidBodyWithLayer(2, layer: 0, be: false),
+            ("bhkCompressedMeshShape", new byte[16]),
+            TargetNode(false));
+
+        var extraction = HavokCollisionExtractor.Extract(data, nif, false);
+
+        Assert.Equal(HavokCollisionProvenance.AbsentOrUnsupported, extraction.Provenance);
+        Assert.Null(extraction.Soup);
+    }
+
+    [Fact]
+    public void Extract_NoncollidablePlusUnsupportedBody_IsNotAuthoritativeNone()
+    {
+        var (data, nif) = BuildNif(
+            false,
+            CollisionObject(6, 1, false),
+            RigidBodyWithLayer(2, layer: 15, be: false),
+            BoxShape(Vector3.One, false),
+            CollisionObject(6, 4, false),
+            RigidBodyWithLayer(5, layer: 0, be: false),
+            ("bhkCompressedMeshShape", new byte[16]),
+            TargetNode(false));
+
+        var extraction = HavokCollisionExtractor.Extract(data, nif, false);
+
+        Assert.Equal(HavokCollisionProvenance.AbsentOrUnsupported, extraction.Provenance);
+        Assert.Null(extraction.Soup);
+    }
+
+    [Fact]
+    public void Extract_NoncollidablePlusDecodedBody_ReturnsAuthoredMesh()
+    {
+        var (data, nif) = BuildNif(
+            false,
+            CollisionObject(6, 1, false),
+            RigidBodyWithLayer(2, layer: 15, be: false),
+            BoxShape(Vector3.One, false),
+            CollisionObject(6, 4, false),
+            RigidBodyWithLayer(5, layer: 0, be: false),
+            BoxShape(Vector3.One, false),
+            TargetNode(false));
+
+        var extraction = HavokCollisionExtractor.Extract(data, nif, false);
+
+        Assert.Equal(HavokCollisionProvenance.AuthoredMesh, extraction.Provenance);
+        Assert.True(extraction.Soup.HasValue);
+        Assert.Equal(8, extraction.Soup.Value.Positions.Length);
+    }
+
+    [Fact]
+    public void Extract_Layer15BodyWithInvalidTarget_RemainsFallbackEligible()
+    {
+        var (data, nif) = BuildNif(
+            false,
+            CollisionObject(int.MaxValue, 1, false),
+            RigidBodyWithLayer(2, layer: 15, be: false),
+            BoxShape(Vector3.One, false));
+
+        var extraction = HavokCollisionExtractor.Extract(data, nif, false);
+
+        Assert.Equal(HavokCollisionProvenance.AbsentOrUnsupported, extraction.Provenance);
+        Assert.Null(extraction.Soup);
+    }
+
+    [Theory]
+    [InlineData("bhkPCollisionObject")]
+    [InlineData("bhkNPCollisionObject")]
+    [InlineData("NiCollisionObject")]
+    [InlineData("NiCollisionData")]
+    public void Extract_NoncollidablePlusUnsupportedCollisionPeer_IsNotAuthoritativeNone(
+        string peerType)
+    {
+        var (data, nif) = BuildNif(
+            false,
+            CollisionObject(4, 1, false),
+            RigidBodyWithLayer(2, layer: 15, be: false),
+            BoxShape(Vector3.One, false),
+            (peerType, new byte[16]),
+            TargetNode(false));
+
+        var extraction = HavokCollisionExtractor.Extract(data, nif, false);
+
+        Assert.Equal(HavokCollisionProvenance.AbsentOrUnsupported, extraction.Provenance);
+        Assert.Null(extraction.Soup);
     }
 
     // ---- buffer builders --------------------------------------------------------------------
@@ -435,7 +565,57 @@ public sealed class HavokCollisionExtractorTests
     private static (byte[] data, NifInfo nif) BuildNif(bool bigEndian, uint version,
         params (string type, byte[] payload)[] blocks)
     {
-        var nif = new NifInfo { IsBigEndian = bigEndian, BlockCount = blocks.Length, BinaryVersion = version };
+        // Most pre-provenance fixtures used target 99 as shorthand for an identity attachment.
+        // Turn that sentinel into a real, parseable root node so target validation is exercised
+        // without rewriting every shape fixture. Tests for corrupt targets use another value.
+        var rewritten = blocks.ToList();
+        var needsSyntheticTarget = false;
+        foreach (var (type, payload) in rewritten)
+        {
+            if (type is not ("bhkCollisionObject" or "bhkBlendCollisionObject" or
+                    "bhkSPCollisionObject") || payload.Length < sizeof(int))
+            {
+                continue;
+            }
+
+            var target = bigEndian
+                ? BinaryPrimitives.ReadInt32BigEndian(payload)
+                : BinaryPrimitives.ReadInt32LittleEndian(payload);
+            needsSyntheticTarget |= target == 99;
+        }
+
+        if (needsSyntheticTarget)
+        {
+            var targetIndex = rewritten.Count;
+            foreach (var (type, payload) in rewritten)
+            {
+                if (type is not ("bhkCollisionObject" or "bhkBlendCollisionObject" or
+                        "bhkSPCollisionObject") || payload.Length < sizeof(int))
+                {
+                    continue;
+                }
+
+                var target = bigEndian
+                    ? BinaryPrimitives.ReadInt32BigEndian(payload)
+                    : BinaryPrimitives.ReadInt32LittleEndian(payload);
+                if (target == 99)
+                {
+                    WriteI32(payload, 0, targetIndex, bigEndian);
+                }
+            }
+
+            rewritten.Add(TargetNode(bigEndian));
+            blocks = rewritten.ToArray();
+        }
+
+        var nif = new NifInfo
+        {
+            IsBigEndian = bigEndian,
+            BlockCount = blocks.Length,
+            BinaryVersion = version,
+            // The synthetic identity target uses the FO3/FNV NiAVObject layout.
+            BsVersion = 34
+        };
         using var ms = new MemoryStream();
         var offsets = new int[blocks.Length];
         for (var i = 0; i < blocks.Length; i++)
@@ -468,10 +648,37 @@ public sealed class HavokCollisionExtractorTests
         return ("bhkCollisionObject", b);
     }
 
+    private static (string, byte[]) TargetNode(bool be)
+    {
+        // Minimal FO3/FNV NiNode: NiObjectNET + NiAVObject + zero children/effects. Parsing it into
+        // the transform walk proves the collision target is a real reachable scene object.
+        var b = new byte[80];
+        WriteI32(b, 0, -1, be); // name
+        WriteU32(b, 4, 0, be); // extra data count
+        WriteI32(b, 8, -1, be); // controller
+        WriteU32(b, 12, 0, be); // flags
+        WriteF(b, 28, 1f, be);
+        WriteF(b, 44, 1f, be);
+        WriteF(b, 60, 1f, be);
+        WriteF(b, 64, 1f, be); // scale
+        WriteU32(b, 68, 0, be); // property count
+        WriteI32(b, 72, -1, be); // collision object
+        WriteU32(b, 76, 0, be); // child count; zero effects is omitted safely
+        return ("NiNode", b);
+    }
+
     private static (string, byte[]) RigidBody(int shape, bool be)
     {
         var b = new byte[4];
         WriteI32(b, 0, shape, be);
+        return ("bhkRigidBody", b);
+    }
+
+    private static (string, byte[]) RigidBodyWithLayer(int shape, byte layer, bool be)
+    {
+        var b = new byte[5];
+        WriteI32(b, 0, shape, be);
+        b[4] = layer;
         return ("bhkRigidBody", b);
     }
 

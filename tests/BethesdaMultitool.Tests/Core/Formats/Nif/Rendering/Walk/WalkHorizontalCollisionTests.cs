@@ -122,7 +122,7 @@ public sealed class WalkHorizontalCollisionTests
         var data = extractor.ExtractFile(file!);
         var nif = NifParser.Parse(data);
         Assert.NotNull(nif);
-        var soup = HavokCollisionExtractor.TryExtract(data, nif!);
+        var soup = HavokCollisionExtractor.Extract(data, nif!).Soup;
         Assert.NotNull(soup);
         var extracted = soup!.Value;
 
@@ -191,7 +191,7 @@ public sealed class WalkHorizontalCollisionTests
             var data = extractor.ExtractFile(file!);
             var nif = Assert.IsType<NifInfo>(NifParser.Parse(data));
 
-            Assert.Null(HavokCollisionExtractor.TryExtract(data, nif));
+            Assert.Null(HavokCollisionExtractor.Extract(data, nif).Soup);
             Assert.False(WalkCollisionFallbackPolicy.AllowsVisualMeshFallback(path));
         }
     }
@@ -209,19 +209,20 @@ public sealed class WalkHorizontalCollisionTests
         Assert.NotNull(file);
         var data = extractor.ExtractFile(file!);
         var nif = Assert.IsType<NifInfo>(NifParser.Parse(data));
-        var soup = HavokCollisionExtractor.TryExtract(data, nif);
+        var soup = HavokCollisionExtractor.Extract(data, nif).Soup;
         Assert.NotNull(soup);
         var extracted = soup.Value;
 
         Assert.Equal(16, extracted.Positions.Length);
         Assert.Equal(51, extracted.Triangles.Length);
-        var collision = CollisionMeshBuilder.Build(
+        var entry = CollisionCacheEntry.Create(
             path,
-            PlacedObjectCategory.Effects,
+            HavokCollisionProvenance.AuthoredMesh,
             extracted.Positions,
             extracted.Triangles,
             static () => throw new InvalidOperationException(
                 "Authored Havok must win before the visual fallback."));
+        var collision = entry.Resolve(path, PlacedObjectCategory.Effects);
         Assert.NotNull(collision.Mesh);
         Assert.Equal(CollisionMeshSource.AuthoredHavok, collision.Source);
     }

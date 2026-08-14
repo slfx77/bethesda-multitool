@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Walk;
 using Xunit;
 
@@ -160,7 +161,7 @@ public sealed class WalkRecoveryTests
     }
 
     [Fact]
-    public void SpeedTreeCanopy_IsNotWalkableGround()
+    public void SpeedTreeVisualFallback_IsRejectedButAuthoredHavokWins()
     {
         const string spt = @"trees\treecottonwood01.spt";
 
@@ -174,19 +175,31 @@ public sealed class WalkRecoveryTests
         Assert.False(WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(spt, PlacedObjectCategory.Unknown));
 
         // A .spt never synthesizes a collision soup in the first place.
-        var built = CollisionMeshBuilder.Build(
-            spt, PlacedObjectCategory.Unknown, null, null,
+        var entry = CollisionCacheEntry.Create(
+            spt, HavokCollisionProvenance.AbsentOrUnsupported, null, null,
             static () => throw new InvalidOperationException(
                 "SpeedTree geometry must not reach the visual fallback."));
+        var built = entry.Resolve(spt, PlacedObjectCategory.Unknown);
         Assert.Null(built.Mesh);
         Assert.Equal(CollisionMeshSource.None, built.Source);
+
+        // Authored Havok is checked before the path-invariant .spt exclusion.
+        Vector3[] positions = [Vector3.Zero, Vector3.UnitX, Vector3.UnitY];
+        int[] triangles = [0, 1, 2];
+        var authoredEntry = CollisionCacheEntry.Create(
+            spt, HavokCollisionProvenance.AuthoredMesh, positions, triangles,
+            static () => throw new InvalidOperationException(
+                "Authored Havok must win before the visual fallback."));
+        var authored = authoredEntry.Resolve(spt, PlacedObjectCategory.Tree);
+        Assert.NotNull(authored.Mesh);
+        Assert.Equal(CollisionMeshSource.AuthoredHavok, authored.Source);
     }
 
     [Fact]
     public void VegetationVisualSoup_IsNotWalkableGroundButAuthoredHavokStaysSolid()
     {
-        // The shared cache builds its ordinary entry under category Unknown, so the vegetation rule has
-        // to be re-applied where the placement's category is known.
+        // The shared cache stores category-independent collision sources, so the vegetation rule is
+        // applied where the placement's category is known.
         const string nifTree = @"meshes\landscape\trees\treeclusterlg01.nif";
         Assert.False(WalkCollisionFallbackPolicy.AllowsResolvedCollisionMesh(
             CollisionMeshSource.VisualFallback, nifTree, PlacedObjectCategory.Tree));

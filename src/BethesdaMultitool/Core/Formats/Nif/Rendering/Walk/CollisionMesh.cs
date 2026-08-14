@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 
@@ -25,68 +26,166 @@ internal readonly record struct CollisionBuildResult(
 }
 
 /// <summary>
-///     Tri-state cache lookup: unresolved, resolved with collision, or resolved with no collision.
-///     Keeping resolved-null distinct prevents permanent-null effects from consuming cold warmup
-///     slots every frame.
+///     Collision lookup with two independent decisions: whether the collision result is authoritative
+///     and whether a cold decode should be offered. A terminal decode failure stays unresolved so
+///     callers retain conservative OBND fallback, but it must not consume a warmup slot every frame.
 /// </summary>
 internal readonly record struct CollisionMeshResolution(
     bool IsResolved,
     CollisionMesh? Mesh,
-    CollisionMeshSource Source)
+    CollisionMeshSource Source,
+    bool ShouldOfferWarmup)
 {
     public static CollisionMeshResolution Unresolved =>
-        new(false, null, CollisionMeshSource.None);
+        new(false, null, CollisionMeshSource.None, true);
+
+    /// <summary>
+    ///     The model decode is terminally unavailable, so callers may retain their conservative OBND
+    ///     fallback but must not spend another bounded cold-warmup slot on it every frame.
+    /// </summary>
+    public static CollisionMeshResolution TerminalUnavailable =>
+        new(false, null, CollisionMeshSource.None, false);
 
     public static CollisionMeshResolution From(CollisionBuildResult result) =>
-        new(true, result.Mesh, result.Source);
+        new(true, result.Mesh, result.Source, false);
 }
 
 /// <summary>
-///     Source-priority gate shared by the D3D12 cache and platform-neutral tests. Authored Havok is
-///     always authoritative, including for effect paths/categories. Visual geometry is synthesized
-///     only after the effect policy has rejected presentation-only cards and volumes.
+///     Source-separated collision payload stored once per decoded model path. The authored Havok
+///     result is category-independent and always wins. Visual triangle soup is retained separately so
+///     the same model can resolve differently for ordinary and vegetation/effect placements without
+///     baking a guessed category into the cache key.
 /// </summary>
-internal static class CollisionMeshBuilder
+internal readonly record struct CollisionCacheEntry(
+    CollisionBuildResult Authored,
+    CollisionBuildResult VisualFallback)
 {
-    public static CollisionBuildResult Build(
-        string? modelPath,
-        PlacedObjectCategory category,
+    public static CollisionCacheEntry ResolvedNone =>
+        new(CollisionBuildResult.None, CollisionBuildResult.None);
+
+    /// <summary>
+    ///     Builds the category-independent cache payload. Visual soup is built exactly once when
+    ///     authored Havok is absent and the normalized path can admit it for at least one placement.
+    ///     When Havok exists, no caller can legally select the visual fallback, so retaining that
+    ///     duplicate geometry would only consume the collision byte budget.
+    /// </summary>
+    public static CollisionCacheEntry Create(
+        string? normalizedModelPath,
+        HavokCollisionProvenance authoredProvenance,
         Vector3[]? authoredPositions,
         int[]? authoredTriangles,
         Func<CollisionMesh?> visualFallbackFactory)
     {
         ArgumentNullException.ThrowIfNull(visualFallbackFactory);
 
-        if (authoredTriangles is { Length: >= 3 } && authoredPositions is { Length: > 0 })
+        if (!Enum.IsDefined(authoredProvenance))
         {
-            return new CollisionBuildResult(
-                new CollisionMesh(authoredPositions, authoredTriangles),
-                CollisionMeshSource.AuthoredHavok);
+            throw new ArgumentOutOfRangeException(nameof(authoredProvenance));
         }
 
-        // Effects are presentation-only; vegetation (Plants/Trees) and SpeedTree .spt recipes are
-        // walk-through unless they shipped authored Havok (handled above). None of them gets
-        // render-mesh collision synthesized for it — a .spt's soup is leaf billboards and fronds.
-        if (WalkCollisionFallbackPolicy.IsEffectModel(modelPath, category)
-            || WalkCollisionFallbackPolicy.IsVegetation(category)
-            || WalkCollisionFallbackPolicy.IsSpeedTreeModel(modelPath))
+        var hasAuthoredPositions = authoredPositions is { Length: > 0 };
+        var hasAuthoredTriangles = authoredTriangles is { Length: > 0 };
+        if (authoredProvenance == HavokCollisionProvenance.AuthoredMesh)
         {
-            return CollisionBuildResult.None;
+            if (!hasAuthoredPositions || authoredTriangles is not { Length: >= 3 } ||
+                authoredTriangles.Length % 3 != 0)
+            {
+                throw new ArgumentException(
+                    "Authored-mesh provenance requires collision positions and complete triangles.");
+            }
+
+            foreach (var position in authoredPositions!)
+            {
+                if (!float.IsFinite(position.X) || !float.IsFinite(position.Y) ||
+                    !float.IsFinite(position.Z))
+                {
+                    throw new ArgumentException("Authored collision positions must be finite.");
+                }
+            }
+
+            foreach (var index in authoredTriangles)
+            {
+                if ((uint)index >= (uint)authoredPositions!.Length)
+                {
+                    throw new ArgumentException(
+                        "Authored collision triangle index is outside the position array.");
+                }
+            }
+
+            return new CollisionCacheEntry(
+                new CollisionBuildResult(
+                    new CollisionMesh(authoredPositions!, authoredTriangles),
+                    CollisionMeshSource.AuthoredHavok),
+                CollisionBuildResult.None);
+        }
+
+        if (hasAuthoredPositions || hasAuthoredTriangles)
+        {
+            throw new ArgumentException(
+                "Collision arrays require authored-mesh provenance.");
+        }
+
+        if (authoredProvenance == HavokCollisionProvenance.AuthoredNoncollidable)
+        {
+            // An explicit layer-15 body is authoritative even for an ordinary placement. Do not
+            // materialize visual soup that could silently undo the authored no-collision verdict.
+            return ResolvedNone;
+        }
+
+        // Effects-folder and SpeedTree paths are presentation-only for every placement category.
+        // Reject them before materializing what can be a very large card/frond soup. Category-only
+        // vegetation cannot be rejected here: one shared model path may also have an ordinary
+        // placement, so that decision remains in Resolve.
+        if (!WalkCollisionFallbackPolicy.AllowsVisualMeshFallback(normalizedModelPath))
+        {
+            return ResolvedNone;
         }
 
         var visual = visualFallbackFactory();
-        return visual is null
-            ? CollisionBuildResult.None
-            : new CollisionBuildResult(visual, CollisionMeshSource.VisualFallback);
+        return new CollisionCacheEntry(
+            CollisionBuildResult.None,
+            visual is null
+                ? CollisionBuildResult.None
+                : new CollisionBuildResult(visual, CollisionMeshSource.VisualFallback));
     }
+
+    /// <summary>
+    ///     Resolves this stored payload for one placement. A policy rejection is an authoritative
+    ///     resolved-null result, not a cache miss, so callers do not retry decoding or fall back to
+    ///     speculative object bounds.
+    /// </summary>
+    public CollisionBuildResult Resolve(string? modelPath, PlacedObjectCategory category)
+    {
+        if (Authored.Source == CollisionMeshSource.AuthoredHavok)
+        {
+            return Authored;
+        }
+
+        return WalkCollisionFallbackPolicy.AllowsResolvedCollisionMesh(
+            VisualFallback.Source, modelPath, category)
+            ? VisualFallback
+            : CollisionBuildResult.None;
+    }
+
+    // Even resolved-null entries carry dictionary/list/key overhead. Charging a non-zero floor keeps
+    // the negative cache genuinely bounded. Sum both fields so future representation changes cannot
+    // silently under-account retained geometry.
+    public long ByteSize => Math.Max(
+        128L,
+        (Authored.Mesh?.ByteSize ?? 0L) + (VisualFallback.Mesh?.ByteSize ?? 0L));
+
+    /// <summary>
+    ///     Whether recreating this entry after collision-LRU eviction requires decoded geometry.
+    ///     A source-independent resolved-none result can instead remain as lightweight node state.
+    /// </summary>
+    public bool HasRetainedGeometry => Authored.Mesh is not null || VisualFallback.Mesh is not null;
 }
 
 /// <summary>
-///     Mesh-local CPU triangle soup kept for walk-mode camera collision (ground snap). Built once per
-///     placed-reference model at upload from the already-decoded geometry (positions + indices) of the
-///     solid submeshes, in the SAME mesh-local space as <c>RenderableReference.WorldMatrix</c> (i.e.
-///     <c>treatRootsAsIdentity</c> decode). The 3D viewer transforms a world-space down-ray into this
-///     local space, raycasts, then maps the hit point back to world to read its Z.
+///     Mesh-local CPU triangle soup kept for placed-reference collision queries (walk mode, selection,
+///     and the collision overlay). Built once per model at upload from authored Havok or the
+///     already-decoded solid render geometry, in the SAME mesh-local space as
+///     <c>RenderableReference.WorldMatrix</c> (i.e. <c>treatRootsAsIdentity</c> decode).
 ///     <para>
 ///         Positions-only (12 B/vertex) + an <see cref="int" /> index triple per triangle — a fraction
 ///         of the GPU vertex footprint, so the collision LRU can stay warm for far more meshes than the

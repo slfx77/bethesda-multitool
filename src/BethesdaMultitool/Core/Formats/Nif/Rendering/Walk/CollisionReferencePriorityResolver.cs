@@ -117,7 +117,7 @@ internal sealed class CollisionReferencePriorityResolver
             if (lineVertexCount >= effectiveMaxLineVertices) break;
 
             var resolution = resolver(candidate.ModelPath, candidate.Category);
-            if (!resolution.IsResolved && warmup is not null && warmupRequests < maxWarmupRequests &&
+            if (resolution.ShouldOfferWarmup && warmup is not null && warmupRequests < maxWarmupRequests &&
                 _warmupPathScratch.Add(candidate.ModelPath))
             {
                 warmupRequests++;

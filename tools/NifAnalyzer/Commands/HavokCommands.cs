@@ -99,11 +99,19 @@ internal static class HavokCommands
         AnsiConsole.WriteLine($"Collision objects: {collisionObjects}");
         AnsiConsole.WriteLine();
 
-        var soup = BethesdaMultitool.Core.Formats.Nif.Collision.HavokCollisionExtractor.TryExtract(
+        var extraction = BethesdaMultitool.Core.Formats.Nif.Collision.HavokCollisionExtractor.Extract(
             data, nif, nif.IsBigEndian);
-        if (soup is not { } s)
+        if (extraction.Provenance ==
+            BethesdaMultitool.Core.Formats.Nif.Collision.HavokCollisionProvenance.AuthoredNoncollidable)
         {
-            AnsiConsole.WriteLine("No decodable Havok collision (packed tri-strips) found → visual-mesh fallback.");
+            AnsiConsole.WriteLine("Authored no collision: every readable collision body uses layer 15 " +
+                                  "(NONCOLLIDABLE). Visual-mesh fallback is suppressed.");
+            return;
+        }
+
+        if (extraction.Soup is not { } s)
+        {
+            AnsiConsole.WriteLine("No decodable Havok collision found → visual-mesh fallback remains eligible.");
             return;
         }
 

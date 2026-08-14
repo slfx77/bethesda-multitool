@@ -11,3 +11,31 @@ namespace BethesdaMultitool.Core.Formats.Nif.Collision;
 ///     into <see cref="Positions" /> (length is a multiple of 3).
 /// </summary>
 internal readonly record struct HavokTriangleSoup(Vector3[] Positions, int[] Triangles);
+
+/// <summary>
+///     Provenance of the collision verdict recovered from a NIF. <see cref="AbsentOrUnsupported" />
+///     deliberately combines files with no collision object and files whose Havok shape/layout is not
+///     decoded yet: both remain eligible for the existing visual-mesh fallback. Only an explicit
+///     layer-15 body produces <see cref="AuthoredNoncollidable" />.
+/// </summary>
+internal enum HavokCollisionProvenance : byte
+{
+    AbsentOrUnsupported = 0,
+    AuthoredNoncollidable = 1,
+    AuthoredMesh = 2
+}
+
+/// <summary>A provenance-preserving Havok extraction result.</summary>
+internal readonly record struct HavokCollisionExtractionResult(
+    HavokCollisionProvenance Provenance,
+    HavokTriangleSoup? Soup)
+{
+    public static HavokCollisionExtractionResult AbsentOrUnsupported =>
+        new(HavokCollisionProvenance.AbsentOrUnsupported, null);
+
+    public static HavokCollisionExtractionResult AuthoredNoncollidable =>
+        new(HavokCollisionProvenance.AuthoredNoncollidable, null);
+
+    public static HavokCollisionExtractionResult FromSoup(HavokTriangleSoup soup) =>
+        new(HavokCollisionProvenance.AuthoredMesh, soup);
+}

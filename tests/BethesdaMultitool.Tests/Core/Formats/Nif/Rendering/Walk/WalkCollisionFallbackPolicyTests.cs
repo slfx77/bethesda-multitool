@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Walk;
 using Xunit;
 using Xunit.Sdk;
@@ -37,13 +38,14 @@ public sealed class WalkCollisionFallbackPolicyTests
     [Fact]
     public void EffectCategory_AcceptsOnlyAuthoredHavokCollision()
     {
+        const string path = @"effects\box03.nif";
         var positions = new[] { Vector3.Zero, Vector3.UnitX, Vector3.UnitY };
         int[] triangles = [0, 1, 2];
         var visualFactoryCalled = false;
 
-        var result = CollisionMeshBuilder.Build(
-            @"effects\box03.nif",
-            PlacedObjectCategory.Effects,
+        var entry = CollisionCacheEntry.Create(
+            path,
+            HavokCollisionProvenance.AuthoredMesh,
             positions,
             triangles,
             () =>
@@ -51,6 +53,7 @@ public sealed class WalkCollisionFallbackPolicyTests
                 visualFactoryCalled = true;
                 return new CollisionMesh(positions, triangles);
             });
+        var result = entry.Resolve(path, PlacedObjectCategory.Effects);
 
         Assert.False(visualFactoryCalled);
         Assert.NotNull(result.Mesh);
@@ -58,20 +61,21 @@ public sealed class WalkCollisionFallbackPolicyTests
     }
 
     [Theory]
-    [InlineData(@"effects\NV\NVLimestoneDustStormHalfViz.NIF", false)]
-    [InlineData(@"architecture\some-activator.nif", true)]
-    public void EffectWithoutAuthoredHavok_ResolvesNoneWithoutBuildingVisualFallback(
+    [InlineData(@"effects\NV\NVLimestoneDustStormHalfViz.NIF", false, false)]
+    [InlineData(@"architecture\some-activator.nif", true, true)]
+    public void EffectWithoutAuthoredHavok_ResolvesAuthoritativeNoneAtCacheBoundary(
         string path,
-        bool explicitEffectCategory)
+        bool explicitEffectCategory,
+        bool expectedVisualFactoryCall)
     {
         var visualFactoryCalled = false;
         var category = explicitEffectCategory
             ? PlacedObjectCategory.Effects
             : PlacedObjectCategory.Unknown;
 
-        var result = CollisionMeshBuilder.Build(
+        var entry = CollisionCacheEntry.Create(
             path,
-            category,
+            HavokCollisionProvenance.AbsentOrUnsupported,
             null,
             null,
             () =>
@@ -81,8 +85,9 @@ public sealed class WalkCollisionFallbackPolicyTests
                     [Vector3.Zero, Vector3.UnitX, Vector3.UnitY],
                     [0, 1, 2]);
             });
+        var result = entry.Resolve(path, category);
 
-        Assert.False(visualFactoryCalled);
+        Assert.Equal(expectedVisualFactoryCall, visualFactoryCalled);
         Assert.Null(result.Mesh);
         Assert.Equal(CollisionMeshSource.None, result.Source);
         var resolution = CollisionMeshResolution.From(result);
@@ -97,15 +102,33 @@ public sealed class WalkCollisionFallbackPolicyTests
             [Vector3.Zero, Vector3.UnitX, Vector3.UnitY],
             [0, 1, 2]);
 
-        var result = CollisionMeshBuilder.Build(
-            @"landscape\rocks\cliffs\CliffVerti_C2.NIF",
-            PlacedObjectCategory.Landscape,
+        const string path = @"landscape\rocks\cliffs\CliffVerti_C2.NIF";
+        var entry = CollisionCacheEntry.Create(
+            path,
+            HavokCollisionProvenance.AbsentOrUnsupported,
             null,
             null,
             () => visual);
+        var result = entry.Resolve(path, PlacedObjectCategory.Landscape);
 
         Assert.Same(visual, result.Mesh);
         Assert.Equal(CollisionMeshSource.VisualFallback, result.Source);
+    }
+
+    [Fact]
+    public void OrdinaryModelWithoutHavokOrVisual_ResolvesAuthoritativeNone()
+    {
+        const string path = @"architecture\empty-marker.nif";
+        var entry = CollisionCacheEntry.Create(
+            path, HavokCollisionProvenance.AbsentOrUnsupported, null, null, static () => null);
+
+        var result = entry.Resolve(path, PlacedObjectCategory.Architecture);
+        var resolution = CollisionMeshResolution.From(result);
+
+        Assert.Null(result.Mesh);
+        Assert.Equal(CollisionMeshSource.None, result.Source);
+        Assert.True(resolution.IsResolved);
+        Assert.Null(resolution.Mesh);
     }
 
     [Fact]
@@ -121,27 +144,34 @@ public sealed class WalkCollisionFallbackPolicyTests
     }
 
     [Fact]
-    public void VegetationWithoutHavok_ResolvesNoneWithoutBuildingVisualFallback()
+    public void VegetationWithoutHavok_RejectsStoredVisualFallback()
     {
+        const string path = @"plants\WastelandShrub01.nif";
+        var visual = new CollisionMesh([Vector3.Zero, Vector3.UnitX, Vector3.UnitY], [0, 1, 2]);
+        var visualFactoryCalls = 0;
+        var entry = CollisionCacheEntry.Create(
+            path,
+            HavokCollisionProvenance.AbsentOrUnsupported,
+            null,
+            null,
+            () =>
+            {
+                visualFactoryCalls++;
+                return visual;
+            });
+
         foreach (var category in new[] { PlacedObjectCategory.Plants, PlacedObjectCategory.Tree })
         {
-            var visualFactoryCalled = false;
+            var result = entry.Resolve(path, category);
 
-            var result = CollisionMeshBuilder.Build(
-                @"plants\WastelandShrub01.nif",
-                category,
-                null,
-                null,
-                () =>
-                {
-                    visualFactoryCalled = true;
-                    return new CollisionMesh([Vector3.Zero, Vector3.UnitX, Vector3.UnitY], [0, 1, 2]);
-                });
-
-            Assert.False(visualFactoryCalled);
             Assert.Null(result.Mesh);
             Assert.Equal(CollisionMeshSource.None, result.Source);
         }
+
+        var ordinary = entry.Resolve(path, PlacedObjectCategory.Architecture);
+        Assert.Same(visual, ordinary.Mesh);
+        Assert.Equal(CollisionMeshSource.VisualFallback, ordinary.Source);
+        Assert.Equal(1, visualFactoryCalls);
     }
 
     [Fact]
@@ -152,12 +182,14 @@ public sealed class WalkCollisionFallbackPolicyTests
         var positions = new[] { Vector3.Zero, Vector3.UnitX, Vector3.UnitY };
         int[] triangles = [0, 1, 2];
 
-        var result = CollisionMeshBuilder.Build(
-            @"plants\SolidCactus01.nif",
-            PlacedObjectCategory.Plants,
+        const string path = @"plants\SolidCactus01.nif";
+        var entry = CollisionCacheEntry.Create(
+            path,
+            HavokCollisionProvenance.AuthoredMesh,
             positions,
             triangles,
             () => throw new XunitException("visual fallback must not run when Havok is authored"));
+        var result = entry.Resolve(path, PlacedObjectCategory.Plants);
 
         Assert.NotNull(result.Mesh);
         Assert.Equal(CollisionMeshSource.AuthoredHavok, result.Source);

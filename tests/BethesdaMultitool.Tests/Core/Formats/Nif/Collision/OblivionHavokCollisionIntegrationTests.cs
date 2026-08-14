@@ -46,7 +46,7 @@ public class OblivionHavokCollisionIntegrationTests
         var nif = NifParser.Parse(nifData!);
         Assert.NotNull(nif);
 
-        var soup = HavokCollisionExtractor.TryExtract(nifData!, nif!);
+        var soup = HavokCollisionExtractor.Extract(nifData!, nif!).Soup;
         Assert.True(soup.HasValue, "TES4 packed collision must decode (no visual-mesh fallback).");
         Assert.True(soup!.Value.Triangles.Length >= 3);
 

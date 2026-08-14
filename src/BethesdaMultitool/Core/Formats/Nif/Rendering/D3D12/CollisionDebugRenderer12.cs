@@ -27,9 +27,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 ///         transient. The buffer is bound as a <c>StructuredBuffer&lt;float3&gt;</c> root SRV and the
 ///         collision_line vertex shader expands every edge into a screen-space quad from SV_VertexID
 ///         (no input-assembler stream); the pixel shader feathers the edge analytically in
-///         render-target pixels. This replaces the driver-dependent fixed-function line-AA
+///         layout pixels (DIPs), which the live caller derives from the render target's composition
+///         scale. This replaces the driver-dependent fixed-function line-AA
 ///         rasterizer state — the quads render identically on every
-///         monitor/adapter/DPI. Depth is DISABLED so the cage stays visible through the meshes it
+///         monitor/adapter and at every DPI. Depth is DISABLED so the cage stays visible through the meshes it
 ///         overlays. It is drawn into the LDR back buffer after tonemapping, keeping this editor
 ///         diagnostic out of scene bloom/exposure. References are globally distance-sorted; warm
 ///         meshes draw immediately and a bounded cold-path warmup offers the nearest misses to the
@@ -41,10 +42,10 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     private const uint UniformsByteSize = 96; // float4x4 (64) + float4 color (16) + float4 params (16)
     private const int MaxColdWarmupRequestsPerFrame = 2;
 
-    // Screen-space line profile (render-target pixels): core + feather ≈ a 2.5 px antialiased line,
-    // visually matching the old 1 px fixed-function-AA'd line. Tunable without shader edits.
-    private const float CoreHalfWidthPx = 0.6f;
-    private const float FeatherPx = 0.65f;
+    // Screen-space line profile (DIPs): core + feather ≈ a 2.5-DIP antialiased line at every
+    // composition scale. Tunable without shader edits.
+    private const float CoreHalfWidthDip = 0.6f;
+    private const float FeatherDip = 0.65f;
 
     // Cap on line vertices retained in the persistent wireframe buffer (each 12 B → ~6 MB at the cap).
     // A dense area's collision cages fit comfortably; beyond this we stop adding (debug overlay — move
@@ -74,7 +75,9 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     /// <summary>Spatial index for the loaded worldspace; set via <see cref="LoadData" />.</summary>
     public global::BethesdaMultitool.WorldSpatialIndex? SpatialIndex { get; private set; }
 
-    /// <summary>Resolves a model/category pair to its tri-state walk-mode collision result.</summary>
+    /// <summary>
+    ///     Resolves a model/category pair to collision authority plus independent warmup eligibility.
+    /// </summary>
     public Func<string, PlacedObjectCategory, CollisionMeshResolution>? CollisionResolver
     {
         get => _collisionResolver;
@@ -243,9 +246,14 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     public int Render(
         Matrix4x4 viewProj, VisibilityCylinder cylinder,
         float viewportWidth, float viewportHeight,
-        Vector3 renderOrigin = default, bool ldrTarget = false)
+        Vector3 renderOrigin = default, bool ldrTarget = false,
+        float compositionScaleX = 1f, float compositionScaleY = 1f,
+        bool showReferences = true,
+        IReadOnlyCollection<PlacedObjectCategory>? hiddenCategories = null)
     {
-        if (_disposed || SpatialIndex is null || _collisionResolver is null) return 0;
+        // Enforce the reference-layer parent here as well as at callers. In particular, do not offer
+        // cold meshes to the warmup callback while their visual layer is hidden.
+        if (!showReferences || _disposed || SpatialIndex is null || _collisionResolver is null) return 0;
         if (viewportWidth < 1f || viewportHeight < 1f) return 0;
 
         _candidateScratch.Clear();
@@ -269,6 +277,14 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
                     RenderableReference.IsImposterModelPath(p.ModelPath, _game) ||
                     RenderableReference.IsLodDuplicateBaseEditorId(p.BaseEditorId)) continue;
 
+                var category = _categoryIndex?.GetValueOrDefault(
+                    p.BaseFormId,
+                    PlacedObjectCategory.Unknown) ?? PlacedObjectCategory.Unknown;
+                // Filter before candidate admission: CollisionReferencePriorityResolver owns both
+                // warm hits and bounded cold warmups, so letting a hidden category reach it would keep
+                // an invisible object in the cage and could still spend streaming work on that object.
+                if (hiddenCategories?.Contains(category) == true) continue;
+
                 var world = PlacedReferenceTransform.ComposeWorldMatrix(
                     p.X, p.Y, p.Z, p.RotX, p.RotY, p.RotZ, p.Scale);
                 // Match the main scene's camera-relative frame. Keeping absolute ~50k+ world
@@ -279,9 +295,6 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
                 world.M43 -= renderOrigin.Z;
                 var dx = p.X - cylinder.Position.X;
                 var dy = p.Y - cylinder.Position.Y;
-                var category = _categoryIndex?.GetValueOrDefault(
-                    p.BaseFormId,
-                    PlacedObjectCategory.Unknown) ?? PlacedObjectCategory.Unknown;
                 _candidateScratch.Add(new CollisionReferenceCandidate(
                     p.ModelPath!, p.FormId, dx * dx + dy * dy, world, candidateSourceOrder,
                     category));
@@ -307,11 +320,13 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
         {
             return 0;
         }
+        var viewportDips = AnalyticOverlayLineMetrics.ViewportDips(
+            viewportWidth, viewportHeight, compositionScaleX, compositionScaleY);
         var uniforms = new CollisionUniforms
         {
             ViewProj = viewProj,
             LineColor = new Vector4(0.2f, 1.0f, 0.35f, 0.85f), // bright green, distinct from grid/navmesh
-            LineParams = new Vector4(viewportWidth, viewportHeight, CoreHalfWidthPx, FeatherPx),
+            LineParams = new Vector4(viewportDips, CoreHalfWidthDip, FeatherDip),
         };
         unsafe { *(CollisionUniforms*)cbAlloc.CpuPtr = uniforms; }
 
@@ -346,7 +361,7 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     {
         public Matrix4x4 ViewProj;
         public Vector4 LineColor;
-        /// <summary>x,y = viewport size px; z = core half-width px; w = feather px.</summary>
+        /// <summary>x,y = viewport size DIPs; z = core half-width DIPs; w = feather DIPs.</summary>
         public Vector4 LineParams;
     }
 }

@@ -3,8 +3,8 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Walk;
 
 /// <summary>
-///     Decides when walk mode may temporarily approximate a cold mesh with its object-bounds box.
-///     Visual effects are never solid merely because their render mesh has not produced collision yet.
+///     Decides when placed-reference collision may use speculative object bounds or visual triangle
+///     soup. Presentation-only geometry is never solid merely because it lacks authored Havok.
 /// </summary>
 internal static class WalkCollisionFallbackPolicy
 {
@@ -17,21 +17,17 @@ internal static class WalkCollisionFallbackPolicy
     }
 
     /// <summary>
-    ///     Gate for an already-RESOLVED warm collision mesh, applied at the placement site. The shared
-    ///     mesh cache builds one ordinary entry per model path under
-    ///     <see cref="PlacedObjectCategory.Unknown" />, so the vegetation rule inside
-    ///     <see cref="CollisionMeshBuilder.Build" /> never sees the placement's real category and a
-    ///     tree's synthesized canopy soup reached walk mode as solid ground — "walk mode can stand on
-    ///     SPT leaves". Leaf cards re-face the camera every frame, so a surface built from one is a
-    ///     floor that is not where it is drawn. Authored Havok is untouched and stays authoritative.
+    ///     Source-aware gate used when a cached mesh is resolved for a particular placement. Authored
+    ///     Havok and authoritative no-collision results are never rejected here; only synthesized
+    ///     visual soup is subject to placement/path policy.
     /// </summary>
     public static bool AllowsResolvedCollisionMesh(
         CollisionMeshSource source,
         string? modelPath,
         PlacedObjectCategory category)
     {
-        if (source != CollisionMeshSource.VisualFallback) return true;
-        return !IsVegetation(category) && !IsSpeedTreeModel(modelPath);
+        return source != CollisionMeshSource.VisualFallback ||
+               AllowsVisualMeshFallback(modelPath, category);
     }
 
     /// <summary>
@@ -45,11 +41,11 @@ internal static class WalkCollisionFallbackPolicy
            modelPath.EndsWith(".spt", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    ///     Plants and trees are walk-through in the retail engine UNLESS they ship authored Havok — a
-    ///     shrub/cactus/tree without collision in its NIF must not become an invisible wall. Our
-    ///     synthesized fallbacks (render-mesh triangle soup + speculative OBND box) would otherwise turn
-    ///     a plant's alpha-tested foliage cards and trunk into collision, so vegetation is excluded from
-    ///     BOTH. Authored Havok is checked first (see <see cref="CollisionMeshBuilder.Build" />) and stays
+    ///     Viewer policy treats Plants and Tree placements as walk-through UNLESS they ship authored
+    ///     Havok — a shrub/cactus/tree without collision in its NIF must not become an invisible wall.
+    ///     Our synthesized fallbacks (render-mesh triangle soup + speculative OBND box) would otherwise
+    ///     turn a plant's alpha-tested foliage cards and trunk into collision, so vegetation is excluded
+    ///     from BOTH. Authored Havok is checked first by the collision cache and stays
     ///     authoritative, so a plant that genuinely ships collision is still solid.
     /// </summary>
     public static bool IsVegetation(PlacedObjectCategory category)
@@ -59,8 +55,12 @@ internal static class WalkCollisionFallbackPolicy
     ///     Visual geometry under the effects folder is presentation, not an inferred walk surface.
     ///     Authored Havok is checked before this policy and remains authoritative.
     /// </summary>
-    public static bool AllowsVisualMeshFallback(string? modelPath)
-        => !IsEffectModel(modelPath);
+    public static bool AllowsVisualMeshFallback(
+        string? modelPath,
+        PlacedObjectCategory category = PlacedObjectCategory.Unknown)
+        => !IsEffectModel(modelPath, category) &&
+           !IsVegetation(category) &&
+           !IsSpeedTreeModel(modelPath);
 
     /// <summary>
     ///     True for an explicit effect-category placement, a missing model path, or a model stored

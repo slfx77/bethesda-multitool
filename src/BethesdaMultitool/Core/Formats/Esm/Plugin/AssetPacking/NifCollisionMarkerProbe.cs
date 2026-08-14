@@ -9,7 +9,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 ///     Deliberately a block-type-name marker scan rather than a real parse. A NIF stores its
 ///     block types as length-prefixed ASCII near the head of the file, and those bytes are
 ///     ASCII in both little- and big-endian (Xbox 360) NIFs, so one scan serves both without
-///     needing to know the version or endianness. <c>HavokCollisionExtractor.TryExtract</c>
+///     needing to know the version or endianness. <c>HavokCollisionExtractor.Extract</c>
 ///     would be exact but needs a fully parsed <c>NifInfo</c>, which is far too heavy for a
 ///     resolver tie-break run over thousands of contested paths.
 ///     </para>
