@@ -108,6 +108,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private GrassDistanceEnvelope _grassDistanceEnvelope;
     private ClassicSpecularLodProfile _classicSpecularLodProfile;
     private bool _tallGrassWindSupported;
+
+    // True only for the game whose grass draws through the INSTANCED+BLENDED route (TES4). Scopes the
+    // grass shadow-caster exclusion below to that route, because the batch-level grass marker
+    // (UsesGrassDistanceEnvelope) is NOT game-specific — Skyrim (3500/1000) and FO3/FNV (7000/1000)
+    // set an envelope too, so keying the exclusion on it alone silently stopped THEIR grass casting.
+    private bool _instancedBlendGrassSupported;
     private readonly HashSet<float> _tallGrassWaveMultipliers = [];
 
     // Sun-shadow pass replay list: one entry per instanced opaque draw recorded this frame (VB/IB
@@ -739,6 +745,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _cells = cells;
         _spatialIndex = spatialIndex;
         _tallGrassWindSupported = FnvTallGrassWind.IsSupported(renderCache.Game);
+        _instancedBlendGrassSupported = GrassShaderProfile.InstancedBlendForGame(renderCache.Game).Enabled;
         _grassDistanceEnvelope = GrassScatterProfile.ForGame(renderCache.Game).DistanceEnvelope;
         _classicSpecularLodProfile = ClassicSpecularLodProfile.ForGame(renderCache.Game);
         // Per-game grass shaders. Resolved here — beside the other ForGame registries — because this
@@ -3235,9 +3242,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // blended per-draw before, and blended draws are never captured as casters, so any
             // Oblivion grass shadow appearing here would be a NEW behaviour introduced by a perf
             // change — and retail has no grass caster permutation in shaderpackage019 either.
-            // UsesGrassDistanceEnvelope is the batch-level "this is grass" marker (it is already part
-            // of the batch key, and only the grass profiles enable an envelope at all).
-            var grassNeverCasts = fnvGrassNeverCasts || batchState.UsesGrassDistanceEnvelope;
+            // UsesGrassDistanceEnvelope is the batch-level "this is grass" marker (already part of the
+            // batch key), but it is NOT game-scoped: Skyrim (3500/1000) and FO3/FNV (7000/1000) set an
+            // envelope too. Gating on it ALONE — as this did between 2026-08-13 and 08-14 — silently
+            // stopped Skyrim grass and FO3/FNV NON-TallGrass grass from casting, which the old
+            // `_tallGrassWindSupported && sub.IsTallGrass` gate deliberately left untouched. Pair it
+            // with the route flag so the exclusion covers exactly the batches this change created.
+            var grassNeverCasts = fnvGrassNeverCasts
+                                  || (_instancedBlendGrassSupported && batchState.UsesGrassDistanceEnvelope);
             if (_shadowCaptureArmed && !sub.IsDecal && !grassNeverCasts &&
                 drawCount + shadowCount > 0 && drawLiveness)
             {

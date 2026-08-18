@@ -656,10 +656,11 @@ public sealed partial class WorldView3DControl
                     //     classification bug even in principle.
                     _shadowFrameAnchor = ResolveShadowAnchor(_camera.Position);
                     _shadowFrameSceneZSpan = ResolveShadowSceneZSpan();
+                    EnsureShadowLadderScale();
                     _references!.ArmShadowCapture(
-                        MathF.Min(ShadowCasterRingRadius, _renderDistance),
+                        MathF.Min(_shadowCasterRingRadiusScaled, _renderDistance),
                         (_shadowFrameAnchor, Vector3.Normalize(_lastResolvedSunDirection),
-                            ResolveShadowCascadeRadii(), ShadowCascadeSnap, _shadowFrameSceneZSpan));
+                            ResolveShadowCascadeRadii(), _shadowCascadeSnapScaled, _shadowFrameSceneZSpan));
                 }
                 else
                 {
@@ -949,18 +950,16 @@ public sealed partial class WorldView3DControl
                     RecordSunShadowPass(cmd, captureRenderOrigin, _camera.Position);
                     // This POST-pass line is the capture oracle. The earlier line describes inputs;
                     // these are the exact commands admitted by each cascade after classification,
-                    // including resident terrain cells. A nonzero availability-without-submission
-                    // bit exposes the known legacy Boolean/publication mismatch without changing it.
+                    // including resident terrain cells.
                     Log.Info(
                         "[Capture] shadow result pass={0}: mode={1} cascadeMask=0x{2:X} capturedBatches={3} " +
                         "refDraws=[{4}] refInstances=[{5}] terrainCells=[{6}] " +
-                        "availableWithoutSubmission=0x{7:X} animatedLeaves={8} animatedMeshes={9}",
+                        "animatedLeaves={7} animatedMeshes={8}",
                         isPrime ? "prime" : "real", _lastShadowMode, _lastShadowCascadeMask,
                         _lastShadowDrawCount,
                         string.Join(",", _lastShadowReferenceDrawsByCascade),
                         string.Join(",", _lastShadowReferenceInstancesByCascade),
                         string.Join(",", _lastShadowTerrainCellDrawsByCascade),
-                        _lastShadowAvailableWithoutSubmissionMask,
                         _references.ShadowDrawsIncludeAnimatedLeaves,
                         _references.ShadowDrawsIncludeAnimatedMeshes);
                 }
@@ -1624,7 +1623,7 @@ public sealed partial class WorldView3DControl
         var sunYExtreme = GmstFloat("fSunYExtreme");
         var sunAlphaTransition = GmstFloat("fSunAlphaTransTime");
         var sunProjection = sunProfile.ResolveBillboardProjection(
-            SkyBillboardRenderer12.Radius,
+            SkyBillboardRenderer12.ClassicRadius * _unitScale,
             _gameHour,
             _currentClimateTiming,
             sunXExtreme,

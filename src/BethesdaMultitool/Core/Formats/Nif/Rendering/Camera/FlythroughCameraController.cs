@@ -34,7 +34,11 @@ internal enum CameraMode
 /// </summary>
 internal sealed class FlythroughCameraController
 {
-    /// <summary>Default fly-mode move speed (units/sec).</summary>
+    /// <summary>
+    ///     Default fly-mode move speed (units/sec). Like every other constant in this type it is
+    ///     authored in CLASSIC world units (~70 per metre) and multiplied by <see cref="UnitScale" />
+    ///     for games whose unit differs — see <see cref="SetUnitScale" />.
+    /// </summary>
     public const float FlySpeedDefault = 4096f;
 
     /// <summary>
@@ -80,6 +84,38 @@ internal sealed class FlythroughCameraController
     public FlythroughCameraController(CameraState camera)
     {
         _camera = camera;
+    }
+
+    /// <summary>
+    ///     Multiplier from this type's classic-unit constants into the active game's units
+    ///     (<c>GameProfiles.HumanScaleFactor</c>). 1 for every classic-unit game; 1/70 for Starfield,
+    ///     whose unit is a metre.
+    /// </summary>
+    public float UnitScale { get; private set; } = 1f;
+
+    /// <summary>
+    ///     Re-seeds every human-scale constant for a world whose unit is not the classic ~1.43 cm.
+    ///     Without this a Starfield walk-mode eye sits 112 metres up — taller than the whole cell —
+    ///     and one walking step covers an entire city block.
+    ///     <para>
+    ///         Call on worldspace load, before entering walk mode. Speeds are re-seeded from their
+    ///         defaults rather than rescaled in place, so switching worlds does not compound a user's
+    ///         scroll adjustments; a scale of 1 restores exactly the authored defaults.
+    ///     </para>
+    /// </summary>
+    public void SetUnitScale(float unitScale)
+    {
+        if (!(unitScale > 0f) || UnitScale.Equals(unitScale)) return;
+
+        UnitScale = unitScale;
+        _flyMoveSpeed = FlySpeedDefault * unitScale;
+        _walkMoveSpeed = WalkSpeedDefault * unitScale;
+        EyeHeight = WalkEyeHeightDefault * unitScale;
+        JumpSpeed = JumpSpeedDefault * unitScale;
+        Gravity = GravityDefault * unitScale;
+        CeilingHeadroom = CeilingHeadroomDefault * unitScale;
+        // A settled walk pose is in the OLD scale — re-seat rather than glide to the new height.
+        _walkZSettled = false;
     }
 
     /// <summary>
@@ -133,12 +169,21 @@ internal sealed class FlythroughCameraController
     /// <summary>Height the camera is held above ground when in <see cref="CameraMode.Walk" />.</summary>
     public float EyeHeight { get; set; } = WalkEyeHeightDefault;
 
+    /// <summary>Initial upward velocity (classic units/sec) of a walk-mode jump: a ~160-unit hop.</summary>
+    public const float JumpSpeedDefault = 700f;
+
+    /// <summary>Downward acceleration (classic units/sec²) applied while airborne in walk mode.</summary>
+    public const float GravityDefault = 1500f;
+
+    /// <summary>Clearance kept between the eye and a ceiling on jump contact (classic units).</summary>
+    public const float CeilingHeadroomDefault = 8f;
+
     /// <summary>Initial upward velocity (units/sec) of a walk-mode jump. Default ≈ a ~160-unit hop
     /// against <see cref="Gravity" /> (a bit over the 128-unit player capsule height).</summary>
-    public float JumpSpeed { get; set; } = 700f;
+    public float JumpSpeed { get; set; } = JumpSpeedDefault;
 
     /// <summary>Downward acceleration (units/sec²) applied while airborne in walk mode.</summary>
-    public float Gravity { get; set; } = 1500f;
+    public float Gravity { get; set; } = GravityDefault;
 
     /// <summary>
     ///     Walk-mode ground-height lookup. <c>(worldX, worldY) → groundZ</c> or <c>null</c> when
@@ -156,7 +201,7 @@ internal sealed class FlythroughCameraController
     public Func<float, float, float?>? CeilingHeightSampler { get; set; }
 
     /// <summary>Clearance kept between the eye and a ceiling on jump contact (world units).</summary>
-    public float CeilingHeadroom { get; set; } = 8f;
+    public float CeilingHeadroom { get; set; } = CeilingHeadroomDefault;
 
     /// <summary>
     ///     Optional continuous horizontal collision resolver for walk mode. Receives the current eye
@@ -201,7 +246,10 @@ internal sealed class FlythroughCameraController
         // walk spans 16..2048 (covers sneak to sprint).
         var current = MoveSpeed;
         var (min, max) = _mode == CameraMode.Walk ? (16f, 2048f) : (16f, 200_000f);
-        MoveSpeed = Math.Clamp(current * MathF.Pow(ScrollSpeedFactor, ticks), min, max);
+        // The bounds are speeds, so they scale with the unit like the defaults do — left unscaled, the
+        // 16-unit floor is 16 m/s in Starfield and the slowest possible walk is a sprint.
+        MoveSpeed = Math.Clamp(
+            current * MathF.Pow(ScrollSpeedFactor, ticks), min * UnitScale, max * UnitScale);
     }
 
     private void ApplyMouseLook()
@@ -407,7 +455,7 @@ internal sealed class FlythroughCameraController
             return;
         }
 
-        if (target < pos.Z - WalkFallThreshold)
+        if (target < pos.Z - (WalkFallThreshold * UnitScale))
         {
             // Ledge: let gravity take it from here (UpdateWalkVertical integrates the fall and
             // lands on the floor below) instead of gliding down at the easing rate.
@@ -420,8 +468,10 @@ internal sealed class FlythroughCameraController
         // only then is the ceiling sampled — the ceiling query rebuilds the same 3x3 candidate set as
         // the ground capsule, so running it every grounded frame would double walk-mode collision cost
         // for the flat-ground case that can never bonk. The fall check above deliberately uses the
-        // unclamped ground target so a low roof cannot be read as a ledge.
-        if (target > pos.Z + 1f && CeilingHeightSampler is { } ceilingSampler)
+        // unclamped ground target so a low roof cannot be read as a ledge. The 1-unit rise gate is
+        // human-scale (≈1.4 cm classic) and must scale like its sibling threshold above — unscaled it
+        // is a full METRE in Starfield, letting stair steps push the eye through a low ceiling.
+        if (target > pos.Z + (1f * UnitScale) && CeilingHeightSampler is { } ceilingSampler)
         {
             target = WalkVerticalMath.ClampToCeiling(target, ceilingSampler(pos.X, pos.Y), CeilingHeadroom);
         }

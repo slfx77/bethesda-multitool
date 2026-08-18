@@ -117,7 +117,6 @@ public sealed partial class WorldView3DControl
         fields["shadowReferenceDrawsByCascade"] = _lastShadowReferenceDrawsByCascade;
         fields["shadowReferenceInstancesByCascade"] = _lastShadowReferenceInstancesByCascade;
         fields["shadowTerrainCellDrawsByCascade"] = _lastShadowTerrainCellDrawsByCascade;
-        fields["shadowAvailableWithoutSubmissionMask"] = _lastShadowAvailableWithoutSubmissionMask;
         return fields;
     }
 
@@ -220,6 +219,15 @@ public sealed partial class WorldView3DControl
     internal RendererProfilerCameraPose Profiler_CameraPose =>
         new(_camera.Position, _camera.Yaw, _camera.Pitch, _renderDistance);
 
+    /// <summary>
+    ///     Profiler hook: the loaded worldspace's cell-edge size in world units. The harness takes its
+    ///     span/distance arguments in CELLS and previously converted them with the hard-coded
+    ///     <c>WorldGridConstants.CellSize</c>, which is 40.96× too large on Starfield (100-unit cells) —
+    ///     so every headless measurement was taken at a different distance than it reported. Convert
+    ///     through this instead.
+    /// </summary>
+    internal float Profiler_CellWorldSize => _cellSize;
+
     internal WorldRenderStats? Profiler_TerrainStats => _terrain?.LastStats.Snapshot();
     internal WorldRenderStats? Profiler_ReferenceStats => _references?.LastStats.Snapshot();
     internal WorldRenderStats? Profiler_WaterStats => _water?.LastStats.Snapshot();
@@ -250,6 +258,31 @@ public sealed partial class WorldView3DControl
         var cx = (float)((sumX / (double)n + 0.5) * _data.CellWorldSize);
         var cy = (float)((sumY / (double)n + 0.5) * _data.CellWorldSize);
         return (ws.FormId, cx, cy, ws.EditorId ?? $"0x{ws.FormId:X8}");
+    }
+
+    /// <summary>
+    ///     Profiler hook: index of the exterior worldspace whose EditorID is <paramref name="name" />,
+    ///     in the same index space <see cref="Profiler_GetWorldspaceCenter" /> uses. Null when no
+    ///     worldspace matches.
+    ///     <para>
+    ///         The top-down capture path targets a worldspace by INDEX, which is unusable for a game
+    ///         that ships hundreds of them (Starfield's main master alone has 433) — an index is
+    ///         load-order-dependent and silently captures the wrong world when it shifts. This lets the
+    ///         harness resolve the same name the lit-frame path already accepts.
+    ///     </para>
+    /// </summary>
+    internal int? Profiler_TryFindWorldspaceIndexByName(string name)
+    {
+        if (_data is null || string.IsNullOrWhiteSpace(name)) return null;
+        for (var i = 0; i < _data.Worldspaces.Count; i++)
+        {
+            if (string.Equals(_data.Worldspaces[i].EditorId, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        return null;
     }
 
     internal void Profiler_SetCameraPose(RendererProfilerCameraPose pose)

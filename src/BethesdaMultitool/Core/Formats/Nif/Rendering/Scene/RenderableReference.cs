@@ -72,6 +72,29 @@ internal readonly record struct RenderableReference(
     internal const float SelectionFallbackRadius = 256f;
 
     /// <summary>
+    ///     <see cref="NoBoundsFallbackRadius" /> expressed in CELLS. The literal above is one
+    ///     Fallout-family cell; the sphere's whole job is "comfortably contains single-cell
+    ///     architecture", which is a statement about cells, not about 4096 world units.
+    /// </summary>
+    private const float NoBoundsFallbackCells = 1f;
+
+    /// <summary>
+    ///     <see cref="SelectionFallbackRadius" /> in cells (1/16 of a cell = 256 units at 4096).
+    /// </summary>
+    private const float SelectionFallbackCells = 1f / 16f;
+
+    /// <summary>
+    ///     Cull-sphere fallback radius scaled to <paramref name="cellSize" />. On Starfield's 100-unit
+    ///     cell the fixed 4096 literal is 41 cells wide, so every OBND-less ref became a cull-proof
+    ///     candidate: AkilaCity culled only 2,618 of 40,874 refs, pushing the rest through the far more
+    ///     expensive mesh-resolve path every frame.
+    /// </summary>
+    internal static float NoBoundsFallbackRadiusFor(float cellSize) => NoBoundsFallbackCells * cellSize;
+
+    /// <summary>Selection-target fallback radius scaled to <paramref name="cellSize" />.</summary>
+    internal static float SelectionFallbackRadiusFor(float cellSize) => SelectionFallbackCells * cellSize;
+
+    /// <summary>
     ///     4-pre Item B — computes the stable per-process MeshId from a ModelPath. Used to
     ///     dedupe the per-REFR mesh-cache lookup in the cull loop: instead of doing a
     ///     case-insensitive string hash + dict lookup per REFR (~80 ns × 5000 REFRs), the
@@ -195,7 +218,8 @@ internal readonly record struct RenderableReference(
             return null;
 
         var world = ComposeWorldMatrix(placement);
-        var (center, radius) = ComposeWorldBounds(placement, world);
+        var (center, radius) = ComposeWorldBounds(
+            placement, world, GameProfiles.CellWorldSizeOrDefault(game));
 
         if (DumpFilter is { Length: > 0 } && placement.ModelPath!.Contains(DumpFilter, StringComparison.OrdinalIgnoreCase))
             DumpRefr(placement, world);
@@ -310,7 +334,8 @@ internal readonly record struct RenderableReference(
     ///     (some MSTT / runtime-only refs). Computed once at LoadData so the per-frame cull
     ///     just does a <c>(centerWorld - cameraXY).LengthSq &lt; (radius + cylinderRadius)^2</c>.
     /// </summary>
-    private static (Vector3 Center, float Radius) ComposeWorldBounds(PlacedReference p, Matrix4x4 world)
+    private static (Vector3 Center, float Radius) ComposeWorldBounds(
+        PlacedReference p, Matrix4x4 world, float cellSize)
     {
         var bounds = p.Bounds;
         if (bounds is null || bounds.IsDegenerate)
@@ -324,7 +349,7 @@ internal readonly record struct RenderableReference(
             // (a cathedral's local radius is ~3049): decode only runs for cull survivors, so an
             // under-sized fallback culls a large mesh before it can decode + self-correct, leaving it
             // permanently invisible. See NoBoundsFallbackRadius.
-            return (new Vector3(p.X, p.Y, p.Z), NoBoundsFallbackRadius);
+            return (new Vector3(p.X, p.Y, p.Z), NoBoundsFallbackRadiusFor(cellSize));
         }
 
         // OBND is in mesh-local space. The conservative sphere = (centerLocal · world) for the

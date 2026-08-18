@@ -52,8 +52,14 @@ internal sealed class ReferenceMeshDecoder12
     // darkening inputs, CSpeedTreeRT::Set{Leaf,Branch}DimmingScalar).
     private readonly IReadOnlyDictionary<string, SpeedTreeDimming>? _speedTreeDimming;
 
+    /// <summary>First bsVersion whose NIFs keep geometry in external <c>geometries\*.mesh</c> blobs.</summary>
+    private const uint StarfieldBsVersion = 170;
+
     private int _totalMissingModelPaths;
     private int _totalSkinnedModelPaths;
+    private int _totalParseFailedModelPaths;
+    private int _totalMissingGeometryBlobs;
+    private int _totalDecodeFailedGeometryBlobs;
 
     // Kill-switch: FALLOUT_VIEWER_NIF_ANIMATION=0 decodes animated/skinned placed NIFs as inert
     // static geometry (pre-v32 behavior). Diagnostic knob — cached entries reflect whichever mode
@@ -77,6 +83,31 @@ internal sealed class ReferenceMeshDecoder12
 
     public int TotalMissingModelPaths => Volatile.Read(ref _totalMissingModelPaths);
     public int TotalSkinnedModelPaths => Volatile.Read(ref _totalSkinnedModelPaths);
+
+    /// <summary>
+    ///     Model paths whose bytes WERE found but whose NIF failed to parse. Deliberately separate
+    ///     from <see cref="TotalMissingModelPaths" /> (an archive miss): the two have opposite causes
+    ///     and opposite fixes, and conflating them hid the fact that 100% of Starfield's meshes were
+    ///     failing at the header rather than being absent. A null parse is otherwise invisible — it is
+    ///     not logged and IS persisted as a negative to the on-disk decoded-mesh cache.
+    /// </summary>
+    public int TotalParseFailedModelPaths => Volatile.Read(ref _totalParseFailedModelPaths);
+
+    /// <summary>
+    ///     Starfield BSGeometry blocks that named an external <c>geometries\*.mesh</c> blob which the
+    ///     mounted archives did not contain — the signature of a missing/misclassified meshes archive
+    ///     rather than a bad decode.
+    /// </summary>
+    public int TotalMissingGeometryBlobs => Volatile.Read(ref _totalMissingGeometryBlobs);
+
+    /// <summary>
+    ///     Starfield geometry blobs that WERE extracted but failed <c>StarfieldMeshFile</c> decode (or
+    ///     decoded to zero triangles). The third failure class beside
+    ///     <see cref="TotalMissingGeometryBlobs" /> (archive miss) and
+    ///     <see cref="TotalParseFailedModelPaths" /> (NIF header failure) — without it a corrupt blob
+    ///     drops silently and the empty model persists to the decoded-mesh disk cache as a negative.
+    /// </summary>
+    public int TotalDecodeFailedGeometryBlobs => Volatile.Read(ref _totalDecodeFailedGeometryBlobs);
 
     /// <summary>Extracts <paramref name="modelPath" /> from the mesh archives and decodes it into a
     /// <see cref="DecodedNifMesh12" /> (NIF parse or procedural SpeedTree); null when missing or unusable.</summary>
@@ -207,6 +238,7 @@ internal sealed class ReferenceMeshDecoder12
                     if (sourceInfo is null)
                     {
                         result = "parse-failed";
+                        Interlocked.Increment(ref _totalParseFailedModelPaths);
                         return null;
                     }
 
@@ -227,6 +259,7 @@ internal sealed class ReferenceMeshDecoder12
                     if (nif is null)
                     {
                         result = "converted-parse-failed";
+                        Interlocked.Increment(ref _totalParseFailedModelPaths);
                         return null;
                     }
                 }
@@ -237,6 +270,7 @@ internal sealed class ReferenceMeshDecoder12
                     if (nif is null)
                     {
                         result = "parse-failed";
+                        Interlocked.Increment(ref _totalParseFailedModelPaths);
                         return null;
                     }
                 }
@@ -275,7 +309,14 @@ internal sealed class ReferenceMeshDecoder12
                     // The reference cache also owns placed-object collision. Preserve the decoded
                     // model shell when a NIF has no render geometry so authored collision provenance
                     // can still reach the collision LRU instead of becoming a total negative entry.
-                    preserveEmptyModel: true);
+                    preserveEmptyModel: true,
+                    // Starfield keeps no vertex data in the NIF — BSGeometry blocks name a blob under
+                    // geometries\. Supplied only for bsVersion >= 170 so no other game pays an extra
+                    // archive probe per shape.
+                    externalMeshLoader: nif.BsVersion >= StarfieldBsVersion ? LoadExternalGeometryBlob : null,
+                    onExternalMeshDecodeFailure: nif.BsVersion >= StarfieldBsVersion
+                        ? _ => Interlocked.Increment(ref _totalDecodeFailedGeometryBlobs)
+                        : null);
 
                 // FNV physics-lite is source-graph data, resolved while the full source graph is
                 // available. The parser is deliberately profile-gated to retail
@@ -728,6 +769,43 @@ internal sealed class ReferenceMeshDecoder12
         }
 
         return total;
+    }
+
+    /// <summary>
+    ///     Loads a Starfield <c>BSGeometry</c> block's external geometry blob. The NIF stores only the
+    ///     two-component hash (e.g. <c>00000042477f47c194db\3cd02fb771e05b4ac1be</c>); the
+    ///     <c>geometries\</c> root and <c>.mesh</c> extension are implied and added here.
+    ///     <para>
+    ///         Deliberately NOT routed through <see cref="NormalizeModelPath" />, which force-prefixes
+    ///         <c>meshes\</c> — these blobs live in a sibling tree, and in retail Meshes01 every one of
+    ///         the 288,231 of them is under <c>geometries\</c> while no <c>.nif</c> is.
+    ///     </para>
+    /// </summary>
+    private byte[]? LoadExternalGeometryBlob(string meshPath)
+    {
+        var normalized = meshPath.Replace('/', '\\').Trim().TrimStart('\\');
+        if (normalized.Length == 0)
+        {
+            return null;
+        }
+
+        if (!normalized.StartsWith("geometries\\", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = "geometries\\" + normalized;
+        }
+
+        if (!normalized.EndsWith(".mesh", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized += ".mesh";
+        }
+
+        if (_meshArchives.TryExtractFile(normalized, out var bytes, out _) && bytes.Length > 0)
+        {
+            return bytes;
+        }
+
+        Interlocked.Increment(ref _totalMissingGeometryBlobs);
+        return null;
     }
 
     public static string NormalizeModelPath(string modelPath)

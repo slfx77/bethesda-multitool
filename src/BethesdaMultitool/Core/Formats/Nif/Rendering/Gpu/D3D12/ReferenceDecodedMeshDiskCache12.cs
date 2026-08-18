@@ -73,8 +73,15 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // retain Tx_V_water_01 as an ordinary drawable texture and never reach WaterRenderer12.
     // v75: FO4 refraction-flagged BGSM surfaces with a conventional diffuse survive extraction.
     // Warm v74 NukaColaBottleFull entries contain only its glass shape and omit the ordinary lit surface.
+    // v76: Starfield support — the bsVersion >= 170 stream-header fix plus BSGeometry/.mesh extraction.
+    // MANDATORY bump, not a courtesy one: every Starfield model previously failed to parse and the
+    // resulting NULL was persisted here as a negative entry, so warm v75 caches would keep serving
+    // "this model has no geometry" forever and the fix would appear to do nothing.
+    // v77: Starfield BSGeometry shapes whose shader has an EMPTY material name are now dropped at
+    // extraction (proxy/LOD shapes nothing can texture — they rendered as bright white geometry).
+    // Warm v76 entries still contain those submeshes.
     // (Full bump history for this constant lives in git blame.)
-    internal const int DecoderVersion = 75;
+    internal const int DecoderVersion = 77;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;

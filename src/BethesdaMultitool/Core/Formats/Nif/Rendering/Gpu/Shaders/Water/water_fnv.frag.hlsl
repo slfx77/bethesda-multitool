@@ -90,7 +90,7 @@ float4 main(PSInput input) : SV_Target
     uint depthIndex = uDepthParams.x;
     float depthT;
     float2 corrD;          // engine corrected-depth (slant, vertical) lanes in FogFar units
-    float column = 0.0;    // raw view-space depth gap in world units (only meaningful when sampled)
+    float column = 0.0;    // view-space gap to the surface the water is OVER (only when sampled)
     float fogNear = uLegacySurface1.x;                    // DNAM@32 above-water FogNear (NVCleanWater -80)
     float fogFar = max(uLegacySurface1.y, fogNear + 1.0); // DNAM@36 above-water FogFar (NVCleanWater 850)
     if (depthIndex == 0xFFFFFFFFu)
@@ -103,18 +103,24 @@ float4 main(PSInput input) : SV_Target
         float near = asfloat(uDepthParams.y);
         float far = asfloat(uDepthParams.z);
         uint depthSampleCount = max((uint)uRenderOrigin.w, 1u);
-        float sceneNdc = LoadSceneDepth(depthIndex, (int2)input.Position.xy, depthSampleCount);
+        // sceneNdc is the surface the water is layered OVER, with MSAA occluder samples excluded
+        // (see LoadSceneDepth); occluderNdc is the unfiltered nearest, for the clip below only.
+        float occluderNdc;
+        float sceneNdc = LoadSceneDepth(
+            depthIndex, (int2)input.Position.xy, depthSampleCount, input.Position.z, occluderNdc);
         float sceneDist = LinearizeDepth(sceneNdc, near, far);
         float waterDist = LinearizeDepth(input.Position.z, near, far);
-        column = sceneDist - waterDist;           // >0: water over a floor; <0: geometry occludes
+        column = sceneDist - waterDist;           // >0: water over a floor
 #if !WATER_HARDWARE_OCCLUSION
         // 3D-2 tie-break: bias the occlusion test toward KEEPING the water (uDepthParams.w world units) so
         // a shoreline where water and terrain are ~coplanar (column ≈ 0 ± sub-ULP depth noise) resolves to
         // water instead of flickering. The bias is tiny vs DepthFalloff, so genuinely occluded water
         // (column far negative) is still discarded. Hardware-occlusion compiles skip this: the pixel-rate
         // binary clip aliases at MSAA'd mesh silhouettes, while the read-only DSV's GreaterEqual test
-        // rejects per sample (and covers the same coplanar tie-break in hardware).
-        clip(column + asfloat(uDepthParams.w));    // discard water hidden behind opaque geometry
+        // rejects per sample (and covers the same coplanar tie-break in hardware). This is the one
+        // consumer that wants the UNFILTERED nearest sample — it asks "is anything in front of me?",
+        // not "what am I over?" — so it tests occluderNdc rather than the shading column.
+        clip(LinearizeDepth(occluderNdc, near, far) - waterDist + asfloat(uDepthParams.w));
 #endif
         // Reconstruct the depth-writer channels: scene point along the view ray, then the slant
         // and vertical water columns between it and the surface point, in FogFar units.

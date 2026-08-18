@@ -32,7 +32,9 @@ internal static class TerrainOpacityTextureCache
             throw new ArgumentException($"Destination must be at least {GridSize} bytes.", nameof(destination));
 
         destination[..GridSize].Clear();
-        foreach (var entry in atxtLayer.BlendEntries)
+        // EnumerateVtxt17Entries, not BlendEntries: BTD-injected Starfield layers encode positions on
+        // the native 65 grid; this cache's output is fixed 17×17.
+        foreach (var entry in atxtLayer.EnumerateVtxt17Entries())
         {
             if (entry.Position >= GridSize) continue;
             var clamped = Math.Clamp(entry.Opacity, 0f, 1f);

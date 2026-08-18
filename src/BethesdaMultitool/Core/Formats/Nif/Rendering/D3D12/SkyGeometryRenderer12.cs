@@ -321,12 +321,18 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         // gate travels per draw in the CB's uTexIndex.y lane (same pattern as the uScrollMode.w branch).
         var fnvFallbackHorizonRamp = game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas;
 
+        // The dome radius is a HUMAN-SCALE distance (12,000 classic units ≈ 171 m), sized to sit
+        // between the near and far planes. Starfield's unit is a metre and its far plane is
+        // cell-scaled (~4,200 units at default draw distance), so the unscaled radius would put the
+        // ENTIRE sky — gradient, stars, clouds, sun — beyond the far plane and it all clips away.
+        var radius = TargetRadius * GameProfiles.HumanScaleFactor(game);
+
         // The procedural dome is strictly a missing-asset fallback. An authored Atmosphere.nif owns the
         // background whenever one was decoded, including its non-linear vertex blend bands.
         if (!_layers.Any(static layer => layer.Mode == 0))
         {
             DrawMesh(cmd, frameIndex, viewProj, camPos, _fallbackVerts, _fallbackIndices,
-                mode: 0, scale: TargetRadius, fallbackHorizon, 1f, Vector2.Zero, NoTexture,
+                mode: 0, scale: radius, fallbackHorizon, 1f, Vector2.Zero, NoTexture,
                 skyUpper, skyLower, skyHorizon, authoredAtmosphere: false, fnvFallbackHorizonRamp);
         }
 
@@ -416,7 +422,7 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
                 }
             }
             DrawMesh(cmd, frameIndex, viewProj, camPos, layer.Vertices, layer.Indices,
-                layer.Mode, TargetRadius, tint, param, scroll, layer.TexIndex,
+                layer.Mode, radius, tint, param, scroll, layer.TexIndex,
                 skyUpper, skyLower, skyHorizon, layer.HasAuthoredBlendWeights, fnvFallbackHorizonRamp);
         }
     }

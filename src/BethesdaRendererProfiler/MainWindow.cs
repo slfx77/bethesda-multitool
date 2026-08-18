@@ -323,7 +323,24 @@ internal sealed partial class MainWindow : Window, IDisposable
             // overlay renders the requested worldspace, not whichever the 3D view currently holds.
             float cx, cy;
             uint? targetFormId;
-            if (_options.CaptureWorldspaceIndex is int wsIdx)
+            // --capture-worldspace-name is the stable way to target a world; the raw index shifts with
+            // load order and silently captures a different one. Resolve the name to an index here so
+            // the top-down path accepts the same flag the lit-frame path does.
+            var resolvedIndex = _options.CaptureWorldspaceIndex;
+            if (resolvedIndex is null && !string.IsNullOrWhiteSpace(_options.CaptureWorldspaceName))
+            {
+                resolvedIndex = _worldView.Profiler_TryFindWorldspaceIndexByName(_options.CaptureWorldspaceName);
+                if (resolvedIndex is null)
+                {
+                    Console.WriteLine(
+                        $"[Capture] UNAVAILABLE: no worldspace named '{_options.CaptureWorldspaceName}' " +
+                        $"(count={_worldView.Profiler_ExteriorWorldspaceCount}).");
+                    ExitProfiler("capture-bad-worldspace", 2);
+                    return;
+                }
+            }
+
+            if (resolvedIndex is int wsIdx)
             {
                 var center = _worldView.Profiler_GetWorldspaceCenter(wsIdx);
                 if (center is null)
@@ -360,7 +377,10 @@ internal sealed partial class MainWindow : Window, IDisposable
                 cy = overrideY;
             }
 
-            var half = Math.Max(1, _options.CaptureSpanCells) * 0.5f * WorldGridConstants.CellSize;
+            // Cells → world units through the LOADED worldspace's cell size (see
+            // Profiler_CellWorldSize): the Fallout-family constant made --capture-span-cells 40.96×
+            // too wide on Starfield, so the capture framed hundreds of empty cells.
+            var half = Math.Max(1, _options.CaptureSpanCells) * 0.5f * _worldView.Profiler_CellWorldSize;
             float minX = cx - half, maxX = cx + half, minY = cy - half, maxY = cy + half;
             const int px = 512;
 

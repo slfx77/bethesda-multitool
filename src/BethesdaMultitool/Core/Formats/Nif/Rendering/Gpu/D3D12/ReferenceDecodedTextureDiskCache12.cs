@@ -32,7 +32,17 @@ internal sealed class ReferenceDecodedTextureDiskCache12 : DiskBlobCache
     // v4: cubemap payloads (FO4 environment maps) — the serialized format gains ArraySize and
     // writes MipCount × ArraySize levels (v3 wrote MipCount then iterated ALL levels, which would
     // desync on a 6-face payload).
-    internal const int DecoderVersion = 4;
+    // v5: Starfield .mat keys resolve DIFFERENTLY — the material walk now goes through layer 0 instead
+    // of taking the first index-0 texture in the object graph (which was often a BLENDER's mask), and
+    // an absent texture can now resolve to a flat TextureReplacement colour. The cache is keyed on the
+    // .mat path, so every pre-fix entry hands back the OLD single-channel mask and the world keeps
+    // rendering RED no matter how correct the resolver is. This is the entire reason a fixed build can
+    // still look broken on a machine with a warm cache.
+    // v6: LowestLayer now merges the layer maps across the whole inheritance chain (reference
+    // copyBaseObject semantics) instead of stopping at the first level with any layers — a derived
+    // material that locally overrides only a decal layer resolves the inherited layer-0 albedo now,
+    // so its .mat key maps to a different texture than any v5 entry.
+    internal const int DecoderVersion = 6;
 
     private const int MaxMipLevels = 24;
     private const int MaxMipBytes = 128 * 1024 * 1024;

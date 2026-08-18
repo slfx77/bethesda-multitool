@@ -100,10 +100,16 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         // v69: triggered-FX rest-state resolve changed particle bake output (dormant emitters).
         // v71: EmitterActive bool bindings gate baked birth rates (NVNellisArtillery idle smoke).
         // v73: Havok provenance joined the payload; a default payload remains fallback-eligible.
+        // v76: Starfield (bsVersion >= 170) NIFs decode for the first time — the payload shape is
+        // unchanged, but every previously-cached Starfield entry is a stale NEGATIVE and must not be
+        // served, so the version had to move.
+        // v77: Starfield BSGeometry shapes with an EMPTY shader material name are dropped at
+        // extraction (untexturable proxy/LOD shapes that rendered bright white); warm v76 entries
+        // still contain those submeshes.
         Assert.True(loaded.EngineZWriteOff);
         Assert.True(loaded.DepthTestOff);
         Assert.Equal(HavokCollisionProvenance.AbsentOrUnsupported, mesh.CollisionProvenance);
-        Assert.Equal(75, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+        Assert.Equal(77, ReferenceDecodedMeshDiskCache12.DecoderVersion);
     }
 
     [Fact]

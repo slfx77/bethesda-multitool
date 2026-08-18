@@ -236,11 +236,26 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
         var unique = new HashSet<uint>();
         foreach (var cell in cells)
         {
-            var layers = cell.LandVisualData?.TextureLayers;
-            if (layers is null) continue;
-            foreach (var layer in layers)
+            var visual = cell.LandVisualData;
+            if (visual is null) continue;
+
+            if (visual.TextureLayers is { } layers)
             {
-                if (layer.TextureFormId != 0) unique.Add(layer.TextureFormId);
+                foreach (var layer in layers)
+                {
+                    if (layer.TextureFormId != 0) unique.Add(layer.TextureFormId);
+                }
+            }
+
+            // VTEX-grid cells (Morrowind, and any FO76/Starfield cell whose BTD layer rebuild fell
+            // back to the flat grid) were skipped entirely, so they always took the slow lazy-miss
+            // path on first paint even though their FormIDs are known up front.
+            if (visual.VtexTextureFormIds is { Length: > 0 } vtex)
+            {
+                foreach (var formId in vtex)
+                {
+                    if (formId != 0) unique.Add(formId);
+                }
             }
         }
 

@@ -36,6 +36,9 @@ public sealed partial class WorldView3DControl
     // camera's ground intersection when a mode is first entered; moved by left-drag panning.
     private Vector3 _projectionFocus;
     // Half the vertical world extent the ortho frustum covers (the zoom). Driven by the wheel.
+    // Seeded here against the default cell size only so the field is never unset; SetProjectionMode
+    // re-seeds it from the loaded worldspace's _cellSize before it is ever read (it is only used while
+    // ProjectionActive), so a non-4096 game never sees this value.
     private float _orthoHalfHeight = 8f * WorldGridConstants.CellSize;
 
     // FOV slider bounds (perspective-only). Default 60° matches CameraState.FovYRadians (π/3).
@@ -241,8 +244,13 @@ public sealed partial class WorldView3DControl
 
     // ---- Matrix + interaction helpers (shared by Frame.cs render + Input.cs picking) -------------
 
-    private const float MinOrthoHalfHeight = 256f;
-    private const float MaxOrthoHalfHeight = 64f * WorldGridConstants.CellSize;
+    // Wheel-zoom bounds, expressed in CELLS rather than world units: these were the literals 256 and
+    // 64*4096, which silently assumed Fallout's 4096-unit cell. On Starfield's 100-unit cell the old
+    // floor of 256 units was 2.5 cells, so the view could never zoom closer than a small block of cells.
+    private const float MinOrthoHalfHeightCells = 1f / 16f;
+    private const float MaxOrthoHalfHeightCells = 64f;
+    private float MinOrthoHalfHeight => MinOrthoHalfHeightCells * _cellSize;
+    private float MaxOrthoHalfHeight => MaxOrthoHalfHeightCells * _cellSize;
     private const float OrthoZoomPerTick = 0.85f; // wheel up shrinks the extent (zoom in)
 
     /// <summary>

@@ -1025,7 +1025,9 @@ internal sealed class TextureWinnerGrid
         foreach (var layer in alphaLayers)
         {
             var quadStart = layer.Quadrant * QuadVertexCount;
-            foreach (var entry in layer.BlendEntries)
+            // EnumerateVtxt17Entries, not BlendEntries: BTD-injected Starfield layers encode positions
+            // on the native 65 grid, which this fixed 17-grid winner map would otherwise drop entirely.
+            foreach (var entry in layer.EnumerateVtxt17Entries())
             {
                 if (entry.Opacity < AtxtOpacityThreshold || entry.Position >= QuadVertexCount)
                 {

@@ -352,7 +352,7 @@ public sealed partial class WorldView3DControl
                     }
                     else
                     {
-                        sphereRadius = RenderableReference.SelectionFallbackRadius;
+                        sphereRadius = RenderableReference.SelectionFallbackRadiusFor(_cellSize);
                     }
                 }
 
@@ -529,7 +529,7 @@ public sealed partial class WorldView3DControl
             // outline isn't a cell-wide box. Re-selecting once the mesh has streamed in upgrades it to
             // the tight AABB above.
             var c = r.BoundsCenter;
-            var rad = RenderableReference.SelectionFallbackRadius;
+            var rad = RenderableReference.SelectionFallbackRadiusFor(_cellSize);
             _selectionHighlight.SetSelection(
                 new Vector3(c.X - rad, c.Y - rad, c.Z - rad),
                 new Vector3(c.X + rad, c.Y + rad, c.Z + rad),

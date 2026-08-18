@@ -194,6 +194,40 @@ public sealed class SunShadowMathTests
             frame,
             StringComparison.Ordinal);
         Assert.Contains("cascadeHasDraws[i] ? 1f : 0f", shadowMap, StringComparison.Ordinal);
+
+        // The cache-key commit goes through the shared predicate, and the narrow visibility-only
+        // special case it replaced is gone (its condition was a strict subset).
+        Assert.Contains("SunShadowMath.ShouldCommitCascadeState(", frame, StringComparison.Ordinal);
+        Assert.Contains(
+            "referenceReplayCompleted, terrainCasts, terrainReplayCompleted)", frame,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("authoritativeEmptyVisibilityRefresh", frame, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     A cascade commits its cached state (pose key, content key, throttle, published anchor) only
+    ///     when every sub-pass reached an AUTHORITATIVE result — but it must commit whenever they did,
+    ///     including the valid EMPTY case. Withholding the keys there left the cascade permanently
+    ///     pose-pending, so it re-cleared its target and re-gathered terrain every frame forever.
+    ///     <para>
+    ///         "Something drew" is deliberately not an input: whether the fitted box happened to
+    ///         contain a caster says nothing about whether the answer is trustworthy.
+    ///     </para>
+    /// </summary>
+    [Theory]
+    [InlineData(false, false, false, false)] // reference replay could not run
+    [InlineData(false, false, true, false)]  // terrain flag is meaningless while terrain is hidden
+    [InlineData(false, true, true, false)]   // terrain ran, reference did not — still not authoritative
+    [InlineData(true, true, false, false)]   // terrain ring allocation failed — retry, do not cache
+    [InlineData(true, false, false, true)]   // authoritative EMPTY, terrain hidden: MUST settle
+    [InlineData(true, true, true, true)]     // both authoritative (drew, or genuinely empty)
+    public void CascadeStateCommitsOnlyOnAnAuthoritativeResult(
+        bool referenceReplayCompleted, bool terrainCasts, bool terrainReplayCompleted, bool expected)
+    {
+        Assert.Equal(
+            expected,
+            SunShadowMath.ShouldCommitCascadeState(
+                referenceReplayCompleted, terrainCasts, terrainReplayCompleted));
     }
 
     private static string ReadSource(params string[] relativePath)

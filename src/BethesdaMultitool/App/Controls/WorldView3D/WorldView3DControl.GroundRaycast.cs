@@ -35,6 +35,14 @@ public sealed partial class WorldView3DControl
     // frame instead of an unbounded sweep through every reference in the surrounding nine cells.
     private const int MaxWalkCollisionWarmupRequestsPerFrame = 2;
 
+    // The three constants above are human-scale lengths in CLASSIC world units (~70 per metre), so a
+    // world with a different unit needs them converted — in Starfield's metres an unscaled 48-unit step
+    // is a 48 m kerb and the capsule is a 24 m disc, which swallows every building. _unitScale is 1 for
+    // every classic-unit game, making these exactly the constants above.
+    private float WalkStepHeightScaled => WalkStepHeight * _unitScale;
+    private float WalkCapsuleRadiusScaled => WalkCapsuleRadius * _unitScale;
+    private float GroundRaycastEpsUpScaled => GroundRaycastEpsUp * _unitScale;
+
     /// <summary>
     ///     One walk-capsule candidate: a placed reference whose XY footprint can overlap the capsule,
     ///     with the placement matrix + inverse hoisted out of the per-sample loop (they are per-REF
@@ -99,14 +107,14 @@ public sealed partial class WorldView3DControl
                 candidate.World));
         }
 
-        var bodyMinZ = eyePosition.Z - _controller.EyeHeight + WalkStepHeight;
+        var bodyMinZ = eyePosition.Z - _controller.EyeHeight + WalkStepHeightScaled;
         var bodyMaxZ = eyePosition.Z + _controller.CeilingHeadroom;
         return WalkHorizontalCollision.Resolve(
             new Vector2(eyePosition.X, eyePosition.Y),
             requestedDisplacement,
             bodyMinZ,
             bodyMaxZ,
-            WalkCapsuleRadius,
+            WalkCapsuleRadiusScaled,
             _horizontalCollisionInstances);
     }
 
@@ -135,8 +143,8 @@ public sealed partial class WorldView3DControl
         {
             var angle = MathF.Tau * i / WalkCapsuleRingSamples;
             var h = SampleGroundAt(
-                worldX + (MathF.Cos(angle) * WalkCapsuleRadius),
-                worldY + (MathF.Sin(angle) * WalkCapsuleRadius),
+                worldX + (MathF.Cos(angle) * WalkCapsuleRadiusScaled),
+                worldY + (MathF.Sin(angle) * WalkCapsuleRadiusScaled),
                 _groundCandidates);
             if (h is { } v && (best is null || v > best)) best = v;
         }
@@ -159,8 +167,8 @@ public sealed partial class WorldView3DControl
         var probe = WalkGroundProbeWindow.FromEye(
             _camera.Position.Z,
             _controller.EyeHeight,
-            WalkStepHeight,
-            GroundRaycastEpsUp);
+            WalkStepHeightScaled,
+            GroundRaycastEpsUpScaled);
         var origin = new Vector3(worldX, worldY, probe.RayOriginZ);
         var down = new Vector3(0f, 0f, -1f);
 
@@ -239,7 +247,8 @@ public sealed partial class WorldView3DControl
         var gx = (int)MathF.Floor(centerX / _cellSize);
         var gy = (int)MathF.Floor(centerY / _cellSize);
         // Ring reach + eye slack + a safety pad for OBNDs that under-cover their collision mesh.
-        var reach = WalkCapsuleRadius + GroundRaycastEpsUp + 64f + MathF.Max(0f, additionalReach);
+        var reach = WalkCapsuleRadiusScaled + GroundRaycastEpsUpScaled + (64f * _unitScale)
+                    + MathF.Max(0f, additionalReach);
         var sourceOrder = 0;
 
         for (var dy = -1; dy <= 1; dy++)
@@ -322,7 +331,7 @@ public sealed partial class WorldView3DControl
                     }
                     else
                     {
-                        coldRadius = RenderableReference.NoBoundsFallbackRadius + reach;
+                        coldRadius = RenderableReference.NoBoundsFallbackRadiusFor(_cellSize) + reach;
                     }
                     if (distanceSquared > coldRadius * coldRadius) continue;
 

@@ -507,7 +507,8 @@ internal static class NifShaderTexturePropertyReader
 
     /// <summary>
     ///     Reads the shader's NiObjectNET <c>Name</c> string at <paramref name="nameFieldOffset" /> and
-    ///     returns it when it is a <c>.bgsm</c>/<c>.bgem</c> material path, else null.
+    ///     returns it when it is a material path (<c>.bgsm</c>/<c>.bgem</c> for FO4/FO76, <c>.mat</c>
+    ///     for Starfield), else null.
     /// </summary>
     private static string? ReadMaterialName(byte[] data, NifInfo nif, int nameFieldOffset)
     {
@@ -525,7 +526,11 @@ internal static class NifShaderTexturePropertyReader
         var name = nif.Strings[nameIndex];
         if (string.IsNullOrEmpty(name) ||
             (!name.EndsWith(".bgsm", StringComparison.OrdinalIgnoreCase) &&
-             !name.EndsWith(".bgem", StringComparison.OrdinalIgnoreCase)))
+             !name.EndsWith(".bgem", StringComparison.OrdinalIgnoreCase) &&
+             // Starfield names a .mat, which exists only as a record inside materialsbeta.cdb.
+             // Rejecting it here strands every Starfield shape on the white-pixel fallback no matter
+             // how well the material database resolves.
+             !name.EndsWith(".mat", StringComparison.OrdinalIgnoreCase)))
         {
             return null;
         }

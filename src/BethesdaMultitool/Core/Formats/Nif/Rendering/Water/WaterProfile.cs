@@ -43,6 +43,17 @@ public enum WaterShaderVariant
     /// <c>water_morrowind.frag.hlsl</c>; the optional <c>[PixelWater]</c> terrain-reflection
     /// path is a follow-up. Derivation: <c>docs/research/morrowind_atmosphere_water_model.md</c>.</summary>
     MorrowindWater,
+
+    /// <summary>
+    ///     No recovered shader: a flat, uniformly tinted transparent plane — one authored color, one
+    ///     constant alpha, scene fog, nothing else. This is the honest stand-in for a game whose water
+    ///     shader has not been disassembled, and it makes no fidelity claim; the alternative was to run
+    ///     FNV's <see cref="FnvWater000" /> engine math (noise octaves, DNAM fog lanes, WATER000
+    ///     coverage algebra) over records it was never derived from. It also has no scene-depth read,
+    ///     so it cannot produce the silhouette fringe the depth-driven variants get from the
+    ///     nearest-sample MSAA depth resolve. Compiled from its own file, <c>water_flat.frag.hlsl</c>.
+    /// </summary>
+    FlatTinted,
 }
 
 /// <summary>
@@ -75,7 +86,8 @@ public enum LegacySurfaceFrameRole
 ///         FNV variant those are the engine-exact literals in <c>water_fnv.frag.hlsl</c>. This profile carries
 ///         only the renderer-side, data-driven values (the variant selector, the NNAM noise tile size, the
 ///         depth tie-break bias, and the no-WATR fallback tints). Per the binary-RE-only grounding policy,
-///         every game without its own decompiled water shader resolves to <see cref="Fnv" />.
+///         a game whose water shader has NOT been recovered gets no engine math at all: it resolves to
+///         <see cref="Flat" />, a plainly-labelled tinted plane.
 ///     </para>
 /// </summary>
 public sealed record WaterProfile
@@ -95,6 +107,7 @@ public sealed record WaterProfile
         WaterShaderVariant.OblivionWater000 => "water_oblivion.frag.hlsl",
         WaterShaderVariant.Fo4Water => "water_fo4.frag.hlsl",
         WaterShaderVariant.MorrowindWater => "water_morrowind.frag.hlsl",
+        WaterShaderVariant.FlatTinted => "water_flat.frag.hlsl",
         _ => "water_fnv.frag.hlsl",
     };
 
@@ -121,9 +134,11 @@ public sealed record WaterProfile
     /// (Oblivion only; other games' TNAM is unused by the renderer).</summary>
     public bool UsesWatrDetailTexture { get; init; }
 
-    /// <summary>Surface opacity of the <see cref="WaterShaderVariant.MorrowindWater" /> plane
-    /// (<c>[Water] World Alpha</c>). Unused by the shader-variant games (their alpha is derived
-    /// in-shader from fresnel/depth ramps).</summary>
+    /// <summary>Opacity of a flat plane: <see cref="WaterShaderVariant.MorrowindWater" />'s
+    /// fixed-function surface (<c>[Water] World Alpha</c>) and
+    /// <see cref="WaterShaderVariant.FlatTinted" />'s stand-in, which uses it whenever the WATR
+    /// authored no ANAM opacity of its own. Unused by the recovered shader variants — their alpha is
+    /// derived in-shader from fresnel/depth ramps.</summary>
     public float SurfaceAlpha { get; init; }
 
     /// <summary>Fallback Shallow/Deep/Reflection tints when the worldspace has no resolvable WATR
@@ -137,9 +152,10 @@ public sealed record WaterProfile
     public Vector3 DefaultReflection { get; init; }
 
     /// <summary>
-    ///     The canonical FNV (and FO3 — identical <c>shaderpackage019.sdp</c> water set) profile, and the
-    ///     binary-RE-only fallback for every other game. Values are the exact constants previously hardcoded
-    ///     in <c>WaterRenderer12</c>, so FNV/FO3 render byte-identically.
+    ///     The canonical FNV profile, shared by FO3 (identical <c>shaderpackage019.sdp</c> water set) and
+    ///     the bounded Skyrim path (RE-confirmed same RT-free core). It is no longer the catch-all for
+    ///     un-recovered games — those take <see cref="Flat" />. Values are the exact constants previously
+    ///     hardcoded in <c>WaterRenderer12</c>, so FNV/FO3 render byte-identically.
     /// </summary>
     public static readonly WaterProfile Fnv = new()
     {
@@ -212,12 +228,39 @@ public sealed record WaterProfile
     };
 
     /// <summary>
+    ///     The stand-in for every game whose water shader has NOT been recovered — a flat transparent
+    ///     plane, tinted by the WATR DNAM color when the ESM resolves one and by
+    ///     <see cref="DefaultShallow" /> otherwise (see <see cref="WaterShaderVariant.FlatTinted" />).
+    ///     <para>
+    ///         The tint is a plain viewer blue, NOT an engine value: it is deliberately a touch
+    ///         brighter than <see cref="Fnv" />'s <see cref="DefaultShallow" />, which is authored to be
+    ///         lit and then composited with a reflection and a specular lobe — used raw on an unlit
+    ///         plane it reads near-black. The 0.6 alpha is likewise a readability choice, overridden
+    ///         by the record's own ANAM opacity whenever one is authored.
+    ///     </para>
+    ///     <para>
+    ///         The FNV tuning inherited below (<see cref="NoiseTilingWorldUnits" />,
+    ///         <see cref="DepthTieBiasWorldUnits" />, <see cref="DefaultDeep" />,
+    ///         <see cref="DefaultReflection" />) is inert here: the flat shader samples no noise, reads
+    ///         no scene depth, and has no depth column to ramp Shallow→Deep along.
+    ///     </para>
+    /// </summary>
+    public static readonly WaterProfile Flat = Fnv with
+    {
+        ShaderVariant = WaterShaderVariant.FlatTinted,
+        SurfaceAlpha = 0.6f,
+        DefaultShallow = new Vector3(0.10f, 0.28f, 0.42f),
+    };
+
+    /// <summary>
     ///     The water profile for the loaded game. FNV/FO3 ship the identical <c>WATER000</c> set and
     ///     Skyrim's RT-free water is the same shader (RE-confirmed — see
-    ///     <see cref="WaterShaderVariant" />), so they resolve to <see cref="Fnv" />, as does every game
-    ///     without its own decompiled water shader (binary-RE-only policy). Oblivion's shader genuinely
-    ///     diverges and resolves to <see cref="Oblivion" />. Per-game color/scalar fidelity comes from
-    ///     the per-game WATR data parse either way.
+    ///     <see cref="WaterShaderVariant" />), so those three resolve to <see cref="Fnv" />; Oblivion,
+    ///     FO4 and FO76 resolve to their own recovered variants. Everything else — Starfield,
+    ///     <see cref="BethesdaGame.Unknown" />, and any game added to the enum later — resolves to
+    ///     <see cref="Flat" />: the binary-RE-only policy forbids guessing at a shader, and running
+    ///     FNV's over foreign data was exactly that guess wearing a recovered shader's name. Per-game
+    ///     color fidelity still comes from the per-game WATR data parse either way.
     /// </summary>
     public static WaterProfile ForGame(BethesdaGame game) => game switch
     {
@@ -225,6 +268,7 @@ public sealed record WaterProfile
         BethesdaGame.Oblivion => Oblivion,
         BethesdaGame.Fallout4 => Fallout4,
         BethesdaGame.Fallout76 => Fallout76,
-        _ => Fnv,
+        BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas or BethesdaGame.Skyrim => Fnv,
+        _ => Flat,
     };
 }

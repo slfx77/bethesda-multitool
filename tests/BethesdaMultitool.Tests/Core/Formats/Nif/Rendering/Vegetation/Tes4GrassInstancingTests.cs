@@ -95,8 +95,53 @@ public sealed class Tes4GrassInstancingTests
 
         // Grass was invisible to the shadow capture while it was blended per-draw. Moving it onto the
         // batch path must not make it start casting — retail shaderpackage019 has no grass caster
-        // permutation for either game.
-        Assert.Contains("var grassNeverCasts = fnvGrassNeverCasts || batchState.UsesGrassDistanceEnvelope;",
+        // permutation for either game. ⚠ The exclusion must stay PAIRED with the per-game route flag;
+        // see TheShadowCasterExclusionIsPairedWithTheRouteFlag for why the batch marker alone is wrong.
+        Assert.Contains("var grassNeverCasts = fnvGrassNeverCasts", renderer, StringComparison.Ordinal);
+        Assert.Contains("|| (_instancedBlendGrassSupported && batchState.UsesGrassDistanceEnvelope)",
+            renderer, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     REGRESSION (introduced 2026-08-13, caught in review 08-14). The grass shadow-caster
+    ///     exclusion must be scoped to the game that actually uses the instanced+blended route.
+    ///     <c>UsesGrassDistanceEnvelope</c> reads like a TES4 marker but is NOT game-specific —
+    ///     Skyrim and FO3/FNV set an envelope too — so gating on it alone silently stopped Skyrim
+    ///     grass and FO3/FNV NON-TallGrass grass from casting sun shadows, which the original
+    ///     <c>_tallGrassWindSupported &amp;&amp; sub.IsTallGrass</c> gate deliberately left alone.
+    /// </summary>
+    [Fact]
+    public void EveryGameWithAGrassEnvelopeProvesTheMarkerIsNotGameScoped()
+    {
+        // If this ever becomes Oblivion-only, the pairing below stops being load-bearing — but do NOT
+        // then simplify the gate: re-derive it, because the envelope is authored per game from INI
+        // data and can gain arms at any time.
+        foreach (var game in new[]
+                 {
+                     BethesdaGame.Oblivion, BethesdaGame.FalloutNewVegas,
+                     BethesdaGame.Fallout3, BethesdaGame.Skyrim,
+                 })
+        {
+            Assert.True(
+                GrassScatterProfile.ForGame(game).DistanceEnvelope.Enabled,
+                $"{game} sets a grass distance envelope, so UsesGrassDistanceEnvelope cannot stand " +
+                "alone as a TES4 marker.");
+        }
+    }
+
+    [Fact]
+    public void TheShadowCasterExclusionIsPairedWithTheRouteFlag()
+    {
+        var renderer = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "ReferenceRenderer12.cs");
+
+        // The exclusion must AND the batch marker with the per-game route flag, never use it alone.
+        Assert.Contains(
+            "|| (_instancedBlendGrassSupported && batchState.UsesGrassDistanceEnvelope)",
+            renderer, StringComparison.Ordinal);
+        Assert.Contains(
+            "_instancedBlendGrassSupported = GrassShaderProfile.InstancedBlendForGame(renderCache.Game).Enabled;",
             renderer, StringComparison.Ordinal);
     }
 

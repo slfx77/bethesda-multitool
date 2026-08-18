@@ -177,26 +177,80 @@ float LinearizeDepth(float ndcZ, float near, float far)
     return (near * far) / max(near + ndcZ * (far - near), 1e-4);
 }
 
-float LoadSceneDepth(uint depthIndex, int2 pixel, uint suppliedSampleCount)
+// Resolves the scene depth under a water fragment, returning the SHADING depth — the surface the
+// water is genuinely layered over — and handing back the unfiltered nearest sample in
+// `nearestNdc` for the legacy pixel-rate occlusion clip.
+//
+// The two are not the same thing on an MSAA target, and conflating them is what fringed every mesh
+// standing in water. A partially covered silhouette pixel holds two unrelated populations of
+// samples: the OCCLUDING MESH (nearer than the water) and the bed the water is over (farther).
+// Taking the nearest across all of them handed the mesh's depth to the whole pixel, so
+// `column = sceneDist - waterDist` collapsed to ~0 and the fragment shaded as shoreline — pale,
+// flat-normalled and over-transparent — in a one-pixel rim around the mesh.
+//
+// Those occluder samples were never the water's to shade. The hardware GreaterEqual test against
+// the host's read-only DSV already rejects the water there, per SAMPLE, which is precisely what
+// antialiases the silhouette; the surviving samples are exactly the ones at or behind the water,
+// so `waterNdc` (this fragment's own reversed-Z depth) reproduces that same test and the shading
+// resolve takes the nearest sample among the survivors. On any pixel with no occluder — every
+// pixel that is not on a silhouette — the two results coincide and the shading is bit-unchanged.
+//
+// The unfiltered value stays available because the pre-hardware-occlusion path genuinely wants the
+// occluder: its pixel-rate clip is asking "is anything in front of me?", not "what am I over?".
+float LoadSceneDepth(
+    uint depthIndex,
+    int2 pixel,
+    uint suppliedSampleCount,
+    float waterNdc,
+    out float nearestNdc)
 {
     if (suppliedSampleCount <= 1u)
     {
-        return gWaterTextures[NonUniformResourceIndex(depthIndex)].Load(int3(pixel, 0)).r;
+        // Single-sample: no partial coverage, so there is no second population to separate. A lone
+        // occluding sample means the hardware rejects this fragment outright and nothing it shades
+        // is visible, so the unfiltered value stands — non-MSAA output is unchanged by this split.
+        nearestNdc = gWaterTextures[NonUniformResourceIndex(depthIndex)].Load(int3(pixel, 0)).r;
+        return nearestNdc;
     }
 
     // The depth index is wave-UNIFORM (a per-draw CB scalar), so index the MSAA alias directly.
     uint depthWidth, depthHeight, descriptorSampleCount;
     gWaterDepthTexturesMsaa[depthIndex]
         .GetDimensions(depthWidth, depthHeight, descriptorSampleCount);
-    float nearestNdc = 0.0;
+    nearestNdc = 0.0;
+    float nearestBehindNdc = 0.0;
+    bool anyBehind = false;
     [loop]
     for (uint sampleIndex = 0; sampleIndex < descriptorSampleCount; sampleIndex++)
     {
-        // Reversed-Z: maximum is the nearest covered opaque sample. This preserves occlusion at an
-        // MSAA silhouette instead of allowing water through one uncovered/far sample.
-        nearestNdc = max(nearestNdc,
-            gWaterDepthTexturesMsaa[depthIndex].Load(pixel, sampleIndex));
+        float sampleNdc = gWaterDepthTexturesMsaa[depthIndex].Load(pixel, sampleIndex);
+        // Reversed-Z: maximum is the nearest covered opaque sample.
+        nearestNdc = max(nearestNdc, sampleNdc);
+        // Reversed-Z again: `<= waterNdc` is at or behind the water — the same GreaterEqual the
+        // hardware depth test applies, so this is exactly the set of samples the water survives on.
+        if (sampleNdc <= waterNdc)
+        {
+            nearestBehindNdc = max(nearestBehindNdc, sampleNdc);
+            anyBehind = true;
+        }
     }
+
+    // Every sample occludes: the hardware rejects the fragment entirely, so nothing this returns
+    // reaches the target. Return the water's own depth (a zero column) rather than the initial 0.0,
+    // which is the reversed-Z FAR plane and would shade the doomed fragment as infinitely deep.
+    return anyBehind ? nearestBehindNdc : waterNdc;
+}
+
+// The frontmost opaque sample, ignoring the water plane — the resolve as it behaved before the
+// shading/occlusion split above. For callers that genuinely want "what is nearest here?" rather
+// than "what am I over?": the WATER001 eligibility probe, which is conservative by design and must
+// not declare a tap underwater while an occluder covers part of the pixel.
+float LoadNearestSceneDepth(uint depthIndex, int2 pixel, uint suppliedSampleCount)
+{
+    // waterNdc = 1.0 is the reversed-Z near plane, so every sample counts as "behind" and the
+    // filtered result degenerates to the unfiltered nearest.
+    float nearestNdc;
+    LoadSceneDepth(depthIndex, pixel, suppliedSampleCount, 1.0, nearestNdc);
     return nearestNdc;
 }
 

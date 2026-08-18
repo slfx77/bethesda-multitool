@@ -230,12 +230,16 @@ public sealed partial class WorldMapControl
             WorldMapHeightmapBuilder.HeightmapInfo? single = null;
             if (palette is null)
             {
+                // Pass the SAME hillshade parameters the live map renders with — an export that
+                // silently used RenderSlope's 4096-calibrated defaults would not match what the user
+                // saw on screen (standing rule: capture must equal the live renderer).
                 single = WorldMapHeightmapBuilder.Build(
                     MapCanvas, activeCells, _cachedGrayscale, _cachedWaterMask,
                     _cachedHmWidth, _cachedHmHeight,
                     _state.SelectedWorldspace, _data,
                     _currentDefaultWaterHeight, _currentColorScheme, terrainShowWater,
-                    req.Layer, _data?.RenderCache);
+                    req.Layer, _data?.RenderCache,
+                    CurrentHillshadeLightDir(), CurrentHillshadeZScale());
             }
             exportTrace?.RecordSharedDataPrep(
                 sharedDataPrepStarted,

@@ -1228,6 +1228,20 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             {
                 continue;
             }
+
+            // Starfield materials that exist but resolve NO albedo in any form: normal-only detail
+            // decals (bolts/trims/bevels), glow-only strips, occlusion boxes, BlankNoRender
+            // placeholders. The engine draws them through channels this renderer does not implement
+            // yet — or never draws them at all — and the white fallback painted every Akila City
+            // building with bright white overlay shapes (13.9k placed instances measured). Skip until
+            // normal-mapped decal rendering exists. Materials MISSING from the database keep the
+            // white fallback: that is broken content and should stay loudly visible.
+            if (sub.DiffuseTexturePath is { } matPath &&
+                matPath.EndsWith(".mat", StringComparison.OrdinalIgnoreCase) &&
+                _textureCache.IsStarfieldNoDrawMaterial(matPath))
+            {
+                continue;
+            }
             try
             {
                 // GRASS2000 reuses the direct-draw uSoftParticle slot as WindData. Enforce the

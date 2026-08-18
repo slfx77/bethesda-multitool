@@ -8,6 +8,19 @@ namespace BethesdaMultitool;
 public sealed partial class WorldView3DControl
 {
     /// <summary>
+    ///     How far south of the framing target the camera sits, in cells. Was the literal 8192 (= 2 cells
+    ///     at Fallout's 4096-unit grid) until Starfield arrived with a 100-unit cell, where the fixed
+    ///     value put the camera 82 cells away and frustum-culled the entire worldspace.
+    /// </summary>
+    private const float FramingSouthOffsetCells = 2f;
+
+    /// <summary>
+    ///     Camera height above the ground plane when framing a worldspace, in cells (was the literal
+    ///     32768 = 8 cells at 4096). See <see cref="FramingSouthOffsetCells" />.
+    /// </summary>
+    private const float FramingHeightCells = 8f;
+
+    /// <summary>
     ///     Captures the current location + selection as a <see cref="WorldViewFocus" /> so the 2D map can
     ///     resume in the same area when the user switches views. Exterior: the camera's ground XY (the
     ///     shared world frame that <c>PlacedReference.X/Y</c> uses). Interior: the loaded interior cell.
@@ -161,7 +174,10 @@ public sealed partial class WorldView3DControl
         if (cell.GridX is not int gx || cell.GridY is not int gy) return;
         var worldX = (gx + 0.5f) * _cellSize;
         var worldY = (gy + 0.5f) * _cellSize;
-        _camera.Position = new Vector3(worldX, worldY - 8192f, 32768f);
+        _camera.Position = new Vector3(
+            worldX,
+            worldY - (FramingSouthOffsetCells * _cellSize),
+            FramingHeightCells * _cellSize);
         _camera.Yaw = 0f;
         _camera.Pitch = -MathF.PI / 6f;
     }
@@ -198,7 +214,10 @@ public sealed partial class WorldView3DControl
         var worldY = (float)(avgGridY * _cellSize);
 
         // Position 2 cells south and well above the ground, pitched down ~30° looking north.
-        _camera.Position = new Vector3(worldX, worldY - 8192f, 32768f);
+        _camera.Position = new Vector3(
+            worldX,
+            worldY - (FramingSouthOffsetCells * _cellSize),
+            FramingHeightCells * _cellSize);
         _camera.Yaw = 0f;
         _camera.Pitch = -MathF.PI / 6f;
     }
@@ -365,8 +384,8 @@ public sealed partial class WorldView3DControl
         var gameY = -heavy.CanvasCenter.Y;
         _camera.Position = new Vector3(
             heavy.CanvasCenter.X,
-            gameY - _cellSize * 2f,
-            32768f);
+            gameY - (FramingSouthOffsetCells * _cellSize),
+            FramingHeightCells * _cellSize);
         _camera.Yaw = 0f;
         _camera.Pitch = -MathF.PI / 6f;
 

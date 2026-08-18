@@ -23,6 +23,9 @@
                   SelectionChanged="WorldspaceComboBox_SelectionChanged"
                   AutomationProperties.Name="Worldspace"
                   PlaceholderText="Select Worldspace" />
+        <Button x:Name="WorldspacesButton" Content="Worldspaces" IsEnabled="False"
+                Click="WorldspacesButton_Click"
+                ToolTipService.ToolTip="Search every worldspace by editor ID or name" />
         <Button x:Name="InteriorsButton" Content="Interiors" IsEnabled="False"
                 Click="InteriorsButton_Click"
                 ToolTipService.ToolTip="Browse interior cells" />
@@ -117,6 +120,29 @@
                   AutomationProperties.Name="Close cell browser" />
         </Grid>
         <local:CellListControl x:Name="CellList" Grid.Row="1" />
+      </Grid>
+
+      <!-- Worldspace browser — the searchable counterpart of the toolbar ComboBox. Its own overlay
+           (rather than a mode of the cell browser) because it lists worldspaces, not cells: picking a
+           row selects a combo index instead of navigating to a CellRecord. -->
+      <Grid x:Name="WorldspaceBrowserPanel" Visibility="Collapsed" Padding="8"
+            Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid Grid.Row="0" Margin="0,0,0,4" ColumnSpacing="8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Grid.Column="0" Text="Worldspaces"
+                     VerticalAlignment="Center" FontWeight="SemiBold" />
+          <Button Grid.Column="1" x:Name="WorldspaceBrowserCloseButton" Content="Close"
+                  Click="WorldspaceBrowserCloseButton_Click"
+                  AutomationProperties.Name="Close worldspace browser" />
+        </Grid>
+        <local:WorldspaceListControl x:Name="WorldspaceList" Grid.Row="1" />
       </Grid>
     </Grid>
   </Grid>

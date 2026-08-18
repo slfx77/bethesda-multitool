@@ -208,7 +208,19 @@ public sealed class RenderingShaderCompilationTests
             "for (uint sampleIndex = 0; sampleIndex < descriptorSampleCount; sampleIndex++)",
             helper,
             StringComparison.Ordinal);
-        Assert.Contains("nearestNdc = max(nearestNdc,", helper, StringComparison.Ordinal);
+        Assert.Contains("nearestNdc = max(nearestNdc, sampleNdc);", helper, StringComparison.Ordinal);
+
+        // The shading resolve must keep the OCCLUDER samples out. Taking the nearest across every
+        // sample handed a partially covered silhouette pixel the occluding mesh's depth, collapsing
+        // the water column to ~0 and ringing every mesh standing in water with a pale, flat,
+        // over-transparent one-pixel fringe. Samples at or behind the water (reversed-Z
+        // `<= waterNdc`) are exactly the set the hardware GreaterEqual test lets the water survive
+        // on, so the nearest among THOSE is the surface the column is measured to.
+        Assert.Contains("if (sampleNdc <= waterNdc)", helper, StringComparison.Ordinal);
+        Assert.Contains(
+            "nearestBehindNdc = max(nearestBehindNdc, sampleNdc);", helper, StringComparison.Ordinal);
+        Assert.Contains(
+            "return anyBehind ? nearestBehindNdc : waterNdc;", helper, StringComparison.Ordinal);
 
         // Bounded to the heap's persistent region: the unbounded `[]` Texture2DMS alias
         // misresolved late-written descriptor slots on shipped drivers (see water_common.hlsli).
@@ -220,8 +232,14 @@ public sealed class RenderingShaderCompilationTests
         Assert.Contains("uint depthSampleCount = max((uint)uRenderOrigin.w, 1u);",
             source,
             StringComparison.Ordinal);
+        // The fragment's own depth is what separates occluders from the bed it is over, so it must
+        // reach the resolve; occluderNdc carries the unfiltered nearest back out for the clip.
+        Assert.Contains(
+            "depthIndex, (int2)input.Position.xy, depthSampleCount, input.Position.z, occluderNdc);",
+            source,
+            StringComparison.Ordinal);
         var resolveCall = source.IndexOf(
-            "float sceneNdc = LoadSceneDepth(depthIndex, (int2)input.Position.xy, depthSampleCount);",
+            "float sceneNdc = LoadSceneDepth(",
             StringComparison.Ordinal);
         var linearizeCall = source.IndexOf(
             "float sceneDist = LinearizeDepth(sceneNdc, near, far);",

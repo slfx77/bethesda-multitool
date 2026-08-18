@@ -71,8 +71,9 @@ internal static class ShaderPermutations
 
     /// <summary>
     ///     Water. The game is a per-FILE axis (<c>WaterProfile.PixelShaderFile</c>); each per-game
-    ///     file is compiled twice — plain, and with WATER_HARDWARE_OCCLUSION for the read-only-DSV
-    ///     path. FNV's retail WATER001 program is its own file (<c>water_fnv001.frag.hlsl</c>).
+    ///     file that reads scene depth is compiled twice — plain, and with WATER_HARDWARE_OCCLUSION
+    ///     for the read-only-DSV path. FNV's retail WATER001 program is its own file
+    ///     (<c>water_fnv001.frag.hlsl</c>), and the depth-free flat plane is a single compile.
     /// </summary>
     internal static IReadOnlyList<ShaderPermutation> Water { get; } = BuildWater();
 
@@ -142,6 +143,13 @@ internal static class ShaderPermutations
                     occlusion ? $"{purpose} (hardware occlusion)" : purpose));
             }
         }
+
+        // The flat tinted plane for games with no recovered shader is off BOTH axes above: it reads
+        // no scene depth, so there is no occlusion clip for WATER_HARDWARE_OCCLUSION to remove and
+        // the second compile would be byte-identical (PermutationsAreDistinct would reject it).
+        list.Add(new ShaderPermutation(
+            "water_flat.frag.hlsl", "main", "ps_5_1", None,
+            "flat tinted plane: no recovered shader (Starfield/Unknown)"));
 
         // FNV WATER001 ships only in its hardware-occlusion form (the snapshot path needs the
         // read-only DSV), matching WaterRenderer12's single compile of it.

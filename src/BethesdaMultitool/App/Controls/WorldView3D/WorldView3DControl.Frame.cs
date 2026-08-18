@@ -59,6 +59,49 @@ public sealed partial class WorldView3DControl
     /// </summary>
     private static readonly float[] ShadowCascadeSnap = { 512f, 2048f, 8192f, 32768f };
 
+    // ── Unit-scaled ladder ─────────────────────────────────────────────────────────────────────
+    // The radii/snap ladders above are HUMAN-SCALE distances in classic units (~70/metre). In
+    // Starfield (1 unit = 1 m) the unscaled near cascade covers 2 km and resolves ~1 m per texel,
+    // with the derived two-texel pixel bias reaching ~2 m — metre-scale geometry casts blocky
+    // shadows detached from their bases. Scaled lazily against _unitScale so every shadow-pass
+    // entry point stays correct without depending on grid-build ordering; classic games alias the
+    // static arrays (zero per-frame cost, bit-identical behavior).
+    private float[] _shadowCascadeRadiiScaled = ShadowCascadeRadii;
+    private float[] _shadowCascadeSnapScaled = ShadowCascadeSnap;
+    private float _shadowCasterRingRadiusScaled = ShadowCasterRingRadius;
+    private float _shadowLadderScaledForUnit = 1f;
+
+    private void EnsureShadowLadderScale()
+    {
+        // Change detection on an ASSIGNED value (HumanScaleFactor output), so a tight epsilon is
+        // purely to satisfy the float-equality rule — the real scales are 1 and 1/70.
+        const float epsilon = 1e-6f;
+        if (MathF.Abs(_shadowLadderScaledForUnit - _unitScale) < epsilon) return;
+        _shadowLadderScaledForUnit = _unitScale;
+        if (MathF.Abs(_unitScale - 1f) < epsilon)
+        {
+            _shadowCascadeRadiiScaled = ShadowCascadeRadii;
+            _shadowCascadeSnapScaled = ShadowCascadeSnap;
+            _shadowCasterRingRadiusScaled = ShadowCasterRingRadius;
+            return;
+        }
+
+        _shadowCascadeRadiiScaled = ScaleLadder(ShadowCascadeRadii, _unitScale);
+        _shadowCascadeSnapScaled = ScaleLadder(ShadowCascadeSnap, _unitScale);
+        _shadowCasterRingRadiusScaled = ShadowCasterRingRadius * _unitScale;
+
+        static float[] ScaleLadder(float[] source, float scale)
+        {
+            var scaled = new float[source.Length];
+            for (var i = 0; i < source.Length; i++)
+            {
+                scaled[i] = source[i] * scale;
+            }
+
+            return scaled;
+        }
+    }
+
     /// <summary>
     ///     Cascades allowed to re-render in one frame. Spreading an overdue ladder across frames turns
     ///     a single ~60 ms spike into a sequence of ~30 ms frames — the mean is unchanged but the
@@ -154,10 +197,6 @@ public sealed partial class WorldView3DControl
         new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
     private readonly int[] _lastShadowTerrainCellDrawsByCascade =
         new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
-    // A bit here means a freshly-cleared cascade was marked available despite zero submitted
-    // reference draws and zero resident terrain draws. The corrected replay contract should keep
-    // this zero; retain it as a regression signal in capture/profiler output.
-    private int _lastShadowAvailableWithoutSubmissionMask;
 
     // This frame's raw camera timestep (see FrameProfileSample.DeltaSeconds).
     private float _lastDeltaSeconds;
@@ -693,15 +732,17 @@ public sealed partial class WorldView3DControl
         return zExtent is { } ze ? MathF.Max(ze.Max - ze.Min, 0f) : 0f;
     }
 
-    /// <summary>Effective per-cascade radii after the env override clamp.</summary>
-    private static float[] ResolveShadowCascadeRadii()
+    /// <summary>Effective per-cascade radii after the env override clamp (unit-scaled).</summary>
+    private float[] ResolveShadowCascadeRadii()
     {
+        EnsureShadowLadderScale();
         var lastRadius = MathF.Min(
-            ShadowCascadeRadii[^1], ShadowRadiusEnvOverride ?? float.MaxValue) + SunShadowMath.CenterSnap;
-        var radii = new float[ShadowCascadeRadii.Length];
+            _shadowCascadeRadiiScaled[^1], ShadowRadiusEnvOverride ?? float.MaxValue)
+            + (SunShadowMath.CenterSnap * _unitScale);
+        var radii = new float[_shadowCascadeRadiiScaled.Length];
         for (var i = 0; i < radii.Length; i++)
         {
-            radii[i] = MathF.Min(ShadowCascadeRadii[i], lastRadius);
+            radii[i] = MathF.Min(_shadowCascadeRadiiScaled[i], lastRadius);
         }
 
         return radii;
@@ -713,7 +754,6 @@ public sealed partial class WorldView3DControl
         _lastShadowCascadeMask = 0;
         _lastShadowDrawCount = 0;
         _lastShadowTerrainCellDraws = 0;
-        _lastShadowAvailableWithoutSubmissionMask = 0;
         Array.Clear(_lastShadowReferenceDrawsByCascade);
         Array.Clear(_lastShadowReferenceInstancesByCascade);
         Array.Clear(_lastShadowTerrainCellDrawsByCascade);
@@ -764,8 +804,10 @@ public sealed partial class WorldView3DControl
         // here could disagree with what the instance sort used.
         var anchor = _shadowFrameAnchor;
 
+        EnsureShadowLadderScale();
         var lastRadius = MathF.Min(
-            ShadowCascadeRadii[^1], ShadowRadiusEnvOverride ?? float.MaxValue) + SunShadowMath.CenterSnap;
+            _shadowCascadeRadiiScaled[^1], ShadowRadiusEnvOverride ?? float.MaxValue)
+            + (SunShadowMath.CenterSnap * _unitScale);
         var animated = _references.ShadowDrawsIncludeAnimatedLeaves
                        || _references.ShadowDrawsIncludeAnimatedMeshes;
 
@@ -786,9 +828,9 @@ public sealed partial class WorldView3DControl
         var referenceExtentIdentityChanged = false;
         for (var i = 0; i < cascadeCount; i++)
         {
-            var radius = MathF.Min(ShadowCascadeRadii[i], lastRadius);
+            var radius = MathF.Min(_shadowCascadeRadiiScaled[i], lastRadius);
             poseKeys[i] = SunShadowMath.BuildKey(
-                _lastResolvedSunDirection, anchor, radius, 0, ShadowCascadeSnap[i]);
+                _lastResolvedSunDirection, anchor, radius, 0, _shadowCascadeSnapScaled[i]);
             _shadowContentThrottles[i]++;
 
             var posePending = !_shadowMap.IsCascadePublished(i) || poseKeys[i] != _shadowPoseKeys[i];
@@ -821,7 +863,7 @@ public sealed partial class WorldView3DControl
                 else if (posePending)
                 {
                     cascadeOverdue[i] =
-                        (Vector3.Distance(anchor, _shadowPublishedAnchors[i]) / ShadowCascadeSnap[i]) + 1f;
+                        (Vector3.Distance(anchor, _shadowPublishedAnchors[i]) / _shadowCascadeSnapScaled[i]) + 1f;
                 }
                 else
                 {
@@ -880,7 +922,7 @@ public sealed partial class WorldView3DControl
         {
             if (cascadeDue[i])
             {
-                var radius = MathF.Min(ShadowCascadeRadii[i], lastRadius);
+                var radius = MathF.Min(_shadowCascadeRadiiScaled[i], lastRadius);
                 // Same helper, same inputs as the arm-time instance classification
                 // (ReferenceRenderer12.ClassifyCascade). Do not inline a different number here.
                 frustums[i] = SunShadowMath.BuildLightFrustum(
@@ -953,6 +995,9 @@ public sealed partial class WorldView3DControl
             _lastShadowReferenceInstancesByCascade[i] = _references.LastShadowSubmittedInstanceCount;
             _gpuTimestampProfiler12?.Write(cmd, GpuTimestampProfiler12.ShadowCascadeRefs[i]);
             var terrainCellDraws = 0;
+            // Meaningful only when terrainCasts — ShouldCommitCascadeState gates it on that flag,
+            // exactly as the reference side is gated on its own completion.
+            var terrainReplayCompleted = false;
             if (terrainCasts)
             {
                 // Same cylinder footprint the main pass streamed, clamped to this cascade's
@@ -961,16 +1006,13 @@ public sealed partial class WorldView3DControl
                 // cleared footprint is redrawn (a current-camera cylinder leaves a trailing-edge
                 // strip of terrain depth un-redrawn).
                 var terrainCenter = refit ? sceneCenter : _shadowPublishedCylinderCenters[i];
-                var terrainRadius = MathF.Min(MathF.Min(ShadowCascadeRadii[i], lastRadius), _renderDistance);
+                var terrainRadius = MathF.Min(MathF.Min(_shadowCascadeRadiiScaled[i], lastRadius), _renderDistance);
                 terrainCellDraws = _terrain!.RenderShadowDepth(
                     frustums[i].ViewProj, new VisibilityCylinder(terrainCenter, terrainRadius));
+                terrainReplayCompleted = _terrain!.LastShadowReplayCompleted;
                 _lastShadowTerrainCellDrawsByCascade[i] = terrainCellDraws;
                 _lastShadowTerrainCellDraws += terrainCellDraws;
                 drewCascade |= terrainCellDraws > 0;
-            }
-            if (drewCascade && _lastShadowReferenceDrawsByCascade[i] == 0 && terrainCellDraws == 0)
-            {
-                _lastShadowAvailableWithoutSubmissionMask |= 1 << i;
             }
             _shadowMap.EndCascade(cmd, i);
             _gpuTimestampProfiler12?.Write(cmd, GpuTimestampProfiler12.ShadowCascadeEnd[i]);
@@ -985,8 +1027,9 @@ public sealed partial class WorldView3DControl
 
             // Publish availability even for a degenerate render: the target was just cleared, so
             // retaining an enabled bit would create a fully-lit cascade-shaped hole. Empty maps are
-            // disabled and fall through to farther cascades. Keep the old policy keys when nothing
-            // drew so a later frame retries instead of caching the degenerate result.
+            // disabled and fall through to farther cascades. Whether the POLICY KEYS are also
+            // committed is a separate question answered below, and it turns on whether the pass was
+            // authoritative — not on whether it drew.
             if (!firstPublish)
             {
                 _shadowMap.PublishCascade(i, frustums[i], renderOrigin, drewCascade);
@@ -1001,15 +1044,15 @@ public sealed partial class WorldView3DControl
             _shadowPublishedOrigins[i] = renderOrigin;
             _shadowPublishedCylinderCenters[i] = sceneCenter;
 
-            var authoritativeEmptyVisibilityRefresh = visibilityPending[i]
-                                                      && referenceReplayCompleted
-                                                      && !terrainCasts
-                                                      && !drewCascade;
-            if ((drewCascade && referenceReplayCompleted) || authoritativeEmptyVisibilityRefresh)
+            // Commit only when BOTH sub-passes were authoritative, and commit whenever they were —
+            // including the EMPTY case. Keying this on "something drew" instead left an
+            // authoritatively-empty cascade permanently pose-pending, so it re-cleared its target and
+            // re-gathered terrain every frame forever. A pass that could not RUN (either side's ring
+            // allocation failing) still retains the old keys and retries, which is what
+            // TerrainRenderer12's own "the host ... retries" comment always promised but never got.
+            if (SunShadowMath.ShouldCommitCascadeState(
+                    referenceReplayCompleted, terrainCasts, terrainReplayCompleted))
             {
-                // Degenerate renders normally retain their old keys and retry. The exception is a
-                // completed reference replay with no terrain expected: its cleared, disabled map is
-                // authoritative after a visibility transition and must not be cleared every frame.
                 _shadowPoseKeys[i] = poseKeys[i];
                 _shadowContentKeys[i] = contentKey;
                 _shadowContentThrottles[i] = 0;
@@ -1240,10 +1283,11 @@ public sealed partial class WorldView3DControl
                 // a cascade whose box no longer contains it.
                 _shadowFrameAnchor = ResolveShadowAnchor(_camera.Position);
                 _shadowFrameSceneZSpan = ResolveShadowSceneZSpan();
+                EnsureShadowLadderScale();
                 _references!.ArmShadowCapture(
-                    MathF.Min(ShadowCasterRingRadius, _renderDistance),
+                    MathF.Min(_shadowCasterRingRadiusScaled, _renderDistance),
                     (_shadowFrameAnchor, Vector3.Normalize(_lastResolvedSunDirection),
-                        ResolveShadowCascadeRadii(), ShadowCascadeSnap, _shadowFrameSceneZSpan));
+                        ResolveShadowCascadeRadii(), _shadowCascadeSnapScaled, _shadowFrameSceneZSpan));
             }
             else
             {

@@ -1,7 +1,9 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
+using BethesdaMultitool.Core.Games;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using WaterRenderer12 = BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.WaterRenderer12;
@@ -76,6 +78,15 @@ public sealed partial class WorldView3DControl
             _cellSize = _data.CellWorldSize;
             SetRenderDistance(DefaultRenderDistanceCells * _cellSize);
         }
+
+        // Adopt the world's UNIT scale too. Separate from the cell size on purpose: Starfield's cell is
+        // 40.96× smaller than Fallout's while its unit is 70× bigger, so walk-mode eye height, step
+        // height and movement speed have to follow the unit, not the grid.
+        _unitScale = GameProfiles.HumanScaleFactor(_data.Game);
+        _controller.SetUnitScale(_unitScale);
+        // The near plane is a human-scale distance too: 16 classic units is ~23 cm, but 16 METRES in
+        // Starfield, which slices the scene away just in front of the camera.
+        _camera.NearPlane = CameraState.DefaultNearPlane * _unitScale;
 
         // The prior selection belongs to the set we're replacing (different worldspace/cell, and
         // FormIDs can be reused), so drop it on every rebuild.
@@ -315,6 +326,42 @@ public sealed partial class WorldView3DControl
     private void CellBrowserCloseButton_Click(object sender, RoutedEventArgs e) => HideInteriorBrowser();
 
     private void HideInteriorBrowser() => CellBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
+
+    // ── Worldspace browser (searchable counterpart of the toolbar ComboBox) ──────────────────
+
+    /// <summary>
+    ///     Opens the searchable worldspace list. The toolbar ComboBox stays the authoritative
+    ///     selection — this only offers a better way to find an entry in it, which matters once a game
+    ///     ships hundreds (Starfield has ~750).
+    /// </summary>
+    private void WorldspacesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (WorldspaceComboBox.Items.Count == 0) return;
+        WorldspaceBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
+    }
+
+    private void WorldspaceBrowserCloseButton_Click(object sender, RoutedEventArgs e) =>
+        HideWorldspaceBrowser();
+
+    private void HideWorldspaceBrowser() =>
+        WorldspaceBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
+
+    /// <summary>
+    ///     Applies a pick from the worldspace browser by driving the ComboBox, so the existing
+    ///     SelectionChanged path does the actual load (cell grid, camera framing, atmosphere) and this
+    ///     feature adds no second way to switch worlds.
+    /// </summary>
+    private void WorldspaceList_WorldspaceActivated(object? sender, int comboIndex)
+    {
+        HideWorldspaceBrowser();
+        if (comboIndex < 0 || comboIndex >= WorldspaceComboBox.Items.Count) return;
+        // Re-picking the active worldspace is a no-op for the combo (SelectionChanged won't fire), which
+        // is the right outcome: the user is already there. No HideStatus() after this: the
+        // SelectionChanged handler raises the "Loading worldspace…" overlay synchronously and hides it
+        // itself when the load completes — hiding here would collapse that overlay the moment it
+        // appears, leaving the big-worldspace load looking like an unexplained UI freeze.
+        WorldspaceComboBox.SelectedIndex = comboIndex;
+    }
 
     /// <summary>
     ///     Handles a pick from either browser mode. This deliberately does NOT assume the cell is an

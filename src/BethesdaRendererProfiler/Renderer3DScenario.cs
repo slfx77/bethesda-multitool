@@ -29,7 +29,9 @@ internal sealed class Renderer3DScenario : IDisposable
         {
             // Bump the view distance above the bookmark default and apply it immediately so the
             // whole run (and the first frame) renders at the requested distance.
-            _initialPose = _initialPose with { RenderDistance = cells * WorldGridConstants.CellSize };
+            // Cells → world units through the LOADED worldspace's cell size, not the Fallout-family
+            // constant: on Starfield (100-unit cells) the constant made --render-distance 40.96× too far.
+            _initialPose = _initialPose with { RenderDistance = cells * control.Profiler_CellWorldSize };
             control.Profiler_SetCameraPose(_initialPose);
         }
 

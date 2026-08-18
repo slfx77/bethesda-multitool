@@ -46,11 +46,13 @@ internal sealed class LoadOrder : IDisposable
     ///     Builds a single RecordCollection by merging all loaded entry records in load order.
     ///     Later entries override earlier ones for duplicate FormIDs.
     ///     Returns null if no entries have records.
-    ///     <paramref name="primaryFileName" /> names the session's externally-merged primary plugin
-    ///     (global mod index 0) so TES4-family entries' master references rebase against it.
+    ///     <paramref name="primaryFilePath" /> is the FULL PATH of the session's externally-merged
+    ///     primary plugin — its MAST list anchors the load-order slots so TES4-family entries'
+    ///     master references resolve where the unstamped primary's raw FormIDs already point
+    ///     (see <see cref="Tes4LoadOrderFormIdMapper" />).
     /// </summary>
-    public RecordCollection? BuildMergedRecords(string? primaryFileName = null) =>
-        BuildMergedRecordsFrom([.. Entries], primaryFileName);
+    public RecordCollection? BuildMergedRecords(string? primaryFilePath = null) =>
+        BuildMergedRecordsFrom([.. Entries], primaryFilePath);
 
     /// <summary>
     ///     Snapshot-based variant for WORKER threads: <see cref="Entries" /> is an
@@ -60,14 +62,14 @@ internal sealed class LoadOrder : IDisposable
     ///     and world-map populates.
     /// </summary>
     public static RecordCollection? BuildMergedRecordsFrom(
-        IReadOnlyList<LoadOrderEntry> entries, string? primaryFileName = null)
+        IReadOnlyList<LoadOrderEntry> entries, string? primaryFilePath = null)
     {
         // TES4-family plugins carry file-local mod indices in their FormID high bytes (every DLC's own
         // records are raw 0x01xxxxxx); rebase them into shared load-order slots so unrelated records
         // from different plugins stop colliding on merge (see Tes4LoadOrderFormIdMapper).
         var tes4Mapper = Tes4LoadOrderFormIdMapper.TryCreate(
             entries.Select(entry => entry.FilePath).ToList(),
-            primaryFileName);
+            primaryFilePath);
 
         RecordCollection? merged = null;
         for (var i = 0; i < entries.Count; i++)

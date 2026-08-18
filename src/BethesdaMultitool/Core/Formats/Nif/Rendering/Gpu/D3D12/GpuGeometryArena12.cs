@@ -91,7 +91,19 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         var totalBytes = alignedVertexBytes + indexBytes.Length;
 
         var allocation = _allocator.Allocate(totalBytes);
-        EnsureBlocks();
+        try
+        {
+            EnsureBlocksThrough(allocation.BlockIndex);
+        }
+        catch
+        {
+            // CreateCommittedResource can fail under memory pressure (E_OUTOFMEMORY seen 2026-08-12).
+            // The allocator already reserved the range, so return it — otherwise the span leaks as
+            // allocated and _allocatedBytes drifts. The allocator keeps the unbacked block; a later
+            // upload retries the commit once pressure eases.
+            _allocator.Free(allocation);
+            throw;
+        }
 
         var cpuBase = (byte*)_blockPointers[allocation.BlockIndex] + allocation.Offset;
         vertexBytes.CopyTo(new Span<byte>(cpuBase, vertexBytes.Length));
@@ -207,9 +219,15 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         _blockPointers.Clear();
     }
 
-    private void EnsureBlocks()
+    /// <summary>
+    ///     Commits backing resources in block order up to and including
+    ///     <paramref name="requiredBlockIndex" />. Deliberately NOT "through the allocator's full
+    ///     block count": if a tail block's commit failed under memory pressure, an upload landing in
+    ///     an already-backed earlier block must not be held hostage by the unbacked tail.
+    /// </summary>
+    private void EnsureBlocksThrough(int requiredBlockIndex)
     {
-        while (_blockResources.Count < _allocator.BlockCount)
+        while (_blockResources.Count <= requiredBlockIndex)
         {
             // Per-block size: standard blocks share _blockSize; an oversized mesh's dedicated
             // block is exactly as large as the allocation that forced it.
@@ -222,7 +240,16 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
                 optimizedClearValue: null);
 
             void* mapped = null;
-            resource.Map(0, &mapped).CheckError();
+            try
+            {
+                resource.Map(0, &mapped).CheckError();
+            }
+            catch
+            {
+                resource.Dispose();
+                throw;
+            }
+
             _blockResources.Add(resource);
             _blockPointers.Add((IntPtr)mapped);
             _committedBytes += blockBytes;

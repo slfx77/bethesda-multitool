@@ -308,6 +308,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // WorldViewData.CellWorldSize on every cell-grid build; drives camera framing, picking, render
     // distance, and the cull cylinder so the 3D viewer matches the geometry's absolute coordinates.
     private float _cellSize = WorldGridConstants.CellSize;
+    // Active world's HUMAN-scale multiplier: classic camera constants (a 112-unit eye, a 48-unit step)
+    // times this give the same physical size in the active game's units. 1 for every classic-unit game,
+    // 1/70 for Starfield, whose unit is a metre. Deliberately NOT derived from _cellSize — the cell
+    // shrank 40.96× while the unit grew 70×, so using the cell ratio here leaves the camera 1.56× tall.
+    private float _unitScale = 1f;
+    // Pre-load default only — LoadCellGrid re-seeds this via SetRenderDistance once _cellSize is known,
+    // so a non-4096 game (Starfield's cell is 100) never renders against this value.
     private float _renderDistance = DefaultRenderDistanceCells * WorldGridConstants.CellSize;
 
     // Top-down overlay rendering for the 2D map (ITopDownSceneRenderer).
@@ -370,6 +377,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // The interior browser is the shared CellListControl; in 3D a cell loads only on a real click.
         CellList.Activation = CellListControl.ActivationMode.ItemClick;
         CellList.CellActivated += CellList_CellActivated;
+        WorldspaceList.WorldspaceActivated += WorldspaceList_WorldspaceActivated;
         _controller = new FlythroughCameraController(_camera);
         _camera.FarPlane = _renderDistance;
         Loaded += OnLoaded;
@@ -522,16 +530,34 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // "Unlinked Exterior" entry when DMP-only loads surface cells with no parent worldspace.
         _suppressWorldspaceSelectionEvent = true;
         WorldspaceComboBox.Items.Clear();
+        // Same entries, same order, feeding both pickers: the ComboBox (fine for a handful) and the
+        // searchable browser (needed once a game ships hundreds). The browser keys on this index.
+        var worldspaceRows = new List<WorldspaceListControl.WorldspaceListItem>();
         foreach (var ws in data.Worldspaces)
         {
             var name = WorldMapColors.FormatWorldspaceName(ws);
             WorldspaceComboBox.Items.Add($"{name} — {ws.Cells.Count} cells");
+            worldspaceRows.Add(new WorldspaceListControl.WorldspaceListItem(
+                worldspaceRows.Count,
+                string.IsNullOrWhiteSpace(ws.EditorId) ? $"0x{ws.FormId:X8}" : ws.EditorId,
+                name,
+                ws.Cells.Count));
         }
         if (data.UnlinkedExteriorCells.Count > 0)
         {
             WorldspaceComboBox.Items.Add($"Unlinked Exterior ({data.UnlinkedExteriorCells.Count} cells)");
+            worldspaceRows.Add(new WorldspaceListControl.WorldspaceListItem(
+                worldspaceRows.Count, "(unlinked)", "Unlinked Exterior",
+                data.UnlinkedExteriorCells.Count));
         }
         _suppressWorldspaceSelectionEvent = false;
+
+        WorldspaceList.Populate(worldspaceRows);
+        HideWorldspaceBrowser();
+        WorldspacesButton.Content = worldspaceRows.Count > 0
+            ? $"Worldspaces ({worldspaceRows.Count})"
+            : "Worldspaces";
+        WorldspacesButton.IsEnabled = worldspaceRows.Count > 0;
 
         // Interiors live in the shared cell browser (Interiors button), not the combo.
         _selectedInterior = null;

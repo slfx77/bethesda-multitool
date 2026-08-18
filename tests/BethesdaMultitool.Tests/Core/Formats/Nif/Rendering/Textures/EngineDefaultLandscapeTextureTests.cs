@@ -15,13 +15,26 @@ public class EngineDefaultLandscapeTextureTests
     [Theory]
     [InlineData(BethesdaGame.FalloutNewVegas)]
     [InlineData(BethesdaGame.Fallout3)]
-    [InlineData(BethesdaGame.Starfield)]
     [InlineData(BethesdaGame.Unknown)]
     public void DiffuseFor_UnmappedOrFnvFamily_UsesFnvDefault(BethesdaGame game)
     {
         var fnv = GameProfiles.For(BethesdaGame.FalloutNewVegas);
         Assert.Equal(fnv.DefaultLandscapeDiffuse, EngineDefaultLandscapeTexture.DiffuseFor(game));
         Assert.Equal(fnv.DefaultLandscapeNormal, EngineDefaultLandscapeTexture.NormalFor(game));
+    }
+
+    /// <summary>
+    ///     Starfield deliberately declares NO engine-default landscape texture. It previously inherited
+    ///     FNV's DirtWasteland01, which does not exist in any Starfield archive — so every unresolved
+    ///     cell chased a path that could never load. Its terrain diffuse is reachable only through the
+    ///     material database; an empty default lets the resolver bind the white-pixel placeholder
+    ///     instead, which is the honest "not resolved yet" state.
+    /// </summary>
+    [Fact]
+    public void DiffuseFor_Starfield_HasNoEngineDefault()
+    {
+        Assert.Equal(string.Empty, EngineDefaultLandscapeTexture.DiffuseFor(BethesdaGame.Starfield));
+        Assert.Equal(string.Empty, EngineDefaultLandscapeTexture.NormalFor(BethesdaGame.Starfield));
     }
 
     [Theory]

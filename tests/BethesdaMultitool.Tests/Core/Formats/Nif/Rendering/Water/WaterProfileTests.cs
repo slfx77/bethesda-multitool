@@ -7,8 +7,9 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Water;
 
 /// <summary>
 ///     Locks the per-game <see cref="WaterProfile" /> mapping + the FNV constants that were hoisted out of
-///     <c>WaterRenderer12</c>. Games move off the FNV fallback only after their own shipped shader or
-///     fixed-function path is recovered. The constants are asserted byte-for-byte so profile routing
+///     <c>WaterRenderer12</c>. A game reaches a recovered shader only on evidence — its own disassembled
+///     program, its own fixed-function path, or a documented shared one; absent that it draws
+///     <see cref="WaterProfile.Flat" />. The constants are asserted byte-for-byte so profile routing
 ///     cannot perturb FNV/FO3.
 /// </summary>
 public class WaterProfileTests
@@ -27,19 +28,68 @@ public class WaterProfileTests
         Assert.Same(WaterProfile.Fnv, WaterProfile.ForGame(BethesdaGame.Fallout3));
     }
 
-    [Theory]
-    [InlineData(BethesdaGame.Skyrim)]
-    [InlineData(BethesdaGame.Starfield)]
-    [InlineData(BethesdaGame.Unknown)]
-    public void GamesWithoutTheirOwnDecompiledShader_ShareTheRtFreeWater000Shader(BethesdaGame game)
+    [Fact]
+    public void Skyrim_SharesTheRtFreeWater000Shader_ReConfirmed()
     {
-        // These games resolve to the shared RT-free WATER000 shader. For Skyrim this is RE-confirmed
-        // (its BSWaterShader reduces to the same RT-free math; see skyrim_water_pixel_shader_decompiled.txt)
-        // — per-game fidelity is the WATR DNAM parse, not a different shader. Others have no own shader
-        // source and fall back (binary-RE-only: no guessing).
-        var profile = WaterProfile.ForGame(game);
+        // Skyrim's BSWaterShader reduces to the same RT-free math (see
+        // skyrim_water_pixel_shader_decompiled.txt), so it shares the FNV file on evidence rather
+        // than as a fallback — per-game fidelity is the WATR DNAM parse, not a different shader.
+        var profile = WaterProfile.ForGame(BethesdaGame.Skyrim);
         Assert.Same(WaterProfile.Fnv, profile);
         Assert.Equal(WaterShaderVariant.FnvWater000, profile.ShaderVariant);
+    }
+
+    [Theory]
+    [InlineData(BethesdaGame.Starfield)]
+    [InlineData(BethesdaGame.Unknown)]
+    public void GamesWithNoRecoveredShader_DrawTheFlatTintedPlane(BethesdaGame game)
+    {
+        // These have no disassembled water shader of their own and no evidence they share one, so
+        // they get the flat tinted plane instead of FNV's engine math applied to foreign records.
+        // Routing them back onto WATER000 would be exactly the guess the binary-RE-only policy bars.
+        var profile = WaterProfile.ForGame(game);
+        Assert.Same(WaterProfile.Flat, profile);
+        Assert.Equal(WaterShaderVariant.FlatTinted, profile.ShaderVariant);
+        Assert.Equal("water_flat.frag.hlsl", profile.PixelShaderFile);
+    }
+
+    [Fact]
+    public void FlatProfile_IsTransparentAndTintedByItsOwnDefaultBlue()
+    {
+        var profile = WaterProfile.Flat;
+
+        // Transparent by construction: an un-recovered game's water must not hide the scene under it.
+        Assert.Equal(0.6f, profile.SurfaceAlpha);
+        Assert.True(profile.SurfaceAlpha is > 0f and < 1f);
+        // Its own tint, NOT FNV's: FNV's DefaultShallow is authored to be lit and then composited
+        // with a reflection and a specular lobe, so on an unlit flat plane it reads near-black.
+        Assert.Equal(new Vector3(0.10f, 0.28f, 0.42f), profile.DefaultShallow);
+        Assert.NotEqual(WaterProfile.Fnv.DefaultShallow, profile.DefaultShallow);
+        // The flat shader animates nothing — no legacy frame cycle can reach it.
+        Assert.Equal(0f, profile.SurfaceFrameFps);
+        Assert.Equal(LegacySurfaceFrameRole.None, profile.LegacyFrames);
+    }
+
+    [Fact]
+    public void EveryGameResolvesToADeclaredProfile_AndNewGamesDefaultToFlat()
+    {
+        // ForGame's default arm is Flat, so a game added to BethesdaGame later renders a labelled
+        // plane rather than silently inheriting FNV's recovered shader. Enumerating the enum keeps
+        // that promise honest as the enum grows.
+        foreach (var game in Enum.GetValues<BethesdaGame>())
+        {
+            var profile = WaterProfile.ForGame(game);
+            Assert.Contains(profile, (WaterProfile[])
+            [
+                WaterProfile.Fnv, WaterProfile.Oblivion, WaterProfile.Fallout4,
+                WaterProfile.Fallout76, WaterProfile.Morrowind, WaterProfile.Flat,
+            ]);
+        }
+
+        // The games explicitly kept on a recovered shader; everything else is Flat by default.
+        Assert.NotSame(WaterProfile.Flat, WaterProfile.ForGame(BethesdaGame.Fallout3));
+        Assert.NotSame(WaterProfile.Flat, WaterProfile.ForGame(BethesdaGame.FalloutNewVegas));
+        Assert.NotSame(WaterProfile.Flat, WaterProfile.ForGame(BethesdaGame.Skyrim));
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using Microsoft.Graphics.Canvas;
@@ -21,7 +22,9 @@ internal static class WorldMapHeightmapBuilder
         float? currentDefaultWaterHeight,
         HeightmapColorScheme colorScheme, bool showWater,
         WorldMapLayer layer = WorldMapLayer.Heightmap,
-        WorldRenderCache? cache = null)
+        WorldRenderCache? cache = null,
+        Vector3? hillshadeLightDir = null,
+        float? hillshadeZScale = null)
     {
         return layer switch
         {
@@ -39,8 +42,16 @@ internal static class WorldMapHeightmapBuilder
             WorldMapLayer.TerrainTextures => Wrap(canvas,
                 WorldMapLayerRenderer.RenderTerrainTexturesRegionsFallback(
                     activeCells, currentDefaultWaterHeight, showWater, cache)),
+            // Hillshade parameters MUST come from the caller, not from RenderSlope's defaults. The
+            // defaults are DefaultLightDir and DefaultZScale (0.02), which is calibrated for a
+            // 4096-unit cell; the live map passes ZScaleForCellSize(_cellSize) instead. Letting the
+            // export fall through to the default made an exported Slope PNG 41× flatter than the map
+            // it was exported from on Starfield (100-unit cells) and 2× harsher on Morrowind.
             WorldMapLayer.Slope => Wrap(canvas,
-                WorldMapLayerRenderer.RenderSlope(activeCells, currentDefaultWaterHeight, showWater, cache)),
+                WorldMapLayerRenderer.RenderSlope(
+                    activeCells, currentDefaultWaterHeight, showWater, cache,
+                    hillshadeLightDir,
+                    hillshadeZScale ?? WorldMapHillshadeRenderer.DefaultZScale)),
             _ => null
         };
     }

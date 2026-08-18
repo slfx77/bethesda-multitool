@@ -270,6 +270,38 @@ internal static class SunShadowMath
         float postCullSceneZSpan) =>
         referenceIdentityChanged && !armedSceneZSpan.Equals(postCullSceneZSpan);
 
+    /// <summary>
+    ///     Whether a just-rendered cascade may COMMIT its cached state (pose key, content key, content
+    ///     throttle, published anchor). True only when every sub-pass feeding that cascade reached an
+    ///     AUTHORITATIVE result — which includes the valid EMPTY one, where the fitted box genuinely
+    ///     contains no caster. A pass that could not run (ring exhaustion) leaves the old keys in place
+    ///     so the next frame retries instead of caching a degenerate render.
+    ///     <para>
+    ///         Committing the authoritative EMPTY case is the point. Withholding the keys there left
+    ///         the cascade permanently pose-pending, so it re-cleared its target and re-gathered
+    ///         terrain EVERY frame forever with nothing to show for it. It still heals through the
+    ///         ordinary keys: a streamed-in caster bumps a content version, and camera or sun motion
+    ///         changes the pose key.
+    ///     </para>
+    ///     <para>
+    ///         Note that "drew something" is deliberately NOT an input. Whether the box happened to
+    ///         contain a caster says nothing about whether the answer is trustworthy, and conflating
+    ///         the two is what made an empty-but-correct cascade indistinguishable from a failed one.
+    ///     </para>
+    /// </summary>
+    /// <param name="referenceReplayCompleted">
+    ///     <c>ReferenceRenderer12.LastShadowReplayCompleted</c>.
+    /// </param>
+    /// <param name="terrainCasts">Whether terrain was asked to contribute to this cascade at all.</param>
+    /// <param name="terrainReplayCompleted">
+    ///     <c>TerrainRenderer12.LastShadowReplayCompleted</c>. Meaningful only when
+    ///     <paramref name="terrainCasts" /> — terrain that was never asked to run cannot make a cascade
+    ///     unauthoritative.
+    /// </param>
+    public static bool ShouldCommitCascadeState(
+        bool referenceReplayCompleted, bool terrainCasts, bool terrainReplayCompleted) =>
+        referenceReplayCompleted && (!terrainCasts || terrainReplayCompleted);
+
     /// <summary>Builds the cascade re-render pose key: quantized sun direction, snapped coverage
     /// center, radius, and content version — the map re-renders only when the key changes.</summary>
     /// <param name="snap">

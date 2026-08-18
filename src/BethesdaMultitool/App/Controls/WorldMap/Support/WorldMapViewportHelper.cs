@@ -95,11 +95,26 @@ internal static class WorldMapViewportHelper
             var maxExtent = Math.Max(
                 Math.Max(Math.Abs(bounds.X2 - bounds.X1), Math.Abs(bounds.Y2 - bounds.Y1)),
                 Math.Abs(bounds.Z2 - bounds.Z1)) * obj.Scale;
-            return Math.Clamp(maxExtent, 500f, data?.CellWorldSize ?? WorldGridConstants.CellSize);
+            var cellWorldSize = data?.CellWorldSize ?? WorldGridConstants.CellSize;
+            return Math.Clamp(maxExtent, MinObjectViewMargin(cellWorldSize), cellWorldSize);
         }
 
-        return 500f;
+        return DefaultObjectViewMargin;
     }
+
+    /// <summary>Legacy floor for the culling margin, in Fallout/TES units (4096 per cell).</summary>
+    private const float DefaultObjectViewMargin = 500f;
+
+    /// <summary>
+    ///     Lower bound for <see cref="GetObjectViewMargin" />, never above <paramref name="cellWorldSize" />
+    ///     — <c>Math.Clamp</c> throws when min exceeds max. Starfield's metric world is 100 units per cell,
+    ///     an order of magnitude under the legacy 500-unit floor, so the floor scales down with the cell
+    ///     there. Games at or above 4096 units per cell keep exactly the historical 500.
+    /// </summary>
+    private static float MinObjectViewMargin(float cellWorldSize) =>
+        MathF.Min(
+            DefaultObjectViewMargin,
+            cellWorldSize * (DefaultObjectViewMargin / WorldGridConstants.CellSize));
 
     /// <summary>
     ///     Frames the worldspace on the cells that actually carry data, NOT on the full cell list: a

@@ -219,7 +219,10 @@ public sealed class FnvWater001SourceContractTests
         Assert.Contains("refractionUv = input.Position.xy / snapshotDimensions;", water001,
             StringComparison.Ordinal);
         Assert.Contains("return FnvWater003LocalFallback(", water001, StringComparison.Ordinal);
-        Assert.Contains("!isfinite(column) || !isfinite(depthT)", water001,
+        // The fail-closed guard now validates the occluder gap: FnvWater003LocalFallback receives
+        // depthT/corrD already resolved, so the raw gap it still takes is purely occlusion input
+        // and must stay the UNFILTERED nearest sample (see LoadSceneDepth in water_common.hlsli).
+        Assert.Contains("!isfinite(occluderGap) || !isfinite(depthT)", water001,
             StringComparison.Ordinal);
         Assert.Contains("clip(-1.0);", water001, StringComparison.Ordinal);
     }

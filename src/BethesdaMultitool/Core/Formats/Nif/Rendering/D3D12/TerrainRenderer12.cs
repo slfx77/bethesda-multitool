@@ -77,6 +77,25 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     public const float DefaultDiffuseUvScale = 1f / 512f;
 
     /// <summary>
+    ///     Terrain diffuse repeats per exterior cell. 8 reproduces the long-standing 1/512 scale on the
+    ///     4096-unit Fallout/Skyrim grid, which is where that constant came from — but expressed against
+    ///     the cell it makes sense on every game. Starfield's cell is 100 units, so the fixed 1/512 gave
+    ///     it ~0.2 repeats per cell: a ~41x magnified texture that reads as flat colour even when the
+    ///     right image loads.
+    /// </summary>
+    private const float DiffuseTileRepeatsPerCell = 8f;
+
+    /// <summary>Texture-space scale for the active game's cell size (see <see cref="DiffuseTileRepeatsPerCell" />).</summary>
+    private float DiffuseUvScale
+    {
+        get
+        {
+            var cellSize = _textureResolver.CellWorldSize;
+            return cellSize > 0f ? DiffuseTileRepeatsPerCell / cellSize : DefaultDiffuseUvScale;
+        }
+    }
+
+    /// <summary>
     ///     Input layout matching the engine-accurate terrain shader: slot 0 is the shared
     ///     <see cref="GpuMeshUploader.GpuVertex" /> (6 attributes, TEXCOORD0..5); slot 1 is
     ///     the per-cell <see cref="CellTerrainTextureSet" /> blend-weight stream — four float4s
@@ -420,6 +439,20 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     public int ContentVersion { get; private set; }
 
     /// <summary>
+    ///     True when the latest <see cref="RenderShadowDepth" /> reached an authoritative result,
+    ///     including the valid zero-cell cases where no terrain is loaded at all or no RESIDENT cell
+    ///     intersects the cascade's cylinder. False only when the gather could not run (ring
+    ///     allocation failed).
+    ///     <para>
+    ///         The <c>int</c> return alone cannot carry this: "0 cells" is emitted by three different
+    ///         paths and only two of them are answers. Without the distinction the host cannot tell an
+    ///         empty cascade it may CACHE from a failed one it must RETRY — the twin of
+    ///         <c>ReferenceRenderer12.LastShadowReplayCompleted</c> on the reference side.
+    ///     </para>
+    /// </summary>
+    public bool LastShadowReplayCompleted { get; private set; }
+
+    /// <summary>
     ///     Sun-shadow depth pass: draws the ALREADY-RESIDENT terrain cells into the (already bound)
     ///     shadow map from the light's view with the 1-sample no-cull shadow PSO — terrain casts
     ///     shadows onto itself and onto placed references (hillsides shading valleys).
@@ -433,12 +466,17 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     ///         recency (shadow reads of far cells must not push the camera's own cells toward
     ///         eviction).
     ///     </para>
+    ///     Returns the count of resident cells drawn. See <see cref="LastShadowReplayCompleted" /> to
+    ///     distinguish an authoritative zero from a gather that could not run.
     /// </summary>
     public int RenderShadowDepth(Matrix4x4 lightViewProj, VisibilityCylinder cylinder)
     {
+        LastShadowReplayCompleted = false;
         if ((_spatialIndex is null || _spatialIndex.CellCount == 0) &&
             (_cells is null || _cells.Count == 0))
         {
+            // No terrain exists to draw — an authoritative zero, not a failure.
+            LastShadowReplayCompleted = true;
             return 0;
         }
 
@@ -455,7 +493,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             *(Matrix4x4*)perFrameAlloc.CpuPtr = lightViewProj;
             // b2 is read by the terrain VS (UV scale feeds an output the null-PS pass ignores,
             // but the register must still be validly bound — earlier passes rebind this slot).
-            *(Vector4*)perModeAlloc.CpuPtr = new Vector4(0f, DefaultDiffuseUvScale, 0f, 0f);
+            *(Vector4*)perModeAlloc.CpuPtr = new Vector4(0f, DiffuseUvScale, 0f, 0f);
         }
 
         cmd.SetPipelineState(_shadowDepthPso);
@@ -494,6 +532,9 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             drawn++;
         }
 
+        // The gather ran to completion; `drawn == 0` here means no RESIDENT cell intersected the
+        // cylinder, which is an answer the host may cache.
+        LastShadowReplayCompleted = true;
         return drawn;
     }
 
@@ -581,7 +622,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         {
             *(Vector4*)perModeAlloc.CpuPtr = new Vector4(
                 _showTextures ? 1f : 0f,
-                DefaultDiffuseUvScale,
+                DiffuseUvScale,
                 _showVertexColors ? 1f : 0f,
                 _textureResolver.LandscapeNormalMappingEnabled ? 1f : 0f);
         }

@@ -170,6 +170,14 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     /// <summary>1x1 opaque white texture used as the fallback diffuse.</summary>
     public Entry WhitePixel => _whitePixel ??= _solidTextureFactory.CreateSolid(255, 255, 255, 255);
 
+    /// <summary>
+    ///     See <see cref="NifGpuTextureResolver.IsStarfieldNoDrawMaterial" /> — true when the shape
+    ///     referencing <paramref name="materialPath" /> should be SKIPPED (no albedo in any form)
+    ///     rather than drawn with <see cref="WhitePixel" />. False when this cache has no resolver.
+    /// </summary>
+    public bool IsStarfieldNoDrawMaterial(string materialPath) =>
+        _resolver?.IsStarfieldNoDrawMaterial(materialPath) == true;
+
     /// <summary>1x1 flat normal map used as the fallback normal.</summary>
     public Entry FlatNormal => _flatNormal ??= _solidTextureFactory.CreateSolid(128, 128, 255, 255);
 

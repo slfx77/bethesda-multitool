@@ -47,7 +47,10 @@ float4 FnvWater003LocalFallback(
     float3 perturbation,
     float3 V,
     float distXY,
-    float column,
+    // The gap to the UNFILTERED nearest depth sample (see LoadSceneDepth). Purely an occlusion and
+    // validity input here — every shading lane arrives already resolved in depthT/corrD — so it
+    // must stay the occluder rather than the surface the water is over.
+    float occluderGap,
     float depthT,
     float2 corrD,
     bool hasSceneDepth,
@@ -58,7 +61,7 @@ float4 FnvWater003LocalFallback(
     // Same manual foreground rejection and shader math as the normal FNV WATER003 route. This
     // function is compiled only into the WATER001 program; the standalone WATER003 bytecode
     // (water_fnv.frag.hlsl) remains its own compile and is not rewritten by this feature.
-    if (!isfinite(column) || !isfinite(depthT) || !all(isfinite(corrD)) ||
+    if (!isfinite(occluderGap) || !isfinite(depthT) || !all(isfinite(corrD)) ||
         !all(isfinite(perturbation)) || !all(isfinite(V)))
     {
         // A nonfinite main-depth sample cannot support either safe foreground rejection or the
@@ -67,7 +70,7 @@ float4 FnvWater003LocalFallback(
         return float4(0.0, 0.0, 0.0, 0.0);
     }
 #if !WATER_HARDWARE_OCCLUSION
-    clip(column + asfloat(uDepthParams.w));
+    clip(occluderGap + asfloat(uDepthParams.w));
 #endif
     float noiseFade = saturate((8192.0 - distXY) / 4096.0);
     float3 n3 = perturbation * depthT;
@@ -147,7 +150,10 @@ bool FnvWater001DepthTapIsUnderwater(
     float3 displacedWorld,
     float planeHeight)
 {
-    float sceneNdc = LoadSceneDepth(depthIndex, pixel, depthSampleCount);
+    // Eligibility probe: deliberately the FRONTMOST opaque sample, not the surface the water is
+    // over. Declaring a tap underwater while an occluder covers part of the pixel would admit
+    // WATER001 for geometry that is in front of the water, so this one stays conservative.
+    float sceneNdc = LoadNearestSceneDepth(depthIndex, pixel, depthSampleCount);
     float sceneDistance = LinearizeDepth(sceneNdc, nearPlane, farPlane);
     float rayScale = sceneDistance / max(displacedWaterDistance, 1e-4);
     float3 scenePoint = uCamPosTime.xyz +
@@ -175,12 +181,20 @@ float4 main(PSInput input) : SV_Target
     float near = asfloat(uDepthParams.y);
     float far = asfloat(uDepthParams.z);
     uint depthSampleCount = max((uint)uRenderOrigin.w, 1u);
-    float sceneNdc = depthIndex == 0xFFFFFFFFu
-        ? 0.0
-        : LoadSceneDepth(depthIndex, (int2)input.Position.xy, depthSampleCount);
+    // sceneNdc is the surface the water is layered OVER, with MSAA occluder samples excluded (see
+    // LoadSceneDepth), so it drives the shading lanes below; occluderNdc keeps the unfiltered
+    // nearest for the fail-closed foreground rejection inside FnvWater003LocalFallback. Both stay
+    // at the reversed-Z far plane (0) with no depth SRV bound, exactly as the ternary here did.
+    float occluderNdc = 0.0;
+    float sceneNdc = 0.0;
+    if (depthIndex != 0xFFFFFFFFu)
+    {
+        sceneNdc = LoadSceneDepth(
+            depthIndex, (int2)input.Position.xy, depthSampleCount, input.Position.z, occluderNdc);
+    }
     float sceneDistance = LinearizeDepth(sceneNdc, near, far);
     float waterDistance = LinearizeDepth(input.Position.z, near, far);
-    float column = sceneDistance - waterDistance;
+    float occluderGap = LinearizeDepth(occluderNdc, near, far) - waterDistance;
     // Same engine depth-writer lanes as the standalone WATER003 program (see water_fnv.frag.hlsl):
     // slant + vertical water columns normalized by the ACTIVE (above-water) FogFar — the engine
     // only switches to the UnderWater fog trio when the camera itself is submerged, which this
@@ -228,7 +242,7 @@ float4 main(PSInput input) : SV_Target
     if (!validDepth)
     {
         return FnvWater003LocalFallback(
-            input, perturbation, V, distXY, column, fallbackDepthT, fallbackCorrD,
+            input, perturbation, V, distXY, occluderGap, fallbackDepthT, fallbackCorrD,
             hasSceneDepth, sunDir, sunCol, sunGate);
     }
 
@@ -259,7 +273,7 @@ float4 main(PSInput input) : SV_Target
     if (!validProjection)
     {
         return FnvWater003LocalFallback(
-            input, perturbation, V, distXY, column, fallbackDepthT, fallbackCorrD,
+            input, perturbation, V, distXY, occluderGap, fallbackDepthT, fallbackCorrD,
             hasSceneDepth, sunDir, sunCol, sunGate);
     }
 
@@ -302,7 +316,7 @@ float4 main(PSInput input) : SV_Target
     if (!all(isfinite(refractionSample)))
     {
         return FnvWater003LocalFallback(
-            input, perturbation, V, distXY, column, fallbackDepthT, fallbackCorrD,
+            input, perturbation, V, distXY, occluderGap, fallbackDepthT, fallbackCorrD,
             hasSceneDepth, sunDir, sunCol, sunGate);
     }
 
@@ -325,7 +339,7 @@ float4 main(PSInput input) : SV_Target
     if (!validWaterFog)
     {
         return FnvWater003LocalFallback(
-            input, perturbation, V, distXY, column, fallbackDepthT, fallbackCorrD,
+            input, perturbation, V, distXY, occluderGap, fallbackDepthT, fallbackCorrD,
             hasSceneDepth, sunDir, sunCol, sunGate);
     }
     float aboveWaterFog = (1.0 - saturate(

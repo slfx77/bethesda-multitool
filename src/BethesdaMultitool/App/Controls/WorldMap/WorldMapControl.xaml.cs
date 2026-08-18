@@ -450,6 +450,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // The cell browser is the shared CellListControl; in 2D selecting a cell inspects it.
         CellList.Activation = CellListControl.ActivationMode.SelectionChanged;
         CellList.CellActivated += (_, cell) => InspectCell?.Invoke(this, cell);
+        WorldspaceList.WorldspaceActivated += WorldspaceList_WorldspaceActivated;
         // Cancel any in-flight TerrainTextures stream when the control unloads (tab switch
         // or app shutdown). Without this, the async loop in StreamAndApplyTerrainTexturesAsync
         // keeps producing cells, tries to enqueue onto a now-null DispatcherQueue, and throws
@@ -554,16 +555,34 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         LayerComboBox.SelectedIndex = (int)_currentLayer;
 
         WorldspaceComboBox.Items.Clear();
+        // Same entries, same order, feeding both pickers: the ComboBox (fine for a handful) and the
+        // searchable browser (needed once a game ships hundreds). The browser keys on this index.
+        var worldspaceRows = new List<WorldspaceListControl.WorldspaceListItem>();
         foreach (var ws in data.Worldspaces)
         {
             var name = WorldMapColors.FormatWorldspaceName(ws);
             WorldspaceComboBox.Items.Add($"{name} — {ws.Cells.Count} cells");
+            worldspaceRows.Add(new WorldspaceListControl.WorldspaceListItem(
+                worldspaceRows.Count,
+                string.IsNullOrWhiteSpace(ws.EditorId) ? $"0x{ws.FormId:X8}" : ws.EditorId,
+                name,
+                ws.Cells.Count));
         }
 
         if (data.UnlinkedExteriorCells.Count > 0)
         {
             WorldspaceComboBox.Items.Add($"Unlinked Exterior ({data.UnlinkedExteriorCells.Count} cells)");
+            worldspaceRows.Add(new WorldspaceListControl.WorldspaceListItem(
+                worldspaceRows.Count, "(unlinked)", "Unlinked Exterior",
+                data.UnlinkedExteriorCells.Count));
         }
+
+        WorldspaceList.Populate(worldspaceRows);
+        HideWorldspaceBrowser();
+        WorldspacesButton.Content = worldspaceRows.Count > 0
+            ? $"Worldspaces ({worldspaceRows.Count})"
+            : "Worldspaces";
+        WorldspacesButton.IsEnabled = worldspaceRows.Count > 0;
 
         InteriorsButton.Content = data.InteriorCells.Count > 0
             ? $"Interiors ({data.InteriorCells.Count})"
@@ -760,6 +779,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         HideLayerBuildStatus();
         DisposeCellDetailBitmaps();
         WorldspaceComboBox.Items.Clear();
+        WorldspaceList.Clear();
+        HideWorldspaceBrowser();
+        WorldspacesButton.Content = "Worldspaces";
+        WorldspacesButton.IsEnabled = false;
         ExportButton.IsEnabled = false;
         MapCanvas.Invalidate();
     }

@@ -31,4 +31,32 @@ public sealed partial class WorldMapControl
         ZoomLevelText.Text = "";
         CoordsText.Text = "";
     }
+
+    // ── Worldspace browser (searchable counterpart of the toolbar ComboBox; the same
+    //    WorldspaceListControl the 3D viewer hosts) ──────────────────────────────────────────────
+
+    private void WorldspacesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (WorldspaceComboBox.Items.Count == 0) return;
+        WorldspaceBrowserPanel.Visibility = Visibility.Visible;
+    }
+
+    private void WorldspaceBrowserCloseButton_Click(object sender, RoutedEventArgs e) =>
+        HideWorldspaceBrowser();
+
+    private void HideWorldspaceBrowser() =>
+        WorldspaceBrowserPanel.Visibility = Visibility.Collapsed;
+
+    /// <summary>
+    ///     Applies a pick by driving the ComboBox, so the existing SelectionChanged path does the
+    ///     actual switch (state, bitmaps, zoom-to-fit) and this adds no second way to change worlds.
+    ///     Cell-browser mode clears the combo selection on entry, so a pick from there always fires
+    ///     the switch and returns the control to canvas mode.
+    /// </summary>
+    private void WorldspaceList_WorldspaceActivated(object? sender, int comboIndex)
+    {
+        HideWorldspaceBrowser();
+        if (comboIndex < 0 || comboIndex >= WorldspaceComboBox.Items.Count) return;
+        WorldspaceComboBox.SelectedIndex = comboIndex;
+    }
 }

@@ -167,11 +167,18 @@ public sealed class SelectedReferenceVisibilitySourceContractTests
             "!firstPublish && !anyVisibilityPending && dueCount > ShadowMaxCascadeRendersPerFrame",
             frame,
             StringComparison.Ordinal);
+        // A visibility-driven clear still commits its keys, but now through the shared authoritative
+        // predicate rather than a bespoke visibility-only branch — the old branch's condition was a
+        // strict subset, and gating on it left every OTHER authoritatively-empty cascade re-rendering
+        // every frame forever.
         Assert.Contains(
-            "&& referenceReplayCompleted",
+            "SunShadowMath.ShouldCommitCascadeState(",
             frame,
             StringComparison.Ordinal);
-        Assert.Contains("&& !terrainCasts", frame, StringComparison.Ordinal);
+        Assert.Contains(
+            "terrainReplayCompleted = _terrain!.LastShadowReplayCompleted;",
+            frame,
+            StringComparison.Ordinal);
         Assert.Contains(
             "_shadowContentKeys[i] = contentKey;",
             frame,

@@ -31,10 +31,20 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
     /// <summary>Sentinel bindless index meaning "texture not available" — the object is skipped.</summary>
     public const uint NoTexture = uint.MaxValue;
 
-    // Sky-sphere radius the billboards sit on (world units). Depth is off, so this only sets the
-    // projected screen position/size — kept well inside the camera far plane. Public so the per-game
-    // celestial profiles can preserve each authored quad-to-path ratio at this replacement radius.
-    public const float Radius = 30000f;
+    // Sky-sphere radius the billboards sit on, in CLASSIC world units (~70/metre). Depth is off, so
+    // this only sets the projected screen position/size — kept well inside the camera far plane.
+    // Public so the per-game celestial profiles can preserve each authored quad-to-path ratio at this
+    // replacement radius.
+    public const float ClassicRadius = 30000f;
+
+    /// <summary>
+    ///     Live sky-sphere radius (world units). Defaults to <see cref="ClassicRadius" />; the host
+    ///     rescales it by the game's human-scale factor per frame — in Starfield (metre units) the
+    ///     unscaled 30,000 sits far outside the cell-scaled far plane, clipping the sun and moons
+    ///     entirely. Callers computing billboard half-sizes must use THIS value so quad-to-path
+    ///     ratios stay consistent with where the renderer actually places the quads.
+    /// </summary>
+    public float Radius { get; set; } = ClassicRadius;
 
     // Moon glow-halo suppression exponent (see sky_billboard.frag: alpha = pow(texel.a, exp)). The moon
     // textures (masser/secunda) bake a bright DISC at alpha~1 plus a soft GLOW HALO at low alpha; drawn

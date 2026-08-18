@@ -26,7 +26,11 @@ internal static class NifSceneGraphWalker
     [
         "NiTriShape", "NiTriStrips", "BSLODTriShape",
         // Skyrim SE / Fallout 4 / Fallout 76 self-contained geometry (BSVertexDesc-packed buffers).
-        "BSTriShape", "BSSubIndexTriShape", "BSMeshLODTriShape", "BSDynamicTriShape"
+        "BSTriShape", "BSSubIndexTriShape", "BSMeshLODTriShape", "BSDynamicTriShape",
+        // Starfield. Self-contained in the same structural sense (the block IS its own data block and
+        // carries the shader/alpha refs inline), but its vertex data is NOT in the NIF at all — the
+        // block names an external geometries\<hash>.mesh blob. See NifSubmeshExtractor.
+        "BSGeometry"
     ];
 
     /// <summary>
@@ -35,7 +39,7 @@ internal static class NifSceneGraphWalker
     ///     not NiGeometry, so the NiTriShape skin/data/property ref parsers do not apply.
     /// </summary>
     internal static readonly HashSet<string> SelfContainedShapeTypes =
-        ["BSTriShape", "BSSubIndexTriShape", "BSMeshLODTriShape", "BSDynamicTriShape"];
+        ["BSTriShape", "BSSubIndexTriShape", "BSMeshLODTriShape", "BSDynamicTriShape", "BSGeometry"];
 
     /// <summary>
     ///     Classify all blocks: identify nodes (with children), shapes (with data refs),
@@ -116,24 +120,38 @@ internal static class NifSceneGraphWalker
                     // resolve via the standard path. BSTriShape carries both refs inline.
                     if (shapePropertyMap != null)
                     {
-                        var bsInfo = NifSceneGraphBlockReader.ParseBsTriShape(data, block, nif.BsVersion, nif.BinaryVersion, be);
-                        if (bsInfo is { } info)
+                        // BSGeometry (Starfield) carries the same three refs but at different offsets
+                        // — its NiAVObject base is followed by a bounding sphere AND box, and its
+                        // "data" is an external blob path rather than inline buffers.
+                        var (shaderRef, alphaRef) = (-1, -1);
+                        if (block.TypeName == "BSGeometry")
                         {
-                            var props = new List<int>(2);
-                            if (info.ShaderRef >= 0 && info.ShaderRef < nif.Blocks.Count)
+                            if (NifSceneGraphBlockReader.ParseBsGeometry(
+                                    data, block, nif.BinaryVersion, be, nif.HasInlineStrings) is { } geo)
                             {
-                                props.Add(info.ShaderRef);
+                                (shaderRef, alphaRef) = (geo.ShaderRef, geo.AlphaRef);
                             }
+                        }
+                        else if (NifSceneGraphBlockReader.ParseBsTriShape(
+                                     data, block, nif.BsVersion, nif.BinaryVersion, be) is { } info)
+                        {
+                            (shaderRef, alphaRef) = (info.ShaderRef, info.AlphaRef);
+                        }
 
-                            if (info.AlphaRef >= 0 && info.AlphaRef < nif.Blocks.Count)
-                            {
-                                props.Add(info.AlphaRef);
-                            }
+                        var props = new List<int>(2);
+                        if (shaderRef >= 0 && shaderRef < nif.Blocks.Count)
+                        {
+                            props.Add(shaderRef);
+                        }
 
-                            if (props.Count > 0)
-                            {
-                                shapePropertyMap[i] = props;
-                            }
+                        if (alphaRef >= 0 && alphaRef < nif.Blocks.Count)
+                        {
+                            props.Add(alphaRef);
+                        }
+
+                        if (props.Count > 0)
+                        {
+                            shapePropertyMap[i] = props;
                         }
                     }
 

@@ -9,6 +9,12 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Water;
 ///     simultaneously the shader's SRV, and the WATER_HARDWARE_OCCLUSION shader variants drop the
 ///     pixel-rate occlusion clip (whose binary keep/kill aliased water edges at MSAA'd mesh
 ///     silhouettes). Regression here re-introduces bright fringes around meshes in front of water.
+///     <para>
+///         Dropping that clip left one half of the bug: the shader still resolved MSAA depth to the
+///         nearest sample across the whole pixel, so a silhouette pixel shaded from the OCCLUDER's
+///         depth. The clip and the shading lanes now read different resolves, and these assertions
+///         pin which is which — see <c>LoadSceneDepth</c> in <c>water_common.hlsli</c>.
+///     </para>
 /// </summary>
 public sealed class WaterHardwareOcclusionSourceContractTests
 {
@@ -16,36 +22,47 @@ public sealed class WaterHardwareOcclusionSourceContractTests
     public void EveryWaterShaderGuardsItsOcclusionClipBehindTheHardwareOcclusionMacro()
     {
         // Exactly one occlusion clip per per-game water file (the shared depth block in the four
-        // variant mains; FnvWater003LocalFallback in the WATER001 program), each compiled out of
-        // the hardware-occlusion variants.
+        // variant mains), each compiled out of the hardware-occlusion variants. It tests the
+        // UNFILTERED nearest depth sample — the occluder — which is precisely what LoadSceneDepth's
+        // shading resolve now excludes: "is anything in front of me?" and "what am I over?" are
+        // different questions, and answering the second with the first is what fringed every mesh
+        // standing in water.
         foreach (var file in (string[])
                  [
                      "water_fnv.frag.hlsl",
                      "water_oblivion.frag.hlsl",
                      "water_fo4.frag.hlsl",
                      "water_morrowind.frag.hlsl",
-                     "water_fnv001.frag.hlsl",
                  ])
         {
             var shader = SourceContract.ReadShaderSource(file);
-            Assert.Equal(1, CountOccurrences(shader, "clip(column + asfloat(uDepthParams.w));"));
+            const string clip =
+                "clip(LinearizeDepth(occluderNdc, near, far) - waterDist + asfloat(uDepthParams.w));";
+            Assert.Equal(1, CountOccurrences(shader, clip));
+            // The shading column must NOT be the clip's input any more.
+            Assert.Equal(0, CountOccurrences(shader, "clip(column + asfloat(uDepthParams.w));"));
             Assert.Equal(1, CountOccurrences(shader, "#if !WATER_HARDWARE_OCCLUSION"));
-            SourceContract.AssertOrder(
-                shader,
-                "#if !WATER_HARDWARE_OCCLUSION",
-                "clip(column + asfloat(uDepthParams.w));",
-                "#endif");
+            SourceContract.AssertOrder(shader, "#if !WATER_HARDWARE_OCCLUSION", clip, "#endif");
         }
+
+        // The WATER001 program takes its occluder gap as a parameter (FnvWater003LocalFallback
+        // receives depthT/corrD already resolved, so the gap is purely occlusion + validity there).
+        var water001 = SourceContract.ReadShaderSource("water_fnv001.frag.hlsl");
+        Assert.Equal(1, CountOccurrences(water001, "clip(occluderGap + asfloat(uDepthParams.w));"));
+        Assert.Equal(1, CountOccurrences(water001, "#if !WATER_HARDWARE_OCCLUSION"));
+        Assert.Contains(
+            "float occluderGap = LinearizeDepth(occluderNdc, near, far) - waterDistance;",
+            water001,
+            StringComparison.Ordinal);
 
         // The non-finite fail-closed guard is NOT occlusion and must stay unconditional.
         var fallback = Extract(
-            SourceContract.ReadShaderSource("water_fnv001.frag.hlsl"),
-            "float4 FnvWater003LocalFallback(", "float noiseFade =");
+            water001, "float4 FnvWater003LocalFallback(", "float noiseFade =");
         SourceContract.AssertOrder(
             fallback,
             "clip(-1.0);",
             "#if !WATER_HARDWARE_OCCLUSION",
-            "clip(column + asfloat(uDepthParams.w));",
+            "clip(occluderGap + asfloat(uDepthParams.w));",
             "#endif");
     }
 

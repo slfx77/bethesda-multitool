@@ -97,7 +97,7 @@ public sealed class NifMaterialDiffusePolicyTests
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             "ReferenceDecodedMeshDiskCache12.cs");
 
-        Assert.Contains("internal const int DecoderVersion = 75;", source, StringComparison.Ordinal);
+        Assert.Contains("internal const int DecoderVersion = 77;", source, StringComparison.Ordinal);
         Assert.Contains("v72: untextured legacy (BsVersion < 26)", source, StringComparison.Ordinal);
         Assert.Contains("MaterialDiffuse", source, StringComparison.Ordinal);
     }

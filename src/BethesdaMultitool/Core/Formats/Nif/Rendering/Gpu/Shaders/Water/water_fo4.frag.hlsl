@@ -139,7 +139,7 @@ float4 main(PSInput input) : SV_Target
     // pixel rate. Falls back to a view-angle proxy when no depth SRV is set.
     uint depthIndex = uDepthParams.x;
     float depthT;
-    float column = 0.0;    // raw view-space depth gap in world units (only meaningful when sampled)
+    float column = 0.0;    // view-space gap to the surface the water is OVER (only when sampled)
     float waterDist = 0.0; // linearized view distance to the water surface (vertical-column conversion)
     if (depthIndex == 0xFFFFFFFFu)
     {
@@ -150,18 +150,24 @@ float4 main(PSInput input) : SV_Target
         float near = asfloat(uDepthParams.y);
         float far = asfloat(uDepthParams.z);
         uint depthSampleCount = max((uint)uRenderOrigin.w, 1u);
-        float sceneNdc = LoadSceneDepth(depthIndex, (int2)input.Position.xy, depthSampleCount);
+        // sceneNdc is the surface the water is layered OVER, with MSAA occluder samples excluded
+        // (see LoadSceneDepth); occluderNdc is the unfiltered nearest, for the clip below only.
+        float occluderNdc;
+        float sceneNdc = LoadSceneDepth(
+            depthIndex, (int2)input.Position.xy, depthSampleCount, input.Position.z, occluderNdc);
         float sceneDist = LinearizeDepth(sceneNdc, near, far);
         waterDist = LinearizeDepth(input.Position.z, near, far);
-        column = sceneDist - waterDist;           // >0: water over a floor; <0: geometry occludes
+        column = sceneDist - waterDist;           // >0: water over a floor
 #if !WATER_HARDWARE_OCCLUSION
         // 3D-2 tie-break: bias the occlusion test toward KEEPING the water (uDepthParams.w world units) so
         // a shoreline where water and terrain are ~coplanar (column ≈ 0 ± sub-ULP depth noise) resolves to
         // water instead of flickering. The bias is tiny vs DepthFalloff, so genuinely occluded water
         // (column far negative) is still discarded. Hardware-occlusion compiles skip this: the pixel-rate
         // binary clip aliases at MSAA'd mesh silhouettes, while the read-only DSV's GreaterEqual test
-        // rejects per sample (and covers the same coplanar tie-break in hardware).
-        clip(column + asfloat(uDepthParams.w));    // discard water hidden behind opaque geometry
+        // rejects per sample (and covers the same coplanar tie-break in hardware). This is the one
+        // consumer that wants the UNFILTERED nearest sample — it asks "is anything in front of me?",
+        // not "what am I over?" — so it tests occluderNdc rather than the shading column.
+        clip(LinearizeDepth(occluderNdc, near, far) - waterDist + asfloat(uDepthParams.w));
 #endif
         float start = uSurface1.y;                 // DepthFalloffStart
         float end = uSurface1.z;                   // DepthFalloffEnd

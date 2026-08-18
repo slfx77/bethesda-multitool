@@ -1216,9 +1216,13 @@ public sealed partial class WorldView3DControl
         var sunFade = atmo.SunDiscDrawAlpha;
         var sunGlareTint = new Vector3(atmo.SunGlareColor.X, atmo.SunGlareColor.Y, atmo.SunGlareColor.Z);
         var sunGlareFade = atmo.SunGlareDrawAlpha;
+        // Human-scale radius: unscaled, Starfield's metre unit puts the 30,000-unit sky sphere far
+        // beyond the cell-scaled far plane and the sun/moons clip away entirely. All half-sizes below
+        // derive from the same value, so the angular sizes are unchanged.
+        _skyBillboards.Radius = SkyBillboardRenderer12.ClassicRadius * _unitScale;
         var sunSizes = SkySunProfile.ForGame(_data?.Game ?? BethesdaGame.Unknown)
             .ResolveBillboardHalfSizes(
-                SkyBillboardRenderer12.Radius,
+                _skyBillboards.Radius,
                 _gameHour,
                 _currentClimateTiming,
                 GmstFloat("fSunXExtreme"),
@@ -1293,8 +1297,8 @@ public sealed partial class WorldView3DControl
             : _data?.MoonPrimaryHalfSizeFraction;
         var primaryFraction = primaryGmstFraction ?? moonProfile.PrimaryHalfSizeFraction;
         var secondaryFraction = _data?.MoonSecondaryHalfSizeFraction ?? moonProfile.SecondaryHalfSizeFraction;
-        var moonHalf = SkyBillboardRenderer12.Radius * primaryFraction;
-        var moon2Half = SkyBillboardRenderer12.Radius * secondaryFraction;
+        var moonHalf = _skyBillboards.Radius * primaryFraction;
+        var moon2Half = _skyBillboards.Radius * secondaryFraction;
 
         _skyBillboards.Render(viewProj, camPos, camRight, camUp,
             sunDir, sunFade, sunTint, sunGlareFade, sunGlareTint,

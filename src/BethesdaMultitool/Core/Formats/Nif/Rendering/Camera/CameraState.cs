@@ -22,12 +22,20 @@ internal sealed class CameraState
     public float FovYRadians { get; set; } = MathF.PI / 3f;
 
     /// <summary>
-    ///     Near clip plane (world units). 16 = clipping at half a cell-vertex spacing — far
-    ///     enough to give D32_Float depth precision room to breathe across the wide
-    ///     near/far range, close enough that flythrough never visibly clips terrain in
-    ///     front of the camera.
+    ///     Default near clip plane in CLASSIC world units (~70 per metre) — 16 units is about 23 cm,
+    ///     far enough to give D32_Float depth precision room across the wide near/far range and close
+    ///     enough that flythrough never visibly clips geometry in front of the camera.
+    ///     <para>
+    ///         ⚠ This is a HUMAN-SCALE distance, so a world with a different unit must rescale it
+    ///         (<c>GameProfiles.HumanScaleFactor</c>). Left at the literal, Starfield — whose unit is a
+    ///         METRE — clips everything within 16 m of the eye, which reads as the whole scene being
+    ///         sliced away just in front of the camera.
+    ///     </para>
     /// </summary>
-    public float NearPlane { get; set; } = 16f;
+    public const float DefaultNearPlane = 16f;
+
+    /// <summary>Near clip plane (world units). See <see cref="DefaultNearPlane" />.</summary>
+    public float NearPlane { get; set; } = DefaultNearPlane;
 
     /// <summary>
     ///     Far clip plane (world units). Decoupled from the streaming radius — the caller sets it

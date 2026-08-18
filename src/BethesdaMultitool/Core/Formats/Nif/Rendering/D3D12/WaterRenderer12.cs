@@ -89,7 +89,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     // The Oblivion pair compiles water_oblivion.frag.hlsl (view-angle body + single sun
     // specular — see WaterShaderVariant.OblivionWater000), and the FO4 pair water_fo4.frag.hlsl
     // (the disassembled BSWaterShader math — see WaterShaderVariant.Fo4Water); both selected by
-    // the profile (WaterProfile.PixelShaderFile) at draw time.
+    // the profile (WaterProfile.PixelShaderFile) at draw time. _psoFlat is the odd one out: a
+    // single PSO drawing water_flat.frag.hlsl for games with no recovered shader at all.
     private readonly ID3D12PipelineState _pso;
     private readonly ID3D12PipelineState _psoDepthSample;
     private readonly ID3D12PipelineState _psoFnvWater001DepthSample;
@@ -99,6 +100,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     private readonly ID3D12PipelineState _psoFo4DepthSample;
     private readonly ID3D12PipelineState _psoMorrowind;
     private readonly ID3D12PipelineState _psoMorrowindDepthSample;
+    // The flat stand-in has NO depth-sample twin, unlike every pair above: it reads no scene depth,
+    // so it has no occlusion clip to compile out and the two compiles would be byte-identical. One
+    // PSO serves both host depth states — the depth-stencil state is the same in either template.
+    private readonly ID3D12PipelineState _psoFlat;
     private readonly GraphicsPipelineStateDescription _depthPsoTemplate;
     private readonly GraphicsPipelineStateDescription _depthSamplePsoTemplate;
 
@@ -439,6 +444,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             "water_fo4.frag.hlsl", "main", "ps_5_1");
         var psMorrowindBytecode = CompileEmbeddedShader(
             "water_morrowind.frag.hlsl", "main", "ps_5_1");
+        // Un-recovered games (WaterProfile.Flat). Compiled once — see _psoFlat.
+        var psFlatBytecode = CompileEmbeddedShader(
+            "water_flat.frag.hlsl", "main", "ps_5_1");
         var psFnvWater001Bytecode = CompileEmbeddedShader(
             "water_fnv001.frag.hlsl", "main", "ps_5_1",
             new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
@@ -466,6 +474,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         _psoFo4 = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psMorrowindBytecode;
         _psoMorrowind = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        psoDesc.PixelShader = psFlatBytecode;
+        _psoFlat = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psBytecode;
 
         // Depth-sample variant: the scene depth buffer is bound BOTH as an SRV (depth-fade /
@@ -860,8 +870,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
 
     /// <summary>Selects the per-game <see cref="WaterProfile" /> (shader variant + tuning) for the loaded
     /// game. Call before <see cref="Render(Matrix4x4, VisibilityCylinder, Vector3)" /> on each
-    /// worldspace/interior load. FNV/FO3 resolve to the FNV profile (byte-identical); every other game
-    /// falls back to it until its own water shader is reverse-engineered (binary-RE-only policy).</summary>
+    /// worldspace/interior load. FNV/FO3 resolve to the FNV profile (byte-identical); a game with no
+    /// reverse-engineered water shader resolves to the flat tinted plane (binary-RE-only policy).</summary>
     public void SetGame(BethesdaGame game)
     {
         _game = game;
@@ -1815,7 +1825,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         LastStats.WaterNoisePrepassUsed = usedFnvNoisePrepass;
 
         var waterOpacity = surface.Opacity;
-        if (_waterProfile.ShaderVariant == WaterShaderVariant.MorrowindWater)
+        if (_waterProfile.ShaderVariant == WaterShaderVariant.MorrowindWater ||
+            // The flat stand-in takes the profile alpha only when the WATR authored no ANAM of its
+            // own: WaterSurfaceParams.Opacity defaults to a fully opaque 1.0 for a silent/unparsed
+            // record, and an opaque plane would hide the scene under it. An authored opacity (< 1)
+            // is real ESM data and wins.
+            (_waterProfile.ShaderVariant == WaterShaderVariant.FlatTinted && waterOpacity >= 1f))
         {
             waterOpacity = _waterProfile.SurfaceAlpha;
         }
@@ -1991,6 +2006,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
                 WaterShaderVariant.OblivionWater000 => depthSample ? _psoOblivionDepthSample : _psoOblivion,
                 WaterShaderVariant.Fo4Water => depthSample ? _psoFo4DepthSample : _psoFo4,
                 WaterShaderVariant.MorrowindWater => depthSample ? _psoMorrowindDepthSample : _psoMorrowind,
+                // No depthSample twin: the flat plane never samples the depth SRV, and its occlusion
+                // is the same hardware GreaterEqual test in both host depth states.
+                WaterShaderVariant.FlatTinted => _psoFlat,
                 _ => depthSample ? _psoDepthSample : _pso,
             });
         }
@@ -2666,7 +2684,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             shaderName = shaderVariant.ToString();
         }
         string depthName;
-        if (sceneDepth)
+        if (!modernPipeline && shaderVariant == WaterShaderVariant.FlatTinted)
+        {
+            // The flat plane reads no scene depth by design, so it must not claim a scene-depth
+            // route just because the host happened to bind one. Its occlusion is the hardware
+            // GreaterEqual test alone, in either host depth state.
+            depthName = "hardware-depth-only";
+        }
+        else if (sceneDepth)
         {
             depthName = sampleCount > 1
                 ? $"scene-depth-msaa{sampleCount}x"
@@ -2704,6 +2729,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         _psoFo4DepthSample.Dispose();
         _psoMorrowind.Dispose();
         _psoMorrowindDepthSample.Dispose();
+        _psoFlat.Dispose();
         _fnvNoiseScrollBlendPso.Dispose();
         _fnvNoiseNormalPso.Dispose();
         _fnvNoiseDownsamplePso.Dispose();

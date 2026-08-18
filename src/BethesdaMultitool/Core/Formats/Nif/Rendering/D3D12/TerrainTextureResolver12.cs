@@ -3,6 +3,8 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 
+using BethesdaMultitool.Core.Games;
+
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>
@@ -67,6 +69,12 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     ///     recovery applies verbatim. Other games keep their geometric-normal path until their own
     ///     shader families are recovered and verified.
     /// </summary>
+    /// <summary>
+    ///     The loaded game's exterior cell edge in world units, so the terrain renderer can express
+    ///     texture tiling per CELL rather than per fixed world distance.
+    /// </summary>
+    public float CellWorldSize => GameProfiles.CellWorldSizeOrDefault(_game);
+
     public bool LandscapeNormalMappingEnabled =>
         _game is BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas
             or BethesdaMultitool.Core.Games.BethesdaGame.Fallout3;
