@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!-- Searchable worldspace list, modeled on CellListControl. Starfield ships ~750 worldspaces, which is
+     far past what a flat ComboBox can be navigated in, so the picker gets the same search-and-pick
+     treatment the cell browsers already have. Filtering runs off the UI thread behind a debounced
+     search box. -->
+<UserControl
+  x:Class="BethesdaMultitool.WorldspaceListControl"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <Grid RowSpacing="4">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <TextBox x:Name="SearchBox" Grid.Row="0" PlaceholderText="Search worldspaces..."
+             AutomationProperties.Name="Search worldspaces"
+             TextChanged="SearchBox_TextChanged" />
+
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12">
+      <CheckBox x:Name="FilterHasCells" Content="Has cells"
+                AutomationProperties.Name="Only worldspaces that have cells"
+                Checked="Filter_Changed" Unchecked="Filter_Changed" />
+      <ComboBox x:Name="SortCombo" MinWidth="140" VerticalAlignment="Center"
+                SelectedIndex="0"
+                AutomationProperties.Name="Sort worldspaces"
+                ToolTipService.ToolTip="Sort order for the worldspace list"
+                SelectionChanged="SortCombo_SelectionChanged">
+        <ComboBoxItem Content="Sort: Name" />
+        <ComboBoxItem Content="Sort: Cell count" />
+      </ComboBox>
+      <TextBlock x:Name="CountText" VerticalAlignment="Center" FontSize="11"
+                 Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+    </StackPanel>
+
+    <ListView x:Name="WorldspaceListView" Grid.Row="2"
+              SelectionMode="Single"
+              IsItemClickEnabled="True"
+              AutomationProperties.Name="Worldspaces"
+              ItemClick="WorldspaceListView_ItemClick">
+      <ListView.ItemsPanel>
+        <ItemsPanelTemplate>
+          <ItemsStackPanel />
+        </ItemsPanelTemplate>
+      </ListView.ItemsPanel>
+      <ListView.ItemTemplate>
+        <DataTemplate>
+          <Grid Padding="4,2" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="2*" />
+              <ColumnDefinition Width="2*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" FontSize="11"
+                       Text="{Binding EditorId}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="1" FontSize="11"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="2" FontSize="11" FontFamily="Consolas"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Text="{Binding CellCountLabel}" />
+          </Grid>
+        </DataTemplate>
+      </ListView.ItemTemplate>
+    </ListView>
+  </Grid>
+</UserControl>
