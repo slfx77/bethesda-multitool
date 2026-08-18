@@ -15,6 +15,17 @@ public record LandscapeTextureRecord
 
     public uint? TextureSetFormId { get; init; }
 
+    /// <summary>
+    ///     Starfield's <c>BNAM</c> "Material File" — a <c>materials\...\*.mat</c> path.
+    ///     <para>
+    ///         Starfield's LTEX has NO <c>TNAM</c> texture-set link at all (verified against
+    ///         wbDefinitionsSF1.pas and retail <c>LDefault006Base</c>): the diffuse is reached through
+    ///         the material database instead, LTEX -> BNAM -> .mat -> MRTextureFile. Every other game
+    ///         keeps using <see cref="TextureSetFormId" />; this is null for them.
+    ///     </para>
+    /// </summary>
+    public string? MaterialPath { get; init; }
+
     public byte[]? HavokData { get; init; }
 
     public byte[]? SpecularData { get; init; }

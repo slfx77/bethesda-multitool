@@ -1,3 +1,4 @@
+using System.Text;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Parser;
@@ -488,6 +489,117 @@ internal static class NifSceneGraphBlockReader
         pos += 1; // Material Needs Update
         return pos <= end;
     }
+
+    /// <summary>
+    ///     A Starfield <c>BSGeometry</c> block: the property refs plus the path of the external
+    ///     <c>.mesh</c> blob that holds its actual vertex/index data. Starfield keeps NO geometry in
+    ///     the NIF — the scene graph names a blob and the renderer loads it separately.
+    /// </summary>
+    /// <param name="MeshPath">
+    ///     The highest-detail LOD's blob path, WITHOUT the <c>geometries\</c> prefix or <c>.mesh</c>
+    ///     suffix (both are implied — see <c>StarfieldMeshFile</c>). Null when the block declares
+    ///     inline mesh data instead, or names no blob at all.
+    /// </param>
+    internal readonly record struct BsGeometryInfo(
+        int SkinRef,
+        int ShaderRef,
+        int AlphaRef,
+        string? MeshPath);
+
+    /// <summary>
+    ///     Parses a Starfield <c>BSGeometry</c> block (nif.xml, <c>versions="#STF#"</c>). Layout after
+    ///     the NiAVObject base is Bounding Sphere (NiBound, 16) + Bounding Box (BSBoundingBox, 24) +
+    ///     Skin/Shader/Alpha refs (3 × int32) + <c>Meshes</c>, a fixed array of four
+    ///     <c>BSMeshArray</c> (LOD 0 first).
+    ///     <para>
+    ///         Each BSMeshArray is a <c>Has Mesh</c> byte, then when set a BSMesh of
+    ///         <c>{ u32 Indices Size, u32 Num Verts, u32 Flags }</c> followed by EITHER a SizedString
+    ///         mesh path or inline BSMeshData — selected by the BSGeometry's own <c>Flags &amp; 512</c>
+    ///         (nif.xml threads it through as the struct argument). Inline data is not modelled; those
+    ///         blocks return a null path and are skipped rather than misread.
+    ///     </para>
+    ///     Returns null when the block is truncated or the NiObjectNET base cannot be walked.
+    /// </summary>
+    internal static BsGeometryInfo? ParseBsGeometry(
+        byte[] data, BlockInfo block, uint binaryVersion, bool be, bool hasInlineStrings)
+    {
+        var pos = block.DataOffset;
+        var end = block.DataOffset + block.Size;
+
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, be, hasInlineStrings, binaryVersion))
+        {
+            return null;
+        }
+
+        // The NiAVObject base is read rather than skipped here: BSGeometry's Flags field is what
+        // decides whether the meshes below carry a path or inline data, so SkipNiGeometryHeader
+        // (which discards it) cannot be reused.
+        if (pos + 4 > end)
+        {
+            return null;
+        }
+
+        var flags = BinaryUtils.ReadUInt32(data, pos, be);
+        pos += 4;                // Flags
+        pos += 12 + 36 + 4;      // Translation (Vector3) + Rotation (Matrix33) + Scale (float)
+        pos += 4;                // Collision Object ref
+        pos += 16;               // Bounding Sphere (NiBound)
+        pos += 24;               // Bounding Box (BSBoundingBox)
+
+        if (pos + 12 > end)
+        {
+            return null;
+        }
+
+        var skinRef = BinaryUtils.ReadInt32(data, pos, be);
+        var shaderRef = BinaryUtils.ReadInt32(data, pos + 4, be);
+        var alphaRef = BinaryUtils.ReadInt32(data, pos + 8, be);
+        pos += 12;
+
+        var carriesInlineMeshData = (flags & 512) != 0;
+        string? meshPath = null;
+        for (var lod = 0; lod < BsGeometryLodCount && meshPath is null && !carriesInlineMeshData; lod++)
+        {
+            if (pos + 1 > end)
+            {
+                break;
+            }
+
+            var hasMesh = data[pos];
+            pos += 1;
+            if (hasMesh != 1)
+            {
+                continue;
+            }
+
+            pos += 12; // Indices Size + Num Verts + Flags (all recoverable from the blob itself)
+            if (pos + 4 > end)
+            {
+                break;
+            }
+
+            var length = BinaryUtils.ReadUInt32(data, pos, be);
+            pos += 4;
+            if (length == 0 || length > MaxMeshPathLength || pos + length > end)
+            {
+                break;
+            }
+
+            meshPath = Encoding.ASCII.GetString(data, pos, (int)length);
+            pos += (int)length;
+        }
+
+        return new BsGeometryInfo(skinRef, shaderRef, alphaRef, meshPath);
+    }
+
+    /// <summary>BSGeometry always writes four LOD slots (nif.xml <c>length="4"</c>); LOD 0 is finest.</summary>
+    private const int BsGeometryLodCount = 4;
+
+    /// <summary>
+    ///     Sanity cap on a mesh-path SizedString. Retail paths are two 20-char hex components plus a
+    ///     separator (41 chars); anything near this is a misparse, not a long name.
+    /// </summary>
+    private const int MaxMeshPathLength = 512;
 
     /// <summary>
     ///     Header + buffer layout of a self-contained BSTriShape block (Skyrim SE / Fallout 4 /

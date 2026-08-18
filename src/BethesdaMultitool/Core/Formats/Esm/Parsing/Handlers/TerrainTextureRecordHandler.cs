@@ -268,6 +268,7 @@ internal sealed class TerrainTextureRecordHandler(RecordParserContext context) :
         string? iconPath = null;
         string? smallIconPath = null;
         uint? textureSetFormId = null;
+        string? materialPath = null;
         byte[]? havokData = null;
         byte[]? specularData = null;
         var grassFormIds = new List<uint>();
@@ -295,6 +296,10 @@ internal sealed class TerrainTextureRecordHandler(RecordParserContext context) :
                 case "TNAM" when sub.DataLength == 4:
                     textureSetFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
+                // Starfield: the landscape diffuse is named by a material path, not a TXST link.
+                case "BNAM":
+                    materialPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
                 case "HNAM" when sub.DataLength > 0:
                     havokData = subData.ToArray();
                     break;
@@ -318,6 +323,7 @@ internal sealed class TerrainTextureRecordHandler(RecordParserContext context) :
             IconPath = iconPath,
             SmallIconPath = smallIconPath,
             TextureSetFormId = textureSetFormId is > 0 ? textureSetFormId : null,
+            MaterialPath = string.IsNullOrEmpty(materialPath) ? null : materialPath,
             HavokData = havokData,
             SpecularData = specularData,
             GrassFormIds = grassFormIds,

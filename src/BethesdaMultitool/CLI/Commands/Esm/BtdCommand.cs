@@ -128,10 +128,19 @@ public static class BtdCommand
             }
         }
 
-        bool mapOk = Math.Abs(mapMin - btd.MinHeight) < 4f && Math.Abs(mapMax - btd.MaxHeight) < 4f;
+        // Fallout 76 authors the header range as the tight hull of the per-cell map, so equality is the
+        // strongest available check. Starfield instead stores a wide fixed quantization envelope (Akila
+        // City declares -500..1000 for content spanning about -3..49), so there the only sound
+        // assertion is containment — a bad offset chain still shows up as values far outside it.
+        // Starfield.esm corroborates the envelope: the SFBK record whose ANAM is akilacity.btd carries
+        // the same -500..1000 as its ENAM height.
+        bool mapOk = btd.IsStarfield
+            ? mapMin >= btd.MinHeight - 4f && mapMax <= btd.MaxHeight + 4f && mapMin <= mapMax
+            : Math.Abs(mapMin - btd.MinHeight) < 4f && Math.Abs(mapMax - btd.MaxHeight) < 4f;
         AnsiConsole.MarkupLine(
-            "  (A) header offset chain — map global range: [{0}]({1:F1} .. {2:F1})[/]  vs header ({3:F1} .. {4:F1})",
-            mapOk ? "green" : "red", mapMin, mapMax, btd.MinHeight, btd.MaxHeight);
+            "  (A) header offset chain — map global range: [{0}]({1:F1} .. {2:F1})[/]  vs header ({3:F1} .. {4:F1}){5}",
+            mapOk ? "green" : "red", mapMin, mapMax, btd.MinHeight, btd.MaxHeight,
+            btd.IsStarfield ? "  [grey](containment; Starfield header range is a fixed envelope)[/]" : string.Empty);
 
         // (B) Decoded LOD4 base values span the world range (cheap — no zlib).
         var b4 = new ushort[64];

@@ -66,6 +66,43 @@ public class BtdFileTests
     }
 
     [Fact]
+    public void Starfield_HeightsAreNotRescaled()
+    {
+        // Regression guard. The fo76utils reference multiplies these two header floats by 8 for the
+        // Starfield variant, and flags the factor in its own source as possibly incorrect
+        // (fo76utils/src/btdfile.cpp:408). It is incorrect, and we carried it briefly.
+        //
+        // Bethesda states each block's height range itself, in the SFBK (Surface Block) record whose
+        // ANAM names the .btd. Decoded straight out of retail Starfield.esm:
+        //     Data\TERRAIN\NewAtlantis.btd  -> ENAM (0, 260.502)
+        //     Data\TERRAIN\akilacity.btd    -> ENAM (-500, 1000)
+        // Both match their .btd header floats verbatim, and each is an eighth of what the x8 produced.
+        // So the header is already in Starfield world units and must be reported unchanged.
+        var path = WriteTemp(BuildStarfieldBtd(256, 256, null));
+        try
+        {
+            using var btd = new BtdFile(path);
+
+            Assert.True(btd.IsStarfield);
+            Assert.Equal(-40.0f, btd.MinHeight, 0.001f);
+            Assert.Equal(100.0f, btd.MaxHeight, 0.001f);
+
+            // SampleToHeight spans exactly the header range, so the whole decode inherits the fix.
+            Assert.Equal(-40.0f, btd.SampleToHeight(0), 0.01f);
+            Assert.Equal(100.0f, btd.SampleToHeight(65535), 0.01f);
+
+            // The per-cell min/max map is read in the same units — it used to be scaled separately.
+            var (lo, hi) = btd.GetCellHeightRange(btd.CellMinX, btd.CellMinY);
+            Assert.Equal(0f, lo);
+            Assert.Equal(0f, hi);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void Starfield_DecodesCellHeightMap_RoundTrip()
     {
         // 1x1 Starfield grid (128x128 samples). Encode a unique height per vertex and read it back,
@@ -100,6 +137,52 @@ public class BtdFileTests
         {
             File.Delete(path);
         }
+    }
+
+    [Fact]
+    public void BytesAndFileConstructors_DecodeIdentically()
+    {
+        // Starfield ships every .btd inside a BA2, so the archive route hands BtdFile raw bytes rather
+        // than a path. Both sources must decode bit-for-bit; the loose route stays memory-mapped so
+        // Fallout 76's 1.48 GB Appalachia.btd is never copied onto the heap.
+        var heights = new ushort[128 * 128];
+        for (var i = 0; i < heights.Length; i++)
+        {
+            heights[i] = (ushort)(i * 3);
+        }
+
+        var raw = BuildStarfieldBtd(128, 128, heights);
+        var path = WriteTemp(raw);
+        try
+        {
+            using var fromFile = new BtdFile(path);
+            using var fromBytes = new BtdFile(raw);
+
+            Assert.Equal(fromFile.IsStarfield, fromBytes.IsStarfield);
+            Assert.Equal(fromFile.MinHeight, fromBytes.MinHeight);
+            Assert.Equal(fromFile.MaxHeight, fromBytes.MaxHeight);
+            Assert.Equal(fromFile.CellMinX, fromBytes.CellMinX);
+            Assert.Equal(fromFile.CellMinY, fromBytes.CellMinY);
+            Assert.Equal(fromFile.CellMaxX, fromBytes.CellMaxX);
+            Assert.Equal(fromFile.CellMaxY, fromBytes.CellMaxY);
+            Assert.Equal(fromFile.LandTextureCount, fromBytes.LandTextureCount);
+
+            var fileBuf = new ushort[128 * 128];
+            var bytesBuf = new ushort[128 * 128];
+            fromFile.GetCellHeightMap(fileBuf, fromFile.CellMinX, fromFile.CellMinY);
+            fromBytes.GetCellHeightMap(bytesBuf, fromBytes.CellMinX, fromBytes.CellMinY);
+            Assert.Equal(fileBuf, bytesBuf);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void BytesConstructor_InvalidHeader_Throws()
+    {
+        Assert.Throws<InvalidDataException>(() => new BtdFile("XXXXnot a btd at all"u8.ToArray()));
     }
 
     [Theory]
@@ -187,8 +270,8 @@ public class BtdFileTests
         using var bw = new BinaryWriter(ms);
         bw.Write("BTDB"u8.ToArray());
         bw.Write(6u); // version
-        bw.Write(0.0f); // min height (Starfield scales by 8 => MinHeight 0)
-        bw.Write(100.0f); // max height (=> MaxHeight 800)
+        bw.Write(-40.0f); // min height, reported verbatim (no scaling — see the x8 test below)
+        bw.Write(100.0f); // max height, reported verbatim
         bw.Write(resX);
         bw.Write(resY);
         bw.Write(0); // all-zero cell bounds => Starfield

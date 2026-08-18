@@ -116,7 +116,16 @@ public static class LandEncoder
 
                 if (layer.Kind == LandTextureLayerKind.Alpha && layer.BlendEntries.Count > 0)
                 {
-                    subs.Add(new EncodedSubrecord("VTXT", EncodeTextureBlendEntries(layer.BlendEntries)));
+                    // Project onto the classic 17×17 grid before writing: VTXT Position is defined on
+                    // that grid, and a BTD-injected layer (BlendGridEdge 65) would otherwise emit
+                    // positions no engine can read. Identity for every real parsed layer.
+                    var vtxt = layer.BlendGridEdge == LandTextureLayer.VtxtGridEdge
+                        ? layer.BlendEntries
+                        : layer.EnumerateVtxt17Entries().ToList();
+                    if (vtxt.Count > 0)
+                    {
+                        subs.Add(new EncodedSubrecord("VTXT", EncodeTextureBlendEntries(vtxt)));
+                    }
                 }
             }
         }

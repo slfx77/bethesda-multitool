@@ -541,7 +541,17 @@ internal static class NifParser
             pos = SkipExportString(data, pos);      // Max Filepath: FO4, FO76
         }
 
-        // bsVersion >= 170 (Starfield) adds an "Unknown Data" (ExportDataSF) block here — not handled.
+        if (bsVersion >= 170)
+        {
+            // Starfield appends an "Unknown Data" ExportDataSF field (nif.xml BSStreamHeader, cond
+            // "BS Version #GTE# 170"). Despite the distinct struct name it is byte-identical to an
+            // ExportString: a 1-byte length (including the null terminator) followed by that many
+            // bytes. Skipping it is not optional — leaving pos short by 1 + Length made the very next
+            // read (numBlockTypes) land inside this payload, which desynced the block-type table and
+            // tripped the strLen > 256 guard, so EVERY Starfield NIF returned null from Parse.
+            pos = SkipExportString(data, pos);
+        }
+
         return pos;
     }
 

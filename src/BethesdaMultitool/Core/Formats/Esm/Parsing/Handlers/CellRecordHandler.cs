@@ -13,6 +13,15 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 
 internal sealed class CellRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
+    /// <summary>
+    ///     Side length of an exterior cell in world units, or 0 for an interior (which has no grid, and
+    ///     whose 0 makes consumers fall back to the engine default). Only games that deviate from the
+    ///     4096-unit Fallout/TES cell carry a profile value — Starfield's Creation Engine 2 is metric at
+    ///     100 units per cell. Mirrors what <c>Tes3RecordParser</c> does for Morrowind's 8192.
+    /// </summary>
+    private float ExteriorCellWorldSize(uint flags) =>
+        (flags & 0x01) != 0 ? 0f : GameProfiles.For(Context.Game).ExteriorCellWorldSize;
+
     private const string AssignmentSourceCellGrup = "CellGrup";
     private const string AssignmentSourceRuntimeCellList = "RuntimeCellList";
     private const string AssignmentSourceProximity = "Proximity";
@@ -513,6 +522,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             FormId = record.FormId,
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
+            CellWorldSize = ExteriorCellWorldSize(flags),
             GridX = gridX,
             GridY = gridY,
             WorldspaceFormId = cellWorldspace > 0 ? cellWorldspace : null,
@@ -565,6 +575,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         {
             FormId = record.FormId,
             EditorId = Context.GetEditorId(record.FormId),
+            CellWorldSize = ExteriorCellWorldSize(flags: 0),
             GridX = gridX,
             GridY = gridY,
             WorldspaceFormId = cellWorldspace > 0 ? cellWorldspace : null,

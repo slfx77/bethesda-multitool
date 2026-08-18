@@ -40,6 +40,16 @@ internal static class LandscapeTexturePathResolver
             return txst.DiffuseTexture;
         }
 
+        // Starfield: no TNAM/TXST at all — BNAM names a .mat, whose diffuse lives in the compiled
+        // material database (materials\materialsbeta.cdb). Returned as the material path so the
+        // caller's material resolver can take it, exactly as FO4/FO76 hand off a .bgsm path. Callers
+        // WITHOUT a material resolver get a path that resolves to nothing, which is the same
+        // untextured outcome as before — never a wrong texture.
+        if (!string.IsNullOrWhiteSpace(ltex.MaterialPath))
+        {
+            return ltex.MaterialPath;
+        }
+
         // Oblivion (TES4): no TNAM/TXST — the texture is the ICON path, relative to textures\landscape\.
         // Prefix it to the textures\-relative form the loader's Normalize expects (Normalize prepends
         // textures\), unless the path is already landscape\- or textures\-rooted.

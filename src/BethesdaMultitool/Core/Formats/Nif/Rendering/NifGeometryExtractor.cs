@@ -168,7 +168,9 @@ internal static class NifGeometryExtractor
         bool dropBoneAttachedShapes = false,
         IReadOnlyDictionary<string, string>? materialSwaps = null,
         Vector3? externalEmittanceColor = null,
-        bool preserveEmptyModel = false)
+        bool preserveEmptyModel = false,
+        Func<string, byte[]?>? externalMeshLoader = null,
+        Action<string>? onExternalMeshDecodeFailure = null)
     {
         if (nif.Blocks.Count == 0)
         {
@@ -575,6 +577,18 @@ internal static class NifGeometryExtractor
                               ?? NifTexturingPropertyReader.ResolveBaseTexturePath(data, nif, propRefs);
                 normalMapPath = shaderMetadata?.NormalMapPath;
 
+                // Starfield BSGeometry whose shader carries an EMPTY material name: nothing can ever
+                // texture it — Starfield has no inline texture sets, the shader's .mat name is the
+                // only route — and retail uses these as auxiliary/proxy shapes (flora and shrub
+                // stand-ins, catwalk sub-shapes, warning-stripe glow strips; measured 12.5k placed
+                // instances in Akila City). Rendering them bound to the white fallback painted bright
+                // white geometry over otherwise-correct scenes, so the shape is skipped entirely.
+                if (diffusePath is null && nif.BsVersion >= 170 &&
+                    nif.Blocks[shapeIndex].TypeName == "BSGeometry")
+                {
+                    continue;
+                }
+
                 // NiStencilProperty DrawMode: DRAW_BOTH (3) = double-sided (no backface culling)
                 isDoubleSided = NifDoubleSidedPolicy.Resolve(
                     NifBlockParsers.ReadIsDoubleSided(data, nif, propRefs),
@@ -842,7 +856,8 @@ internal static class NifGeometryExtractor
                 isDoubleSided,
                 hasAlphaBlend, hasAlphaTest, alphaTestThreshold, alphaTestFunction,
                 isEyeEnvmap, envMapScale, srcBlendMode, dstBlendMode, materialAlpha, materialGlossiness,
-                specularColor, useDualQuaternionSkinning, shapeMorphDeltas);
+                specularColor, useDualQuaternionSkinning, shapeMorphDeltas, externalMeshLoader,
+                onExternalMeshDecodeFailure);
             if (submesh != null)
             {
                 submesh.SourceBlockIndex = shapeIndex;

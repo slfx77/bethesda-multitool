@@ -475,8 +475,17 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
             return false;
         }
 
-        // Skip Max Filepath if bsVersion >= 103
-        if (bsVersion >= 103 && !TrySkipExportString(data, ref pos))
+        // Skip Max Filepath — present for bsVersion 103..169 only (FO4, FO76). nif.xml gates it
+        // "(BS Version #GTE# 103) #AND# (BS Version #LT# 170)"; the missing upper bound made this
+        // consume a field Starfield does not write.
+        if (bsVersion is >= 103 and < 170 && !TrySkipExportString(data, ref pos))
+        {
+            return false;
+        }
+
+        // Starfield (bsVersion >= 170) instead appends ExportDataSF, which has an ExportString's
+        // layout (1-byte length including terminator, then the bytes). See NifParser.ParseBethesdaHeader.
+        if (bsVersion >= 170 && !TrySkipExportString(data, ref pos))
         {
             return false;
         }

@@ -97,6 +97,87 @@ public class GameProfilesTests
     }
 
     [Fact]
+    public void Profiles_PinExternalBtdTerrain()
+    {
+        // Fallout 76 and Starfield keep exterior heights in .btd files rather than a LAND record's
+        // VHGT — xEdit's Starfield definitions contain no LAND record at all. Every other game would
+        // render flat if the injector ran for it, so the flag must stay exactly these two.
+        Assert.True(GameProfiles.For(BethesdaGame.Fallout76).HasExternalBtdTerrain);
+        Assert.True(GameProfiles.For(BethesdaGame.Starfield).HasExternalBtdTerrain);
+        Assert.False(GameProfiles.For(BethesdaGame.FalloutNewVegas).HasExternalBtdTerrain);
+        Assert.False(GameProfiles.For(BethesdaGame.Skyrim).HasExternalBtdTerrain);
+
+        // Fallout 76 ships Appalachia.btd loose, so it needs no archive probe at all; Starfield ships
+        // zero loose assets and hides its 753 terrain files across Terrain01..04 + TerrainPatch, with
+        // more in the DLC/update archives (hence the whole-Data fallback).
+        Assert.Empty(GameProfiles.For(BethesdaGame.Fallout76).TerrainArchiveNamePatterns);
+        Assert.False(GameProfiles.For(BethesdaGame.Fallout76).TerrainSearchesAllDataArchives);
+        Assert.Equal(["*Terrain*.ba2"], GameProfiles.For(BethesdaGame.Starfield).TerrainArchiveNamePatterns);
+        Assert.True(GameProfiles.For(BethesdaGame.Starfield).TerrainSearchesAllDataArchives);
+    }
+
+    [Fact]
+    public void Profiles_PinExteriorCellWorldSize()
+    {
+        // Creation Engine 2 went metric: Starfield's exterior cell is 100 world units, not 4096.
+        // xEdit scales WRLD NAM0/NAM9 by IsSF1(1/100, 1/4096), and sampled REFR positions satisfy
+        // floor(pos / 100) == XCLC. Everything else keeps the engine default (0 => caller's default).
+        Assert.Equal(100f, GameProfiles.For(BethesdaGame.Starfield).ExteriorCellWorldSize);
+        Assert.Equal(0f, GameProfiles.For(BethesdaGame.FalloutNewVegas).ExteriorCellWorldSize);
+        Assert.Equal(0f, GameProfiles.For(BethesdaGame.Fallout4).ExteriorCellWorldSize);
+        Assert.Equal(0f, GameProfiles.For(BethesdaGame.Fallout76).ExteriorCellWorldSize);
+    }
+
+    /// <summary>
+    ///     The world UNIT is a separate axis from the cell size, and conflating them is the specific
+    ///     bug this pins: Starfield's cell shrank 40.96× (4096→100) while its unit grew 70× (1.42875 cm
+    ///     → 1 m), because a Starfield cell spans 100 m where a Fallout cell spans ~58 m. Scaling a
+    ///     human-scale constant by the CELL ratio therefore leaves it 1.5625× too big — a walk-mode eye
+    ///     2.7 m off the ground instead of 1.6 m.
+    ///     <para>
+    ///         Measured from retail mesh bounds: ChairPlastic01 1.02 tall, ChairUtilityB01 0.98,
+    ///         GenIntRmSmWallMid_DoorA00 2.84, InvisibleDoor01 2.41 × 1.60. Those are metres.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void Profiles_PinWorldUnitsPerMetre()
+    {
+        Assert.Equal(1f, GameProfiles.For(BethesdaGame.Starfield).WorldUnitsPerMetre);
+        Assert.Equal(1f, GameProfiles.UnitsPerMetreOrDefault(BethesdaGame.Starfield));
+
+        // Unset everywhere else => the classic Gamebryo/Creation unit.
+        Assert.Equal(0f, GameProfiles.For(BethesdaGame.FalloutNewVegas).WorldUnitsPerMetre);
+        Assert.Equal(70f, GameProfiles.UnitsPerMetreOrDefault(BethesdaGame.FalloutNewVegas));
+    }
+
+    /// <summary>
+    ///     The human-scale multiplier must be EXACTLY 1 for every classic-unit game, so applying it to
+    ///     the camera constants is a bit-exact no-op outside Starfield rather than a near-miss that
+    ///     silently shifts every existing game's walk height.
+    /// </summary>
+    [Theory]
+    [InlineData(BethesdaGame.Morrowind)]
+    [InlineData(BethesdaGame.Oblivion)]
+    [InlineData(BethesdaGame.Fallout3)]
+    [InlineData(BethesdaGame.FalloutNewVegas)]
+    [InlineData(BethesdaGame.Skyrim)]
+    [InlineData(BethesdaGame.Fallout4)]
+    [InlineData(BethesdaGame.Fallout76)]
+    public void HumanScaleFactor_IsExactlyOneForClassicUnitGames(BethesdaGame game) =>
+        Assert.Equal(1f, GameProfiles.HumanScaleFactor(game));
+
+    [Fact]
+    public void HumanScaleFactor_ScalesStarfieldToMetres()
+    {
+        var factor = GameProfiles.HumanScaleFactor(BethesdaGame.Starfield);
+
+        // A 112-unit classic eye height is 1.6 m; in Starfield's units that must read as ~1.6, not 112
+        // (taller than the whole 100-unit cell) and not 2.73 (what the cell ratio would have given).
+        Assert.Equal(1.6f, 112f * factor, 2);
+        Assert.Equal(1.43f, 100f * factor, 2); // walk pace, m/s
+    }
+
+    [Fact]
     public void Profiles_PinMapMarkerStrategy()
     {
         // Morrowind has no world-map markers; every TES4 game does.

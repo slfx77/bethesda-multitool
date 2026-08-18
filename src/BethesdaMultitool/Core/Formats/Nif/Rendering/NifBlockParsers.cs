@@ -256,7 +256,9 @@ internal static class NifBlockParsers
         float materialGlossiness = 10f,
         (float R, float G, float B) specularColor = default,
         bool useDualQuaternionSkinning = false,
-        float[]? preSkinMorphDeltas = null)
+        float[]? preSkinMorphDeltas = null,
+        Func<string, byte[]?>? externalMeshLoader = null,
+        Action<string>? onExternalMeshDecodeFailure = null)
     {
         return NifSubmeshExtractor.ExtractSubmesh(
             data,
@@ -284,7 +286,9 @@ internal static class NifBlockParsers
             materialGlossiness,
             specularColor,
             useDualQuaternionSkinning,
-            preSkinMorphDeltas);
+            preSkinMorphDeltas,
+            externalMeshLoader,
+            onExternalMeshDecodeFailure);
     }
 
     internal static RenderableSubmesh? ExtractTriShapeData(

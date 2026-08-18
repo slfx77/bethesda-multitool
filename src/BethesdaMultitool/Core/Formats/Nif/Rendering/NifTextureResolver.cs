@@ -150,6 +150,22 @@ internal sealed class NifTextureResolver : IDisposable
             return LoadFromMaterial(path);
         }
 
+        // Starfield: same indirection, but the material is a record inside the compiled database
+        // rather than a file of its own. Kept in lockstep with the GPU resolver — this class's
+        // contract is that both paths resolve materials identically.
+        if (MaterialTexturePathResolver.IsStarfieldMaterialPath(path))
+        {
+            var slot = MaterialTexturePathResolver.ResolveStarfieldSlot(path, _sources);
+            if (slot.TexturePath is { Length: > 0 } starfieldTexture)
+            {
+                return NifTextureLoader.TryLoadFromSources(starfieldTexture, _sources);
+            }
+
+            // Flat-colour slot (no image authored) — a 1×1 of the declared colour, matching the GPU
+            // resolver's SolidColorPayload so both halves render the same surface.
+            return slot.ReplacementRgba is { } rgba ? SolidColorTexture(rgba) : null;
+        }
+
         var texture = NifTextureLoader.TryLoadFromSources(path, _sources);
         if (texture != null)
         {
@@ -182,6 +198,26 @@ internal sealed class NifTextureResolver : IDisposable
     ///     material from the sources (it lives under <c>materials\</c>), parses its texture-path table,
     ///     and resolves the diffuse texture. The materials archive must be among the configured sources.
     /// </summary>
+    /// <summary>A 1×1 RGBA texture of <paramref name="rgba" /> (R in the low byte).</summary>
+    private static DecodedTexture SolidColorTexture(uint rgba) => new()
+    {
+        MipLevels =
+        [
+            new DecodedTextureMipLevel
+            {
+                Width = 1,
+                Height = 1,
+                Pixels =
+                [
+                    (byte)(rgba & 0xFF),
+                    (byte)((rgba >> 8) & 0xFF),
+                    (byte)((rgba >> 16) & 0xFF),
+                    (byte)((rgba >> 24) & 0xFF)
+                ]
+            }
+        ]
+    };
+
     private DecodedTexture? LoadFromMaterial(string materialPath)
     {
         var diffuse = MaterialTexturePathResolver.ResolveDiffuseTexturePath(materialPath, _sources);

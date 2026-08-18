@@ -91,6 +91,55 @@ public sealed record GameProfile
     /// <inheritdoc cref="DefaultLandscapeDiffuse" />
     public string DefaultLandscapeNormal { get; init; } = string.Empty;
 
+    // ---- Terrain source (see BtdTerrainInjector) ----
+
+    /// <summary>
+    ///     True when exterior terrain heights live in external Bethesda Terrain Data (<c>.btd</c>) files
+    ///     instead of a LAND record's VHGT — Fallout 76 and Starfield. Starfield is the extreme case:
+    ///     xEdit's <c>wbDefinitionsSF1.pas</c> defines no LAND record at all, so without the BTD the
+    ///     whole worldspace is flat and every terrain-derived map layer renders nothing.
+    /// </summary>
+    public bool HasExternalBtdTerrain { get; init; }
+
+    /// <summary>
+    ///     Filename globs of the archives that carry <c>terrain\*.btd</c>, probed before the rest of the
+    ///     Data folder. Empty means "loose files only" (Fallout 76 ships <c>Data\Terrain\Appalachia.btd</c>
+    ///     loose, so it never opens an archive). Starfield ships no loose assets at all, and a blind
+    ///     lookup across its 89 archives would index ~1.5 M entries to find one file.
+    /// </summary>
+    public IReadOnlyList<string> TerrainArchiveNamePatterns { get; init; } = [];
+
+    /// <summary>
+    ///     Allows a fallback probe across the whole Data folder when
+    ///     <see cref="TerrainArchiveNamePatterns" /> misses. Starfield needs it: the DLC and update
+    ///     archives (<c>SFBGS00D - Main.ba2</c>, <c>ShatteredSpace - Main01.ba2</c>, …) carry their own
+    ///     <c>terrain\*.btd</c> outside the <c>Terrain*</c> set.
+    /// </summary>
+    public bool TerrainSearchesAllDataArchives { get; init; }
+
+    /// <summary>
+    ///     Side length of one exterior cell in world units. The Fallout/TES default is 4096; Creation
+    ///     Engine 2 went metric and Starfield uses <b>100</b> — xEdit's <c>wbWorldObjectBounds</c> scales
+    ///     WRLD NAM0/NAM9 by <c>IsSF1(1/100, 1/4096)</c>, and sampled REFR positions satisfy
+    ///     <c>floor(pos / 100) == XCLC</c>. Zero means "use the engine default"; the value reaches the
+    ///     viewer through <c>CellRecord.CellWorldSize</c>, the same route Morrowind's 8192 takes.
+    /// </summary>
+    public float ExteriorCellWorldSize { get; init; }
+
+    /// <summary>
+    ///     World units per real-world metre, i.e. how big one unit physically is. Gamebryo/Creation
+    ///     games use ~<b>70</b> (1 unit = 1.42875 cm); Creation Engine 2 went metric and Starfield uses
+    ///     <b>1</b> — measured from retail mesh bounds, where a chair is 0.98–1.13 tall and a door
+    ///     2.4–2.8. Zero means "use the classic default".
+    ///     <para>
+    ///         ⚠ This is NOT derivable from <see cref="ExteriorCellWorldSize" />. The cell shrank by
+    ///         4096→100 (40.96×) while the unit grew by 70→1 (70×), because a Starfield cell covers 100 m
+    ///         where a Fallout cell covers ~58 m. Anything human-scaled (eye height, walk pace, step
+    ///         height, jump) must scale by THIS; only cell-grid distances scale by the cell size.
+    ///     </para>
+    /// </summary>
+    public float WorldUnitsPerMetre { get; init; }
+
     // ---- Map markers (consumed by the 2D world map; see MapMarkerCatalog + IMapMarkerIconSet) ----
 
     /// <summary>

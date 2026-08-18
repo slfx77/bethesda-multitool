@@ -186,6 +186,12 @@ public sealed class CellLayerWeightTable
     /// </summary>
     private readonly List<LandTextureLayer> _alphaScratch = new(4);
 
+    /// <summary>
+    ///     Pooled source-resolution scratch grid for <see cref="PopulateAtxtGrids" /> when a layer's
+    ///     <see cref="LandTextureLayer.BlendGridEdge" /> differs from this table's <see cref="QuadEdge" />.
+    /// </summary>
+    private float[]? _atxtSourceScratch;
+
     public ref VertexWeights At(int vx, int vy) => ref Vertices[vy * GridSize + vx];
 
     /// <summary>
@@ -200,11 +206,22 @@ public sealed class CellLayerWeightTable
     }
 
     /// <summary>
-    ///     Fill pool slots 0..<c>alphas.Count-1</c> with sparse-to-dense 17×17 opacity grids
-    ///     for each ATXT in <paramref name="alphas" />. Each grid is cleared before fill,
+    ///     Fill pool slots 0..<c>alphas.Count-1</c> with sparse-to-dense QuadEdge×QuadEdge opacity
+    ///     grids for each ATXT in <paramref name="alphas" />. Each grid is cleared before fill,
     ///     so positions absent from the layer's <c>BlendEntries</c> read as zero. Callers
     ///     read from <see cref="_atxtDenseGridsPool" /> directly to avoid method-call
     ///     overhead in the per-vertex inner loop.
+    ///     <para>
+    ///         ⚠ Blend positions are encoded on the LAYER's declared grid
+    ///         (<see cref="LandTextureLayer.BlendGridEdge" />, 17 for every real VTXT), NOT on this
+    ///         table's <see cref="QuadEdge" />. Indexing <c>grid[entry.Position]</c> directly is only
+    ///         correct when the two coincide — at the Starfield/FO76 native 129 grid (QuadEdge 65) a
+    ///         17-convention position lands in the wrong row and the whole alpha map collapses into
+    ///         the quadrant's first ~4.5 vertex rows (the "one repeating stone stripe" defect). When
+    ///         the edges differ, the entries are rasterized at source resolution and bilinearly
+    ///         resampled onto the QuadEdge grid, which also lets the injector hand a native 65-edge
+    ///         map to the 129 renderer at full fidelity while the 33-grid 2D path downsamples it.
+    ///     </para>
     /// </summary>
     private void PopulateAtxtGrids(List<LandTextureLayer> alphas)
     {
@@ -218,11 +235,62 @@ public sealed class CellLayerWeightTable
         {
             var grid = _atxtDenseGridsPool[i] ??= new float[_quadVertCount];
             Array.Clear(grid, 0, grid.Length);
-            foreach (var entry in alphas[i].BlendEntries)
+            var layer = alphas[i];
+            var srcEdge = layer.BlendGridEdge;
+            if (srcEdge == QuadEdge)
             {
-                if (entry.Position < _quadVertCount)
+                foreach (var entry in layer.BlendEntries)
                 {
-                    grid[entry.Position] = entry.Opacity;
+                    if (entry.Position < _quadVertCount)
+                    {
+                        grid[entry.Position] = entry.Opacity;
+                    }
+                }
+
+                continue;
+            }
+
+            if (srcEdge < 2 || QuadEdge < 2)
+            {
+                continue;
+            }
+
+            var srcCount = srcEdge * srcEdge;
+            if (_atxtSourceScratch is null || _atxtSourceScratch.Length < srcCount)
+            {
+                _atxtSourceScratch = new float[srcCount];
+            }
+
+            var src = _atxtSourceScratch;
+            Array.Clear(src, 0, srcCount);
+            foreach (var entry in layer.BlendEntries)
+            {
+                if (entry.Position < srcCount)
+                {
+                    src[entry.Position] = entry.Opacity;
+                }
+            }
+
+            var scale = (srcEdge - 1) / (float)(QuadEdge - 1);
+            for (var qy = 0; qy < QuadEdge; qy++)
+            {
+                var fy = qy * scale;
+                var y0 = (int)fy;
+                var ty = fy - y0;
+                var y1 = Math.Min(y0 + 1, srcEdge - 1);
+                for (var qx = 0; qx < QuadEdge; qx++)
+                {
+                    var fx = qx * scale;
+                    var x0 = (int)fx;
+                    var tx = fx - x0;
+                    var x1 = Math.Min(x0 + 1, srcEdge - 1);
+                    var top = (src[(y0 * srcEdge) + x0] * (1f - tx)) + (src[(y0 * srcEdge) + x1] * tx);
+                    var bottom = (src[(y1 * srcEdge) + x0] * (1f - tx)) + (src[(y1 * srcEdge) + x1] * tx);
+                    var value = (top * (1f - ty)) + (bottom * ty);
+                    if (value > 0f)
+                    {
+                        grid[(qy * QuadEdge) + qx] = value;
+                    }
                 }
             }
         }

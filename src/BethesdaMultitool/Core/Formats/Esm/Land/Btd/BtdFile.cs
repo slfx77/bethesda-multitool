@@ -21,11 +21,12 @@
 //                 (height / land-texture / vertex-color), zlib block-offset tables
 //                 (LOD3..LOD0), then the zlib-compressed data blocks.
 // In Starfield BTD files the SW/NE cell coordinates are all zero (the bounds are derived from
-// the resolution), and terrain color and ground cover are absent.
+// the resolution), and terrain color and ground cover are absent. The two height floats are in
+// Starfield world units as-is — the reference's x8 multiply is a self-flagged guess and is NOT
+// reproduced here; see the note in the IsStarfield branch of the constructor.
 
 using System.Buffers;
 using System.IO.Compression;
-using System.IO.MemoryMappedFiles;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Land.Btd;
 
@@ -34,14 +35,19 @@ namespace BethesdaMultitool.Core.Formats.Esm.Land.Btd;
 ///     Decodes per-cell height maps, land-texture alphas, ground cover and vertex colors from the
 ///     compressed multi-LOD tile pyramid. Thread-affine: a single instance keeps a small decompressed
 ///     tile cache and is not safe for concurrent <c>GetCell*</c> calls; open one per worker.
+///     <para>
+///         Accepts either a loose file (memory-mapped, so Fallout 76's 1.48 GB
+///         <c>Appalachia.btd</c> stays off the managed heap) or raw bytes — Starfield ships every
+///         terrain file inside <c>Starfield - Terrain*.ba2</c>, and archive entries arrive as bytes.
+///         See <see cref="IBtdBytes" />.
+///     </para>
 /// </summary>
 public sealed class BtdFile : IDisposable
 {
     // "BTDB" read as a little-endian uint32.
     private const uint MagicBtdb = 'B' | ('T' << 8) | ('D' << 16) | ('B' << 24);
 
-    private readonly MemoryMappedFile _mappedFile;
-    private readonly MemoryMappedViewAccessor _view;
+    private readonly IBtdBytes _source;
     private readonly long _fileSize;
     private bool _disposed;
 
@@ -65,18 +71,30 @@ public sealed class BtdFile : IDisposable
     private List<TileData> _tileCache = [];
     private int _tileCacheIndex;
 
-    /// <summary>Open a BTD file for reading.</summary>
+    /// <summary>Open a loose BTD file for reading (memory-mapped).</summary>
     public BtdFile(string fileName)
+        : this(new MappedBtdBytes(fileName))
     {
-        _fileSize = new FileInfo(fileName).Length;
-        _mappedFile = MemoryMappedFile.CreateFromFile(fileName, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        _view = _mappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+    }
+
+    /// <summary>
+    ///     Open a BTD held in memory — the archive path, where the VFS returns an entry's bytes.
+    ///     The array is used in place, not copied.
+    /// </summary>
+    public BtdFile(byte[] data)
+        : this(new ArrayBtdBytes(data ?? throw new ArgumentNullException(nameof(data))))
+    {
+    }
+
+    private BtdFile(IBtdBytes source)
+    {
+        _source = source;
+        _fileSize = source.Length;
 
         long pos = 0;
-        if (ReadU32(pos) != MagicBtdb)
+        if (_fileSize < 4 || ReadU32(pos) != MagicBtdb)
         {
-            _view.Dispose();
-            _mappedFile.Dispose();
+            _source.Dispose();
             throw new InvalidDataException("Input file format is not BTD (missing 'BTDB' magic).");
         }
 
@@ -85,8 +103,7 @@ public sealed class BtdFile : IDisposable
         pos += 4;
         if (((version - 5u) & ~1u) != 0) // must be 5 or 6
         {
-            _view.Dispose();
-            _mappedFile.Dispose();
+            _source.Dispose();
             throw new InvalidDataException($"Unsupported BTD format version {version} (expected 5 or 6).");
         }
 
@@ -110,8 +127,17 @@ public sealed class BtdFile : IDisposable
         IsStarfield = (CellMinX | CellMinY | CellMaxX | CellMaxY) == 0;
         if (IsStarfield)
         {
-            MinHeight *= 8.0f; // Z scale per reference (noted there as possibly imprecise)
-            MaxHeight *= 8.0f;
+            // NOTE: the fo76utils reference multiplies these two floats by 8 here, and flags the factor
+            // in its own source as possibly incorrect (fo76utils/src/btdfile.cpp:408). It is
+            // incorrect — the header floats are already Starfield world units. Bethesda states each
+            // block's height range itself, in the SFBK (Surface Block) record whose ANAM names the
+            // .btd: Starfield.esm gives Data\TERRAIN\NewAtlantis.btd an ENAM of (0, 260.502) and
+            // akilacity/NeonCity/CydoniaCity (-500, 1000), each matching the raw header exactly and
+            // each an eighth of what the x8 produced. Do not reintroduce the factor.
+            //
+            // The cell bounds below stay derived from the resolution: SFBK NAM2/NAM3 ("Cell Min"/
+            // "Cell Max") look like a better source but are degenerate on many blocks — akilacity
+            // reports (0,0)-(0,0) for a grid that is really 9x9, which this derivation gets right.
             CellMinX = -(int)(heightMapResX >> 8);
             CellMinY = -(int)(heightMapResY >> 8);
             CellMaxX = CellMinX + (int)(heightMapResX >> 7) - 1;
@@ -122,8 +148,7 @@ public sealed class BtdFile : IDisposable
         NCellsY = CellMaxY + 1 - CellMinY;
         if (NCellsX <= 0 || NCellsY <= 0 || (long)NCellsX * NCellsY > 0x10000000L)
         {
-            _view.Dispose();
-            _mappedFile.Dispose();
+            _source.Dispose();
             throw new InvalidDataException($"BTD cell grid {NCellsX}x{NCellsY} is invalid or unreasonably large.");
         }
 
@@ -229,8 +254,7 @@ public sealed class BtdFile : IDisposable
             return;
         }
 
-        _view.Dispose();
-        _mappedFile.Dispose();
+        _source.Dispose();
         _disposed = true;
     }
 
@@ -260,11 +284,13 @@ public sealed class BtdFile : IDisposable
     }
 
     /// <summary>
-    ///     Reads the raw per-cell (min, max) entry from the header's per-cell height map (game units,
+    ///     Reads the per-cell (min, max) entry from the header's per-cell height map (game units,
     ///     row-major south-to-north). NOTE: empirically this stored aggregate is NOT a tight bound on the
     ///     decoded per-vertex heights — fo76utils computes its offset but never decodes it, and even the
-    ///     provably-correct LOD4 base can fall outside it. Its global extremes do equal the world height
-    ///     range. Treat it as a coarse hint, not a guaranteed cell bound.
+    ///     provably-correct LOD4 base can fall outside it. Treat it as a coarse hint, not a guaranteed
+    ///     cell bound. On Fallout 76 its global extremes equal the world height range; on Starfield they
+    ///     do not, because the header range there is a wide authored quantization envelope (Akila City
+    ///     stores -500..1000 for content spanning roughly -3..49).
     /// </summary>
     public (float Min, float Max) GetCellHeightRange(int cellX, int cellY)
     {
@@ -830,7 +856,7 @@ public sealed class BtdFile : IDisposable
         var packed = ArrayPool<byte>.Shared.Rent(compressedSize);
         try
         {
-            _view.ReadArray(fileOffset, packed, 0, compressedSize);
+            _source.ReadArray(fileOffset, packed, 0, compressedSize);
 
             // The reference auto-detects an LZ4 frame (CMF/FLG == 0x0422 read big-endian) before
             // falling through to zlib. Retail Fallout 76 and Starfield use zlib; flag LZ4 clearly.
@@ -859,15 +885,15 @@ public sealed class BtdFile : IDisposable
         }
     }
 
-    private byte ReadU8(long offset) => _view.ReadByte(offset);
+    private byte ReadU8(long offset) => _source.ReadU8(offset);
 
-    private ushort ReadU16(long offset) => _view.ReadUInt16(offset);
+    private ushort ReadU16(long offset) => _source.ReadU16(offset);
 
-    private uint ReadU32(long offset) => _view.ReadUInt32(offset);
+    private uint ReadU32(long offset) => _source.ReadU32(offset);
 
-    private int ReadI32(long offset) => _view.ReadInt32(offset);
+    private int ReadI32(long offset) => _source.ReadI32(offset);
 
-    private float ReadF32(long offset) => _view.ReadSingle(offset);
+    private float ReadF32(long offset) => _source.ReadF32(offset);
 
     /// <summary>One decompressed 8x8-cell tile (1024x1024 height/ltex, 256x256 vertex color).</summary>
     private sealed class TileData

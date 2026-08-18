@@ -117,9 +117,10 @@ public record CellRecord
     public List<uint> LinkedCellFormIds { get; init; } = [];
 
     /// <summary>
-    ///     Associated LAND record heightmap (if found). Settable so the Fallout 76 terrain injector
-    ///     can attach BTD-decoded heights post-parse (FO76 stores heights in external .btd files, not
-    ///     in-record VHGT). See <see cref="BethesdaMultitool.Core.Formats.Esm.Land.Fo76TerrainInjector" />.
+    ///     Associated LAND record heightmap (if found). Settable so the BTD terrain injector can
+    ///     attach decoded heights post-parse — Fallout 76 stores heights in external .btd files rather
+    ///     than in-record VHGT, and Starfield has no LAND record at all. See
+    ///     <see cref="BethesdaMultitool.Core.Formats.Esm.Land.BtdTerrainInjector" />.
     /// </summary>
     public LandHeightmap? Heightmap { get; set; }
 

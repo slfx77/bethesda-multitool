@@ -41,7 +41,9 @@ internal static class NifSubmeshExtractor
         float materialGlossiness = 10f,
         (float R, float G, float B) specularColor = default,
         bool useDualQuaternionSkinning = false,
-        float[]? preSkinMorphDeltas = null)
+        float[]? preSkinMorphDeltas = null,
+        Func<string, byte[]?>? externalMeshLoader = null,
+        Action<string>? onExternalMeshDecodeFailure = null)
     {
         var dataBlock = nif.Blocks[dataIndex];
         worldTransforms.TryGetValue(shapeIndex, out var transform);
@@ -92,6 +94,12 @@ internal static class NifSubmeshExtractor
                 // so dataIndex == shapeIndex). Skyrim SE / Fallout 4 / Fallout 76 geometry.
                 "BSTriShape" or "BSSubIndexTriShape" or "BSMeshLODTriShape" or "BSDynamicTriShape"
                     => ExtractBsTriShape(data, dataBlock, nif.IsBigEndian, nif.BsVersion, nif.BinaryVersion, transform, shapeName),
+                // Starfield. The block holds NO vertex data — it names an external geometries\ blob,
+                // so this arm is inert without a loader (standalone callers that have no archive
+                // simply get no geometry rather than a wrong mesh).
+                "BSGeometry" => ExtractBsGeometry(
+                    data, dataBlock, nif, transform, shapeName, externalMeshLoader,
+                    onExternalMeshDecodeFailure),
                 _ => null
             };
 
@@ -1172,6 +1180,111 @@ internal static class NifSubmeshExtractor
             BindPosePositions = null,
             IsFarLodFallback = isFarLodFallback
         };
+    }
+
+    /// <summary>
+    ///     Extracts a Starfield <c>BSGeometry</c> shape. Unlike every other shape type the geometry is
+    ///     NOT in the NIF: the block names a blob under <c>geometries\</c> which
+    ///     <paramref name="externalMeshLoader" /> fetches from the archive layer, and
+    ///     <see cref="StarfieldMeshFile" /> decodes.
+    ///     <para>
+    ///         Returns null — leaving the shape simply absent rather than wrong — when there is no
+    ///         loader, the block declares inline mesh data, the blob is missing from the archives, or
+    ///         the blob fails to decode.
+    ///     </para>
+    /// </summary>
+    private static RenderableSubmesh? ExtractBsGeometry(
+        byte[] data,
+        BlockInfo block,
+        NifInfo nif,
+        Matrix4x4 transform,
+        string? shapeName,
+        Func<string, byte[]?>? externalMeshLoader,
+        Action<string>? onExternalMeshDecodeFailure)
+    {
+        if (externalMeshLoader is null)
+        {
+            return null;
+        }
+
+        var info = NifSceneGraphBlockReader.ParseBsGeometry(
+            data, block, nif.BinaryVersion, nif.IsBigEndian, nif.HasInlineStrings);
+        if (info?.MeshPath is not { Length: > 0 } meshPath)
+        {
+            return null;
+        }
+
+        var blob = externalMeshLoader(meshPath);
+        if (blob is null)
+        {
+            return null;
+        }
+
+        var mesh = StarfieldMeshFile.Parse(blob);
+        if (mesh is null || mesh.Triangles.Length == 0 || mesh.Positions.Length == 0)
+        {
+            // Blob FOUND but undecodable/empty — a different failure class from an archive miss (the
+            // loader already counted that). Without this signal the drop is silent AND the resulting
+            // empty model is persisted to the decoded-mesh disk cache: the same invisible-negative
+            // pattern TotalParseFailedModelPaths was added to expose one level up.
+            onExternalMeshDecodeFailure?.Invoke(meshPath);
+            return null;
+        }
+
+        // The blob's tangent array stores handedness in the packed W; the renderer wants an explicit
+        // bitangent vector, which is the standard cross(normal, tangent) * handedness.
+        var bitangents = BuildBitangents(mesh);
+
+        var transformed = ApplySkinningOrTransform(
+            mesh.Positions, mesh.Normals, mesh.Tangents, bitangents, transform, null, false, shapeName);
+
+        return new RenderableSubmesh
+        {
+            Positions = transformed.Positions,
+            Triangles = mesh.Triangles,
+            Normals = transformed.Normals
+                      ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, mesh.Triangles),
+            UVs = mesh.Uvs,
+            // Starfield vertex colour is NOT albedo. Whether it modulates at all is decided by the
+            // material (BSMaterial::ColorChannelTypeComponent / MaterialOverrideColorTypeComponent),
+            // which this renderer does not read yet — and applying it unconditionally drowns the real
+            // diffuse in saturated tint (measured: AkilaCity rendered blue/green with no texture bound,
+            // then red once one was). Withhold it until the material can say; an untinted texture is
+            // the honest approximation, a wrongly-tinted one is not.
+            VertexColors = null,
+            Tangents = transformed.Tangents,
+            Bitangents = transformed.Bitangents,
+            BindPosePositions = null
+        };
+    }
+
+    /// <summary>
+    ///     Derives per-vertex bitangents from a decoded blob's normals + tangents + handedness signs.
+    ///     Null when either input array is absent or their lengths disagree.
+    /// </summary>
+    private static float[]? BuildBitangents(StarfieldMeshFile mesh)
+    {
+        if (mesh.Normals is not { } normals ||
+            mesh.Tangents is not { } tangents ||
+            mesh.BitangentSigns is not { } signs ||
+            normals.Length != tangents.Length ||
+            signs.Length * 3 != tangents.Length)
+        {
+            return null;
+        }
+
+        var bitangents = new float[tangents.Length];
+        for (var i = 0; i < signs.Length; i++)
+        {
+            var n = new Vector3(normals[i * 3], normals[(i * 3) + 1], normals[(i * 3) + 2]);
+            var t = new Vector3(tangents[i * 3], tangents[(i * 3) + 1], tangents[(i * 3) + 2]);
+            var b = Vector3.Cross(n, t) * signs[i];
+            bitangents[i * 3] = b.X;
+            bitangents[(i * 3) + 1] = b.Y;
+            bitangents[(i * 3) + 2] = b.Z;
+        }
+
+        return bitangents;
     }
 
     /// <summary>

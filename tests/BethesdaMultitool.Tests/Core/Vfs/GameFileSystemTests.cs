@@ -115,6 +115,41 @@ public sealed class GameFileSystemTests : IDisposable
     }
 
     [Fact]
+    public void OpenArchiveSubset_MountsOnlyMatchingArchives_AndLetsPatchesWin()
+    {
+        const string sharedPath = "terrain\\shared.btd";
+        var basePayload = PayloadFor(600);
+        var patchPayload = PayloadFor(700);
+        var unrelatedPayload = PayloadFor(800);
+
+        WriteBsa("Game - Terrain01.bsa", [(sharedPath, basePayload)]);
+        WriteBsa("Game - TerrainPatch.bsa", [(sharedPath, patchPayload)]);
+        WriteBsa("Game - Meshes01.bsa", [("meshes\\thing.nif", unrelatedPayload)]);
+
+        using var subset = GameFileSystem.OpenArchiveSubset(
+            _root, ["*Terrain*.bsa"], includeLooseFiles: false);
+
+        // "Terrain01" sorts before "TerrainPatch" alphabetically, which would shadow the patch — the
+        // subset mount deliberately promotes *Patch* archives so the patched copy wins instead.
+        Assert.Equal(patchPayload, subset.TryReadAllBytes(sharedPath));
+        Assert.EndsWith(
+            "Game - TerrainPatch.bsa", subset.TryStat(sharedPath)!.Source, StringComparison.OrdinalIgnoreCase);
+
+        // Non-matching archives are never mounted, so their contents stay invisible to this slice.
+        Assert.Null(subset.TryReadAllBytes("meshes\\thing.nif"));
+    }
+
+    [Fact]
+    public void OpenArchiveSubset_NoPatterns_MountsNothing()
+    {
+        WriteBsa("Game - Terrain01.bsa", [("terrain\\only.btd", PayloadFor(900))]);
+
+        using var subset = GameFileSystem.OpenArchiveSubset(_root, [], includeLooseFiles: false);
+
+        Assert.Null(subset.TryReadAllBytes("terrain\\only.btd"));
+    }
+
+    [Fact]
     public void OpenDataFolder_LooseShadowsArchives_AndArchivesResolveAlphabetically()
     {
         const string sharedPath = "textures\\shared.dds";

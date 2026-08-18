@@ -44,6 +44,52 @@ public static class GameProfiles
         DefaultLandscapeNormal = FalloutNormal
     };
 
+    /// <summary>
+    ///     The Bethesda-standard exterior cell edge. Mirrors <c>WorldGridConstants.CellSize</c>, which
+    ///     this file deliberately does not reference — GameProfiles is pure data and depends on nothing
+    ///     outside itself (see the type doc).
+    /// </summary>
+    private const float StandardExteriorCellWorldSize = 4096f;
+
+    /// <summary>
+    ///     The exterior cell edge in world units for <paramref name="game" />, resolving the profile's
+    ///     "unset" 0 to the Bethesda-standard 4096.
+    ///     <para>
+    ///         ⚠ <see cref="GameProfile.ExteriorCellWorldSize" /> is populated ONLY where it differs
+    ///         from that standard (today just Starfield's metric 100), so reading the raw property and
+    ///         multiplying by it yields ZERO for every other game. Anything scaling a distance by the
+    ///         cell size must go through here — reading the property directly is the bug this method
+    ///         exists to prevent.
+    ///     </para>
+    /// </summary>
+    public static float CellWorldSizeOrDefault(BethesdaGame game)
+    {
+        var size = For(game).ExteriorCellWorldSize;
+        return size > 0f ? size : StandardExteriorCellWorldSize;
+    }
+
+    /// <summary>
+    ///     The Gamebryo/Creation world unit: 1 unit = 1.42875 cm, so ~70 units span a metre. Every
+    ///     human-scale camera constant in this codebase was authored against it (a 112-unit eye is a
+    ///     1.6 m human).
+    /// </summary>
+    private const float ClassicWorldUnitsPerMetre = 70f;
+
+    /// <summary>World units per metre for <paramref name="game" />, resolving "unset" to the classic ~70.</summary>
+    public static float UnitsPerMetreOrDefault(BethesdaGame game)
+    {
+        var units = For(game).WorldUnitsPerMetre;
+        return units > 0f ? units : ClassicWorldUnitsPerMetre;
+    }
+
+    /// <summary>
+    ///     Multiplier converting a classic-units human-scale constant into <paramref name="game" />'s
+    ///     units. Exactly <c>1.0</c> for every game that uses the classic unit (the constant divides by
+    ///     itself), so scaling by this is a bit-exact no-op outside Starfield, where it is 1/70.
+    /// </summary>
+    public static float HumanScaleFactor(BethesdaGame game) =>
+        UnitsPerMetreOrDefault(game) / ClassicWorldUnitsPerMetre;
+
     private static readonly IReadOnlyDictionary<BethesdaGame, GameProfile> Registry =
         new Dictionary<BethesdaGame, GameProfile>
         {
@@ -173,6 +219,8 @@ public static class GameProfiles
                 ImageSpaceFamily = ImageSpaceModernFamily.Fallout4,
                 WideTimeOfDayBandsFormVersion = 111,
                 HasVerifiedModernWatrLayout = true,
+                // Appalachia.btd ships loose under Data\Terrain, so no archive patterns are needed.
+                HasExternalBtdTerrain = true,
                 DefaultLandscapeDiffuse = CommonwealthDiffuse,
                 DefaultLandscapeNormal = CommonwealthNormal
             },
@@ -190,8 +238,24 @@ public static class GameProfiles
                 ImageSpaceFamily = ImageSpaceModernFamily.Fallout4,
                 WideTimeOfDayBandsFormVersion = 111,
                 // HasVerifiedModernWatrLayout stays false: Starfield's WATR layout is unverified.
-                DefaultLandscapeDiffuse = FalloutDiffuse,
-                DefaultLandscapeNormal = FalloutNormal
+                // Every terrain\<worldspaceEditorId>.btd lives in Starfield - Terrain01..04.ba2 /
+                // TerrainPatch.ba2 (753 of them); the DLC and update archives carry more, hence the
+                // whole-Data fallback.
+                HasExternalBtdTerrain = true,
+                TerrainArchiveNamePatterns = ["*Terrain*.ba2"],
+                TerrainSearchesAllDataArchives = true,
+                ExteriorCellWorldSize = 100f,
+                // Metric: measured from retail mesh bounds — ChairPlastic01 is 1.02 tall, ChairUtilityB01
+                // 0.98, GenIntRmSmWallMid_DoorA00 2.84, the InvisibleDoor01 marker 2.41 × 1.60. Those are
+                // metres. Do NOT infer this from the 100-unit cell: that is 40.96× where this is 70×.
+                WorldUnitsPerMetre = 1f,
+                // Starfield ships NO usable engine-default landscape texture for us to point at: its
+                // terrain diffuse is reached only through the material database, and the inherited FNV
+                // DirtWasteland01 does not exist in any Starfield archive — so every unresolved cell
+                // silently fell back to a texture that could never load. Empty is honest: the resolver
+                // then binds the white-pixel placeholder instead of chasing a path that cannot resolve.
+                DefaultLandscapeDiffuse = string.Empty,
+                DefaultLandscapeNormal = string.Empty
             }
         };
 

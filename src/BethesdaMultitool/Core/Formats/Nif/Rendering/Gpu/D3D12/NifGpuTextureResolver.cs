@@ -223,6 +223,32 @@ internal sealed class NifGpuTextureResolver : IDisposable
         return LoadTextureUncached(sourcePath, leafAtlasMips);
     }
 
+    /// <summary>
+    ///     See <see cref="MaterialTexturePathResolver.IsStarfieldNoDrawMaterial" /> — true when the
+    ///     material exists but resolves no albedo in any form, so its shape should be skipped rather
+    ///     than drawn with the white fallback.
+    /// </summary>
+    internal bool IsStarfieldNoDrawMaterial(string materialPath) =>
+        MaterialTexturePathResolver.IsStarfieldNoDrawMaterial(materialPath, _sources);
+
+    /// <summary>
+    ///     A 1×1 RGBA8 texture of <paramref name="rgba" /> (R in the low byte), for a material slot
+    ///     that declares a flat colour instead of an image.
+    /// </summary>
+    private static GpuTexturePayload SolidColorPayload(uint rgba)
+    {
+        byte[] pixel =
+        [
+            (byte)(rgba & 0xFF),
+            (byte)((rgba >> 8) & 0xFF),
+            (byte)((rgba >> 16) & 0xFF),
+            (byte)((rgba >> 24) & 0xFF)
+        ];
+
+        return new GpuTexturePayload(
+            GpuTexturePayloadFormat.Rgba8, 1, 1, [new GpuTextureMipPayload(1, 1, pixel)]);
+    }
+
     private GpuTexturePayload? LoadTextureUncached(string path, bool leafAtlasMips = false)
     {
         // Fallout 4 / Fallout 76 shapes point at a .bgsm/.bgem material under materials\ instead of an
@@ -233,6 +259,24 @@ internal sealed class NifGpuTextureResolver : IDisposable
         {
             var materialDiffuse = MaterialTexturePathResolver.ResolveDiffuseTexturePath(path, _sources);
             return materialDiffuse is null ? null : TryLoadFromSources(materialDiffuse, leafAtlasMips);
+        }
+
+        // Starfield: the same indirection, but the material lives in the compiled database rather
+        // than as its own file. One branch serves BOTH halves of the renderer — a mesh shader's Name
+        // and a landscape LTEX's BNAM arrive here as the same kind of .mat path. (Materials that
+        // resolve NO albedo at all are skipped before this point — see IsStarfieldNoDrawMaterial.)
+        if (MaterialTexturePathResolver.IsStarfieldMaterialPath(path))
+        {
+            var slot = MaterialTexturePathResolver.ResolveStarfieldSlot(path, _sources);
+            if (slot.TexturePath is { Length: > 0 } starfieldTexture)
+            {
+                return TryLoadFromSources(starfieldTexture, leafAtlasMips);
+            }
+
+            // No image for this slot, but the material declared a flat colour for it. Uploading a 1×1
+            // of that colour is what the engine effectively draws; returning null here would leave the
+            // shape on the white-pixel fallback instead of its authored plastic/paint colour.
+            return slot.ReplacementRgba is { } rgba ? SolidColorPayload(rgba) : null;
         }
 
         var texture = TryLoadFromSources(path, leafAtlasMips);

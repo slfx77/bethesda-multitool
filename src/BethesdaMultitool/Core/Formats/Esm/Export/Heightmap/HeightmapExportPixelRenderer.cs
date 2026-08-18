@@ -25,7 +25,8 @@ internal static class HeightmapExportPixelRenderer
     internal static byte[] BuildLayerMaskPixels(LandTextureLayer layer)
     {
         var mask = new byte[33 * 33];
-        foreach (var entry in layer.BlendEntries)
+        // EnumerateVtxt17Entries: BTD-injected Starfield layers carry native-65-grid positions.
+        foreach (var entry in layer.EnumerateVtxt17Entries())
         {
             var localX = entry.Position % 17;
             var localY = entry.Position / 17;
@@ -77,7 +78,7 @@ internal static class HeightmapExportPixelRenderer
         {
             var color = TextureIdColor(layer.TextureFormId);
             var (baseX, baseY) = QuadrantBase(layer.Quadrant);
-            foreach (var entry in layer.BlendEntries)
+            foreach (var entry in layer.EnumerateVtxt17Entries())
             {
                 var localX = entry.Position % 17;
                 var localY = entry.Position / 17;
