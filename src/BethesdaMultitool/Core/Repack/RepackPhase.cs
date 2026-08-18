@@ -17,6 +17,9 @@ public enum RepackPhase
     /// <summary>Processing BSA files.</summary>
     Bsa,
 
+    /// <summary>Unpacking final_master_xml.dat into the loose menus tree.</summary>
+    Menus,
+
     /// <summary>Processing ESM files.</summary>
     Esm,
 

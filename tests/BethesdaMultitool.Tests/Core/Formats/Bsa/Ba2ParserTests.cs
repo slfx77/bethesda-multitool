@@ -179,6 +179,102 @@ public class Ba2ParserTests
     ///     Writes a minimal version-1 GNRL BA2 to a temp file: 24-byte header, two 36-byte file
     ///     records, the two data blobs, then a name table. Returns the temp path (caller deletes).
     /// </summary>
+    [Theory]
+    // Versions 1/7/8 have no extra dwords; 2 has two; 3 has three, the last being CompressionMethod.
+    // The count depends on the VERSION ONLY — a version-3 GNRL header is 36 bytes just like DX10.
+    // fo76utils sizes it at 32, which would read the record table 4 bytes early; xEdit's writer and
+    // bsa-rs both agree on 36. Retail Starfield ships no v3 GNRL, so only a rebuilt archive hits it.
+    [InlineData(1u, "GNRL", 0u, Ba2CompressionFormat.Zip)]
+    [InlineData(2u, "GNRL", 0u, Ba2CompressionFormat.Zip)]
+    [InlineData(2u, "DX10", 0u, Ba2CompressionFormat.Zip)]
+    [InlineData(3u, "GNRL", 3u, Ba2CompressionFormat.Lz4)]
+    [InlineData(3u, "DX10", 3u, Ba2CompressionFormat.Lz4)]
+    [InlineData(3u, "GNRL", 0u, Ba2CompressionFormat.Zip)] // v3 re-saved with zlib
+    [InlineData(3u, "DX10", 0u, Ba2CompressionFormat.Zip)]
+    [InlineData(7u, "GNRL", 0u, Ba2CompressionFormat.Zip)]
+    [InlineData(8u, "GNRL", 0u, Ba2CompressionFormat.Zip)]
+    public void Parse_HeaderSizingAndCodec_FollowVersionNotTag(
+        uint version, string tag, uint compressionMethod, Ba2CompressionFormat expected)
+    {
+        var path = WriteHeaderOnlyBa2(version, tag, compressionMethod);
+        try
+        {
+            var archive = Ba2Parser.Parse(path);
+
+            Assert.Equal(version, archive.Header.Version);
+            Assert.Equal(expected, archive.Header.CompressionFormat);
+
+            // The real assertion: the record table began at the right offset. A mis-sized header
+            // shifts every field, so the single entry's decoded values would be garbage.
+            Assert.Equal(1, archive.TotalFiles);
+            Assert.Equal("txt", archive.Files[0].Extension);
+            Assert.Equal(0x1111u, archive.Files[0].NameHash);
+            Assert.Equal(0x2222u, archive.Files[0].DirHash);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Parse_Version2_CompressionMethodDwordIsNotConsulted()
+    {
+        // Guard against keying the codec off the FIRST extra dword: that is Unknown1, and it reads 1
+        // in every retail archive including all the v2 ones, so a v2 archive must stay Zip regardless.
+        var path = WriteHeaderOnlyBa2(2u, "DX10", compressionMethod: 0u, unknown1: 1u);
+        try
+        {
+            Assert.Equal(Ba2CompressionFormat.Zip, Ba2Parser.Parse(path).Header.CompressionFormat);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
+    ///     A minimal BA2 with one GNRL-shaped record and a name table, whose header carries the extra
+    ///     dwords for <paramref name="version" />. DX10 archives use the same record start offset, so a
+    ///     GNRL record body is enough to prove the header was sized correctly.
+    /// </summary>
+    private static string WriteHeaderOnlyBa2(
+        uint version, string tag, uint compressionMethod, uint unknown1 = 1u)
+    {
+        var extraDwords = version switch { 2 => 2, 3 => 3, _ => 0 };
+        var headerSize = 24 + (extraDwords * 4);
+        var dataStart = (ulong)(headerSize + 36);
+        var nameTableOffset = dataStart + (ulong)PlainData.Length;
+
+        using var ms = new MemoryStream();
+        using (var bw = new BinaryWriter(ms, Encoding.ASCII, true))
+        {
+            bw.Write("BTDX"u8.ToArray());
+            bw.Write(version);
+            bw.Write(Encoding.ASCII.GetBytes(tag));
+            bw.Write(1u); // file count
+            bw.Write(nameTableOffset);
+            if (extraDwords > 0)
+            {
+                bw.Write(unknown1);
+                bw.Write(0u);
+            }
+
+            if (extraDwords > 2)
+            {
+                bw.Write(compressionMethod);
+            }
+
+            WriteGnrlRecord(bw, 0x1111, "txt", 0x2222, dataStart, 0, (uint)PlainData.Length);
+            bw.Write(PlainData);
+            WriteName(bw, "data\\plain.txt");
+        }
+
+        var path = Path.Combine(Path.GetTempPath(), $"ba2hdr_{Guid.NewGuid():N}.ba2");
+        File.WriteAllBytes(path, ms.ToArray());
+        return path;
+    }
+
     private static string WriteGnrlBa2()
     {
         var packed = ZlibCompress(CompressibleData);

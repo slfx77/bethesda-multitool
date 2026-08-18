@@ -56,6 +56,13 @@ public sealed partial class RepackerTab : UserControl, IDisposable, IHasSettings
 
         _categories.Add(new RepackCategory
         {
+            Name = "Interface Menus",
+            Description = "Unpack final_master_xml.dat into the loose Data\\menus tree (required to boot)",
+            Phase = RepackPhase.Menus
+        });
+
+        _categories.Add(new RepackCategory
+        {
             Name = "ESM Master Files",
             Description = "Convert big-endian ESM files to PC little-endian",
             Phase = RepackPhase.Esm
@@ -306,6 +313,24 @@ public sealed partial class RepackerTab : UserControl, IDisposable, IHasSettings
         OutputPathTextBox.Text = folder.Path;
     }
 
+    private async void SelectPcMenuDonorButton_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new FolderPicker();
+        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+        picker.FileTypeFilter.Add("*");
+
+        var hwnd = WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow);
+        InitializeWithWindow.Initialize(picker, hwnd);
+
+        var folder = await picker.PickSingleFolderAsync();
+        if (folder is null)
+        {
+            return;
+        }
+
+        PcMenuDonorTextBox.Text = folder.Path;
+    }
+
     private async void ConvertButton_Click(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrEmpty(_sourcePath) || string.IsNullOrEmpty(_outputPath))
@@ -345,6 +370,10 @@ public sealed partial class RepackerTab : UserControl, IDisposable, IHasSettings
             ProcessVideo = _categories.First(c => c.Phase == RepackPhase.Video).IsEnabled,
             ProcessMusic = _categories.First(c => c.Phase == RepackPhase.Music).IsEnabled,
             ProcessBsa = _categories.First(c => c.Phase == RepackPhase.Bsa).IsEnabled,
+            ProcessMenus = _categories.First(c => c.Phase == RepackPhase.Menus).IsEnabled,
+            PcMenuDonorPath = string.IsNullOrWhiteSpace(PcMenuDonorTextBox.Text)
+                ? null
+                : PcMenuDonorTextBox.Text.Trim(),
             ProcessEsm = _categories.First(c => c.Phase == RepackPhase.Esm).IsEnabled,
             ProcessEsp = _categories.First(c => c.Phase == RepackPhase.Esp).IsEnabled,
             ProcessIni = _categories.First(c => c.Phase == RepackPhase.Ini).IsEnabled,

@@ -420,7 +420,7 @@ internal sealed class DataFolderIndex : IDisposable
         foreach (var fullPath in looseFiles)
         {
             var ext = Path.GetExtension(fullPath);
-            if (!AssetPathRules.AssetExtensions.Contains(ext))
+            if (!AssetPathRules.IsIndexableAsset(ext))
             {
                 continue;
             }
@@ -517,7 +517,7 @@ internal sealed class DataFolderIndex : IDisposable
 
             var fullPath = record.FullPath;
             var ext = Path.GetExtension(fullPath);
-            if (!AssetPathRules.AssetExtensions.Contains(ext))
+            if (!AssetPathRules.IsIndexableAsset(ext))
             {
                 continue;
             }
@@ -603,7 +603,7 @@ internal sealed class DataFolderIndex : IDisposable
         {
             var fullPath = record.FullPath;
             var ext = Path.GetExtension(fullPath);
-            if (!AssetPathRules.AssetExtensions.Contains(ext))
+            if (!AssetPathRules.IsIndexableAsset(ext))
             {
                 continue;
             }

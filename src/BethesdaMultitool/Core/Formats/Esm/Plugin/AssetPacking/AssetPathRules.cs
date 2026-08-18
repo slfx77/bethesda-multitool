@@ -16,6 +16,28 @@ internal static class AssetPathRules
         ".spt"
     };
 
+    /// <summary>
+    ///     Extensions the asset INDEX must see but the asset PACKER must not touch. Kept out of
+    ///     <see cref="AssetExtensions" /> deliberately.
+    ///     <para>
+    ///         Starfield's <c>geometries\*.mesh</c> blobs are content-addressed — the path IS a hash of
+    ///         the bytes — so they must be readable (the renderer resolves them per BSGeometry block)
+    ///         but must never be fed to the collector/renamer, which would rewrite paths that the
+    ///         hashes have to match. Without indexing them the viewer resolves every Starfield model to
+    ///         "no geometry"; with them in the packer's set, a rename pass would corrupt them.
+    ///     </para>
+    /// </summary>
+    public static readonly HashSet<string> IndexOnlyExtensions =
+        new(StringComparer.OrdinalIgnoreCase) { ".mesh" };
+
+    /// <summary>
+    ///     True when <paramref name="extension" /> should appear in a read-side asset index (the union
+    ///     of <see cref="AssetExtensions" /> and <see cref="IndexOnlyExtensions" />). Packing and
+    ///     renaming keep using <see cref="AssetExtensions" /> alone.
+    /// </summary>
+    public static bool IsIndexableAsset(string extension) =>
+        AssetExtensions.Contains(extension) || IndexOnlyExtensions.Contains(extension);
+
     public static readonly Dictionary<string, string> ExtensionToPrefix =
         new(StringComparer.OrdinalIgnoreCase)
         {
@@ -49,6 +71,70 @@ internal static class AssetPathRules
             [".dds"] = [".ddx"]
         };
 
+    /// <summary>
+    ///     Every Data subtree an asset path can be rooted at, derived from
+    ///     <see cref="ExtensionToPrefix" /> plus <c>music\</c> — which no extension maps to,
+    ///     because <c>.mp3</c> and <c>.wav</c> both appear under <c>Sound\</c> AND <c>Music\</c>
+    ///     and only the owning field can say which.
+    /// </summary>
+    private static readonly string[] CategoryRoots =
+        [.. ExtensionToPrefix.Values.Append("music\\").Distinct(StringComparer.Ordinal)];
+
+    /// <summary>Identifies which Data subtree a normalized path is rooted at.</summary>
+    public static bool TryGetCategoryRoot(string normalizedPath, out string root)
+    {
+        foreach (var candidate in CategoryRoots)
+        {
+            if (normalizedPath.StartsWith(candidate, StringComparison.OrdinalIgnoreCase))
+            {
+                root = candidate;
+                return true;
+            }
+        }
+
+        root = string.Empty;
+        return false;
+    }
+
+    /// <summary>
+    ///     True when two normalized paths live under the same Data subtree (or both under
+    ///     none). Rewriting a field across roots changes what the field means, so callers use
+    ///     this to decline such matches.
+    /// </summary>
+    public static bool SharesCategoryRoot(string a, string b)
+    {
+        var hasA = TryGetCategoryRoot(a, out var rootA);
+        var hasB = TryGetCategoryRoot(b, out var rootB);
+        return hasA == hasB && string.Equals(rootA, rootB, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    ///     Extensions the FNV engine cannot read from inside a BSA, so they have to ship as
+    ///     loose files next to the archives.
+    ///     <para>
+    ///         MP3 is the whole list. Bethesda's own data is the proof, and it is an FO3→FNV
+    ///         engine difference: Fallout 3's <c>Fallout - Sound.bsa</c> archives 66 <c>.mp3</c>,
+    ///         while FNV's archives ZERO — the same radio songs were re-encoded to <c>.ogg</c>
+    ///         for the FNV archive, and all 199 <c>Data\Music\</c> tracks were left loose. The
+    ///         GECK wiki states it outright ("MP3 files will not work in Fallout: New Vegas when
+    ///         placed inside BSA files. Use OGG/Vorbis instead.").
+    ///     </para>
+    ///     <para>
+    ///         Note this is narrower than the streaming-audio rule that also applies: <c>.wav</c>
+    ///         and <c>.ogg</c> work from a BSA but only an UNCOMPRESSED one, which
+    ///         <see cref="Bsa.BsaWriter.CreateWithAutoFlags" /> already guarantees for audio
+    ///         buckets. MP3 fails regardless of compression, hence loose delivery.
+    ///     </para>
+    /// </summary>
+    private static readonly string[] LooseOnlyExtensions = [".mp3"];
+
+    /// <summary>
+    ///     True when an asset must be delivered loose rather than packed into a BSA.
+    /// </summary>
+    public static bool RequiresLooseDelivery(string path) =>
+        LooseOnlyExtensions.Contains(
+            Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+
     public static readonly string[] PathLikePropertyTokens =
     [
         "Path", "FileName", "Texture", "Model", "Icon", "Mesh"
@@ -65,7 +151,13 @@ internal static class AssetPathRules
     ///     expected category prefix (meshes\, textures\, …), or returns null if the path
     ///     has no recognized asset extension.
     /// </summary>
-    public static string? TryNormalizeRequestPath(string? raw)
+    /// <param name="rootHint">
+    ///     The Data subtree the owning field is interpreted against, when the extension alone
+    ///     cannot say. FNV uses <c>.mp3</c> and <c>.wav</c> under BOTH <c>Sound\</c> (SOUN FNAM,
+    ///     including the <c>songs\radio\*</c> family) and <c>Music\</c> (MUSC FNAM), so deriving
+    ///     the root from the extension mis-roots one of them whichever way the map points.
+    /// </param>
+    public static string? TryNormalizeRequestPath(string? raw, string? rootHint = null)
     {
         if (string.IsNullOrWhiteSpace(raw))
         {
@@ -73,6 +165,21 @@ internal static class AssetPathRules
         }
 
         var lower = raw.Trim().Replace('/', '\\').ToLowerInvariant();
+
+        // Prototype captures can carry a developer's absolute path (MUSC FNAM values like
+        // "D:\Data\Music\endgame\endgame_02.mp3"). Root it at the Data folder so it resolves
+        // like any other reference; without this the engine appends the whole drive path to
+        // Data\Music\ and the track is silent.
+        var dataSegment = lower.LastIndexOf("\\data\\", StringComparison.Ordinal);
+        if (dataSegment >= 0)
+        {
+            lower = lower[(dataSegment + 6)..];
+        }
+        else if (lower.Length > 2 && lower[1] == ':' && lower[2] == '\\')
+        {
+            lower = lower[3..];
+        }
+
         if (lower.StartsWith("data\\", StringComparison.Ordinal))
         {
             lower = lower[5..];
@@ -87,6 +194,11 @@ internal static class AssetPathRules
         if (!ExtensionToPrefix.TryGetValue(ext, out var expectedPrefix))
         {
             return null;
+        }
+
+        if (rootHint is not null)
+        {
+            expectedPrefix = rootHint;
         }
 
         var prefixIdx = lower.IndexOf(expectedPrefix, StringComparison.Ordinal);
@@ -348,29 +460,24 @@ internal static class AssetPathRules
             lowerRaw = lowerRaw[5..];
         }
 
-        var origExt = Path.GetExtension(lowerRaw);
-        var newExt = Path.GetExtension(normalizedNewPath);
+        var originalHadTypePrefix = TryGetCategoryRoot(lowerRaw, out _);
 
-        var originalHadTypePrefix = false;
-        if (TryGetExtensionPrefix(origExt, out var origPrefix))
-        {
-            originalHadTypePrefix = lowerRaw.StartsWith(origPrefix, StringComparison.Ordinal);
-        }
-
-        if (!TryGetExtensionPrefix(newExt, out var newPrefix))
+        // Strip the root the path ACTUALLY has, not the one its extension implies. Those two
+        // disagree whenever a container appears under more than one subtree — a MUSC `.mp3`
+        // resolved under `music\` used to keep that root here (because `.mp3` maps to
+        // `sound\`), so the record gained a `music\` prefix retail never has.
+        if (!TryGetCategoryRoot(normalizedNewPath, out var newRoot))
         {
             return normalizedNewPath;
         }
 
-        var withoutPrefix = normalizedNewPath.StartsWith(newPrefix, StringComparison.Ordinal)
-            ? normalizedNewPath[newPrefix.Length..]
-            : normalizedNewPath;
+        var withoutPrefix = normalizedNewPath[newRoot.Length..];
 
         if (originalHadTypePrefix)
         {
             return hadDataPrefix
-                ? "Data\\" + newPrefix + withoutPrefix
-                : newPrefix + withoutPrefix;
+                ? "Data\\" + newRoot + withoutPrefix
+                : newRoot + withoutPrefix;
         }
 
         return hadDataPrefix

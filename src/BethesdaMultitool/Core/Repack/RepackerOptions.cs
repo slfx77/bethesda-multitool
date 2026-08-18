@@ -37,6 +37,24 @@ public sealed class RepackerOptions
     public HashSet<string>? SelectedBsaFiles { get; init; }
 
     /// <summary>
+    ///     Whether to unpack <c>final_master_xml.dat</c> into the loose <c>Data\menus</c> tree.
+    ///     The console keeps every interface document in that container rather than in
+    ///     <c>Fallout - Misc.bsa</c>, and the PC engine only reads the loose tree — without this
+    ///     the converted build has no interface and faults during boot.
+    /// </summary>
+    public bool ProcessMenus { get; init; } = true;
+
+    /// <summary>
+    ///     Vanilla PC <c>Data</c> folder (or a direct <c>Fallout - Misc.bsa</c> path) used to
+    ///     backfill the interface documents the console build has no counterpart for — BookMenu,
+    ///     LoadGameMenu, SaveGameMenu, TraitSelectMenu and friends, plus the
+    ///     <c>menus\prefabs\</c> tree they include. Console menus always win where both exist.
+    ///     Leave null to ship console-only menus, which boots but faults when the engine asks for
+    ///     one of the missing nine.
+    /// </summary>
+    public string? PcMenuDonorPath { get; init; }
+
+    /// <summary>
     ///     Whether to generate a hybrid INI file for PC compatibility.
     /// </summary>
     public bool ProcessIni { get; init; } = true;

@@ -116,6 +116,14 @@ public static class RepackerService
                 result.BsaFilesProcessed = await bsaProcessor.ProcessAsync(options, progress, cancellationToken);
             }
 
+            // Unpack the console interface container into the loose menus tree the PC engine
+            // reads. Nothing else supplies menus — the 360 Misc.bsa carries none.
+            if (options.ProcessMenus)
+            {
+                var menuProcessor = new MenuProcessor();
+                result.MenuFilesProcessed = await menuProcessor.ProcessAsync(options, progress, cancellationToken);
+            }
+
             // Process ESM
             if (options.ProcessEsm)
             {

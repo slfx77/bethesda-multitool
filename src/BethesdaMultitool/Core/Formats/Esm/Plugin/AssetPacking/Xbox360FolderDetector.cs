@@ -11,9 +11,28 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 ///     <see cref="EsmParser.IsBigEndian" />), then falls back to any <c>.bsa</c> header
 ///     flag (<see cref="BsaHeader.IsXbox360" />). Default false (PC) when neither is
 ///     present or none are readable.
+///     The probe descends a few levels because a donor is often handed to us as the
+///     extracted disc/title root rather than the <c>Data</c> folder itself (e.g.
+///     <c>…\Fallout New Vegas (July 21, 2010)\FalloutNV\Data\</c>). Looking only at the
+///     top level classified such a donor as PC, and every LOOSE asset under it then packed
+///     without conversion — <see cref="DataFolderIndex" /> falls back to this folder-level
+///     hint for loose files, while BSA entries carry their own per-archive flag.
 /// </summary>
 public static class Xbox360FolderDetector
 {
+    /// <summary>
+    ///     How many directory levels below the supplied folder to probe. A title root nests
+    ///     its Data folder one or two levels down; beyond that we would start walking the
+    ///     asset tree itself, which is large and never holds an ESM or BSA.
+    /// </summary>
+    private const int MaxProbeDepth = 3;
+
+    /// <summary>
+    ///     Upper bound on directories examined, so a pathological tree cannot turn a hint
+    ///     into a long walk. Real donors resolve within the first handful.
+    /// </summary>
+    private const int MaxProbedDirectories = 256;
+
     /// <summary>
     ///     Return true when the folder appears to contain Xbox 360 format assets.
     ///     The result is a best-effort hint; callers should expose it to the user with
@@ -26,17 +45,57 @@ public static class Xbox360FolderDetector
             return false;
         }
 
-        if (HasBigEndianEsm(folderPath))
+        foreach (var candidate in EnumerateProbeDirectories(folderPath))
         {
-            return true;
-        }
-
-        if (HasXbox360Bsa(folderPath))
-        {
-            return true;
+            if (HasBigEndianEsm(candidate) || HasXbox360Bsa(candidate))
+            {
+                return true;
+            }
         }
 
         return false;
+    }
+
+    /// <summary>
+    ///     Breadth-first directory walk from <paramref name="root" />, shallowest first, so
+    ///     the common case (the caller already passed the Data folder) costs one probe.
+    /// </summary>
+    private static IEnumerable<string> EnumerateProbeDirectories(string root)
+    {
+        var queue = new Queue<(string Path, int Depth)>();
+        queue.Enqueue((root, 0));
+        var probed = 0;
+
+        while (queue.Count > 0 && probed < MaxProbedDirectories)
+        {
+            var (path, depth) = queue.Dequeue();
+            probed++;
+            yield return path;
+
+            if (depth >= MaxProbeDepth)
+            {
+                continue;
+            }
+
+            IEnumerable<string> children;
+            try
+            {
+                children = Directory.EnumerateDirectories(path);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                continue;
+            }
+            catch (IOException)
+            {
+                continue;
+            }
+
+            foreach (var child in children)
+            {
+                queue.Enqueue((child, depth + 1));
+            }
+        }
     }
 
     private static bool HasBigEndianEsm(string folderPath)

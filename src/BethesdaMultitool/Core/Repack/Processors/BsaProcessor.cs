@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using DDXConv;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Bsa;
@@ -130,7 +131,6 @@ public sealed class BsaProcessor : IRepackProcessor
         CancellationToken cancellationToken)
     {
         var bsaName = Path.GetFileName(sourceBsaPath);
-        var ddxConverter = new DdxConverter();
 
         // Phase 1: Extract all files from BSA
         progress.Report(new RepackerProgress
@@ -330,8 +330,19 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
             }
         }
 
-        // Phase 2b: Convert DDX files using batch mode (single DDXConv process)
-        if (ddxFiles.Count > 0 && ddxConverter != null)
+        // Phase 2b: Convert DDX files in memory.
+        //
+        // This used to stage every DDX into a FLAT temp directory named "{index:D6}_{filename}"
+        // and let ConvertBatchAsync(pcFriendly: true) do the specular merge on disk. That merge
+        // pairs a normal map with its specular companion by filename ("x_n.dds" -> "x_s.dds"),
+        // so the index prefix made the companion name unresolvable for EVERY texture: the pair
+        // "001234_rock_n.dds" / "005678_rock_s.dds" never matched. The merge then fell back to a
+        // flat gray-128 alpha, and since FNV reads the specular mask out of the normal map's
+        // alpha channel, every converted surface rendered with a uniform 50% specular.
+        //
+        // Converting in memory keeps the archive path intact, so the companion is resolved
+        // against the archive itself and it also drops two full read/write passes over ~22k files.
+        if (ddxFiles.Count > 0)
         {
             progress.Report(new RepackerProgress
             {
@@ -339,101 +350,62 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
                 Message = $"{bsaName}: Converting {ddxFiles.Count} texture files..."
             });
 
-            // Create temp directories for batch conversion
-            var tempId = Guid.NewGuid().ToString("N")[..8];
-            var tempInputDir = Path.Combine(Path.GetTempPath(), $"bsa_ddx_in_{tempId}");
-            var tempOutputDir = Path.Combine(Path.GetTempPath(), $"bsa_ddx_out_{tempId}");
-            Directory.CreateDirectory(tempInputDir);
-            Directory.CreateDirectory(tempOutputDir);
-
-            try
+            // Archive-path -> raw DDX bytes, for resolving "_s" specular companions.
+            var ddxByPath = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (_, relativePath, data) in ddxFiles)
             {
-                // Build mapping from temp file path to (index, original relative path)
-                var fileMapping = new Dictionary<string, (int Index, string RelativePath)>();
+                ddxByPath[relativePath] = data;
+            }
 
-                // Write all DDX files to temp input directory
-                foreach (var (index, relativePath, ddxData) in ddxFiles)
+            var convertedCount = 0;
+            var converted = new ConcurrentDictionary<int, (string Path, byte[] Data)>();
+
+            ParallelWork.ForEach("bsa-ddx-convert", ddxFiles, ConcurrencyPolicy.FullCores, ddxFile =>
+            {
+                var (index, relativePath, ddxData) = ddxFile;
+                // DdxParser holds per-conversion state, so give each work item its own.
+                var converter = new DdxConverter();
+
+                try
                 {
-                    // Use a flat structure with unique names to avoid path issues
-                    var tempFileName = $"{index:D6}_{Path.GetFileName(relativePath)}";
-                    var tempInputPath = Path.Combine(tempInputDir, tempFileName);
-                    await File.WriteAllBytesAsync(tempInputPath, ddxData, cancellationToken);
-                    fileMapping[tempInputPath] = (index, relativePath);
-                }
-
-                // Run batch conversion with progress callback
-                // Enable --pc-friendly to convert Xbox 360 normal maps (2-channel BC5) to PC format (3-channel DXT5)
-                var convertedCount = 0;
-                _ = await ddxConverter.ConvertBatchAsync(
-                    tempInputDir,
-                    tempOutputDir,
-                    (inputPath, status, _) =>
+                    var result = converter.ConvertFromMemoryWithResult(ddxData);
+                    if (result.Success && result.OutputData is { } ddsData)
                     {
-                        var count = Interlocked.Increment(ref convertedCount);
-                        var fileName = Path.GetFileName(inputPath);
-                        // Strip the index prefix for display
-                        if (fileName.Length > 7 && fileName[6] == '_')
+                        // FNV's runtime DDS loader cannot bind ATI2/BC5, so a 360 normal map has
+                        // to be re-encoded to DXT5 with the specular mask packed into alpha.
+                        if (NormalMapMerge.IsNormalMapPath(relativePath) && NormalMapMerge.IsAti2(ddsData))
                         {
-                            fileName = fileName[7..];
+                            ddsData = MergeSpecularIntoNormal(converter, ddsData, relativePath, ddxByPath);
                         }
 
-                        progress.Report(new RepackerProgress
-                        {
-                            Phase = RepackPhase.Bsa,
-                            CurrentItem = fileName,
-                            Message = $"{bsaName}: Textures {count}/{ddxFiles.Count}"
-                        });
-                    },
-                    cancellationToken,
-                    true);
-
-                // Read back converted files
-                foreach (var (tempInputPath, (index, relativePath)) in fileMapping)
-                {
-                    var tempFileName = Path.GetFileName(tempInputPath);
-                    var tempOutputPath = Path.Combine(tempOutputDir, Path.ChangeExtension(tempFileName, ".dds"));
-
-                    if (File.Exists(tempOutputPath))
-                    {
-                        var ddsData = await File.ReadAllBytesAsync(tempOutputPath, cancellationToken);
-                        var newPath = Path.ChangeExtension(relativePath, ".dds");
-                        allFiles[index] = (newPath, ddsData);
+                        converted[index] = (Path.ChangeExtension(relativePath, ".dds"), ddsData);
                     }
                     else
                     {
-                        // Keep original if conversion failed
-                        var original = ddxFiles.First(f => f.Index == index);
-                        allFiles[index] = (relativePath, original.Data);
-                    }
-                }
-            }
-            finally
-            {
-                // Clean up temp directories
-                try
-                {
-                    if (Directory.Exists(tempInputDir))
-                    {
-                        Directory.Delete(tempInputDir, true);
-                    }
-
-                    if (Directory.Exists(tempOutputDir))
-                    {
-                        Directory.Delete(tempOutputDir, true);
+                        // Keep the original bytes if conversion produced nothing.
+                        converted[index] = (relativePath, ddxData);
                     }
                 }
                 catch
                 {
-                    // Best effort cleanup
+                    converted[index] = (relativePath, ddxData);
                 }
-            }
-        }
-        else if (ddxFiles.Count > 0)
-        {
-            // DDXConv not available, keep originals
-            foreach (var (index, relativePath, data) in ddxFiles)
+
+                var count = Interlocked.Increment(ref convertedCount);
+                if (count % 100 == 0 || count == ddxFiles.Count)
+                {
+                    progress.Report(new RepackerProgress
+                    {
+                        Phase = RepackPhase.Bsa,
+                        CurrentItem = Path.GetFileName(relativePath),
+                        Message = $"{bsaName}: Textures {count}/{ddxFiles.Count}"
+                    });
+                }
+            }, cancellationToken: cancellationToken);
+
+            foreach (var kvp in converted)
             {
-                allFiles[index] = (relativePath, data);
+                allFiles[kvp.Key] = kvp.Value;
             }
         }
 
@@ -545,5 +517,39 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
             Phase = RepackPhase.Bsa,
             Message = $"{bsaName}: Done ({allFiles.Count} files)"
         });
+    }
+
+    /// <summary>
+    ///     Re-encodes a converted ATI2/BC5 normal map to the DXT5 form Fallout NV loads, packing
+    ///     the companion <c>*_s.ddx</c> specular mask into the alpha channel. Falls back to the
+    ///     merge's neutral gray alpha when the archive has no companion (~10% of 360 normal maps)
+    ///     or when the companion itself fails to convert.
+    /// </summary>
+    private static byte[] MergeSpecularIntoNormal(
+        DdxConverter converter,
+        byte[] normalDds,
+        string normalPath,
+        Dictionary<string, byte[]> ddxByPath)
+    {
+        byte[]? specDds = null;
+
+        var specPath = NormalMapMerge.ComputeSpecularPath(normalPath);
+        if (specPath is not null && ddxByPath.TryGetValue(specPath, out var specRaw))
+        {
+            try
+            {
+                var specResult = converter.ConvertFromMemoryWithResult(specRaw);
+                if (specResult.Success)
+                {
+                    specDds = specResult.OutputData;
+                }
+            }
+            catch
+            {
+                // Leave specDds null — the merge substitutes neutral gray.
+            }
+        }
+
+        return DdsPostProcessor.MergeNormalSpecularMapsFromMemory(normalDds, specDds);
     }
 }

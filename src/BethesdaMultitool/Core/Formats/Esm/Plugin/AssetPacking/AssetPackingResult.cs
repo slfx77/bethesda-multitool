@@ -63,6 +63,15 @@ public sealed record AssetPackingStats
     public int PackedAssetCount { get; init; }
     public long OutputBsaSizeBytes { get; init; }
     public TimeSpan Elapsed { get; init; }
+
+    /// <summary>
+    ///     Assets delivered as loose files rather than archive entries, because the FNV
+    ///     engine cannot read them from a BSA. See
+    ///     <see cref="AssetPathRules.RequiresLooseDelivery" />.
+    /// </summary>
+    public int LooseAssetCount { get; init; }
+
+    public long LooseOutputSizeBytes { get; init; }
 }
 
 /// <summary>
@@ -74,6 +83,13 @@ public sealed record AssetPackingResult
     public required AssetPackingStats Stats { get; init; }
     public string? OutputPath { get; init; }
     public IReadOnlyList<string> OutputPaths { get; init; } = [];
+
+    /// <summary>
+    ///     Directory holding the loose (non-archivable) assets, laid out Data-relative
+    ///     alongside the archives. Null when nothing needed loose delivery.
+    /// </summary>
+    public string? LooseOutputDirectory { get; init; }
+
     public string? ErrorMessage { get; init; }
     public IReadOnlyList<AssetResolution> Resolutions { get; init; } = [];
 }

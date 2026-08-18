@@ -193,6 +193,13 @@ internal static class AssetPackBsaPlanner
             return AssetPackBucket.Sounds;
         }
 
+        // Music is rooted at Data\Music\, not Data\Sound\ — it would otherwise fall through to
+        // Main and sit alongside meshes. Keep it in the audio sidecar.
+        if (normalized.StartsWith("music\\", StringComparison.Ordinal))
+        {
+            return AssetPackBucket.Sounds;
+        }
+
         return AssetPackBucket.Main;
     }
 

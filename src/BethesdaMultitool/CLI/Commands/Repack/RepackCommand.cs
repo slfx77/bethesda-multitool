@@ -31,6 +31,16 @@ public static class RepackCommand
             Description = "Process BSA archives",
             DefaultValueFactory = _ => true
         };
+        var menusOpt = new Option<bool>("--menus")
+        {
+            Description = "Unpack final_master_xml.dat into the loose Data/menus tree (required to boot)",
+            DefaultValueFactory = _ => true
+        };
+        var pcMenuDonorOpt = new Option<string?>("--pc-menu-donor")
+        {
+            Description = "Vanilla PC Data folder (or Fallout - Misc.bsa) used to backfill the 9 "
+                          + "menus the console build lacks (book, load/save, trait select, ...) plus their prefabs"
+        };
         var esmOpt = new Option<bool>("--esm")
         {
             Description = "Process ESM master files",
@@ -48,6 +58,8 @@ public static class RepackCommand
         command.Options.Add(videoOpt);
         command.Options.Add(musicOpt);
         command.Options.Add(bsaOpt);
+        command.Options.Add(menusOpt);
+        command.Options.Add(pcMenuDonorOpt);
         command.Options.Add(esmOpt);
         command.Options.Add(espOpt);
         command.Options.Add(verboseOpt);
@@ -59,12 +71,14 @@ public static class RepackCommand
             var processVideo = parseResult.GetValue(videoOpt);
             var processMusic = parseResult.GetValue(musicOpt);
             var processBsa = parseResult.GetValue(bsaOpt);
+            var processMenus = parseResult.GetValue(menusOpt);
+            var pcMenuDonor = parseResult.GetValue(pcMenuDonorOpt);
             var processEsm = parseResult.GetValue(esmOpt);
             var processEsp = parseResult.GetValue(espOpt);
             var verbose = parseResult.GetValue(verboseOpt);
 
-            await ExecuteAsync(source, output, processVideo, processMusic, processBsa, processEsm, processEsp, verbose,
-                cancellationToken);
+            await ExecuteAsync(source, output, processVideo, processMusic, processBsa, processMenus, pcMenuDonor,
+                processEsm, processEsp, verbose, cancellationToken);
         });
 
         return command;
@@ -76,6 +90,8 @@ public static class RepackCommand
         bool processVideo,
         bool processMusic,
         bool processBsa,
+        bool processMenus,
+        string? pcMenuDonor,
         bool processEsm,
         bool processEsp,
         bool verbose,
@@ -113,6 +129,8 @@ public static class RepackCommand
             ProcessVideo = processVideo,
             ProcessMusic = processMusic,
             ProcessBsa = processBsa,
+            ProcessMenus = processMenus,
+            PcMenuDonorPath = pcMenuDonor,
             ProcessEsm = processEsm,
             ProcessEsp = processEsp
         };
@@ -143,6 +161,7 @@ public static class RepackCommand
                             RepackPhase.Video => "[yellow]Processing video files...[/]",
                             RepackPhase.Music => "[yellow]Processing music files...[/]",
                             RepackPhase.Bsa => "[yellow]Processing BSA archives...[/]",
+                            RepackPhase.Menus => "[yellow]Unpacking interface menus...[/]",
                             RepackPhase.Esm => "[yellow]Processing ESM files...[/]",
                             RepackPhase.Esp => "[yellow]Processing ESP files...[/]",
                             RepackPhase.Complete => p.Success ? "[green]Complete[/]" : "[red]Failed[/]",
@@ -178,6 +197,7 @@ public static class RepackCommand
                     AnsiConsole.MarkupLine("  Video files processed:  {0}", result.VideoFilesProcessed);
                     AnsiConsole.MarkupLine("  Music files processed:  {0}", result.MusicFilesProcessed);
                     AnsiConsole.MarkupLine("  BSA files processed:    {0}", result.BsaFilesProcessed);
+                    AnsiConsole.MarkupLine("  Menu files extracted:   {0}", result.MenuFilesProcessed);
                     AnsiConsole.MarkupLine("  ESM files processed:    {0}", result.EsmFilesProcessed);
                     AnsiConsole.MarkupLine("  ESP files processed:    {0}", result.EspFilesProcessed);
                     AnsiConsole.MarkupLine("  [bold green]Total:                  {0}[/]", result.TotalFilesProcessed);

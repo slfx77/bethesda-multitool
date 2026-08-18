@@ -10,11 +10,12 @@ public sealed record RepackResult
     public int VideoFilesProcessed { get; set; }
     public int MusicFilesProcessed { get; set; }
     public int BsaFilesProcessed { get; set; }
+    public int MenuFilesProcessed { get; set; }
     public int EsmFilesProcessed { get; set; }
     public int EspFilesProcessed { get; set; }
     public int IniFilesProcessed { get; set; }
 
     public int TotalFilesProcessed =>
-        VideoFilesProcessed + MusicFilesProcessed + BsaFilesProcessed + EsmFilesProcessed + EspFilesProcessed +
-        IniFilesProcessed;
+        VideoFilesProcessed + MusicFilesProcessed + BsaFilesProcessed + MenuFilesProcessed + EsmFilesProcessed +
+        EspFilesProcessed + IniFilesProcessed;
 }

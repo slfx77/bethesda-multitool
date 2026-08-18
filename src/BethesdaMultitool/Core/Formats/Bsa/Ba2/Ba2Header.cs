@@ -1,6 +1,10 @@
-// Header layout and per-version sizing follow the publicly documented Bethesda Archive v2
-// format and the MIT-licensed fo76utils reference (loadArchiveFile / loadBA2General /
-// loadBA2Textures in libfo76utils/src/ba2file.cpp). Not derived from any copyleft source.
+// Header layout follows the publicly documented Bethesda Archive v2 format. Per-version sizing
+// follows xEdit's writer (Core/wbBSArchive.pas, MPL-2.0 — read, not transliterated) and the 0BSD
+// bsa-rs reference, both of which size a version-3 header the same way for GNRL and DX10. The
+// MIT fo76utils reference (loadBA2General / loadBA2Textures in libfo76utils/src/ba2file.cpp) is
+// still the source for the record and chunk layouts, but is NOT authoritative on version-3 header
+// sizing — it gives version-3 GNRL 32 bytes where the other two give 36. Not derived from any
+// copyleft source.
 
 using System.Text;
 
@@ -68,30 +72,37 @@ public sealed record Ba2Header
         var fileCount = reader.ReadUInt32();
         var nameTableOffset = reader.ReadUInt64();
 
-        // After the 24-byte base, versions 2 and 3 carry extra dwords before the record table.
-        // Per fo76utils header sizing: general archives add two dwords for versions two and three;
-        // texture archives add two dwords for version two and three dwords for version three;
-        // versions one, seven and eight add none. For version three the first extra dword selects
-        // the compression codec.
-        var extraDwords = (version, type) switch
+        // After the 24-byte base, versions 2 and 3 carry extra dwords before the record table, and the
+        // count depends only on the VERSION — not on the content tag. Version 2 adds two (Unknown1,
+        // Unknown2); version 3 adds a third, CompressionMethod. Versions 1, 7 and 8 add none.
+        //
+        // fo76utils sizes a version-3 GNRL header at 32 bytes, which is wrong; xEdit's writer
+        // (Core/wbBSArchive.pas, `if Version >= HEADER_VERSION_SFv3 then CompressionMethod := ...`)
+        // and the bsa-rs reference both read CompressionMethod for version 3 regardless of tag.
+        // Retail Starfield ships no version-3 GNRL archive, so the difference only shows on an
+        // archive rebuilt by BSArch/Archive2 — which would otherwise read the record table 4 bytes
+        // early and produce garbage entries.
+        var extraDwords = version switch
         {
-            (2, _) => 2,
-            (3, Ba2HeaderType.Texture) => 3,
-            (3, _) => 2,
+            2 => 2,
+            3 => 3,
             _ => 0
         };
 
-        uint firstExtra = 0;
+        uint compressionMethod = 0;
         for (var i = 0; i < extraDwords; i++)
         {
             var dword = reader.ReadUInt32();
-            if (i == 0)
+            if (i == 2)
             {
-                firstExtra = dword;
+                compressionMethod = dword;
             }
         }
 
-        var compression = version == 3 && firstExtra == 1
+        // CompressionMethod 3 == LZ4 block (xEdit writes exactly that constant). Keying off the first
+        // extra dword instead would be wrong: it is Unknown1, and it reads 1 in every retail archive
+        // including all the version-2 ones.
+        var compression = compressionMethod == 3
             ? Ba2CompressionFormat.Lz4
             : Ba2CompressionFormat.Zip;
 

@@ -278,7 +278,23 @@ public sealed class AssetPackingService
                 // --pack-assets path as a base name when multiple asset classes exist.
                 Directory.CreateDirectory(Path.GetDirectoryName(options.OutputBsaPath)!);
 
-                var outputPlans = PlanBsaOutputs(options.OutputBsaPath, packedSnapshot);
+                // Some assets cannot live in an archive at all — the FNV engine's MP3 path
+                // does not read from a BSA (see AssetPathRules.RequiresLooseDelivery). Split
+                // those off and write them Data-relative beside the archives so the output
+                // directory is a drop-in mod folder.
+                var looseFiles = packedSnapshot
+                    .Where(f => AssetPathRules.RequiresLooseDelivery(f.Path))
+                    .ToList();
+                var archiveFiles = looseFiles.Count == 0
+                    ? packedSnapshot
+                    : packedSnapshot
+                        .Where(f => !AssetPathRules.RequiresLooseDelivery(f.Path))
+                        .ToList();
+
+                var (looseDirectory, looseBytes) = WriteLooseAssets(
+                    options.OutputBsaPath, looseFiles, sink);
+
+                var outputPlans = PlanBsaOutputs(options.OutputBsaPath, archiveFiles);
                 AssetPackBsaPlanner.DeleteStaleBsaOutputs(options.OutputBsaPath, outputPlans, sink);
 
                 var outputPaths = new List<string>(outputPlans.Count);
@@ -328,6 +344,7 @@ public sealed class AssetPackingService
                     Success = true,
                     OutputPath = outputPaths.FirstOrDefault(),
                     OutputPaths = outputPaths,
+                    LooseOutputDirectory = looseDirectory,
                     Stats = new AssetPackingStats
                     {
                         TotalPathsScanned = stats.Total,
@@ -339,6 +356,8 @@ public sealed class AssetPackingService
                         Missing = stats.Missing,
                         PackedAssetCount = packedSnapshot.Count,
                         OutputBsaSizeBytes = totalOutputSize,
+                        LooseAssetCount = looseFiles.Count,
+                        LooseOutputSizeBytes = looseBytes,
                         Elapsed = stopwatch.Elapsed
                     },
                     Resolutions = resolutionsSnapshot
@@ -581,15 +600,13 @@ public sealed class AssetPackingService
             packedPath = renamedPackPath;
         }
 
-        // If we converted an extension (.ddx → .dds, .xma → .wav), apply the same swap to
-        // the requested path so the runtime finds the converted output. Otherwise the
-        // record's reference would still point to the original extension.
-        var originalExt = Path.GetExtension(resolution.Source.NormalizedPath);
-        var convertedExt = Path.GetExtension(outputPath);
-        if (!string.Equals(originalExt, convertedExt, StringComparison.OrdinalIgnoreCase))
-        {
-            packedPath = Path.ChangeExtension(packedPath, convertedExt);
-        }
+        // The entry lands under whatever container the source actually yields (.ddx → .dds,
+        // .xma → .wav/.ogg, a PC .ogg donor answering a .wav request → .ogg). This must stay
+        // the SAME call AssetPathRewriter makes when it decides what to write into the record:
+        // the two used to derive this independently and drifted, which is how records ended up
+        // naming files no archive contained.
+        packedPath = PrototypeAssetConverter.PredictPackedPath(
+            packedPath, resolution.Source.NormalizedPath, resolution.Source.IsXbox360);
 
         packedFiles.Add((packedPath, outputBytes));
 
@@ -689,6 +706,63 @@ public sealed class AssetPackingService
         IReadOnlyList<(string Path, byte[] Data)> packedFiles,
         long maxArchiveBytes = DefaultMaxBsaBytes)
         => AssetPackBsaPlanner.Plan(outputBsaPath, packedFiles, maxArchiveBytes);
+
+    /// <summary>
+    ///     Writes assets that cannot live in an archive as loose files, Data-relative to the
+    ///     directory holding the output BSAs. Placing them there rather than in a sidecar
+    ///     folder means that directory IS the installable mod: plugin, archives, and loose
+    ///     tree in the layout the game (and a mod manager) expects.
+    /// </summary>
+    internal static (string? Directory, long Bytes) WriteLooseAssets(
+        string outputBsaPath,
+        IReadOnlyList<(string Path, byte[] Data)> looseFiles,
+        IConversionProgressSink sink)
+    {
+        if (looseFiles.Count == 0)
+        {
+            return (null, 0);
+        }
+
+        var root = Path.GetDirectoryName(Path.GetFullPath(outputBsaPath));
+        if (string.IsNullOrEmpty(root))
+        {
+            sink.Warn("AssetPacking",
+                $"Cannot place {looseFiles.Count:N0} loose asset(s): output path has no directory.");
+            return (null, 0);
+        }
+
+        long bytes = 0;
+        var written = 0;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (path, data) in looseFiles)
+        {
+            var relative = path.Replace('/', '\\').TrimStart('\\');
+            if (!seen.Add(relative))
+            {
+                continue;
+            }
+
+            var absolute = Path.Combine(root, relative);
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(absolute)!);
+                File.WriteAllBytes(absolute, data);
+                bytes += data.Length;
+                written++;
+            }
+            catch (Exception ex)
+            {
+                sink.Warn("AssetPacking",
+                    $"Could not write loose asset {relative}: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        sink.Info("AssetPacking",
+            $"Loose output written: {written:N0} file(s), {bytes:N0} bytes under {root} " +
+            "(the FNV engine cannot read these from a BSA)");
+        return (root, bytes);
+    }
 
     private static AssetPackingStats EmptyStats(TimeSpan elapsed)
     {

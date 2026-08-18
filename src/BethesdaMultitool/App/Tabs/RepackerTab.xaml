@@ -22,6 +22,22 @@
               x:Uid="Checkbox_UpdateUserIni"
               MinWidth="0" />
           </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock x:Name="PcMenuDonorLabel"
+                       Text="PC menu donor (Data folder)"
+                       FontWeight="SemiBold" FontSize="13"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock Text="The console build has no Book, Load, Save, Trait Select, Reputation, Surgery, Breath or Quest Added menu. Point this at a vanilla PC Data folder to backfill them; console menus always win where both exist."
+                       TextWrapping="Wrap" FontSize="12"
+                       Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+            <TextBox x:Name="PcMenuDonorTextBox"
+                     PlaceholderText="…\Fallout New Vegas\Data"
+                     AutomationProperties.LabeledBy="{Binding ElementName=PcMenuDonorLabel}" />
+            <Button x:Name="PcMenuDonorBrowseButton"
+                    Content="Browse…"
+                    AutomationProperties.Name="Browse for PC menu donor Data folder"
+                    Click="SelectPcMenuDonorButton_Click" />
+          </StackPanel>
         </StackPanel>
       </ScrollViewer>
     </Border>

@@ -77,7 +77,7 @@ internal sealed class AssetRenameService(IConversionProgressSink sink)
             sink.Info("AssetRename",
                 $"Asset rewrite pass considered {result.Considered:N0} paths, " +
                 $"rewrote {result.Rewritten:N0}, exact/no-change {result.SkippedExact:N0}, " +
-                $"missing {result.SkippedMissing:N0}.");
+                $"missing {result.SkippedMissing:N0}, cross-root declined {result.SkippedCrossRoot:N0}.");
 
             return new AssetRenameResult(
                 true,

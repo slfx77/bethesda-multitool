@@ -85,7 +85,8 @@ internal sealed class PrototypeAssetConverter
             }
 
             var outputData = result.OutputData;
-            var newPath = Path.ChangeExtension(sourcePath, ".dds");
+            var newPath = Path.ChangeExtension(
+                sourcePath, ExtensionAfterConversion(sourcePath, sourceIsXbox360: true));
 
             // FNV's runtime DDS loader doesn't accept BC5/ATI2 (the Xbox 360 native normal-map
             // format) — the texture slot stays unbound and renders whatever stale memory
@@ -94,7 +95,7 @@ internal sealed class PrototypeAssetConverter
             // the alpha channel, so re-encode any ATI2 output through the same merge step
             // the standalone `bsa extract --convert` path uses (with the companion `_s.ddx`
             // when available; gray alpha otherwise).
-            if (IsLikelyNormalMap(sourcePath) && IsAti2(outputData))
+            if (NormalMapMerge.IsNormalMapPath(sourcePath) && NormalMapMerge.IsAti2(outputData))
             {
                 outputData = MergeNormalToDxt5(outputData, sourcePath);
             }
@@ -112,7 +113,7 @@ internal sealed class PrototypeAssetConverter
         byte[]? specBytes = null;
         if (_companionFetcher is not null)
         {
-            var specSourcePath = ComputeSpecularSourcePath(normalSourcePath);
+            var specSourcePath = NormalMapMerge.ComputeSpecularPath(normalSourcePath);
             if (specSourcePath is not null)
             {
                 var specRaw = _companionFetcher(specSourcePath);
@@ -136,36 +137,6 @@ internal sealed class PrototypeAssetConverter
         }
 
         return DdsPostProcessor.MergeNormalSpecularMapsFromMemory(bc5Bytes, specBytes);
-    }
-
-    private static bool IsLikelyNormalMap(string sourcePath)
-    {
-        var stem = Path.GetFileNameWithoutExtension(sourcePath);
-        return stem.EndsWith("_n", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsAti2(byte[] dds)
-    {
-        // DDS header fourcc lives at offset 84. ATI2 = "ATI2" = {0x41, 0x54, 0x49, 0x32}.
-        return dds.Length >= 88
-               && dds[84] == (byte)'A'
-               && dds[85] == (byte)'T'
-               && dds[86] == (byte)'I'
-               && dds[87] == (byte)'2';
-    }
-
-    private static string? ComputeSpecularSourcePath(string normalSourcePath)
-    {
-        var dir = Path.GetDirectoryName(normalSourcePath) ?? string.Empty;
-        var name = Path.GetFileNameWithoutExtension(normalSourcePath);
-        var ext = Path.GetExtension(normalSourcePath);
-        if (!name.EndsWith("_n", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var specName = name[..^2] + "_s" + ext;
-        return string.IsNullOrEmpty(dir) ? specName : Path.Combine(dir, specName);
     }
 
     private static ConvertedAsset ConvertNif(byte[] data, string sourcePath)
@@ -209,7 +180,8 @@ internal sealed class PrototypeAssetConverter
                     result.Notes ?? "XMA → WAV conversion produced no data");
             }
 
-            var newPath = Path.ChangeExtension(sourcePath, ".wav");
+            var newPath = Path.ChangeExtension(
+                sourcePath, ExtensionAfterConversion(sourcePath, sourceIsXbox360: true));
             return ConvertedAsset.Converted(result.OutputData, newPath);
         }
         catch (Exception ex)
@@ -234,13 +206,64 @@ internal sealed class PrototypeAssetConverter
                     result.Notes ?? "XMA → OGG conversion produced no data");
             }
 
-            var newPath = Path.ChangeExtension(sourcePath, ".ogg");
+            var newPath = Path.ChangeExtension(
+                sourcePath, ExtensionAfterConversion(sourcePath, sourceIsXbox360: true));
             return ConvertedAsset.Converted(result.OutputData, newPath);
         }
         catch (Exception ex)
         {
             return ConvertedAsset.Failure(data, sourcePath, $"XMA → OGG exception: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    ///     The extension this converter emits for <paramref name="sourcePath" />. Every branch
+    ///     of <see cref="ConvertAsync" /> derives its output path from this, so it is the one
+    ///     place the 360→PC container policy lives.
+    ///     <para>
+    ///     A PC-sourced asset is never converted, so it keeps its own extension — which is NOT
+    ///     necessarily the requested one. That case is real: a <c>.wav</c> request can resolve
+    ///     to a PC <c>.ogg</c> donor through <see cref="AssetPathRules.ExtensionSwaps" />, and
+    ///     the bytes packed are Ogg. Callers predicting a name must honour it, so this method
+    ///     answers unconditionally rather than only when a conversion occurs.
+    ///     </para>
+    /// </summary>
+    public static string ExtensionAfterConversion(string sourcePath, bool sourceIsXbox360)
+    {
+        var extension = Path.GetExtension(sourcePath).ToLowerInvariant();
+        if (!sourceIsXbox360)
+        {
+            return extension;
+        }
+
+        return extension switch
+        {
+            ".ddx" => ".dds",
+            ".xma" => IsDialogueVoicePath(sourcePath) ? ".ogg" : ".wav",
+            _ => extension,
+        };
+    }
+
+    /// <summary>
+    ///     The BSA entry path the packer will produce. The packer always packs under the
+    ///     REQUESTED path — that is what lets a fuzzy rename re-home donor bytes onto the name
+    ///     the record uses — and only ever changes its extension, so this is a pure function of
+    ///     (request, source).
+    ///     <para>
+    ///     <c>AssetPackingService</c> calls it with the request it is about to pack.
+    ///     <c>AssetPathRewriter</c> calls it with the path it is about to write into a record,
+    ///     because that value becomes the packer's request on the next pass. One function, one
+    ///     answer — which is the whole point: the two used to derive the name independently and
+    ///     drifted, leaving records pointing at files no archive contained.
+    ///     </para>
+    /// </summary>
+    public static string PredictPackedPath(string requestedPath, string sourcePath, bool sourceIsXbox360)
+    {
+        var packedExtension = ExtensionAfterConversion(sourcePath, sourceIsXbox360);
+        return string.Equals(packedExtension, Path.GetExtension(requestedPath),
+            StringComparison.OrdinalIgnoreCase)
+            ? requestedPath
+            : Path.ChangeExtension(requestedPath, packedExtension);
     }
 
     private static bool IsDialogueVoicePath(string sourcePath)

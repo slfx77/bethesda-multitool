@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Reflection;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
@@ -158,7 +159,7 @@ internal static class AssetPathCollector
             switch (value)
             {
                 case string s when isPathLike:
-                    if (TryAddPath(s, paths) && sources is not null)
+                    if (TryAddPath(s, paths, FieldRootHint(record)) && sources is not null)
                     {
                         sources.Add(BuildReference(record, prop, s));
                     }
@@ -177,7 +178,7 @@ internal static class AssetPathCollector
                             // String inside an IEnumerable (e.g. List<string>) — we can detect
                             // the path but can't rewrite it from the list (no settable index).
                             // Skip source-tracking but still gather it for packing.
-                            TryAddPath(itemStr, paths);
+                            TryAddPath(itemStr, paths, FieldRootHint(record));
                         }
                         else if (!item.GetType().IsPrimitive && item is not string)
                         {
@@ -203,6 +204,18 @@ internal static class AssetPathCollector
     }
 
     /// <summary>
+    ///     The Data subtree a record's asset paths are interpreted against, when the file
+    ///     extension cannot say. MUSC <c>FNAM</c> is resolved by the engine relative to
+    ///     <c>Data\Music\</c> and carries both <c>.mp3</c> and <c>.wav</c> — the same two
+    ///     containers SOUN <c>FNAM</c> uses under <c>Data\Sound\</c> (the radio-song family,
+    ///     e.g. <c>songs\radio\enclave\...</c>) — so the owning record type is the only thing
+    ///     that can disambiguate. Null means "derive it from the extension", which is correct
+    ///     for every other record.
+    /// </summary>
+    private static string? FieldRootHint(object owner) =>
+        owner is MusicTypeRecord ? "music\\" : null;
+
+    /// <summary>
     ///     Build an <see cref="AssetPathReference" /> for a path discovered on a record
     ///     field. Captures the owner object + property + raw value + normalized value.
     /// </summary>
@@ -211,7 +224,7 @@ internal static class AssetPathCollector
         PropertyInfo property,
         string rawPath)
     {
-        var normalized = TryNormalizeRequestPath(rawPath) ?? rawPath;
+        var normalized = TryNormalizeRequestPath(rawPath, FieldRootHint(owner)) ?? rawPath;
         return new AssetPathReference
         {
             Owner = owner,
@@ -459,13 +472,29 @@ internal static class AssetPathCollector
     ///     Add a candidate path to the set after normalization. Returns true if added,
     ///     false if filtered out (wrong extension, basename-only, no inferable prefix, …).
     /// </summary>
-    private static bool TryAddPath(string? raw, HashSet<string> paths)
+    /// <summary>
+    ///     Adds a path to the request set and reports whether it is a packable asset path.
+    ///     <para>
+    ///     The return value deliberately does NOT mean "was newly added". It used to, and that
+    ///     silently cost rewrites: when two records name the same asset — e.g. a MUSC holding
+    ///     <c>endgame\endgame_04.mp3</c> and another holding
+    ///     <c>D:\Data\Music\endgame\endgame_04.mp3</c>, which normalize identically — only the
+    ///     first was source-tracked, so the second could never be repointed. Deduping is the
+    ///     <see cref="HashSet{T}" />'s job; every owning field still needs its own reference.
+    ///     </para>
+    /// </summary>
+    private static bool TryAddPath(string? raw, HashSet<string> paths, string? rootHint = null)
     {
-        var normalized = TryNormalizeRequestPath(raw);
-        return normalized is not null
-               && !IsEngineGlobalCharacterAsset(normalized)
-               && !AssetPathRules.IsTerrainBoundLodAsset(normalized)
-               && paths.Add(normalized);
+        var normalized = TryNormalizeRequestPath(raw, rootHint);
+        if (normalized is null
+            || IsEngineGlobalCharacterAsset(normalized)
+            || AssetPathRules.IsTerrainBoundLodAsset(normalized))
+        {
+            return false;
+        }
+
+        paths.Add(normalized);
+        return true;
     }
 
     /// <summary>
@@ -503,9 +532,9 @@ internal static class AssetPathCollector
     ///     Basename-only paths (no directory component) are rejected as too ambiguous.
     /// </summary>
     /// <returns>Canonical normalized path, or null if the input can't be made into a valid asset reference.</returns>
-    internal static string? TryNormalizeRequestPath(string? raw)
+    internal static string? TryNormalizeRequestPath(string? raw, string? rootHint = null)
     {
-        return AssetPathRules.TryNormalizeRequestPath(raw);
+        return AssetPathRules.TryNormalizeRequestPath(raw, rootHint);
     }
 
     /// <summary>

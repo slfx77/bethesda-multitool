@@ -37,32 +37,73 @@ internal static class AssetPathRewriter
         var rewritten = 0;
         var skippedExact = 0;
         var skippedMissing = 0;
+        var skippedCrossRoot = 0;
 
         foreach (var reference in sources)
         {
             considered++;
             var resolution = resolver.Resolve(reference.NormalizedPath);
 
-            // Skip resolutions that don't carry a different filename.
             if (resolution.Kind == AssetResolutionKind.Missing)
             {
                 skippedMissing++;
                 continue;
             }
 
-            if (resolution.ResolvedPath is null
-                || string.Equals(resolution.ResolvedPath, reference.NormalizedPath,
-                    StringComparison.OrdinalIgnoreCase))
+            // An exact hit reports no ResolvedPath — "the asset is exactly where you asked".
+            // Treating that as unresolved would skip the record entirely, which matters for a
+            // non-portable raw value (below): it resolves fine, it just cannot be written into
+            // a plugin as-is.
+            var resolvedPath = resolution.ResolvedPath ?? reference.NormalizedPath;
+
+            // What the packer will actually name the entry once this field points at the
+            // resolved asset — NOT the donor's own name. A donor that differs only by a
+            // 360-only container (.xma / .ddx) yields the extension the field already has, so
+            // rewriting to the donor name would desync the record from the archive. That was
+            // the defect: a correct `...lp.wav` became `...lp.xma`, and the packer wrote .wav.
+            var target = PrototypeAssetConverter.PredictPackedPath(
+                resolvedPath,
+                resolution.Source?.NormalizedPath ?? resolvedPath,
+                resolution.Source?.IsXbox360 ?? false);
+
+            // A drive-qualified capture ("D:\Data\Music\endgame\endgame_02.mp3") is unusable in
+            // a plugin no matter what it resolves to: the engine reads the raw field, appends
+            // it to Data\Music\, and finds nothing. Canonicalising it is independent of any
+            // rename, so it is computed from the field's OWN normalized path.
+            var rawIsPortable = !reference.OriginalRawPath.Contains(':', StringComparison.Ordinal);
+            var portableRaw = rawIsPortable
+                ? reference.OriginalRawPath
+                : DenormalizeForField(reference.NormalizedPath, reference.OriginalRawPath);
+
+            // A field's path is interpreted relative to exactly one Data subtree (SOUN FNAM
+            // under Sound\, MUSC FNAM under Music\, MODL under Meshes\). A match under a
+            // different root would change what the field means, so it is not a usable rename —
+            // the packer still re-homes those donor bytes onto the original request, which is
+            // the outcome we want anyway.
+            var renameable =
+                !string.Equals(target, reference.NormalizedPath, StringComparison.OrdinalIgnoreCase)
+                && AssetPathRules.SharesCategoryRoot(target, reference.NormalizedPath);
+
+            if (!renameable && rawIsPortable)
             {
-                // Exact match — name unchanged, nothing to rewrite.
-                skippedExact++;
+                // Already a fixed point — the engine will find the file where the field says.
+                if (string.Equals(target, reference.NormalizedPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    skippedExact++;
+                }
+                else
+                {
+                    skippedCrossRoot++;
+                }
+
                 continue;
             }
 
-            // Resolved path differs from requested → record was pointing at a since-renamed
-            // asset. Rewrite the field to the matched name, keeping the field's original
-            // prefix-style so the runtime queries match the new BSA entry.
-            var newRawPath = DenormalizeForField(resolution.ResolvedPath, reference.OriginalRawPath);
+            // Either a genuine rename (the asset survived under a different filename), or a
+            // portability-only cleanup of the field's own path.
+            var newRawPath = renameable
+                ? DenormalizeForField(target, reference.OriginalRawPath)
+                : portableRaw;
             try
             {
                 reference.Property.SetValue(reference.Owner, newRawPath);
@@ -87,7 +128,8 @@ internal static class AssetPathRewriter
             Considered = considered,
             Rewritten = rewritten,
             SkippedExact = skippedExact,
-            SkippedMissing = skippedMissing
+            SkippedMissing = skippedMissing,
+            SkippedCrossRoot = skippedCrossRoot
         };
     }
 
@@ -111,5 +153,12 @@ internal static class AssetPathRewriter
         public int Rewritten { get; init; }
         public int SkippedExact { get; init; }
         public int SkippedMissing { get; init; }
+
+        /// <summary>
+        ///     Resolutions declined because the match sat under a different Data root
+        ///     (e.g. a SOUN field matching something under <c>music\</c>). Accepting those
+        ///     would change what the field means.
+        /// </summary>
+        public int SkippedCrossRoot { get; init; }
     }
 }
