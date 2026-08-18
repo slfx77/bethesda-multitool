@@ -299,9 +299,32 @@ internal static class DmpCellInventoryCommand
                 // Cells that have at least one placement whose base FormID is in our target set.
                 var matchedCells = BuildMatchedCells(records.Cells, baseTypeMap, inventoryAuthority);
 
+                // Population totals behind the filter, so a zero result can say WHY it is zero.
+                var allPlacements = records.Cells.Sum(c => c.PlacedObjects.Count);
+                var nonPersistentPlacements = records.Cells
+                    .Sum(c => c.PlacedObjects.Count(o => !o.IsPersistent));
+
                 if (matchedCells.Count == 0)
                 {
                     sb.AppendLine($"_No placements with base types in {{ {string.Join(", ", targetTypes)} }} found._");
+                    sb.AppendLine();
+
+                    // Distinguish "we dropped the cells" from "the capture has no scene". Reporting
+                    // only the matched count reads as the former, which is what sent a prior
+                    // investigation after xex23 — a dump holding 1,153 cells (97.5% of its working
+                    // neighbour) whose crash simply predates the cell grid streaming in. Scenery
+                    // lives on NON-persistent refs; a capture taken with no cell attached has
+                    // essentially none, while persistent refs (markers etc.) are always present.
+                    sb.AppendLine(
+                        $"Runtime cells recovered: **{records.Cells.Count:N0}**. " +
+                        $"Placements on those cells: **{allPlacements:N0}** " +
+                        $"({nonPersistentPlacements:N0} non-persistent, " +
+                        $"{allPlacements - nonPersistentPlacements:N0} persistent).");
+                    sb.AppendLine();
+                    sb.AppendLine(records.Cells.Count > 0 && nonPersistentPlacements == 0
+                        ? "This is a **scene-less capture**, not a recovery gap: the cells are here, "
+                          + "but the dump holds no temporary/streamed references for them to contain."
+                        : "_Cells were recovered but none carried scenery of the requested base types._");
                 }
                 else
                 {
@@ -391,6 +414,13 @@ internal static class DmpCellInventoryCommand
                 AnsiConsole.MarkupLine(
                     $"  -> {Markup.Escape(Path.GetFileName(mdPath))} " +
                     $"(ws={totalWorldspaces} cells={totalCells} placements={totalPlacements})");
+
+                // On its own line: appended to the one above, this wraps at the console width
+                // and the halves can no longer be parsed as a pair. These two counts are the
+                // discriminators between a recovery gap and a scene-less capture — cells and
+                // placements alone cannot tell those apart.
+                AnsiConsole.MarkupLine(
+                    $"     runtimeCells={records.Cells.Count} nonPersistent={nonPersistentPlacements}");
                 processed++;
             }
             catch (Exception ex)

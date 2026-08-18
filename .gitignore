@@ -6,6 +6,13 @@ out/
 # Reports
 reports/
 
+# Default output directory of EsmAnalyzer's terrain export commands (heightmap analysis
+# JSON + missing-cell lists). Generated per run against whatever corpus is to hand.
+worldmap_export/
+
+# MSYS/Cygwin crash artifacts
+*.stackdump
+
 # IDE
 .vs/
 .vscode/
@@ -110,6 +117,13 @@ tools/EsmSchemaGen/obj/
 !tools/EsmSchemaGen.Tests/
 tools/EsmSchemaGen.Tests/bin/
 tools/EsmSchemaGen.Tests/obj/
+
+# tools/scripts: allow-listed per script. Only scripts useful to the wider modding
+# community belong here — corpus-specific audits and repo dev tooling stay untracked.
+!tools/scripts/
+tools/scripts/*
+!tools/scripts/esm_asset_path_audit.py
+!tools/scripts/esm_bsa_crosscheck.py
 
 # Python remnants (if any)
 .venv/
