@@ -61,7 +61,8 @@ internal sealed class RuntimeCellObjectEnumerator
             entry.TesFormOffset.Value,
             entry.FormId,
             entry.DisplayName,
-            layout);
+            layout,
+            entry.OriginalFormType);
     }
 
     internal RuntimeCellProbeSnapshot? ReadRuntimeCellProbeSnapshot(long fileOffset, uint? expectedFormId,
@@ -92,9 +93,15 @@ internal sealed class RuntimeCellObjectEnumerator
         long fileOffset,
         uint? expectedFormId,
         string? displayName,
-        PdbTypeLayout layout)
+        PdbTypeLayout layout,
+        byte? originalFormType = null)
     {
-        if (buffer.Length < 16 || buffer[4] != 0x39)
+        // Accept the pre-drift byte as well as canonical CELL. Entries are drift-corrected by
+        // RuntimeBuildOffsets.ApplyRemap, but the bytes in memory are NOT — so on a build whose
+        // FormType enum shifts across 0x39, a hard equality test silently drops EVERY runtime
+        // cell. The WRLD twin (RuntimeCellReader.cs:219) already tolerates this; CELL did not.
+        // No dump in the current corpus drifts across 0x39, so this is latent, not active.
+        if (buffer.Length < 16 || (buffer[4] != 0x39 && buffer[4] != (originalFormType ?? 0x39)))
         {
             return null;
         }

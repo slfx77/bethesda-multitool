@@ -141,6 +141,14 @@ internal static class SemanticFileLoader
 
         ApplyDmpGapRecoveryPromotionsIfNeeded(analysisResult, options);
 
+        // NOTE: an earlier revision wrapped the string-table + terrain mounts below in
+        // ArchiveHandleRegistry.Shared.KeepWarm() to avoid re-parsing archives across the pair. That is
+        // wrong here on both counts. It buys nothing — the string-table lookup stops at the first
+        // layer that hits, and "<Game> - Localization.ba2" sorts before "<Game> - Terrain*.ba2", so the
+        // terrain archives are never opened by that pass — and KeepWarm is process-global, so it parks
+        // handles released by *any* concurrent caller, holding their files open past the point those
+        // callers expect to be able to delete them.
+
         // Localized plugins (Skyrim/FO4/Starfield) store FULL/DESC/dialogue text as string-table
         // IDs, not inline text. Load the tables (loose Data\Strings or inside a BSA) so the handlers
         // resolve real names instead of the first byte of the ID. Null for non-localized plugins.
@@ -158,12 +166,13 @@ internal static class SemanticFileLoader
         var records = parser.ParseAll(options.ParseProgress, options.ResidentRecoveryMasterFormIds);
         ApplyCellWorldspaceAuthorityIfNeeded(records, analysisResult.EsmRecords, fileType, options);
 
-        // Fallout 76 stores terrain heights in external .btd files, not in-record VHGT. Attach them to
-        // exterior cells so the 2D/3D terrain renderers (which read through the shared height
-        // abstraction) light up. No-op for every other game.
+        // Fallout 76 and Starfield store terrain heights in external .btd files, not in-record VHGT
+        // (Starfield has no LAND record at all). Attach them to exterior cells so the 2D/3D terrain
+        // renderers (which read through the shared height abstraction) light up. No-op for every
+        // other game.
         if (fileType == AnalysisFileType.EsmFile)
         {
-            Formats.Esm.Land.Fo76TerrainInjector.Inject(records, filePath);
+            Formats.Esm.Land.BtdTerrainInjector.Inject(records, filePath);
         }
 
         var resolver = records.CreateResolver(analysisResult.FormIdMap);

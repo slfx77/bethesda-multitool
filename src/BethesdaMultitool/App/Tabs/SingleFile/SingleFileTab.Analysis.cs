@@ -475,7 +475,9 @@ public sealed partial class SingleFileTab
             // Snapshot UI-thread-owned state HERE: LoadOrder.Entries is a UI-mutated
             // ObservableCollection and the resolver getter enumerates it, so neither may be touched
             // from the worker below.
-            var primaryFileName = _session.IsEsmFile ? Path.GetFileName(_session.FilePath) : null;
+            // Full path, not just the name: the mapper reads this file's MAST list to place its
+            // masters on the slots its own raw FormIDs already name (Tes4LoadOrderFormIdMapper).
+            var primaryFilePath = _session.IsEsmFile ? _session.FilePath : null;
             var loadOrderEntries = _session.LoadOrder.Entries.ToList();
             var resolver = _session.EffectiveResolver ?? _session.Resolver;
             var recoverableGaps = _session.AnalysisResult?.RecoverableGapCandidates;
@@ -494,9 +496,9 @@ public sealed partial class SingleFileTab
             var (tree, placements, usageIndex, factionMembers, raceLookup, semanticResult) =
                 await Task.Run(() =>
             {
-                // Merge load order records so DLC content appears in the browser. An ESM/ESP primary
-                // owns global mod index 0, so TES4-family entries rebase master references against it.
-                var loadOrderRecords = LoadOrder.BuildMergedRecordsFrom(loadOrderEntries, primaryFileName);
+                // Merge load order records so DLC content appears in the browser. An ESM/ESP primary's
+                // MAST list anchors the slots, so entries land where its raw FormIDs already point.
+                var loadOrderRecords = LoadOrder.BuildMergedRecordsFrom(loadOrderEntries, primaryFilePath);
                 var merged = loadOrderRecords != null
                     ? loadOrderRecords.MergeWith(primaryResult)
                     : primaryResult;

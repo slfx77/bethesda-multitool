@@ -33,18 +33,19 @@ internal sealed class SemanticSourceSet
 
     /// <summary>
     ///     Merges every source's records into one collection in load order.
-    ///     <paramref name="primaryFileName" /> names the externally-merged primary plugin (global mod
-    ///     index 0) when this set supplements one — TES4-family sources' FormIDs are then rebased so
-    ///     their master references resolve against it (see <see cref="Tes4LoadOrderFormIdMapper" />).
+    ///     <paramref name="primaryFilePath" /> is the FULL PATH of the externally-merged primary
+    ///     plugin when this set supplements one — its MAST list anchors the load-order slots so
+    ///     TES4-family sources' master references resolve where the unstamped primary's raw FormIDs
+    ///     already point (see <see cref="Tes4LoadOrderFormIdMapper" />).
     /// </summary>
-    public RecordCollection? BuildMergedRecords(string? primaryFileName = null)
+    public RecordCollection? BuildMergedRecords(string? primaryFilePath = null)
     {
         // TES4-family plugins carry file-local mod indices in their FormID high bytes (every DLC's own
         // records are raw 0x01xxxxxx) — rebase them into shared load-order slots so unrelated records
         // from different DLCs stop colliding while cross-file overrides keep folding together.
         var tes4Mapper = Tes4LoadOrderFormIdMapper.TryCreate(
             Sources.Select(source => source.FilePath).ToList(),
-            primaryFileName);
+            primaryFilePath);
 
         RecordCollection? merged = null;
         for (var i = 0; i < Sources.Count; i++)

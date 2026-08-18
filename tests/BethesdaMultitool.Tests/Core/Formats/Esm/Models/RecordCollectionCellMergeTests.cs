@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
@@ -222,15 +224,18 @@ public class Tes4LoadOrderFormIdMapperTests
     }
 
     [Fact]
-    public void Namespaced_PrimaryFileOccupiesSlotZero()
+    public void Namespaced_BaseGamePrimaryWithNoMasters_OccupiesSlotZero()
     {
-        // Supplementary set [DLCCoast] with primary Fallout4.esm: Coast lands at slot 1, and its
-        // master reference resolves to the primary's slot 0 — overrides keep folding onto the base.
+        // Supplementary set [DLCCoast] with primary Fallout4.esm: a base-game primary has no MAST
+        // list, so its own master count is 0 and it keeps slot 0 — that is the one shape where the
+        // pre-2026-08-17 "primary owns slot 0" behavior was correct. Coast lands at slot 1, and its
+        // master reference resolves to the primary's slot — overrides keep folding onto the base.
         var mapper = Tes4LoadOrderFormIdMapper.TryCreate(
             ["DLCCoast.esm"],
             "Fallout4.esm",
             Masters(new Dictionary<string, string[]>
             {
+                ["Fallout4.esm"] = [],
                 ["DLCCoast.esm"] = ["Fallout4.esm"]
             }))!;
 
@@ -303,5 +308,251 @@ public class Tes4LoadOrderFormIdMapperTests
 
         var records = CellCollection(0x01001234, 0x3C);
         Assert.Same(records, mapper.Namespaced(records, "capture.dmp"));
+    }
+
+    /// <summary>
+    ///     The user-reported case (2026-08-17): open a converted plugin, then add its master to the
+    ///     Load Order to resolve the placements. The primary is merged UNSTAMPED, so it keeps raw
+    ///     FormIDs — meaning the master must stay where the primary's references already point.
+    ///     Slotting the primary at 0 pushed the master's records to 0x01xxxxxx, which both stranded
+    ///     every reference AND collided with the primary's own 0x01 range.
+    /// </summary>
+    [Fact]
+    public void Namespaced_MasterAddedBesideAnUnstampedPrimary_StaysWhereItsReferencesPoint()
+    {
+        var mapper = Tes4LoadOrderFormIdMapper.TryCreate(
+            ["FalloutNV.esm"],
+            "xex4.v152.esm",
+            Masters(new Dictionary<string, string[]>
+            {
+                ["FalloutNV.esm"] = [],
+                ["xex4.v152.esm"] = ["FalloutNV.esm"]
+            }))!;
+
+        // The plugin's REFRs name master bases as 0x00xxxxxx and are never rebased (unstamped),
+        // so FalloutNV.esm's records have to stay at 0x00xxxxxx for the lookup to hit.
+        var master = CellCollection(0x0008E665, 0x3C);
+        Assert.Same(master, mapper.Namespaced(master, @"C:\FNV\Data\FalloutNV.esm"));
+    }
+
+    /// <summary>Two masters keep their MAST order, and the primary lands after both.</summary>
+    [Fact]
+    public void Namespaced_TwoMastersBesideAPrimary_BothStayIdentity()
+    {
+        var mastersReader = Masters(new Dictionary<string, string[]>
+        {
+            ["FalloutNV.esm"] = [],
+            ["DeadMoney.esm"] = ["FalloutNV.esm"],
+            ["proto.esp"] = ["FalloutNV.esm", "DeadMoney.esm"]
+        });
+        var mapper = Tes4LoadOrderFormIdMapper.TryCreate(
+            ["FalloutNV.esm", "DeadMoney.esm"], "proto.esp", mastersReader)!;
+
+        var nv = CellCollection(0x0008E665, 0x3C);
+        Assert.Same(nv, mapper.Namespaced(nv, "FalloutNV.esm"));
+
+        // DeadMoney is master index 1 in the primary's list and sits at slot 1, so its own
+        // 0x01-prefixed records are already correct and its 0x00 refs still mean FalloutNV.
+        var dm = CellCollection(0x01000B0F, 0x01000B0F);
+        Assert.Same(dm, mapper.Namespaced(dm, "DeadMoney.esm"));
+    }
+
+    /// <summary>
+    ///     A dump primary passes null and keeps the old numbering, because a dump is self-contained
+    ///     and owns the unstamped 0x00 range itself.
+    /// </summary>
+    [Fact]
+    public void Namespaced_NoPrimary_KeepsMasterAtSlotZero()
+    {
+        var mapper = Tes4LoadOrderFormIdMapper.TryCreate(
+            ["FalloutNV.esm", "DeadMoney.esm"],
+            mastersReader: Masters(new Dictionary<string, string[]>
+            {
+                ["FalloutNV.esm"] = [],
+                ["DeadMoney.esm"] = ["FalloutNV.esm"]
+            }))!;
+
+        var nv = CellCollection(0x0008E665, 0x3C);
+        Assert.Same(nv, mapper.Namespaced(nv, "FalloutNV.esm"));
+    }
+
+    /// <summary>
+    ///     2026-08-17 adversarial review: pins the primary's OWN slot (= its master count), which no
+    ///     earlier test observed — reverting the primary to slot 0 kept the whole class green. A
+    ///     supplementary patch that lists the PRIMARY as a master must resolve those references into
+    ///     the primary's raw block, and its own records must land past the anchored slots.
+    /// </summary>
+    [Fact]
+    public void Namespaced_EntryListingThePrimaryAsMaster_ResolvesIntoThePrimarysSlot()
+    {
+        var mapper = Tes4LoadOrderFormIdMapper.TryCreate(
+            ["FalloutNV.esm", "Patch.esp"],
+            "xex4.v152.esm",
+            Masters(new Dictionary<string, string[]>
+            {
+                ["FalloutNV.esm"] = [],
+                ["xex4.v152.esm"] = ["FalloutNV.esm"],
+                ["Patch.esp"] = ["FalloutNV.esm", "xex4.v152.esm"]
+            }))!;
+
+        // Slots: FalloutNV 0 (MAST anchor), primary 1 (its master count), Patch 2 (first free).
+        var patch = new RecordCollection
+        {
+            Cells =
+            [
+                new CellRecord
+                {
+                    FormId = 0x02000FEF, // local 0x02 = Patch's own record
+                    PlacedObjects =
+                    [
+                        // local 0x01 = the PRIMARY: must stay in its raw block (slot 1), not fall to 0.
+                        new PlacedReference { FormId = 0x02000FF0, BaseFormId = 0x01000A00 }
+                    ]
+                }
+            ]
+        };
+
+        var rebased = mapper.Namespaced(patch, "Patch.esp");
+        var cell = Assert.Single(rebased.Cells);
+        Assert.Equal(0x02000FEFu, cell.FormId);
+        Assert.Equal(0x01000A00u, Assert.Single(cell.PlacedObjects).BaseFormId);
+    }
+
+    /// <summary>
+    ///     2026-08-17 adversarial review: synthetic slots for absent masters must start past EVERY
+    ///     occupied slot. Anchoring the primary's masters can occupy slots at or above the file
+    ///     count, and a count-based seed then handed the absent master an OCCUPIED slot — aliasing
+    ///     two files' records into one global block, where the FormID-keyed merge folds them.
+    /// </summary>
+    [Fact]
+    public void Namespaced_MissingMasterBesideAnAnchoredPrimary_GetsAnUnoccupiedSlot()
+    {
+        var mapper = Tes4LoadOrderFormIdMapper.TryCreate(
+            ["FalloutNV.esm", "SomePatch.esp"],
+            "proto.esp",
+            Masters(new Dictionary<string, string[]>
+            {
+                ["FalloutNV.esm"] = [],
+                ["proto.esp"] = ["FalloutNV.esm", "DeadMoney.esm"],
+                ["SomePatch.esp"] = ["FalloutNV.esm", "Missing.esm"]
+            }))!;
+
+        // Slots: FalloutNV 0 and DeadMoney 1 (anchored), proto 2, SomePatch 3 (first free).
+        var patch = new RecordCollection
+        {
+            Cells =
+            [
+                new CellRecord
+                {
+                    FormId = 0x02000FEF, // local 0x02 = SomePatch's own record
+                    PlacedObjects =
+                    [
+                        new PlacedReference { FormId = 0x02000FF0, BaseFormId = 0x01000A00 } // local 0x01 = Missing.esm
+                    ]
+                }
+            ]
+        };
+
+        var rebased = mapper.Namespaced(patch, "SomePatch.esp");
+        var cell = Assert.Single(rebased.Cells);
+        Assert.Equal(0x03000FEFu, cell.FormId); // own records land at slot 3
+        // Missing.esm gets 4 — past everything — never SomePatch's own slot 3 (the review bug).
+        Assert.Equal(0x04000A00u, Assert.Single(cell.PlacedObjects).BaseFormId);
+    }
+
+    /// <summary>
+    ///     2026-08-17 adversarial review: a duplicated (or case-differing) name in the primary's
+    ///     MAST list must still RESERVE its index. The unstamped primary's raw references use that
+    ///     high byte for the earlier occurrence, so handing the hole to an unrelated filler would
+    ///     alias them onto the wrong file's records; reserved-but-vacant merely leaves them dangling.
+    /// </summary>
+    [Fact]
+    public void Namespaced_DuplicateMasterInPrimaryList_ReservesItsSlot()
+    {
+        var mapper = Tes4LoadOrderFormIdMapper.TryCreate(
+            ["A.esm", "X.esp"],
+            "P.esp",
+            Masters(new Dictionary<string, string[]>
+            {
+                ["A.esm"] = [],
+                ["P.esp"] = ["A.esm", "a.esm"], // duplicate differing only by case
+                ["X.esp"] = ["A.esm"]
+            }))!;
+
+        // Slots: A 0, (reserved duplicate) 1, P 2 — X must land at 3, never in the vacant 1 where
+        // the primary's raw 0x01 references (which mean A via the duplicate) would alias onto it.
+        var x = CellCollection(0x01001234, 0x3C);
+        var rebased = mapper.Namespaced(x, "X.esp");
+        Assert.Equal(0x03001234u, rebased.Cells[0].FormId);
+    }
+
+    /// <summary>
+    ///     Pins the REAL ReadMasters path, which every other test bypasses via the injected reader:
+    ///     the primary's MAST list is read from its FULL PATH even while another handle (the GUI
+    ///     session) holds the file open with write access. A regression to a FileShare.Read open
+    ///     throws a sharing violation here that gets swallowed into an empty master list — which
+    ///     silently reinstates the primary-at-slot-0 bug this class documents.
+    /// </summary>
+    [Fact]
+    public void TryCreate_ReadsPrimaryMastersFromDisk_EvenWhileTheFileIsHeldOpenForWrite()
+    {
+        var tempDir = Directory.CreateTempSubdirectory("tes4mapper-").FullName;
+        try
+        {
+            var masterPath = Path.Combine(tempDir, "FalloutNV.esm");
+            File.WriteAllBytes(masterPath, BuildHeaderOnlyEsm());
+            var primaryPath = Path.Combine(tempDir, "xex4.v152.esm");
+            File.WriteAllBytes(primaryPath, BuildHeaderOnlyEsm("FalloutNV.esm"));
+
+            using var held = new FileStream(
+                primaryPath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete);
+
+            var mapper = Tes4LoadOrderFormIdMapper.TryCreate([masterPath], primaryPath)!;
+
+            // FalloutNV anchors at slot 0 (identity) only if the MAST list actually got read; a
+            // swallowed read failure would put the primary at 0 and rebase the master to 0x01.
+            var master = CellCollection(0x0008E665, 0x3C);
+            Assert.Same(master, mapper.Namespaced(master, masterPath));
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    private static byte[] BuildHeaderOnlyEsm(params string[] masters)
+    {
+        var subrecords = new List<(string Signature, byte[] Data)> { ("HEDR", BuildHedr()) };
+        foreach (var master in masters)
+        {
+            subrecords.Add(("MAST", Encoding.ASCII.GetBytes(master + "\0")));
+            subrecords.Add(("DATA", new byte[8]));
+        }
+
+        var dataSize = subrecords.Sum(subrecord => 6 + subrecord.Data.Length);
+        var data = new byte[24 + dataSize];
+        Encoding.ASCII.GetBytes("TES4", data.AsSpan(0, 4));
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(4), (uint)dataSize);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(8), 1);
+
+        var offset = 24;
+        foreach (var (signature, bytes) in subrecords)
+        {
+            Encoding.ASCII.GetBytes(signature, data.AsSpan(offset, 4));
+            BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(offset + 4), (ushort)bytes.Length);
+            bytes.CopyTo(data.AsSpan(offset + 6));
+            offset += 6 + bytes.Length;
+        }
+
+        return data;
+    }
+
+    private static byte[] BuildHedr()
+    {
+        var hedr = new byte[12];
+        BinaryPrimitives.WriteSingleLittleEndian(hedr, 1.34f);
+        BinaryPrimitives.WriteUInt32LittleEndian(hedr.AsSpan(4), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(hedr.AsSpan(8), 0x800);
+        return hedr;
     }
 }

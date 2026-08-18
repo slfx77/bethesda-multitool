@@ -94,7 +94,9 @@ public sealed partial class SingleFileTab
             // snapshot — it used to run right here on the UI thread and hard-froze the map populate
             // for seconds with a DLC-sized load order.
             var loadOrderEntries = _session.LoadOrder.Entries.ToList();
-            var primaryFileName = _session.IsEsmFile ? Path.GetFileName(_session.FilePath) : null;
+            // Full path, not just the name: the mapper reads this file's MAST list to place its
+            // masters on the slots its own raw FormIDs already name (Tes4LoadOrderFormIdMapper).
+            var primaryFilePath = _session.IsEsmFile ? _session.FilePath : null;
             var isEsmFile = _session.IsEsmFile;
             var isSaveFile = _session.IsSaveFile;
             var filePath = _session.FilePath;
@@ -114,9 +116,9 @@ public sealed partial class SingleFileTab
                 var primaryWorldspaceIds = records.Worldspaces.Select(w => w.FormId).ToHashSet();
                 var primaryCellIds = records.Cells.Select(c => c.FormId).ToHashSet();
 
-                // Merge load order records so DLC worldspaces appear on the map. An ESM/ESP primary
-                // owns global mod index 0, so TES4-family entries rebase master references against it.
-                var loadOrderRecords = LoadOrder.BuildMergedRecordsFrom(loadOrderEntries, primaryFileName);
+                // Merge load order records so DLC worldspaces appear on the map. An ESM/ESP primary's
+                // MAST list anchors the slots, so entries land where its raw FormIDs already point.
+                var loadOrderRecords = LoadOrder.BuildMergedRecordsFrom(loadOrderEntries, primaryFilePath);
                 if (loadOrderRecords != null)
                 {
                     // Precedence is type-aware: an opened ESM/ESP is the base the Load Order layers on
