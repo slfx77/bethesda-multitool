@@ -594,11 +594,15 @@ public sealed class FnvWater001SourceContractTests
             "TryRenderCaptureWaterReflection(cmd, viewProjSky, sceneSkyScale, target);",
             "_water?.SetWaterReflection(",
             "(uint)target.Width,");
-        Assert.Contains(
-            "fields[\"waterReflection\"] = _captureWaterReflectionBound",
-            capture, StringComparison.Ordinal);
-        Assert.Contains(
-            "\"planar-rt-scene\" : \"planar-rt-sky\"", capture, StringComparison.Ordinal);
+        // The reported field is DERIVED from the bound flag, and the unbound arm must resolve to the
+        // gradient stand-in — labelling a fallback run "planar-rt-*" would make a capture that never
+        // rendered a reflection indistinguishable from one that did.
+        SourceContract.AssertOrder(
+            capture,
+            "if (!_captureWaterReflectionBound)",
+            "waterReflectionSource = \"gradient-standin\";",
+            "\"planar-rt-scene\" : \"planar-rt-sky\"",
+            "fields[\"waterReflection\"] = waterReflectionSource;");
         // Same mirror construction as the live route (translation-free dome ⇒ a plain Z flip).
         Assert.Contains(
             "RenderSky(Matrix4x4.CreateScale(1f, 1f, -1f) * viewProjSky, Vector3.Zero",

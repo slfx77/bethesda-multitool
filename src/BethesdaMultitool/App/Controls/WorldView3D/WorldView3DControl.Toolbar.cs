@@ -126,11 +126,17 @@ public sealed partial class WorldView3DControl
     private void TonemapRadio_Checked(object sender, RoutedEventArgs e)
     {
         if (_initializing || _syncingTonemapRadio) return;
-        var mode = ReferenceEquals(sender, SettingsPanel.TonemapNoneRadio)
-            ? Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode.Sdr
-            : ReferenceEquals(sender, SettingsPanel.TonemapBloomRadio)
-                ? Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode.SdrBloom
-                : Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode.Hdr;
+        // Hdr is the fallback arm — it covers TonemapHdrRadio and anything added later.
+        var mode = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode.Hdr;
+        if (ReferenceEquals(sender, SettingsPanel.TonemapNoneRadio))
+        {
+            mode = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode.Sdr;
+        }
+        else if (ReferenceEquals(sender, SettingsPanel.TonemapBloomRadio))
+        {
+            mode = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode.SdrBloom;
+        }
+
         SetTonemapGuiMode(mode);
     }
 

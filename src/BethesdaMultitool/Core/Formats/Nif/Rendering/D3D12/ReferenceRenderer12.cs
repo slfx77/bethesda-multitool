@@ -3155,7 +3155,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     The caller has bound the mirror b3 (clip plane + mirrored shading camera). Returns
     ///     false on ring exhaustion — the reflection keeps its sky content for the frame.
     /// </summary>
-    public bool RenderMirrorColor(in Matrix4x4 mirrorViewProj)
+    public bool RenderMirrorColor(Matrix4x4 mirrorViewProj)
     {
         _mirrorCaptureArmed = false;
         if (_mirrorDraws.Count == 0)

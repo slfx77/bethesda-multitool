@@ -2100,9 +2100,17 @@ public sealed partial class WorldView3DControl
         // Which reflection source the water actually sampled. This existed as a silent live-only
         // divergence: captures cleared the binding and fell back to the gradient, so a reflection
         // artefact reported with a pose could never be reproduced from that pose.
-        fields["waterReflection"] = _captureWaterReflectionBound
-            ? (_captureWaterReflectionScene ? "planar-rt-scene" : "planar-rt-sky")
-            : "gradient-standin";
+        string waterReflectionSource;
+        if (!_captureWaterReflectionBound)
+        {
+            waterReflectionSource = "gradient-standin";
+        }
+        else
+        {
+            waterReflectionSource = _captureWaterReflectionScene ? "planar-rt-scene" : "planar-rt-sky";
+        }
+
+        fields["waterReflection"] = waterReflectionSource;
         fields["waterDraws"] = waterStats?.WaterDraws ?? 0;
         // Placeable-water (PWAT) surfaces that streamed in as authored NIF geometry. Zero at a pose
         // that should have a pond is the signature of the base record never resolving a MODL — the
