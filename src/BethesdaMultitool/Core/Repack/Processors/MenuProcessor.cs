@@ -26,6 +26,30 @@ public sealed class MenuProcessor : IRepackProcessor
     /// <summary>The container's fixed name in a 360 Data folder.</summary>
     public const string ContainerFileName = "final_master_xml.dat";
 
+    /// <summary>
+    ///     Console menu documents PROVEN incompatible with the retail PC executable — delivered
+    ///     from the PC donor instead, per the user ruling that PC content is copied ONLY where
+    ///     playability requires it (everything else stays prototype).
+    ///     Evidence (2026-08-18/19 July-prototype playtests):
+    ///     - hud_main_menu.xml: HUDMainMenu ctor dereferences the CNDArrows/Rads/LMBs tile
+    ///       lookups with no null check — the July HUD predates those tiles (boot AV at 0xA0CBA2).
+    ///     - stats_menu.xml: "MENUS: Stats Menu Creation Failed" on the retail exe, followed by
+    ///       the same NULL-tile AV when the Pip-Boy opens.
+    ///     - inventory/container/barter/recipe: the shared item-list helper (FUN_00707e30)
+    ///       looks up CNDArrows per entry, unguarded — crashes when the first item list renders.
+    ///     When no PC donor is configured the console document is still written (a partially
+    ///     unstable interface beats none) and a warning is reported.
+    /// </summary>
+    private static readonly HashSet<string> PcRequiredMenuOverrides = new(StringComparer.OrdinalIgnoreCase)
+    {
+        @"menus\main\hud_main_menu.xml",
+        @"menus\main\stats_menu.xml",
+        @"menus\main\inventory_menu.xml",
+        @"menus\container_menu.xml",
+        @"menus\barter_menu.xml",
+        @"menus\recipe_menu.xml"
+    };
+
     public string Name => "Menus";
 
     public async Task<int> ProcessAsync(
@@ -75,11 +99,21 @@ public sealed class MenuProcessor : IRepackProcessor
         var menusRoot = Path.Combine(options.OutputFolder, "Data");
         var written = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        // Console docs the retail exe cannot run are held back so the donor backfill supplies
+        // them; if no donor is configured they are written afterwards as a last resort.
+        var heldBack = new List<(string RelativePath, byte[] Xml)>();
+
         foreach (var entry in entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var relativePath = FinalMasterXmlLayout.ToPcPath(entry.Name);
+            if (PcRequiredMenuOverrides.Contains(relativePath))
+            {
+                heldBack.Add((relativePath, entry.Xml));
+                continue;
+            }
+
             await WriteMenuAsync(menusRoot, relativePath, entry.Xml, cancellationToken);
             written.Add(relativePath);
 
@@ -99,6 +133,25 @@ public sealed class MenuProcessor : IRepackProcessor
         var consoleCount = written.Count;
         var backfilled = BackfillFromPcDonor(options, menusRoot, written, progress);
 
+        // Any held-back console doc the donor did not cover falls back to the console bytes.
+        var overrideFallbacks = 0;
+        foreach (var (relativePath, xml) in heldBack.Where(h => !written.Contains(h.RelativePath)))
+        {
+            await WriteMenuAsync(menusRoot, relativePath, xml, cancellationToken);
+            written.Add(relativePath);
+            overrideFallbacks++;
+        }
+
+        if (overrideFallbacks > 0)
+        {
+            progress.Report(new RepackerProgress
+            {
+                Phase = RepackPhase.Menus,
+                Message = $"WARNING: {overrideFallbacks} console menus known to crash the retail exe "
+                          + "were written anyway because no PC donor is configured (--pc-menu-donor)"
+            });
+        }
+
         var stillAbsent = FinalMasterXmlLayout.MenusAbsentFromConsoleBuild
             .Where(m => !written.Contains(m))
             .ToList();
@@ -107,6 +160,7 @@ public sealed class MenuProcessor : IRepackProcessor
               + $"supplied them: {string.Join(", ", stillAbsent.Select(Path.GetFileName))}"
             : string.Empty;
 
+        var overridesFromDonor = heldBack.Count - overrideFallbacks;
         progress.Report(new RepackerProgress
         {
             Phase = RepackPhase.Menus,
@@ -114,6 +168,9 @@ public sealed class MenuProcessor : IRepackProcessor
             TotalItems = written.Count,
             Message = $"Extracted {consoleCount} console menus"
                       + (backfilled > 0 ? $" + backfilled {backfilled} from the PC donor" : string.Empty)
+                      + (overridesFromDonor > 0
+                          ? $" ({overridesFromDonor} of them replacing console menus the retail exe cannot run)"
+                          : string.Empty)
                       + note,
             IsComplete = true,
             Success = true
