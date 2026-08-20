@@ -21,7 +21,8 @@ internal sealed record WorldView3DProfilerPostProcessState(
     string BaseImageSpaceSource,
     float ResolvedSunlightScale,
     float SceneSunlightScale,
-    bool ShadowsEnabled);
+    bool ShadowsEnabled,
+    string TonemapGuiMode = "");
 
 /// <summary>Retail placed-reference identity retained alongside a profiler scenario fixture.</summary>
 internal sealed record WorldView3DProfilerFixture(
@@ -49,13 +50,14 @@ public sealed partial class WorldView3DControl
         bool fogEnabled,
         bool shadowsEnabled = true)
     {
-        _hdrEnabled = hdrEnabled;
+        // The bool scenario contract predates the retail three-way radio: hdrEnabled maps onto
+        // Hdr/Sdr (the funnel reseats the radio control), and bloomEnabled stays the NON-UI
+        // diagnostic AND-gate so scenarios can A/B bloom independently under HDR.
+        SetTonemapGuiMode(hdrEnabled ? GpuTonemapGuiMode.Hdr : GpuTonemapGuiMode.Sdr);
         _bloomEnabled = bloomEnabled;
         _showFog = fogEnabled;
         _showShadows = shadowsEnabled;
 
-        SettingsPanel.HdrToggle.IsOn = hdrEnabled;
-        SettingsPanel.BloomToggle.IsOn = bloomEnabled;
         // The bool scenario contract maps onto the dropdown's Automatic/None entries (explicit IMGS
         // picks are a GUI-only affordance); this also syncs the ComboBox selection.
         SetImagespaceSelection(imagespaceEnabled
@@ -72,7 +74,7 @@ public sealed partial class WorldView3DControl
         {
             var tonemap = ResolveTonemapSettings();
             var tonemapAvailable = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
-            var hdrActive = _hdrEnabled && tonemapAvailable;
+            var hdrActive = HdrGuiActive && tonemapAvailable;
             var modeTraits = GpuTonemapModeTraits.For(tonemap.Mode, tonemapAvailable);
             var sceneSunlightScale = GpuTonemapSettings.ResolveSceneSunlightScale(
                 tonemap,
@@ -80,7 +82,7 @@ public sealed partial class WorldView3DControl
                 hdrActive,
                 isInterior: _selectedInterior is not null);
             return new WorldView3DProfilerPostProcessState(
-                _hdrEnabled,
+                HdrGuiActive,
                 _bloomEnabled,
                 _imagespaceMode != ImagespaceSelectionMode.None,
                 _showFog,
@@ -91,7 +93,8 @@ public sealed partial class WorldView3DControl
                 _tonemapBaseImageSpaceSource,
                 tonemap.SunlightScale,
                 sceneSunlightScale,
-                _showShadows);
+                _showShadows,
+                _tonemapGuiMode.ToString());
         }
     }
 

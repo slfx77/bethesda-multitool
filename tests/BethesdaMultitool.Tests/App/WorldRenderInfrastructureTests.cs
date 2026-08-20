@@ -372,7 +372,7 @@ public sealed class WorldRenderInfrastructureTests
             },
             AllCells = allCells,
             CellByFormId = allCells.ToDictionary(c => c.FormId),
-            RefrToCellIndex = [],
+            PlacedRefs = PlacedRefIndex.Empty,
             UnlinkedExteriorCells = [],
             UnlinkedMapMarkers = []
         };

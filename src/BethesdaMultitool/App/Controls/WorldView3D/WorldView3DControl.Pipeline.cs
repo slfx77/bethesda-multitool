@@ -138,6 +138,16 @@ public sealed partial class WorldView3DControl
                 ShowImposters = BethesdaMultitool.Core.EnvironmentVariables.IsEnabled(
                     BethesdaMultitool.Core.EnvironmentVariables.Viewer.ShowImposters),
                 AnimationsEnabled = _animationsEnabled, // persist the toolbar toggle across reloads
+                // FormID heatmap: persist the Overlays toggle + range across ESM reloads. The range
+                // is whole cells end to end; the renderer resolves its own grid's cell size.
+                FormIdHeatmapEnabled = _formIdHeatmap,
+                FormIdHeatmapRangeCells = _formIdHeatmapRangeCells,
+                // Video-expander toggles: persist across ESM reloads like the visibility toggles.
+                GrassShadowsEnabled = _grassShadowsEnabled,
+                TreeShadowsEnabled = _canopyShadowsEnabled,
+                WindowReflectionsEnabled = _windowReflectionsEnabled,
+                // Scripted day/night reference states (street lights, glow FX) follow the game hour.
+                DayNightStates = _dayNightStates,
             };
             _references.SetHiddenCategories(_hiddenCategories);
             Log.Info("WorldView3DControl: reference pipeline initialized ({0} meshes BSA(s), {1} textures BSA(s)).",

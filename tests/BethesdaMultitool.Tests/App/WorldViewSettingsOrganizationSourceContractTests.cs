@@ -78,8 +78,10 @@ public sealed class WorldViewSettingsOrganizationSourceContractTests
     public void DependencyStateChangesOnlyAvailabilityAndEveryParentRefreshesIt()
     {
         var panel = SourceContract.ReadAppSource("WorldView3DSettingsPanel.xaml.cs");
+        // End the window at the next member's doc comment: the Video-profile members that now
+        // follow ApplyDependencyState legitimately discuss IsOn/visibility in their own contracts.
         var apply = SourceContract.Extract(
-            panel, "internal void ApplyDependencyState", "private void SettingsPanel_Loaded");
+            panel, "internal void ApplyDependencyState", "/// <summary>");
         Assert.Contains("Lighting.ShadowsControlEnabled = lighting;", apply, StringComparison.Ordinal);
         Assert.Contains("PlacedLightsToggle.IsEnabled = lighting;", apply, StringComparison.Ordinal);
         Assert.Contains("TerrainTexturesToggle.IsEnabled = terrain;", apply, StringComparison.Ordinal);

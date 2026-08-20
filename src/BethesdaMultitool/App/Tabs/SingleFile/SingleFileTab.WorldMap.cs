@@ -296,7 +296,7 @@ public sealed partial class SingleFileTab
     {
         WorldPanelSelector.SelectedItem = WorldPanelInspectionItem; // inspecting → show the Inspection tab
         _selectedWorldObject = obj;
-        _selectedWorldCell = _session.WorldViewData?.RefrToCellIndex.TryGetValue(obj.FormId, out var ownerCell) == true
+        _selectedWorldCell = _session.WorldViewData?.PlacedRefs.TryGetCell(obj.FormId, out var ownerCell) == true
             ? ownerCell
             : null;
 
@@ -869,15 +869,17 @@ public sealed partial class SingleFileTab
             ? (UIElement)WorldView3DControl.SettingsPanel
             : WorldMapControl.SettingsPanel;
 
-        // The Export tab is 3D-only: seed it with the 3D viewer's export panel and hide the tab in 2D.
-        // If it was the selected tab when leaving 3D, fall back to Settings.
-        WorldExportPresenter.Content = show3D ? WorldView3DControl.ExportPanel : null;
-        WorldPanelExportItem.Visibility = show3D ? Visibility.Visible : Visibility.Collapsed;
-        if (!show3D && WorldPanelSelector.SelectedItem == WorldPanelExportItem)
-        {
-            WorldPanelSelector.SelectedItem = WorldPanelSettingsItem;
-        }
+        // The Export tab always shows the ACTIVE viewer's export panel — the 2D map's PNG export moved
+        // out of its modal dialog into WorldMapExportPanel, so the tab is no longer 3D-only. Content
+        // swap (not visibility) so each panel keeps its Expander state and its typed folder/name.
+        WorldExportPresenter.Content = show3D
+            ? (UIElement)WorldView3DControl.ExportPanel
+            : WorldMapControl.ExportPanel;
+
+        // Both panels compute their captured bounds + output-size readout from the active worldspace, so
+        // refresh whichever one just became visible.
         if (show3D) WorldView3DControl.RefreshExportBounds();
+        else WorldMapControl.RefreshExportBounds();
     }
 
     /// <summary>Settings / Inspection / Export tab switch for the world-map right panel (SelectorBar).</summary>
@@ -888,10 +890,14 @@ public sealed partial class SingleFileTab
         WorldSettingsHost.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
         WorldExportHost.Visibility = export ? Visibility.Visible : Visibility.Collapsed;
         WorldInspectionHost.Visibility = !settings && !export ? Visibility.Visible : Visibility.Collapsed;
-        // Only draw the export framing overlay while its tab is up; refresh bounds/output-size on open
-        // so they reflect the current worldspace (covers a worldspace/interior change since last open).
-        WorldView3DControl.SetExportFramingActive(export);
-        if (export) WorldView3DControl.RefreshExportBounds();
+        // Only draw the export framing overlay while its tab is up AND the 3D viewer is the active one
+        // (the overlay is a 3D-scene wireframe); refresh bounds/output-size on open so they reflect the
+        // current worldspace (covers a worldspace/interior change since last open).
+        var show3D = WorldViewModeComboBox.SelectedIndex == 1;
+        WorldView3DControl.SetExportFramingActive(export && show3D);
+        if (!export) return;
+        if (show3D) WorldView3DControl.RefreshExportBounds();
+        else WorldMapControl.RefreshExportBounds();
     }
 }
 

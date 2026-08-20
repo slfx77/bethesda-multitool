@@ -101,6 +101,10 @@ public sealed partial class WorldView3DControl
     /// line so a capture can never silently be a different renderer from the live view.</summary>
     private bool _captureWaterReflectionBound;
 
+    /// <summary>True when the capture's reflection target carried mirrored SCENE content (the
+    /// Oblivion WATER007 arm) rather than the sky-only mirror — surfaced in the parity line.</summary>
+    private bool _captureWaterReflectionScene;
+
     /// <summary>
     ///     Renders the capture's own planar sky reflection — the same pass, in the same place in the
     ///     frame, as the live route in <c>WorldView3DControl.Frame.cs</c>.
@@ -123,7 +127,7 @@ public sealed partial class WorldView3DControl
         float sceneSkyScale,
         GpuOffscreenSceneTarget12 target)
     {
-        if (!WaterReflectionEnabled || _water is null ||
+        if (!WaterReflectionActive || _water is null ||
             !TryEnsureWaterReflectionTarget(target.Width, target.Height) ||
             _waterReflectionTarget is not { } reflectionTarget)
         {
@@ -422,12 +426,12 @@ public sealed partial class WorldView3DControl
         var sceneSunlightScale = GpuTonemapSettings.ResolveSceneSunlightScale(
             tonemap,
             _data?.Game ?? Core.Games.BethesdaGame.Unknown,
-            _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
+            HdrGuiActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
             isInterior: _selectedInterior is not null);
         var sceneSkyScale = GpuTonemapSettings.ResolveSceneSkyScale(
             tonemap,
             _data?.Game ?? Core.Games.BethesdaGame.Unknown,
-            _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
+            HdrGuiActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
             isInterior: _selectedInterior is not null);
 
         // Perspective view-projection from the current camera pose. CAMERA-RELATIVE, exactly as the
@@ -604,6 +608,7 @@ public sealed partial class WorldView3DControl
             // OWN reflection below, at its own dimensions — a capture must not be a different
             // renderer from the one it is used to debug.
             _water.SetWaterReflection(null, 0, 0);
+            _captureWaterReflectionScene = false;
         }
         // Sun shadows in captures: the shadow map is rendered at the END of a frame and sampled by
         // the NEXT one (ShadowMapRenderer12's replay-this-frame/sample-next-frame contract), and the
@@ -683,6 +688,23 @@ public sealed partial class WorldView3DControl
                 // Sky FIRST (gradient + sun/moon billboards), then the scene over it — same order as the live
                 // frame. EnsureSkyTexturesResolved (inside RenderSky) uploads the climate/weather textures on
                 // this open command list.
+                // Scene-mirror planning — SAME rule as the live frame (Frame.cs): Oblivion + the
+                // Water Reflections toggle + a dominant visible plane below the camera ⇒ the
+                // reflection carries mirrored SCENE content rendered AFTER the opaque passes;
+                // otherwise the sky-only capture reflection below runs.
+                var captureSceneMirrorPlanned = false;
+                var captureMirrorPlaneHeight = 0f;
+                if (_showSky && WaterReflectionActive && _showWater &&
+                    _data?.Game == Core.Games.BethesdaGame.Oblivion &&
+                    _water is not null && _references is not null && _selectedInterior is null &&
+                    _water.TryGetDominantVisibleWaterPlaneHeight(
+                        cylinder, _camera.Position.Z, out captureMirrorPlaneHeight) &&
+                    TryEnsureWaterReflectionTarget(target.Width, target.Height, sceneContent: true))
+                {
+                    captureSceneMirrorPlanned = true;
+                    _references.ArmMirrorCapture();
+                }
+
                 if (_showSky)
                 {
                     // Sky ALWAYS uses the translation-free view (same rule as the live frame): the dome is
@@ -694,15 +716,11 @@ public sealed partial class WorldView3DControl
                     // own dimensions, so the water shader's screen-UV lookup divides by the same
                     // extent it rasterized into. Without it a capture silently fell back to the
                     // 2-row gradient stand-in, which made every reflection report unreproducible
-                    // from the coordinates that reported it.
-                    _captureWaterReflectionBound = TryRenderCaptureWaterReflection(
-                        cmd, viewProjSky, sceneSkyScale, target);
+                    // from the coordinates that reported it. Skipped when the scene mirror below
+                    // will overwrite the target with mirrored scene content anyway.
+                    _captureWaterReflectionBound = !captureSceneMirrorPlanned &&
+                        TryRenderCaptureWaterReflection(cmd, viewProjSky, sceneSkyScale, target);
                 }
-
-                _water?.SetWaterReflection(
-                    _captureWaterReflectionBound ? _waterReflectionSrv!.Value.BindlessIndex : null,
-                    (uint)target.Width,
-                    (uint)target.Height);
 
                 if (captureTerrainEnabled)
                 {
@@ -717,6 +735,74 @@ public sealed partial class WorldView3DControl
                         renderOrigin: captureRenderOrigin,
                         cameraPosition: _camera.Position, cameraForward: _camera.Forward);
                 }
+
+                // ── CAPTURE SCENE MIRROR ── same sequence as the live frame's block, with the
+                // capture's own matrices, render origin, and target dimensions.
+                Matrix4x4? captureSceneMirrorMatrix = null;
+                if (captureSceneMirrorPlanned && _waterReflectionTarget is { } captureMirrorTarget)
+                {
+                    var captureMainAtmosphereCb = _lastAtmosphereCbGpuAddress;
+                    try
+                    {
+                        var mirrorPlaneRel = captureMirrorPlaneHeight - captureRenderOrigin.Z;
+                        var captureMirrorViewProj =
+                            Matrix4x4.CreateReflection(
+                                new System.Numerics.Plane(0f, 0f, 1f, -mirrorPlaneRel))
+                            * viewProj;
+
+                        captureMirrorTarget.RestoreWaterOpaqueSnapshot(cmd);
+                        var mirrorClear = ResolveSceneAtmosphere(_gameHour, _showLighting)
+                                              .SkyHorizonColor * sceneSkyScale;
+                        captureMirrorTarget.Bind(cmd, new Vortice.Mathematics.Color4(
+                            mirrorClear.X, mirrorClear.Y, mirrorClear.Z, 1f));
+                        var mirroredCameraAbs = new Vector3(
+                            _camera.Position.X, _camera.Position.Y,
+                            (2f * captureMirrorPlaneHeight) - _camera.Position.Z);
+                        BindAtmosphereConstants(
+                            cmd, recorder.FrameIndex, cameraRelative: captureCameraRelative,
+                            shadingCameraPosOverride: captureCameraRelative
+                                ? mirroredCameraAbs - captureRenderOrigin
+                                : mirroredCameraAbs,
+                            cameraOriginOverride: captureCameraRelative ? captureRenderOrigin : null,
+                            lightVisibility: cylinder, tonemapOverride: tonemap,
+                            clipPlane: new Vector4(0f, 0f, 1f, -mirrorPlaneRel));
+                        RenderSky(Matrix4x4.CreateScale(1f, 1f, -1f) * viewProjSky, Vector3.Zero,
+                            animationTimeSeconds: animationTimeSeconds,
+                            skyColorScale: sceneSkyScale, advanceCloudScroll: false);
+                        if (captureTerrainEnabled)
+                        {
+                            _terrain!.RenderMirror(captureMirrorViewProj, cylinder);
+                        }
+                        _references?.RenderMirrorColor(captureMirrorViewProj);
+                        _captureWaterReflectionBound =
+                            captureMirrorTarget.TryPrepareWaterOpaqueSnapshot(cmd);
+                        if (_captureWaterReflectionBound)
+                        {
+                            captureSceneMirrorMatrix = captureMirrorViewProj;
+                            _captureWaterReflectionScene = true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warn("Capture scene-mirror pass failed; sky-gradient fallback: {0}",
+                            ex.Message);
+                    }
+                    finally
+                    {
+                        _references?.DisarmMirrorCapture();
+                        target.Rebind(cmd);
+                        cmd.RSSetViewport(0, 0, target.Width, target.Height);
+                        cmd.RSSetScissorRect(target.Width, target.Height);
+                        cmd.SetGraphicsRootConstantBufferView(
+                            GpuRootSignature12.Slots.AtmosphereCbv, captureMainAtmosphereCb);
+                    }
+                }
+
+                _water?.SetWaterReflection(
+                    _captureWaterReflectionBound ? _waterReflectionSrv!.Value.BindlessIndex : null,
+                    (uint)target.Width,
+                    (uint)target.Height,
+                    captureSceneMirrorMatrix);
                 // Water is a sibling of Meshes in the live visibility model. Keep handing it already-
                 // discovered placed-NIF planes even while Meshes is hidden; requiring the reference
                 // parent here would make the capture diverge from Frame.cs and hide real water.
@@ -1760,19 +1846,19 @@ public sealed partial class WorldView3DControl
         fields["sceneSunlightScale"] = GpuTonemapSettings.ResolveSceneSunlightScale(
             tonemap,
             game,
-            _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
+            HdrGuiActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
             isInterior: interior is not null);
         fields["tonemapGrassScale"] = tonemap.GrassScale;
         fields["sceneGrassScale"] = GpuTonemapSettings.ResolveSceneGrassScale(
             tonemap,
             game,
-            _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
+            HdrGuiActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
             isInterior: interior is not null);
         fields["tonemapSkyScale"] = tonemap.SkyScale;
         fields["sceneSkyScale"] = GpuTonemapSettings.ResolveSceneSkyScale(
             tonemap,
             game,
-            _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
+            HdrGuiActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
             isInterior: interior is not null);
         fields["tonemapSaturation"] = tonemap.Saturation;
         fields["tonemapContrastAvgLum"] = tonemap.ContrastAvgLum;
@@ -1897,7 +1983,7 @@ public sealed partial class WorldView3DControl
             weatherImageSpaceUnavailableReason =
                 "tonemap infrastructure is disabled; weather image-space bands were not applied";
         }
-        else if (!_hdrEnabled
+        else if (!HdrGuiActive
                  && GpuTonemapSettings.ParseTonemapModeOverride(
                      Environment.GetEnvironmentVariable("FALLOUT_VIEWER_TONEMAP")) is null
                  && game is not (Core.Games.BethesdaGame.Fallout3 or
@@ -2014,7 +2100,9 @@ public sealed partial class WorldView3DControl
         // Which reflection source the water actually sampled. This existed as a silent live-only
         // divergence: captures cleared the binding and fell back to the gradient, so a reflection
         // artefact reported with a pose could never be reproduced from that pose.
-        fields["waterReflection"] = _captureWaterReflectionBound ? "planar-rt" : "gradient-standin";
+        fields["waterReflection"] = _captureWaterReflectionBound
+            ? (_captureWaterReflectionScene ? "planar-rt-scene" : "planar-rt-sky")
+            : "gradient-standin";
         fields["waterDraws"] = waterStats?.WaterDraws ?? 0;
         // Placeable-water (PWAT) surfaces that streamed in as authored NIF geometry. Zero at a pose
         // that should have a pond is the signature of the base record never resolving a MODL — the

@@ -24,6 +24,7 @@ public sealed partial class WorldView3DControl
     private CheckBox VertexColorsToggle => SettingsPanel.VertexColorsToggle;
     private CheckBox NavMeshCheckBox => SettingsPanel.NavMeshCheckBox;
     private CheckBox CollisionCheckBox => SettingsPanel.CollisionCheckBox;
+    private CheckBox FormIdHeatmapCheckBox => SettingsPanel.FormIdHeatmapCheckBox;
     private CheckBox TerrainToggle => SettingsPanel.TerrainToggle;
     private CheckBox RefsToggle => SettingsPanel.RefsToggle;
     private CheckBox WaterCheckBox => SettingsPanel.WaterCheckBox;
@@ -41,6 +42,13 @@ public sealed partial class WorldView3DControl
     private ToggleSwitch FlyModeToggle => SettingsPanel.FlyModeToggle;
     private Slider DrawDistanceSlider => SettingsPanel.DrawDistanceSlider;
     private TextBlock DrawDistanceValueLabel => SettingsPanel.DrawDistanceValueLabel;
+    private Slider HeatmapRangeSlider => SettingsPanel.HeatmapRangeSlider;
+    private TextBlock HeatmapRangeValueLabel => SettingsPanel.HeatmapRangeValueLabel;
+    private ToggleSwitch WaterReflectionsToggle => SettingsPanel.WaterReflectionsToggle;
+    private ToggleSwitch WaterRipplesToggle => SettingsPanel.WaterRipplesToggle;
+    private ToggleSwitch WindowReflectionsToggle => SettingsPanel.WindowReflectionsToggle;
+    private ToggleSwitch GrassShadowsToggle => SettingsPanel.GrassShadowsToggle;
+    private ToggleSwitch CanopyShadowsToggle => SettingsPanel.CanopyShadowsToggle;
 
     /// <summary>
     ///     Subscribes every settings-panel control to its handler. Runs in the ctor while
@@ -63,15 +71,24 @@ public sealed partial class WorldView3DControl
         p.Lighting.WindSpeedChanged += LightingPanel_WindSpeedChanged;
 
         p.PlacedLightsToggle.Toggled += PlacedLightsToggle_Changed;
-        p.HdrToggle.Toggled += HdrToggle_Changed;
-        p.BloomToggle.Toggled += BloomToggle_Changed;
         p.ImagespaceComboBox.SelectionChanged += ImagespaceComboBox_SelectionChanged;
+
+        // Video expander — the retail screen-effects radio + per-engine-setting toggles.
+        p.TonemapNoneRadio.Checked += TonemapRadio_Checked;
+        p.TonemapBloomRadio.Checked += TonemapRadio_Checked;
+        p.TonemapHdrRadio.Checked += TonemapRadio_Checked;
+        p.WaterReflectionsToggle.Toggled += WaterReflectionsToggle_Changed;
+        p.WaterRipplesToggle.Toggled += WaterRipplesToggle_Changed;
+        p.WindowReflectionsToggle.Toggled += WindowReflectionsToggle_Changed;
+        p.GrassShadowsToggle.Toggled += GrassShadowsToggle_Changed;
+        p.CanopyShadowsToggle.Toggled += CanopyShadowsToggle_Changed;
 
         Wire(p.CellsCheckBox, CellsCheckBox_Changed);
         Wire(p.TerrainTexturesToggle, TerrainTexturesToggle_Changed);
         Wire(p.VertexColorsToggle, VertexColorsToggle_Changed);
         Wire(p.NavMeshCheckBox, NavMeshCheckBox_Changed);
         Wire(p.CollisionCheckBox, CollisionCheckBox_Changed);
+        Wire(p.FormIdHeatmapCheckBox, FormIdHeatmapCheckBox_Changed);
         Wire(p.TerrainToggle, TerrainToggle_Changed);
         Wire(p.RefsToggle, RefsToggle_Changed);
         Wire(p.WaterCheckBox, WaterCheckBox_Changed);
@@ -89,6 +106,7 @@ public sealed partial class WorldView3DControl
         p.FovSlider.ValueChanged += FovSlider_ValueChanged;
         p.FlyModeToggle.Toggled += FlyModeToggle_Changed;
         p.DrawDistanceSlider.ValueChanged += DrawDistanceSlider_ValueChanged;
+        p.HeatmapRangeSlider.ValueChanged += HeatmapRangeSlider_ValueChanged;
 
         p.ApplyDependencyState(_showLighting, _showTerrain, _showReferences);
 
@@ -99,22 +117,140 @@ public sealed partial class WorldView3DControl
         }
     }
 
-    private void HdrToggle_Changed(object sender, RoutedEventArgs e)
-    {
-        if (_initializing) return;
-        _hdrEnabled = SettingsPanel.HdrToggle.IsOn;
-    }
-
     private void PlacedLightsToggle_Changed(object sender, RoutedEventArgs e)
     {
         if (_initializing) return;
         _placedLightsEnabled = SettingsPanel.PlacedLightsToggle.IsOn;
     }
 
-    private void BloomToggle_Changed(object sender, RoutedEventArgs e)
+    private void TonemapRadio_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_initializing || _syncingTonemapRadio) return;
+        var mode = ReferenceEquals(sender, SettingsPanel.TonemapNoneRadio)
+            ? Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode.Sdr
+            : ReferenceEquals(sender, SettingsPanel.TonemapBloomRadio)
+                ? Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode.SdrBloom
+                : Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode.Hdr;
+        SetTonemapGuiMode(mode);
+    }
+
+    private void WaterReflectionsToggle_Changed(object sender, RoutedEventArgs e)
     {
         if (_initializing) return;
-        _bloomEnabled = SettingsPanel.BloomToggle.IsOn;
+        SetWaterReflections(SettingsPanel.WaterReflectionsToggle.IsOn);
+    }
+
+    private void WaterRipplesToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        SetWaterRipples(SettingsPanel.WaterRipplesToggle.IsOn);
+    }
+
+    private void WindowReflectionsToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        SetWindowReflections(SettingsPanel.WindowReflectionsToggle.IsOn);
+    }
+
+    private void GrassShadowsToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        SetGrassShadows(SettingsPanel.GrassShadowsToggle.IsOn);
+    }
+
+    private void CanopyShadowsToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        SetCanopyShadows(SettingsPanel.CanopyShadowsToggle.IsOn);
+    }
+
+    /// <summary>Single funnel for the retail Screen-effects radio (None/Bloom/HDR). The enum's
+    /// numeric values ARE the radio's item indices; the panel reseat is guarded so a programmatic
+    /// selection (profiler parity, LoadData coercion) cannot ping-pong the handler.</summary>
+    private void SetTonemapGuiMode(Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode mode)
+    {
+        _tonemapGuiMode = mode;
+        _syncingTonemapRadio = true;
+        try
+        {
+            SettingsPanel.SelectTonemapRadio((int)mode);
+        }
+        finally
+        {
+            _syncingTonemapRadio = false;
+        }
+    }
+
+    /// <summary>Single funnel for the video-settings water-reflection toggle
+    /// (bUseWaterReflections). Consumed per frame by the reflection pass gate in Frame.cs — no
+    /// renderer state to push here.</summary>
+    private void SetWaterReflections(bool on)
+    {
+        _waterReflectionsEnabled = on;
+        if (WaterReflectionsToggle is not null && WaterReflectionsToggle.IsOn != on)
+        {
+            WaterReflectionsToggle.IsOn = on;
+        }
+    }
+
+    /// <summary>Single funnel for the video-settings water-ripples toggle
+    /// (bUseWaterDisplacements → the animated surface field, per the 2026-08-18 ruling).</summary>
+    private void SetWaterRipples(bool on)
+    {
+        _waterRipplesEnabled = on;
+        if (_water is not null)
+        {
+            _water.RipplesEnabled = on;
+        }
+        if (WaterRipplesToggle is not null && WaterRipplesToggle.IsOn != on)
+        {
+            WaterRipplesToggle.IsOn = on;
+        }
+    }
+
+    /// <summary>Single funnel for the video-settings window-reflection toggle
+    /// (bDynamicWindowReflections → the classic env-map term).</summary>
+    private void SetWindowReflections(bool on)
+    {
+        _windowReflectionsEnabled = on;
+        if (_references is not null)
+        {
+            _references.WindowReflectionsEnabled = on;
+        }
+        if (WindowReflectionsToggle is not null && WindowReflectionsToggle.IsOn != on)
+        {
+            WindowReflectionsToggle.IsOn = on;
+        }
+    }
+
+    /// <summary>Single funnel for the video-settings grass-shadow toggle (bShadowsOnGrass —
+    /// grass RECEIVING the sun shadow map; grass never casts, matching retail).</summary>
+    private void SetGrassShadows(bool on)
+    {
+        _grassShadowsEnabled = on;
+        if (_references is not null)
+        {
+            _references.GrassShadowsEnabled = on;
+        }
+        if (GrassShadowsToggle is not null && GrassShadowsToggle.IsOn != on)
+        {
+            GrassShadowsToggle.IsOn = on;
+        }
+    }
+
+    /// <summary>Single funnel for the video-settings canopy-shadow toggle (bDoCanopyShadowPass —
+    /// tree canopies CASTING into the sun shadow map; the trees stay visible).</summary>
+    private void SetCanopyShadows(bool on)
+    {
+        _canopyShadowsEnabled = on;
+        if (_references is not null)
+        {
+            _references.TreeShadowsEnabled = on;
+        }
+        if (CanopyShadowsToggle is not null && CanopyShadowsToggle.IsOn != on)
+        {
+            CanopyShadowsToggle.IsOn = on;
+        }
     }
 
     private void ImagespaceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -284,6 +420,19 @@ public sealed partial class WorldView3DControl
         SetShowCollision(CollisionCheckBox.IsChecked == true);
     }
 
+    private void FormIdHeatmapCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        SetFormIdHeatmap(FormIdHeatmapCheckBox.IsChecked == true);
+    }
+
+    private void HeatmapRangeSlider_ValueChanged(
+        object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        if (_initializing || _syncingHeatmapRange) return;
+        SetFormIdHeatmapRange(FormIdHeatmapRangeScale.CellsFromSlider(e.NewValue));
+    }
+
     private void DisabledCheckBox_Changed(object sender, RoutedEventArgs e)
     {
         if (_initializing) return;
@@ -336,6 +485,8 @@ public sealed partial class WorldView3DControl
         _renderDistance = Math.Clamp(distance, MinRenderDistanceCells * _cellSize, MaxRenderDistance);
         _camera.FarPlane = _renderDistance;
         SyncDrawDistanceSlider();
+        // The heatmap range needs no reseed here: it is stored and applied in CELLS end to end,
+        // and the renderer reads the active grid's cell size from its own spatial index.
     }
 
     private void SyncDrawDistanceSlider()
@@ -404,6 +555,100 @@ public sealed partial class WorldView3DControl
         if (CollisionCheckBox is not null && CollisionCheckBox.IsChecked != on)
         {
             CollisionCheckBox.IsChecked = on;
+        }
+    }
+
+    /// <summary>Single funnel for the FormID-heatmap debug overlay toggle (Overlays checkbox routes
+    /// here). Off by default; tints placed refs blue→red by FormID (authoring order) inside the
+    /// selected camera range. Applies straight to the live reference renderer (render-time tint —
+    /// the renderer forces its own one-frame batch rebuild) and gates the range slider's
+    /// availability, mirroring how dependent controls stay latent while their parent is off.</summary>
+    private void SetFormIdHeatmap(bool on)
+    {
+        _formIdHeatmap = on;
+        if (_references is not null)
+        {
+            _references.FormIdHeatmapEnabled = on;
+        }
+        if (FormIdHeatmapCheckBox is not null && FormIdHeatmapCheckBox.IsChecked != on)
+        {
+            FormIdHeatmapCheckBox.IsChecked = on;
+        }
+        if (HeatmapRangeSlider is not null)
+        {
+            HeatmapRangeSlider.IsEnabled = on;
+        }
+        // The key (gradient bar + live min/max FormID labels) only means something while the
+        // overlay is on; collapse it otherwise and force a label refresh on the next frame.
+        SettingsPanel.SetHeatmapKeyVisible(on);
+        _heatmapKeySeeded = false;
+    }
+
+    // Last window pushed into the key labels; refreshed from the render loop (UI thread) only on a
+    // real change, so a static frame costs one property read and a tuple compare.
+    private (uint Min, uint Max)? _lastHeatmapKeyWindow;
+    private int _lastHeatmapKeyRankedCount;
+    private bool _heatmapKeySeeded;
+
+    /// <summary>Per-frame (render loop) refresh of the heatmap key's live endpoints — the
+    /// lowest/highest FormID inside the selected cell block plus the number of ranked steps.</summary>
+    private void UpdateFormIdHeatmapKey()
+    {
+        if (!_formIdHeatmap)
+        {
+            return; // key is collapsed
+        }
+
+        var window = _references?.FormIdHeatmapWindow;
+        var rankedCount = _references?.FormIdHeatmapRankedCount ?? 0;
+        if (_heatmapKeySeeded && window == _lastHeatmapKeyWindow && rankedCount == _lastHeatmapKeyRankedCount)
+        {
+            return;
+        }
+
+        _heatmapKeySeeded = true;
+        _lastHeatmapKeyWindow = window;
+        _lastHeatmapKeyRankedCount = rankedCount;
+        SettingsPanel.UpdateHeatmapKeyWindow(window, rankedCount);
+    }
+
+    /// <summary>Single funnel for the heatmap selection range (settings-panel slider). Stored in
+    /// WHOLE CELLS (<see cref="float.PositiveInfinity" /> = the slider's unlimited top stop) so it
+    /// survives worldspace switches; the renderer receives cells too and selects the full
+    /// (2N+1)×(2N+1) cell block around the camera's cell on its own grid. Keeps field, slider,
+    /// renderer, and value label in sync.</summary>
+    private void SetFormIdHeatmapRange(float cells)
+    {
+        _formIdHeatmapRangeCells = float.IsPositiveInfinity(cells)
+            ? float.PositiveInfinity
+            : MathF.Round(Math.Clamp(
+                cells, FormIdHeatmapRangeScale.MinCells, FormIdHeatmapRangeScale.MaxFiniteCells));
+        if (_references is not null)
+        {
+            _references.FormIdHeatmapRangeCells = _formIdHeatmapRangeCells;
+        }
+        SyncHeatmapRangeSlider();
+    }
+
+    private void SyncHeatmapRangeSlider()
+    {
+        var sliderValue = FormIdHeatmapRangeScale.SliderFromCells(_formIdHeatmapRangeCells);
+        _syncingHeatmapRange = true;
+        try
+        {
+            // Only reseat on a real difference to avoid float ping-pong with ValueChanged.
+            if (Math.Abs(HeatmapRangeSlider.Value - sliderValue) > 0.005)
+            {
+                HeatmapRangeSlider.Value = sliderValue;
+            }
+
+            HeatmapRangeValueLabel.Text = float.IsPositiveInfinity(_formIdHeatmapRangeCells)
+                ? "∞"
+                : $"{_formIdHeatmapRangeCells:0} c";
+        }
+        finally
+        {
+            _syncingHeatmapRange = false;
         }
     }
 

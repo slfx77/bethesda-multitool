@@ -836,24 +836,21 @@ internal static class WorldMapOverviewRenderer
             }
         }
 
-        if (data.RefPositionIndex != null)
+        foreach (var actorFid in actorFormIds)
         {
-            foreach (var actorFid in actorFormIds)
+            if (!spawnIndex.ActorToPackageRefs.TryGetValue(actorFid, out var refs))
             {
-                if (!spawnIndex.ActorToPackageRefs.TryGetValue(actorFid, out var refs))
-                {
-                    continue;
-                }
+                continue;
+            }
 
-                foreach (var refLoc in refs)
+            foreach (var refLoc in refs)
+            {
+                if (data.PlacedRefs.TryGetPosition(refLoc.RefFormId, out var refPos))
                 {
-                    if (data.RefPositionIndex.TryGetValue(refLoc.RefFormId, out var refPos))
-                    {
-                        var center = new Vector2(refPos.X, -refPos.Y);
-                        var radius = refLoc.Radius > 0 ? (float)refLoc.Radius : 500f;
-                        ds.FillCircle(center, radius, overlayColor);
-                        ds.DrawCircle(center, radius, overlayBorder, 2f / zoom);
-                    }
+                    var center = new Vector2(refPos.X, -refPos.Y);
+                    var radius = refLoc.Radius > 0 ? (float)refLoc.Radius : 500f;
+                    ds.FillCircle(center, radius, overlayColor);
+                    ds.DrawCircle(center, radius, overlayBorder, 2f / zoom);
                 }
             }
         }

@@ -52,12 +52,8 @@
                 ToolTipService.ToolTip="Zoom to fit" AutomationProperties.Name="Zoom to fit">
           <FontIcon Glyph="&#xE740;" FontSize="14" />
         </Button>
-        <Button x:Name="ExportButton" Click="ExportButton_Click" IsEnabled="False"
-                MinWidth="0" Padding="9,6"
-                ToolTipService.ToolTip="Export worldspace as PNG for comparison"
-                AutomationProperties.Name="Export worldspace as PNG">
-          <FontIcon Glyph="&#xE74E;" FontSize="14" />
-        </Button>
+        <!-- The Export button is gone: worldspace PNG export lives in the host's right-panel "Export"
+             tab (WorldMapExportPanel), matching the 3D viewer's export tab. -->
         <ComboBox x:Name="LayerComboBox" MinWidth="150"
                   SelectionChanged="LayerComboBox_SelectionChanged"
                   AutomationProperties.Name="Map layer"

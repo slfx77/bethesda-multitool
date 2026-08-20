@@ -10,6 +10,7 @@ public sealed class WorldSettingsPanelPolishSourceContractTests
     {
         var world3D = SourceContract.ReadAppSource("WorldView3DSettingsPanel.xaml");
         AssertHeader(world3D, "&#xE706;", "Lighting");
+        AssertHeader(world3D, "&#xE7F4;", "Video");
         AssertHeader(world3D, "&#xE81E;", "Overlays");
         AssertHeader(world3D, "&#xE890;", "Visibility");
         AssertHeader(world3D, "&#xE809;", "Camera");
@@ -25,7 +26,7 @@ public sealed class WorldSettingsPanelPolishSourceContractTests
     {
         var world3D = SourceContract.ReadAppSource("WorldView3DSettingsPanel.xaml.cs");
         AssertWarmup(world3D,
-            "PremeasureCollapsedContent(availableWidth, OverlaysExpander, VisibilityExpander, CameraExpander);");
+            "PremeasureCollapsedContent(availableWidth, VideoExpander, OverlaysExpander, VisibilityExpander, CameraExpander);");
 
         var world2D = SourceContract.ReadAppSource("WorldMapSettingsPanel.xaml.cs");
         AssertWarmup(world2D,

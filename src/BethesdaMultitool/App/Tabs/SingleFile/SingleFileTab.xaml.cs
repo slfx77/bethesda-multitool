@@ -129,9 +129,10 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         InitializeFileTypeCheckboxes();
         SetupTextBoxContextMenus();
         WorldMapControl.BeforeNavigate += WorldMap_BeforeNavigate;
-        // World-map right panel: seed the Settings tab with the default (2D) viewer's settings
-        // panel and select it (SelectorBar has no XAML default-selection attribute).
+        // World-map right panel: seed the Settings and Export tabs with the default (2D) viewer's
+        // panels and select Settings (SelectorBar has no XAML default-selection attribute).
         WorldSettingsPresenter.Content = WorldMapControl.SettingsPanel;
+        WorldExportPresenter.Content = WorldMapControl.ExportPanel;
         WorldPanelSelector.SelectedItem = WorldPanelSettingsItem;
         SetupCollapsiblePanels();
         KeyDown += SingleFileTab_KeyDown;

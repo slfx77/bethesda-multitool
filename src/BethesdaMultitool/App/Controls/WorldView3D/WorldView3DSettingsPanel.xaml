@@ -8,6 +8,7 @@
 
   <UserControl.Resources>
     <local:DrawDistanceTooltipConverter x:Key="DrawDistanceTooltip" />
+    <local:HeatmapRangeTooltipConverter x:Key="HeatmapRangeTooltip" />
   </UserControl.Resources>
 
   <!-- 3D viewer settings, shown in the host's right-panel "Settings" tab (replaces the old toolbar
@@ -35,26 +36,80 @@
                       AutomationProperties.Name="Placed lights"
                       ToolTipService.ToolTip="Illuminate the scene with placed LIGH point emitters" />
 
-        <!-- Post-processing: HDR/bloom/imagespace — hidden for games without the engine HDR stage
-             (Morrowind); the owner gates visibility per loaded game in LoadData. -->
+        <!-- Post-processing: imagespace grade — hidden for games without the engine HDR stage
+             (Morrowind); the owner gates visibility per loaded game in LoadData. The HDR/Bloom
+             switches this section used to hold became the Video expander's retail three-way
+             Screen effects radio (None/Bloom/HDR). -->
         <StackPanel x:Name="TonemapSection" x:FieldModifier="internal" Spacing="10">
           <Border Height="1" Margin="0,2,0,2"
                   Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
           <TextBlock Text="Post-processing" FontWeight="SemiBold"
                      AutomationProperties.HeadingLevel="Level2" />
-          <ToggleSwitch x:Name="HdrToggle" x:FieldModifier="internal" IsOn="True" Header="HDR"
-                        OnContent="On" OffContent="Off"
-                        AutomationProperties.Name="HDR"
-                        ToolTipService.ToolTip="HDR exposure and eye adaptation; in Fallout 3/New Vegas, Off keeps the imagespace color grade while disabling HDR lighting, exposure, and bloom (the retail non-HDR Bloom mode is not implemented)" />
-          <ToggleSwitch x:Name="BloomToggle" x:FieldModifier="internal" IsOn="True" Header="Bloom"
-                        OnContent="On" OffContent="Off"
-                        AutomationProperties.Name="Bloom"
-                        ToolTipService.ToolTip="Engine HDR bright-pass bloom (soft glow around bright/emissive surfaces); the preference is remembered but inert while HDR is off" />
           <ComboBox x:Name="ImagespaceComboBox" x:FieldModifier="internal"
                     Header="Imagespace" HorizontalAlignment="Stretch"
                     AutomationProperties.Name="Imagespace"
                     ToolTipService.ToolTip="Imagespace color grade: (Automatic) follows the cell/worldspace (e.g. the FNV golden desert filter), (None) renders a neutral grade, or force a specific imagespace" />
         </StackPanel>
+      </StackPanel>
+    </Expander>
+
+    <!-- ============================== Video ============================== -->
+    <!-- Retail-style video options (the game's launcher/in-game set), one control per engine
+         setting; tooltips cite the ini names. Per-game visibility comes from
+         VideoSettingsProfile.ForGame via ApplyVideoProfile (never hard-coded game compares).
+         Defaults describe retail Ultra High: HDR + everything on. The toggles are latent
+         preferences ANDed with the Shadows/Water/Meshes masters — deliberately NOT in
+         ApplyDependencyState (its 4-call-site contract stays untouched). -->
+    <Expander x:Name="VideoExpander" x:FieldModifier="internal"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+      <Expander.Header>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <FontIcon Glyph="&#xE7F4;" FontSize="14" />
+          <TextBlock Text="Video" FontWeight="SemiBold"
+                     AutomationProperties.HeadingLevel="Level2" />
+        </StackPanel>
+      </Expander.Header>
+      <StackPanel Spacing="8">
+        <!-- The retail launcher ships a THREE-WAY radio (None/Bloom/HDR), not two switches:
+             HDR = bDoHighDynamicRange:BlurShaderHDR; Bloom = !HDR && bUseBlurShader:BlurShader;
+             None = neither. Plain GroupName RadioButtons rather than the WinUI RadioButtons
+             control: x:Name'd children inside its ItemsRepeater break the generated XAML
+             connection table at runtime (InvalidCastException in Connect). -->
+        <StackPanel x:Name="TonemapModePanel" x:FieldModifier="internal" Spacing="2">
+          <TextBlock Text="Screen effects" />
+          <RadioButton x:Name="TonemapNoneRadio" x:FieldModifier="internal" Content="None"
+                       GroupName="ScreenEffects"
+                       AutomationProperties.Name="Screen effects: none"
+                       ToolTipService.ToolTip="No HDR and no bloom (the launcher's 'None'): plain SDR clamp" />
+          <RadioButton x:Name="TonemapBloomRadio" x:FieldModifier="internal" Content="Bloom"
+                       GroupName="ScreenEffects"
+                       AutomationProperties.Name="Screen effects: bloom"
+                       ToolTipService.ToolTip="SDR + bloom (bUseBlurShader): the retail LDR BlurShader path is unrecovered, so this is an SDR clamp plus the engine bright-pass bloom at neutral exposure — a documented stand-in" />
+          <RadioButton x:Name="TonemapHdrRadio" x:FieldModifier="internal" Content="HDR"
+                       GroupName="ScreenEffects" IsChecked="True"
+                       AutomationProperties.Name="Screen effects: HDR"
+                       ToolTipService.ToolTip="Engine HDR rendering (bDoHighDynamicRange): eye adaptation, weather-authored exposure and bloom" />
+        </StackPanel>
+        <ToggleSwitch x:Name="WaterReflectionsToggle" x:FieldModifier="internal" IsOn="True"
+                      Header="Water reflections" OnContent="On" OffContent="Off"
+                      AutomationProperties.Name="Water reflections"
+                      ToolTipService.ToolTip="Mirror the scene (terrain, objects, sky) in water (bUseWaterReflections). Off = the engine's reflection-free water shading. Retail defaults reflect land + sky only; this includes objects and trees like the maxed ini set" />
+        <ToggleSwitch x:Name="WaterRipplesToggle" x:FieldModifier="internal" IsOn="True"
+                      Header="Water ripples" OnContent="On" OffContent="Off"
+                      AutomationProperties.Name="Water ripples"
+                      ToolTipService.ToolTip="Animated water surface ripple field (bUseWaterDisplacements). Off = a calm flat sheet; scrolling detail and reflections continue" />
+        <ToggleSwitch x:Name="WindowReflectionsToggle" x:FieldModifier="internal" IsOn="True"
+                      Header="Window reflections" OnContent="On" OffContent="Off"
+                      AutomationProperties.Name="Window reflections"
+                      ToolTipService.ToolTip="Environment-map reflections on window/glass materials (bDynamicWindowReflections)" />
+        <ToggleSwitch x:Name="GrassShadowsToggle" x:FieldModifier="internal" IsOn="True"
+                      Header="Shadows on grass" OnContent="On" OffContent="Off"
+                      AutomationProperties.Name="Shadows on grass"
+                      ToolTipService.ToolTip="Grass receives the sun shadow map (bShadowsOnGrass). Grass never casts shadows, matching the engine" />
+        <ToggleSwitch x:Name="CanopyShadowsToggle" x:FieldModifier="internal" IsOn="True"
+                      Header="Tree canopy shadows" OnContent="On" OffContent="Off"
+                      AutomationProperties.Name="Tree canopy shadows"
+                      ToolTipService.ToolTip="Trees cast shadows (bDoCanopyShadowPass). The viewer's real shadow map stands in for the engine's projected canopy textures" />
       </StackPanel>
     </Expander>
 
@@ -78,6 +133,37 @@
         <CheckBox x:Name="CollisionCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Collision mesh"
                   AutomationProperties.Name="Collision mesh"
                   ToolTipService.ToolTip="Overlay each object's walk-mode collision mesh as a green wireframe (compare against the rendered meshes)" />
+        <CheckBox x:Name="FormIdHeatmapCheckBox" x:FieldModifier="internal" IsChecked="False" Content="FormID heatmap"
+                  AutomationProperties.Name="FormID heatmap"
+                  ToolTipService.ToolTip="Tint placed objects blue→red by FormID (FormIDs are sequential at authoring time, so cold = added early, hot = added late — cut-content archaeology)" />
+        <!-- Range slider bounds/default must match FormIdHeatmapRangeScale (log₂ cells; the top
+             ~0.32 band = Unlimited). SetFormIdHeatmap gates IsEnabled on the checkbox above. -->
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock x:Name="HeatmapRangeLabel" x:FieldModifier="internal" Text="Range" VerticalAlignment="Center" />
+          <Slider x:Name="HeatmapRangeSlider" x:FieldModifier="internal" Width="130" VerticalAlignment="Center"
+                  Minimum="1" Maximum="7.32" Value="7.32" StepFrequency="0.01" IsEnabled="False"
+                  ThumbToolTipValueConverter="{StaticResource HeatmapRangeTooltip}"
+                  AutomationProperties.Name="FormID heatmap range"
+                  ToolTipService.ToolTip="Heatmap range: whole cells from the camera's cell (a full square block of cells, log scale); the top stop is unlimited" />
+          <TextBlock x:Name="HeatmapRangeValueLabel" x:FieldModifier="internal" Text="∞" VerticalAlignment="Center" />
+        </StackPanel>
+        <!-- Heatmap key: the gradient bar is filled in code-behind by sampling FormIdHeatmapPalette
+             (single source of truth — the key can never drift from the on-mesh ramp); the labels
+             show the LIVE normalization window (lowest/highest FormID currently inside the selected
+             cell block), pushed per change from the render loop via UpdateHeatmapKeyWindow.
+             SetHeatmapKeyVisible collapses the whole block while the overlay is off. -->
+        <StackPanel x:Name="HeatmapKeyPanel" x:FieldModifier="internal" Spacing="2" Visibility="Collapsed">
+          <Rectangle x:Name="HeatmapKeyGradientBar" x:FieldModifier="internal" Height="10"
+                     RadiusX="2" RadiusY="2" HorizontalAlignment="Stretch" />
+          <Grid>
+            <TextBlock x:Name="HeatmapKeyMinLabel" x:FieldModifier="internal" Text="oldest –"
+                       FontSize="11" HorizontalAlignment="Left"
+                       ToolTipService.ToolTip="Lowest FormID in range — authored earliest (blue end)" />
+            <TextBlock x:Name="HeatmapKeyMaxLabel" x:FieldModifier="internal" Text="– newest"
+                       FontSize="11" HorizontalAlignment="Right"
+                       ToolTipService.ToolTip="Highest FormID in range — authored latest (red end)" />
+          </Grid>
+        </StackPanel>
       </StackPanel>
     </Expander>
 

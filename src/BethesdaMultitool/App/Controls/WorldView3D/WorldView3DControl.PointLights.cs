@@ -165,7 +165,8 @@ public sealed partial class WorldView3DControl
             enabledOverrides: _referenceEnabledOverrides,
             includeInitiallyDisabled: _showDisabled,
             destination: _framePlacedLights,
-            scratch: _cellPlacedLightScratch);
+            scratch: _cellPlacedLightScratch,
+            dayNightStates: _dayNightStates);
         if (clipped <= 0 || !_placedLightClipLoggedCells.Add(cell.FormId)) return;
 
         Log.Warn(

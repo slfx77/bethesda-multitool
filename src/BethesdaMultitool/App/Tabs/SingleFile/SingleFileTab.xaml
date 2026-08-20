@@ -626,7 +626,7 @@
                 <!--  Right: tabbed Settings / Inspection / Export panel. Settings (default) hosts the
                       ACTIVE viewer's settings expanders (content swapped on the 2D/3D view-mode change);
                       Inspection holds the object/cell detail and is auto-selected on click/pick; Export
-                      (3D only) hosts the 3D viewer's export options + Export button.  -->
+                      hosts the ACTIVE viewer's export options + Export button (also content-swapped).  -->
               <Grid x:Name="WorldRightPanelContent" Grid.Column="2" Padding="12,0,0,0"
                     Background="{ThemeResource LayerFillColorAltBrush}" CornerRadius="8">
                 <Grid.RowDefinitions>
@@ -727,8 +727,8 @@
                   </Border>
                 </Grid>
 
-                <!--  Export (3D viewer only): the active 3D viewer's WorldView3DExportPanel is swapped
-                      into this presenter on the 2D/3D view-mode change; 2D leaves it empty.  -->
+                <!--  Export: the ACTIVE viewer's export panel is swapped into this presenter on the
+                      2D/3D view-mode change — WorldMapExportPanel in 2D, WorldView3DExportPanel in 3D.  -->
                 <ScrollViewer x:Name="WorldExportHost" Grid.Row="1" Visibility="Collapsed"
                               VerticalScrollBarVisibility="Auto">
                   <ContentPresenter x:Name="WorldExportPresenter" />

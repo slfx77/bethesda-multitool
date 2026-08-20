@@ -83,8 +83,10 @@ internal static class WorldMapOverlayBuilder
         // Build cell FormID lookup for navigation
         var cellByFormId = BuildCellByFormId(semantic.Cells);
 
-        // Build reverse index: placed reference FormID -> parent cell
-        var (refrToCellIndex, refPositionIndex) = BuildRefrIndices(semantic.Cells);
+        // One shared placement index (FormID -> ref + parent cell) serves the ref->cell and
+        // ref->position lookups AND the XESP/day-night resolvers below — previously four separate
+        // full-population dictionaries (5.1M entries each on FO76).
+        var placedRefs = PlacedRefIndex.Build(semantic.Cells);
 
         // Build spawn resolution index
         var spawnIndex = SpawnResolutionIndex.Build(semantic);
@@ -100,10 +102,12 @@ internal static class WorldMapOverlayBuilder
             UnlinkedExteriorCells = unlinkedExterior,
             UnlinkedMapMarkers = unlinkedMarkers,
             AllCells = semantic.Cells,
-            XespDisabledRefs = PlacedReferenceEnableStateResolver.ResolveXespDisabledRefs(semantic.Cells),
+            XespDisabledRefs = PlacedReferenceEnableStateResolver.ResolveXespDisabledRefs(placedRefs),
+            DayNightSchedule = Core.WorldData.DayNight.DayNightRefSchedule.Build(
+                semantic.Scripts, semantic.Cells, semantic.Activators, semantic.Lights, placedRefs),
             CellWorldSize = ResolveCellWorldSize(semantic.Cells),
             CellByFormId = cellByFormId,
-            RefrToCellIndex = refrToCellIndex,
+            PlacedRefs = placedRefs,
             BoundsIndex = boundsIndex,
             ModelPathIndex = modelPathIndex,
             SpeedTreeLeafTextures = BuildSpeedTreeLeafTextures(semantic),
@@ -126,7 +130,6 @@ internal static class WorldMapOverlayBuilder
             MoonSecondaryHalfSizeFraction = moonSecondarySize,
             SpawnIndex = spawnIndex,
             UsageIndex = usageIndex,
-            RefPositionIndex = refPositionIndex,
             DanglingRefs = DanglingRefAttributions.LoadDefault(),
             NavMeshesByCell = BuildNavMeshIndex(semantic.NavMeshes, semantic.Cells),
             LandTexturesByFormId = BuildLandTextureIndex(semantic.LandTextures),
@@ -227,7 +230,7 @@ internal static class WorldMapOverlayBuilder
             UnlinkedMapMarkers = [],
             AllCells = [],
             CellByFormId = [],
-            RefrToCellIndex = [],
+            PlacedRefs = PlacedRefIndex.Empty,
             BoundsIndex = [],
             CategoryIndex = [],
             Resolver = resolver,
@@ -280,7 +283,7 @@ internal static class WorldMapOverlayBuilder
             .ToList();
 
         var cellByFormId = BuildCellByFormId(suppRecords.Cells);
-        var (refrToCellIndex, refPositionIndex) = BuildRefrIndices(suppRecords.Cells);
+        var placedRefs = PlacedRefIndex.Build(suppRecords.Cells);
         var spawnIndex = SpawnResolutionIndex.Build(suppRecords);
         var usageIndex = FormUsageIndex.Build(suppRecords);
         var (moonPrimarySize, moonSecondarySize) = ComputeMoonSizes(suppRecords, game);
@@ -294,10 +297,10 @@ internal static class WorldMapOverlayBuilder
             UnlinkedExteriorCells = unlinkedExterior,
             UnlinkedMapMarkers = unlinkedMarkers,
             AllCells = suppRecords.Cells,
-            XespDisabledRefs = PlacedReferenceEnableStateResolver.ResolveXespDisabledRefs(suppRecords.Cells),
+            XespDisabledRefs = PlacedReferenceEnableStateResolver.ResolveXespDisabledRefs(placedRefs),
             CellWorldSize = ResolveCellWorldSize(suppRecords.Cells),
             CellByFormId = cellByFormId,
-            RefrToCellIndex = refrToCellIndex,
+            PlacedRefs = placedRefs,
             BoundsIndex = boundsIndex,
             ModelPathIndex = modelPathIndex,
             SpeedTreeLeafTextures = BuildSpeedTreeLeafTextures(suppRecords),
@@ -320,7 +323,6 @@ internal static class WorldMapOverlayBuilder
             MoonSecondaryHalfSizeFraction = moonSecondarySize,
             SpawnIndex = spawnIndex,
             UsageIndex = usageIndex,
-            RefPositionIndex = refPositionIndex,
             SaveOverlayMarkers = overlayMarkers,
             PlayerPosition = playerPos,
             DanglingRefs = DanglingRefAttributions.LoadDefault(),
@@ -682,24 +684,5 @@ internal static class WorldMapOverlayBuilder
         return cellByFormId;
     }
 
-    private static (Dictionary<uint, CellRecord> RefrToCell, Dictionary<uint, (float X, float Y)> RefPosition)
-        BuildRefrIndices(List<CellRecord> cells)
-    {
-        var refrToCellIndex = new Dictionary<uint, CellRecord>();
-        var refPositionIndex = new Dictionary<uint, (float X, float Y)>();
-        foreach (var cell in cells)
-        {
-            foreach (var obj in cell.PlacedObjects)
-            {
-                refrToCellIndex.TryAdd(obj.FormId, cell);
-                if (obj.FormId != 0)
-                {
-                    refPositionIndex.TryAdd(obj.FormId, (obj.X, obj.Y));
-                }
-            }
-        }
-
-        return (refrToCellIndex, refPositionIndex);
-    }
 }
 

@@ -23,6 +23,7 @@ namespace BethesdaMultitool;
 internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
 {
     private MemoryMappedFile? _mmf;
+    private Core.Formats.Esm.Land.BtdTerrainInjection? _terrainInjection;
     private ResourceRegistration? _registration;
 
     public string ResourceName => "AnalysisSession";
@@ -181,8 +182,13 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
         Accessor = null;
         _mmf?.Dispose();
         _mmf = null;
+        _terrainInjection?.Dispose();
+        _terrainInjection = null;
 
-        var (mappedFile, accessor) = session.DetachDisposables();
+        var (mappedFile, accessor, terrainInjection) = session.DetachDisposables();
+        // The lazy BTD height sources (FO76/Starfield terrain) follow the same adopt-or-die lifetime
+        // as the file mapping: the session owns them until the next Open/Adopt/Dispose.
+        _terrainInjection = terrainInjection;
         if (mappedFile != null && accessor != null)
         {
             _mmf = mappedFile;
@@ -258,6 +264,8 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
         Accessor = null;
         _mmf?.Dispose();
         _mmf = null;
+        _terrainInjection?.Dispose();
+        _terrainInjection = null;
         AnalysisResult = null;
         FilePath = null;
         FileSize = 0;

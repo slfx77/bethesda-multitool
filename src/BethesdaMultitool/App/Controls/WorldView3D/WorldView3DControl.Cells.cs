@@ -134,7 +134,17 @@ public sealed partial class WorldView3DControl
         _water?.SetFnvWaterMaterialCatalog(ResolveFnvWaterMaterialCatalog());
         _water?.SetLegacyAnimatedFrames(ResolveLegacyAnimatedWaterFrames());
         _water?.SetOblivionDetailTexture(oblivionDetailIndex);
-        if (_water is not null) _water.DefaultWaterRequiresCellHasWater = waterFromParent;
+        if (_water is not null)
+        {
+            _water.DefaultWaterRequiresCellHasWater = waterFromParent;
+            // Video-settings "Water ripples": re-seed the persisted toggle and the flat-normal
+            // substitute it swaps in (the ripples-off calm sheet) on every worldspace load.
+            _water.RipplesEnabled = _waterRipplesEnabled;
+            if (_textureResolver12 is not null)
+            {
+                _water.FlatNormalBindlessIndex = _textureResolver12.FlatNormalFallback.BindlessIndex;
+            }
+        }
         _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex, appearance, normalIndices);
         _water?.SetFnvWater001WaterTypeContext(
             initialWaterSelection.WaterFormId,
@@ -149,6 +159,7 @@ public sealed partial class WorldView3DControl
             _collisionDebug.LoadData(_spatialIndex, _data.CategoryIndex, _data.Game);
             _collisionDebug.ShowDisabled = _showDisabled;
             _collisionDebug.XespDisabledRefs = _data.XespDisabledRefs;
+            _collisionDebug.DayNightStates = _dayNightStates;
         }
     }
 
@@ -302,8 +313,7 @@ public sealed partial class WorldView3DControl
     private async void InteriorsButton_Click(object sender, RoutedEventArgs e)
     {
         if (_data is null || _data.InteriorCells.Count == 0) return;
-        CellBrowserHeader.Text = "Interior cells";
-        CellBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
+        ShowCellBrowser("Interior cells");
         // groupInteriors (Interiors mode) → group by first letter (A..Z), like the 2D viewer.
         await CellList.PopulateAsync(_data.InteriorCells, CellListControl.CellListMode.Interiors, _data);
     }
@@ -318,9 +328,27 @@ public sealed partial class WorldView3DControl
     private async void AllCellsButton_Click(object sender, RoutedEventArgs e)
     {
         if (_data is null || _data.AllCells.Count == 0) return;
-        CellBrowserHeader.Text = "All cells";
-        CellBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
+        ShowCellBrowser("All cells");
         await CellList.PopulateAsync(_data.AllCells, CellListControl.CellListMode.AllCells, _data);
+    }
+
+    /// <summary>
+    ///     Raises the cell browser in <paramref name="header" /> mode. Both viewport browsers are
+    ///     full-bleed overlays over the SAME SwapChainPanel, so they MUST be mutually exclusive: the
+    ///     worldspace browser is declared after the cell browser and therefore stacks above it, so
+    ///     opening a cell list while it was up used to look like the button did nothing, and closing the
+    ///     worldspace browser then revealed the cell list instead of the 3D view — which read as "the
+    ///     browser won't close unless I pick a worldspace" (a worldspace pick is the one path that
+    ///     collapses both).
+    /// </summary>
+    private void ShowCellBrowser(string header)
+    {
+        HideWorldspaceBrowser();
+        CellBrowserHeader.Text = header;
+        CellBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
+        // Keyboard focus is on the toolbar button that opened this; move it into the search box so
+        // typing filters the list instead of driving the flythrough camera.
+        CellList.FocusSearch();
     }
 
     private void CellBrowserCloseButton_Click(object sender, RoutedEventArgs e) => HideInteriorBrowser();
@@ -332,12 +360,16 @@ public sealed partial class WorldView3DControl
     /// <summary>
     ///     Opens the searchable worldspace list. The toolbar ComboBox stays the authoritative
     ///     selection — this only offers a better way to find an entry in it, which matters once a game
-    ///     ships hundreds (Starfield has ~750).
+    ///     ships hundreds (Starfield has ~750). Mutually exclusive with the cell browser (see
+    ///     <see cref="ShowCellBrowser" />): in 3D the scene is always underneath, so closing either
+    ///     overlay has to land back on the viewport.
     /// </summary>
     private void WorldspacesButton_Click(object sender, RoutedEventArgs e)
     {
         if (WorldspaceComboBox.Items.Count == 0) return;
+        HideInteriorBrowser();
         WorldspaceBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
+        WorldspaceList.FocusSearch();
     }
 
     private void WorldspaceBrowserCloseButton_Click(object sender, RoutedEventArgs e) =>
@@ -424,6 +456,7 @@ public sealed partial class WorldView3DControl
             _collisionDebug.LoadData(_spatialIndex, _data.CategoryIndex, _data.Game);
             _collisionDebug.ShowDisabled = _showDisabled;
             _collisionDebug.XespDisabledRefs = _data.XespDisabledRefs;
+            _collisionDebug.DayNightStates = _dayNightStates;
         }
     }
 

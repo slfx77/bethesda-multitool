@@ -15,6 +15,7 @@ namespace BethesdaMultitool;
 /// <summary>Win2D-based 2D world map: renders terrain layers, placed-object markers, and overlays with zoom/pan navigation.</summary>
 public sealed partial class WorldMapControl : UserControl, IDisposable
 {
+    /// <summary>Initial long-edge seed for the export tab's resolution box.</summary>
     private const int ExportLongEdge = 4096;
 
     // Cached (CA1869): the tile-manifest export reuses one options instance instead of allocating per write.
@@ -437,8 +438,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // WaterCheckBox resolve through it), so standalone hosts (profiler apps) work with no
         // SingleFileTab attached — the host merely DISPLAYS SettingsPanel in its Settings tab.
         SettingsPanel = new WorldMapSettingsPanel();
+        ExportPanel = new WorldMapExportPanel(); // shown in the host's right-panel Export tab
         InitializeComponent();
         WireSettingsPanel(); // subscribe while _initializing still gates the handlers
+        WireExportPanel();
         // Hillshade lighting defaults OFF (fixed NW look). Set the shared panel's toggle to match while
         // _initializing is still true, so its Toggled handler early-returns (no spurious rebuild).
         LightingPanel.LightingEnabled = false;
@@ -508,6 +511,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         DisposeMarkerIcons();
         _spatialIndex = null;
         _cellGridLookup = null;
+        // The export tab's include toggles are seeded once per scene from the live map's own toggles.
+        _exportSeeded = false;
+        ExportPanel.FileNameTextBox.Text = "";
 
         _data = data;
         _cellSize = data.CellWorldSize;
@@ -602,6 +608,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         var hasDangling = data.DanglingRefs.Grid.Count > 0;
         DanglingRefsComboBox.IsEnabled = hasDangling;
         DanglingRefsLabel.Opacity = hasDangling ? 1.0 : 0.5;
+
+        // A new file re-seeds the export tab's include copy from this scene's live toggles. The
+        // worldspace selection above already refreshed the bounds via ApplyWorldspaceSwitch; this also
+        // covers a file with no worldspaces at all (nothing to export → the tab says so).
+        RefreshExportBounds();
     }
 
     private void LegendToggle_Click(object sender, RoutedEventArgs e)
@@ -783,7 +794,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         HideWorldspaceBrowser();
         WorldspacesButton.Content = "Worldspaces";
         WorldspacesButton.IsEnabled = false;
-        ExportButton.IsEnabled = false;
+        // A cleared viewer has no worldspace to export; re-seed the export tab (including its
+        // worldspace-derived default file name) from the next load.
+        _exportSeeded = false;
+        ExportPanel.FileNameTextBox.Text = "";
+        RefreshExportBounds();
         MapCanvas.Invalidate();
     }
 

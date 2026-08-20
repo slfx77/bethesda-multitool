@@ -170,7 +170,7 @@ internal sealed partial class MainWindow : Window, IDisposable
                 "Profiling {0:N0} cells, {1:N0} worldspace(s), {2:N0} placed refs. Log: {3}",
                 data.AllCells.Count,
                 data.Worldspaces.Count,
-                data.RefrToCellIndex.Count,
+                data.PlacedRefs.Count,
                 _options.ProfileOutputPath);
             SetStatus(summary);
             Log.Info(summary);

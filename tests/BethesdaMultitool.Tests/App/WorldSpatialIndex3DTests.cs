@@ -131,7 +131,7 @@ public sealed class WorldSpatialIndex3DTests
             MarkersByWorldspace = [],
             AllCells = cells,
             CellByFormId = cells.ToDictionary(c => c.FormId),
-            RefrToCellIndex = [],
+            PlacedRefs = PlacedRefIndex.Empty,
             UnlinkedExteriorCells = [],
             UnlinkedMapMarkers = []
         };

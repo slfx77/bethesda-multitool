@@ -6,144 +6,16 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Utils;
 using Microsoft.Graphics.Canvas;
-using Microsoft.UI;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.Windows.Storage.Pickers;
-using WinRT.Interop;
 
 namespace BethesdaMultitool;
 
-/// <summary>PNG export of the active worldspace: single capped image or a grid of GPU-bounded tiles.</summary>
+/// <summary>
+///     PNG export of the active worldspace: single capped image or a grid of GPU-bounded tiles. The
+///     options and the run trigger live in the right-panel Export tab
+///     (<c>WorldMapControl.ExportPanel.cs</c>); this file is the render pipeline it drives.
+/// </summary>
 public sealed partial class WorldMapControl
 {
-    private async void ExportButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_data == null) return;
-
-        var activeCells = GetActiveCells();
-        var cellsWithGrid = activeCells.Where(c => c.GridX.HasValue && c.GridY.HasValue).ToList();
-        if (cellsWithGrid.Count == 0) return;
-
-        var minGx = cellsWithGrid.Min(c => c.GridX!.Value);
-        var maxGx = cellsWithGrid.Max(c => c.GridX!.Value);
-        var minGy = cellsWithGrid.Min(c => c.GridY!.Value);
-        var maxGy = cellsWithGrid.Max(c => c.GridY!.Value);
-        if (!WorldMapExportPlan.TryCreateGridBounds(
-                minGx, maxGx, minGy, maxGy, out var gridBounds, out var boundsError))
-        {
-            Logger.Instance.Warn("Map export rejected invalid grid bounds: {0}", boundsError);
-            return;
-        }
-
-        var dialog = new MapExportDialog(
-            gridBounds.CellsWide, gridBounds.CellsTall,
-            initialLayer: _currentLayer,
-            initialIncludeMarkers: !_hiddenCategories.Contains(PlacedObjectCategory.MapMarker),
-            initialIncludeNavMesh: _showNavMesh,
-            initialIncludeWater: _showWater,
-            initialIncludeGrid: _showCellGrid,
-            initialLongEdgePx: ExportLongEdge,
-            canRenderMeshes: _topDownProvider?.CanRenderTopDown == true)
-        {
-            XamlRoot = XamlRoot
-        };
-
-        var dialogResult = await dialog.ShowAsync();
-        if (dialogResult != ContentDialogResult.Primary) return;
-        var req = dialog.GetRequest();
-
-        // Resolve output px/cell. Don't upscale beyond the layer's real source detail (132/528 for
-        // texture, 132 for the 33-native heightmap-family layers).
-        var maxGridDim = gridBounds.MaxGridDimension;
-        var maxSourcePpc = req.Layer == WorldMapLayer.TerrainTextures
-            ? WorldMapLayerRenderer.MaxTexturePixelsPerCell
-            : WorldMapLayerRenderer.HeightmapPixelsPerCell * 4;
-        var ppc = Math.Clamp(req.LongEdgePx / maxGridDim, 1, maxSourcePpc);
-
-        int cellsPerTile;
-        if (req.Tiled)
-        {
-            // Split into tiles each within the GPU max-texture bound.
-            cellsPerTile = Math.Max(1, WorldMapExporter.ExportMaxTileDimension / ppc);
-        }
-        else
-        {
-            // Single image: clamp px/cell so the whole worldspace fits one texture.
-            ppc = Math.Min(ppc, Math.Max(1, WorldMapExporter.ExportMaxTileDimension / maxGridDim));
-            cellsPerTile = maxGridDim;
-        }
-
-        if (!WorldMapExportPlan.TryCreate(
-                gridBounds,
-                ppc,
-                cellsPerTile,
-                WorldMapExporter.ExportMaxTileDimension,
-                _cellSize,
-                out var plan,
-                out var planError) || plan is null)
-        {
-            Logger.Instance.Warn("Map export rejected an unrepresentable plan: {0}", planError);
-            return;
-        }
-
-        var wsName = _state.SelectedWorldspace?.EditorId ?? _state.SelectedWorldspace?.FullName ?? "worldspace";
-        // The legacy Windows.Storage picker returns a newly-created EMPTY StorageFile, truncating a
-        // same-name target before our atomic writer can protect it. The Windows App SDK picker returns
-        // only the chosen path, so existing PNG bytes remain intact until AtomicFileWriter commits.
-        var hwnd = WindowNative.GetWindowHandle(FalloutApp.Current.MainWindow);
-        var picker = new FileSavePicker(Win32Interop.GetWindowIdFromWindow(hwnd))
-        {
-            SuggestedStartLocation = PickerLocationId.PicturesLibrary
-        };
-        picker.FileTypeChoices.Add("PNG Image", [".png"]);
-        picker.SuggestedFileName = $"{wsName}_map";
-
-        var result = await picker.PickSaveFileAsync();
-        if (result == null) return;
-
-        EnsureMarkerIconSet(MapCanvas);
-
-        // Apply markers preference: hidden if user unchecked Map markers in the dialog.
-        var exportHiddenCategories = new HashSet<PlacedObjectCategory>(_hiddenCategories);
-        if (!req.IncludeMarkers)
-        {
-            exportHiddenCategories.Add(PlacedObjectCategory.MapMarker);
-        }
-        else
-        {
-            exportHiddenCategories.Remove(PlacedObjectCategory.MapMarker);
-        }
-
-        var progressDialog = new ExportProgressController(XamlRoot);
-        _ = progressDialog.ShowAsync();
-        ExportButton.IsEnabled = false;
-        try
-        {
-            await RunExportAsync(
-                req,
-                activeCells,
-                result.Path,
-                plan,
-                exportHiddenCategories,
-                progressDialog,
-                progressDialog.Cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            // User canceled — leave whatever tiles were already written.
-        }
-        catch (Exception ex)
-        {
-            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn("Map export failed: {0}", ex.ToString());
-        }
-        finally
-        {
-            progressDialog.Complete();
-            ExportButton.IsEnabled = true;
-        }
-    }
-
     /// <summary>
     ///     Renders the export as one capped image or a grid of GPU-bounded tiles. Decodes each tile's
     ///     terrain cells off the UI thread (bounded memory: only the tile's cells, plus a 1-cell margin

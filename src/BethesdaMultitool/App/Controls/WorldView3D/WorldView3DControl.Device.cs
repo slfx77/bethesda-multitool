@@ -141,6 +141,7 @@ public sealed partial class WorldView3DControl
                 CollisionResolver = ResolveCollisionMesh,
                 CollisionWarmup = ResolveOrWarmCollisionMesh,
                 ShowDisabled = _showDisabled,
+                DayNightStates = _dayNightStates,
             };
 
             // Export framing preview: reuses the collision line shaders (no spatial index needed — it

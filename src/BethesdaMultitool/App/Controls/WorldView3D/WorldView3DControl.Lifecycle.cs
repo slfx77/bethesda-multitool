@@ -371,16 +371,18 @@ public sealed partial class WorldView3DControl
     ///         UV, so the target is deliberately kept small.
     ///     </para>
     /// </summary>
-    private bool TryEnsureWaterReflectionTarget(int sceneWidth, int sceneHeight)
+    private bool TryEnsureWaterReflectionTarget(int sceneWidth, int sceneHeight, bool sceneContent = false)
     {
         if (_gpu12 is null || _cbvSrvUavHeap12 is null || sceneWidth <= 0 || sceneHeight <= 0)
         {
             return false;
         }
 
-        const int reflectionWidth = 512;
+        // Sky-only content reads fine at 512; mirrored SCENE content (terrain + references)
+        // carries real geometry edges and doubles to 1024 wide. Aspect tracks the viewport.
+        var reflectionWidth = sceneContent ? 1024 : 512;
         var reflectionHeight = Math.Clamp(
-            (int)MathF.Round(reflectionWidth * (float)sceneHeight / sceneWidth), 64, 512);
+            (int)MathF.Round(reflectionWidth * (float)sceneHeight / sceneWidth), 64, sceneContent ? 1024 : 512);
 
         if (_waterReflectionTarget is null ||
             _waterReflectionTargetW != reflectionWidth ||

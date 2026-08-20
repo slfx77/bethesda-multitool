@@ -52,6 +52,13 @@ public sealed partial class WorldspaceListControl : UserControl
         RunFilter();
     }
 
+    /// <summary>
+    ///     Moves keyboard focus into the search box. The 3D viewer opens this over a SwapChainPanel that
+    ///     binds WASD/Q/E to the flythrough camera, so an unfocused search box means typing flies the
+    ///     camera around behind the list instead of filtering it.
+    /// </summary>
+    public void FocusSearch() => SearchBox.Focus(FocusState.Programmatic);
+
     /// <summary>Empties the list (e.g. when a new file is loaded).</summary>
     public void Clear()
     {

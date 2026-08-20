@@ -71,7 +71,7 @@ public sealed class SelectedReferenceVisibilitySourceContractTests
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
         Assert.Contains(
-            "visibilityKey.IsVisible(r, _enabledOverrides)",
+            "visibilityKey.IsVisible(r, _enabledOverrides, DayNightStates)",
             referenceRenderer,
             StringComparison.Ordinal);
 
@@ -240,8 +240,15 @@ public sealed class SelectedReferenceVisibilitySourceContractTests
             "enabledOverrides.IsVisible(",
             selector,
             StringComparison.Ordinal);
+        // The scripted day/night layer replaces the AUTHORED disabled state for gated emitters but
+        // still funnels through the shared override policy — the explicit On/Off preview and the
+        // show-disabled diagnostic keep their precedence.
         Assert.Contains(
-            "light.FormId, light.IsInitiallyDisabled, includeInitiallyDisabled",
+            "light.FormId, authoredDisabled, includeInitiallyDisabled",
+            selector,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "dayNightStates?.TryGetDisabled(light.FormId, out var hourDisabled)",
             selector,
             StringComparison.Ordinal);
     }

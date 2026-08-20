@@ -99,6 +99,13 @@ public sealed partial class CellListControl : UserControl
         await RunFilterAsync();
     }
 
+    /// <summary>
+    ///     Moves keyboard focus into the search box. The 3D viewer opens this over a SwapChainPanel that
+    ///     binds WASD/Q/E to the flythrough camera, so an unfocused search box means typing flies the
+    ///     camera around behind the list instead of filtering it.
+    /// </summary>
+    public void FocusSearch() => SearchBox.Focus(FocusState.Programmatic);
+
     /// <summary>Empties the list and resets the search box + filters (e.g. when leaving browser mode).</summary>
     public void Clear()
     {

@@ -101,7 +101,7 @@ public sealed class WorldSpatialIndexCellSizeTests
             AllCells = [cell],
             CellWorldSize = cellSize,
             CellByFormId = new Dictionary<uint, CellRecord> { [cell.FormId] = cell },
-            RefrToCellIndex = [],
+            PlacedRefs = PlacedRefIndex.Empty,
             UnlinkedExteriorCells = [],
             UnlinkedMapMarkers = []
         };

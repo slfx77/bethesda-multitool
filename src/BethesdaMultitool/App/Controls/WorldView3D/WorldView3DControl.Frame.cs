@@ -240,9 +240,14 @@ public sealed partial class WorldView3DControl
     private static readonly bool ShadowDiagLogging =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.ShadowDiag) == "1";
 
-    /// <summary>Planar sky reflection for water. "0" restores the 2-row sky-gradient stand-in.</summary>
+    /// <summary>Planar reflection infrastructure kill-switch (env). "0" restores the 2-row
+    /// sky-gradient stand-in regardless of the GUI toggle; the live per-session state is the
+    /// Video expander's Water Reflections toggle (<c>_waterReflectionsEnabled</c>), ANDed below.</summary>
     private static readonly bool WaterReflectionEnabled =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.WaterReflection) != "0";
+
+    /// <summary>The live water-reflection gate: env kill-switch AND the Video-expander toggle.</summary>
+    private bool WaterReflectionActive => WaterReflectionEnabled && _waterReflectionsEnabled;
 
     /// <summary>Adapter handing the reference renderer's blended loop the water drain (the unified
     /// transparency stream's merge hook). Cached per water-renderer instance.</summary>
@@ -405,6 +410,10 @@ public sealed partial class WorldView3DControl
         {
             RenderFrameD3D12(tonemap);
             _consecutiveRenderFailures = 0;
+            // After the frame: the reference renderer's heatmap scan is now current, so the
+            // settings-panel key labels can mirror it (CompositionTarget.Rendering runs on the UI
+            // thread; the refresh no-ops unless the window actually changed).
+            UpdateFormIdHeatmapKey();
         }
         catch (Exception ex)
         {
@@ -470,7 +479,8 @@ public sealed partial class WorldView3DControl
         Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, int frameIndex, bool enableFog = true,
         bool enableLighting = true, bool cameraRelative = false, Vector3? shadingCameraPosOverride = null,
         float? gameHourOverride = null, Vector3? cameraOriginOverride = null, bool enableShadows = true,
-        VisibilityCylinder? lightVisibility = null, GpuTonemapSettings? tonemapOverride = null)
+        VisibilityCylinder? lightVisibility = null, GpuTonemapSettings? tonemapOverride = null,
+        Vector4? clipPlane = null)
     {
         // The top-down overlay drives lighting from the 2D map's own time-of-day, passed via
         // gameHourOverride; the live perspective path uses the 3D control's _gameHour. enableLighting is
@@ -478,6 +488,11 @@ public sealed partial class WorldView3DControl
         // overlay passes its own lighting-enabled flag as enableLighting with _showLighting left true).
         var gameHour = gameHourOverride ?? _gameHour;
         var lightingOn = enableLighting && _showLighting;
+        // Advance the scripted day/night reference states to this frame's hour BEFORE the placed
+        // -light gather below and the reference cull consume them (cheap no-op within a 3-minute
+        // schedule slot). Overridden hours (top-down overlay) legitimately re-evaluate the shared
+        // store — capture-equals-live requires the capture's hour to drive the same state machine.
+        _dayNightStates.Apply(_data?.DayNightSchedule, gameHour);
         var resolved = ResolveSceneAtmosphere(gameHour, lightingOn);
         // Stash the frame's directional-light direction for the frame-end shadow pass (the map is
         // fitted around this direction; see RecordSunShadowPass).
@@ -507,7 +522,7 @@ public sealed partial class WorldView3DControl
         // brightness). Keyed off the same per-game resolution the display pass uses so the two stay
         // consistent.
         var tonemap = tonemapOverride ?? ResolveTonemapSettings();
-        var hdrActive = _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
+        var hdrActive = HdrGuiActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
         var game = _data?.Game ?? Core.Games.BethesdaGame.Unknown;
         var sceneSunlightScale = GpuTonemapSettings.ResolveSceneSunlightScale(
             tonemap,
@@ -558,10 +573,18 @@ public sealed partial class WorldView3DControl
             // so a display-operator override must not suppress it.
             sunlightScale: sceneSunlightScale,
             grassScale: sceneGrassScale);
+        // Neutral (0,0,0,1) clips nothing; the water-reflection mirror pass passes its plane here.
+        constants.ClipPlane = clipPlane ?? new Vector4(0f, 0f, 0f, 1f);
         var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
         unsafe { *(AtmosphereConstants*)alloc.CpuPtr = constants; }
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
+        // Stash the bound address so a nested pass (the mirror block) can restore the MAIN b3
+        // after rebinding its own — water/blended passes read b3 afterward.
+        _lastAtmosphereCbGpuAddress = alloc.GpuAddress;
     }
+
+    // GPU address of the most recent b3 atmosphere CB bound by BindAtmosphereConstants.
+    private ulong _lastAtmosphereCbGpuAddress;
 
     // CPU mirror of the b3 `cbuffer Atmosphere` the lighting/sky/water shaders declare. 10 float4
     // = 160 bytes before the shadow constants (CB-aligned by the ring buffer). When a flag is 0 the shader falls back to its
@@ -616,7 +639,15 @@ public sealed partial class WorldView3DControl
         /// </summary>
         public Vector4 GrassSunColorScale;
 
-        public const uint ByteSize = 10 * 16 + 4 * 64 + 4 * 16 + 6 * 16 + 16;
+        /// <summary>
+        ///     Half-space clip plane in origin-relative <c>vWorldPos</c> space, consumed by the
+        ///     terrain + reference PS entry (<c>clip(dot(p, xyz) + w)</c>). The neutral default
+        ///     (0,0,0,1) clips nothing; the water-reflection mirror pass binds (0,0,1,−h′) so
+        ///     below-plane geometry never enters the mirror.
+        /// </summary>
+        public Vector4 ClipPlane;
+
+        public const uint ByteSize = 10 * 16 + 4 * 64 + 4 * 16 + 6 * 16 + 16 + 16;
 
         public static AtmosphereConstants From(
             AtmosphereState.Resolved a,
@@ -1318,7 +1349,7 @@ public sealed partial class WorldView3DControl
         var sceneSkyScale = GpuTonemapSettings.ResolveSceneSkyScale(
             tonemap,
             _data?.Game ?? Core.Games.BethesdaGame.Unknown,
-            _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
+            HdrGuiActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0",
             isInterior: _selectedInterior is not null);
         BindAtmosphereConstants(
             cmd, recorder.FrameIndex, enableFog: !projectionActive, cameraRelative: cameraRelative,
@@ -1342,6 +1373,25 @@ public sealed partial class WorldView3DControl
             _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.SkyEnd);
         }
 
+        // WATER-REFLECTION SCENE MIRROR — planned up front: when the loaded game's water shader
+        // has a projective RT arm (Oblivion WATER007), the toggle is on, and a dominant visible
+        // water plane exists below the camera, the reflection target gets MIRRORED SCENE content
+        // (terrain + captured references + sky) in a dedicated block AFTER the main opaque passes
+        // — the reference replay needs this frame's captured draws. The sky-only block below then
+        // skips; every other case keeps it.
+        var sceneMirrorPlanned = false;
+        var mirrorPlaneHeight = 0f;
+        if (_showSky && WaterReflectionActive && !projectionActive && _showWater &&
+            _data?.Game == Core.Games.BethesdaGame.Oblivion &&
+            _water is not null && _references is not null && _selectedInterior is null &&
+            _water.TryGetDominantVisibleWaterPlaneHeight(
+                cylinder, _camera.Position.Z, out mirrorPlaneHeight) &&
+            TryEnsureWaterReflectionTarget((int)surface.Width, (int)surface.Height, sceneContent: true))
+        {
+            sceneMirrorPlanned = true;
+            _references.ArmMirrorCapture();
+        }
+
         // PLANAR SKY REFLECTION — the sky again, with the view's Z axis mirrored, into a small
         // offscreen target the water shaders sample. Retail WATER000 reflects a planar RT; our
         // 2-row gradient stand-in could not carry cloud mottling, warm tint or the sun glitter
@@ -1352,7 +1402,8 @@ public sealed partial class WorldView3DControl
         // Runs here, immediately after the main sky: the b3 atmosphere CB the gradient reads is
         // already bound, and nothing has written the scene depth yet that we would have to preserve.
         var waterReflectionBound = false;
-        if (_showSky && WaterReflectionEnabled && !projectionActive && _water is not null &&
+        if (!sceneMirrorPlanned &&
+            _showSky && WaterReflectionActive && !projectionActive && _water is not null &&
             TryEnsureWaterReflectionTarget((int)surface.Width, (int)surface.Height) &&
             _waterReflectionTarget is { } reflectionTarget)
         {
@@ -1403,10 +1454,9 @@ public sealed partial class WorldView3DControl
             }
         }
 
-        _water?.SetWaterReflection(
-            waterReflectionBound ? _waterReflectionSrv!.Value.BindlessIndex : null,
-            surface.Width,
-            surface.Height);
+        // SetWaterReflection moves to AFTER the scene-mirror block below: when the mirror runs,
+        // the binding must carry its matrix; when it does not, the sky-only binding made here
+        // would be identical anyway.
 
         // Layer order is terrain → references → water → wireframe. Water is
         // alpha-blended depth-read, so it must come after terrain + references (which write
@@ -1486,6 +1536,87 @@ public sealed partial class WorldView3DControl
         {
             _water.SetNifWaterPlanes(_references.NifWaterPlanes);
         }
+
+        // ── WATER-REFLECTION SCENE MIRROR ────────────────────────────────────────────────────
+        // Same frame, after the main opaque passes: the reference replay re-issues this frame's
+        // captured draws (their per-draw CB/t8 ring addresses are frame-local), so one-frame
+        // latency is impossible. Sequence: restore snapshot → bind + horizon clear (depth 0) →
+        // mirror b3 (mirrored shading camera + clip plane) → mirrored sky → terrain mirror →
+        // reference replay → prepare snapshot; the finally restores scene targets, viewport, and
+        // the MAIN b3 (water/blended read it next). Failures fall back to the gradient stand-in.
+        Matrix4x4? sceneMirrorMatrix = null;
+        if (sceneMirrorPlanned && _waterReflectionTarget is { } sceneMirrorTarget)
+        {
+            var mainAtmosphereCb = _lastAtmosphereCbGpuAddress;
+            try
+            {
+                // Reflection about the dominant plane in ORIGIN-RELATIVE space (the VS transforms
+                // p − origin): z = h′ plane, System.Numerics row-vector composition — reflect,
+                // then view-project.
+                var mirrorPlaneRel = mirrorPlaneHeight - sceneRenderOrigin.Z;
+                var mirrorViewProjScene =
+                    Matrix4x4.CreateReflection(new System.Numerics.Plane(0f, 0f, 1f, -mirrorPlaneRel))
+                    * viewProjScene;
+
+                sceneMirrorTarget.RestoreWaterOpaqueSnapshot(cmd);
+                var mirrorClear = ResolveSceneAtmosphere(_gameHour, _showLighting).SkyHorizonColor
+                                  * sceneSkyScale;
+                sceneMirrorTarget.Bind(cmd, new Vortice.Mathematics.Color4(
+                    mirrorClear.X, mirrorClear.Y, mirrorClear.Z, 1f));
+                // Mirror b3: the shading camera reflects too (specular/fog track the mirrored
+                // eye), and the clip plane trims everything below the water surface out of the
+                // mirror. Same fog/shadow/tonemap state as the main pass.
+                var mirroredCameraAbs = new Vector3(
+                    _camera.Position.X, _camera.Position.Y,
+                    (2f * mirrorPlaneHeight) - _camera.Position.Z);
+                BindAtmosphereConstants(
+                    cmd, recorder.FrameIndex, enableFog: true, cameraRelative: cameraRelative,
+                    shadingCameraPosOverride: cameraRelative
+                        ? mirroredCameraAbs - sceneRenderOrigin
+                        : mirroredCameraAbs,
+                    cameraOriginOverride: cameraRelative ? sceneRenderOrigin : null,
+                    enableShadows: shadowsActive, lightVisibility: cylinder,
+                    tonemapOverride: tonemap,
+                    clipPlane: new Vector4(0f, 0f, 1f, -mirrorPlaneRel));
+                // Sky first (depth-off background): the dome is at infinity, so the camera-plane
+                // Z flip is the same reflection as the water plane's — directions are unaffected
+                // by the translation difference. Cloud scroll must not advance twice per frame.
+                RenderSky(Matrix4x4.CreateScale(1f, 1f, -1f) * viewProjSky, Vector3.Zero,
+                    skyColorScale: sceneSkyScale, advanceCloudScroll: false);
+                if (_showTerrain)
+                {
+                    _terrain?.RenderMirror(mirrorViewProjScene, cylinder);
+                }
+                _references?.RenderMirrorColor(mirrorViewProjScene);
+                waterReflectionBound = sceneMirrorTarget.TryPrepareWaterOpaqueSnapshot(cmd);
+                if (waterReflectionBound)
+                {
+                    sceneMirrorMatrix = mirrorViewProjScene;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("WorldView3DControl: water scene-mirror pass failed; " +
+                         "falling back to the sky gradient: {0}", ex.Message);
+            }
+            finally
+            {
+                _references?.DisarmMirrorCapture();
+                cmd.OMSetRenderTargets(sceneRtv, sceneDsv);
+                cmd.RSSetViewport(0, 0, surface.Width, surface.Height);
+                cmd.RSSetScissorRect((int)surface.Width, (int)surface.Height);
+                // Water/blended passes read b3 next — the mirror's CB must not leak forward.
+                cmd.SetGraphicsRootConstantBufferView(
+                    GpuRootSignature12.Slots.AtmosphereCbv, mainAtmosphereCb);
+            }
+        }
+
+        _water?.SetWaterReflection(
+            waterReflectionBound ? _waterReflectionSrv!.Value.BindlessIndex : null,
+            surface.Width,
+            surface.Height,
+            sceneMirrorMatrix);
+
         segmentStarted = StartProfileTimestamp();
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterStart);
         // Feed water/effects the real scene depth (terrain + opaque references already wrote it).

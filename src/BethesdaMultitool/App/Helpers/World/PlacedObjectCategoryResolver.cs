@@ -180,7 +180,7 @@ internal static class PlacedObjectCategoryResolver
                 { Name = "Special Rendering", Value = "Imposter (vantage-only)", Category = "Identity" });
         }
 
-        if (worldViewData?.RefrToCellIndex.TryGetValue(obj.FormId, out var parentCell) == true)
+        if (worldViewData?.PlacedRefs.TryGetCell(obj.FormId, out var parentCell) == true)
         {
             var cellName = parentCell.EditorId ?? parentCell.FullName ?? $"0x{parentCell.FormId:X8}";
             if (parentCell.GridX.HasValue && parentCell.GridY.HasValue)

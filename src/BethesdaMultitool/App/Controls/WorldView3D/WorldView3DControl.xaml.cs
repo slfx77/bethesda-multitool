@@ -112,6 +112,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // Per-placement ACTI/REFR Enabled preview overrides. This table is scene-local and keyed by the
     // placed FormID, so changing one selected instance never mutates its parsed/base record or siblings.
     private readonly ReferenceEnabledOverrideStore _referenceEnabledOverrides = new();
+    // Current-hour states for script-driven day/night refs (street lights, glow FX, fire barrels).
+    // Re-evaluated from WorldViewData.DayNightSchedule as the game hour advances; its Version keys
+    // the renderer's cull/shadow caches so networks flip exactly at their scripted hours.
+    private readonly DayNightRefStateStore _dayNightStates = new();
     private WorldViewData? _data;
     // Semantic eye-adaptation reset epoch. Retail FNV preserves history across routine CELL/IMGS/WTHR
     // transitions and clears only on an explicit ClearAdaptedLight request. Loading a new viewer scene
@@ -242,6 +246,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private bool _initializing = true;
     // Guards the draw-distance slider↔SetRenderDistance round trip (funnel reseats the slider).
     private bool _syncingDrawDistance;
+    // Same guard for the FormID-heatmap range slider↔SetFormIdHeatmapRange round trip.
+    private bool _syncingHeatmapRange;
+    // Same guard for the Screen-effects radio↔SetTonemapGuiMode round trip.
+    private bool _syncingTonemapRadio;
     private bool _showWireframe;
     private bool _showTerrain = true;
     private bool _showWater = true;
@@ -254,6 +262,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private bool _showNavMesh = BethesdaMultitool.Core.EnvironmentVariables.IsEnabled(
         BethesdaMultitool.Core.EnvironmentVariables.Viewer.ShowNavMesh);
     private bool _showCollision; // Havok collision-cage debug overlay (Visibility menu; off by default)
+    // FormID-heatmap debug overlay (Overlays menu; off by default, must match
+    // FormIdHeatmapCheckBox.IsChecked). Tints placed refs blue→red by FormID so authoring order
+    // reads at a glance. The range is stored in CELLS (∞ = the slider's unlimited top stop, the
+    // default) and persists across ESM reloads like _showMarkers; the renderer receives world
+    // units (cells × _cellSize) via the Toolbar funnels + Pipeline seeding.
+    private bool _formIdHeatmap;
+    private float _formIdHeatmapRangeCells = float.PositiveInfinity;
     private bool _showDisabled;
     // Engine/editor markers (XMarker, map/travel/teleport markers). Hidden by default to match the
     // game; the env knob seeds the initial value, the toolbar toggle flips it at runtime (persists
@@ -290,19 +305,36 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // default; exteriors stay behind FALLOUT_VIEWER_EXTERIOR_LIGHTS until the forward loop is
     // profiled in dense worldspaces. The UI toggle is an additional live AND-gate.
     private bool _placedLightsEnabled = true;
-    // Post-processing toggles (settings-panel "Post-processing" section; hidden for Morrowind —
-    // no engine HDR stage there). Read per-frame by ResolveTonemapSettings, so flipping them is
-    // free (no pipeline rebuild): FO3/FNV HDR off keeps their standalone cinematic grade but skips
-    // HDR exposure/adaptation/bloom; other games use LegacyClamp. The float scene target itself stays;
-    // only the static FALLOUT_VIEWER_HDR=0 env kill-switch reverts it. Bloom off skips the
-    // BrightPassBlur chain. Imagespace is a three-way selection: Automatic
-    // follows the cell/worldspace resolution, None renders a neutral cinematic (no golden desert
-    // filter) while eye-adapt exposure stays only when an HDR operator is active; Explicit forces
-    // one IMGS record by FormID.
-    private bool _hdrEnabled = true;
+    // Post-processing: the Video expander's retail three-way "Screen effects" radio
+    // (None/Bloom/HDR — the classic launcher's option; there is no retail HDR-with-bloom-off
+    // state). Read per-frame by ResolveTonemapSettings, so flipping it is free (no pipeline
+    // rebuild): HDR = each family's engine operator; Bloom = SDR + classic bloom stand-in
+    // (ClassicSdrBloom); None = SDR (FO3/FNV keep their standalone cinematic grade). The float
+    // scene target itself stays; only the static FALLOUT_VIEWER_HDR=0 env kill-switch reverts
+    // it. _bloomEnabled survives as a NON-UI diagnostic AND-gate (profiler scenarios and
+    // FALLOUT_VIEWER_BLOOM A/B bloom independently under HDR). Imagespace is a three-way
+    // selection: Automatic follows the cell/worldspace resolution, None renders a neutral
+    // cinematic while eye-adapt exposure stays only when an HDR operator is active; Explicit
+    // forces one IMGS record by FormID.
+    private Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode _tonemapGuiMode =
+        Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode.Hdr;
     private bool _bloomEnabled = true;
     private ImagespaceSelectionMode _imagespaceMode = ImagespaceSelectionMode.Automatic;
     private uint _imagespaceExplicitFormId;
+
+    /// <summary>The boolean most call sites actually ask: is the GUI in the HDR state?</summary>
+    private bool HdrGuiActive =>
+        _tonemapGuiMode == Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode.Hdr;
+
+    // Video-expander toggles (retail Ultra High defaults — everything on). Persist across ESM
+    // reloads like _showMarkers; re-seeded into the renderers on pipeline construction and
+    // applied live through the SetWaterReflections/SetWaterRipples/SetWindowReflections/
+    // SetGrassShadows/SetCanopyShadows funnels (Toolbar.cs).
+    private bool _waterReflectionsEnabled = true;
+    private bool _waterRipplesEnabled = true;
+    private bool _windowReflectionsEnabled = true;
+    private bool _grassShadowsEnabled = true;
+    private bool _canopyShadowsEnabled = true;
 
     // Active worldspace's cell-edge size in world units (4096 Fallout-family, 8192 Morrowind). Set from
     // WorldViewData.CellWorldSize on every cell-grid build; drives camera framing, picking, render
@@ -436,6 +468,16 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             Core.Formats.Nif.Rendering.Vegetation.GrassScatterProfile.ForGame(data.Game).Supported
                 ? Visibility.Visible
                 : Visibility.Collapsed;
+        // Video expander: per-game capability visibility (profile-driven, like GrassCheckBox).
+        // Hidden toggles keep their latent preferences; only an impossible radio state is coerced
+        // (the launcher's middle "Bloom" exists solely for the classic-HDR games).
+        var videoProfile = Core.Formats.Nif.Rendering.VideoSettingsProfile.ForGame(data.Game);
+        SettingsPanel.ApplyVideoProfile(videoProfile);
+        if (!videoProfile.HasClassicHdrTriple &&
+            _tonemapGuiMode == Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode.SdrBloom)
+        {
+            SetTonemapGuiMode(Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapGuiMode.Hdr);
+        }
         // Make the base-object category available to the placement bake before the renderer pulls
         // its first cell — drives the per-category visibility filter (activators default visible).
         data.RenderCache.CategoryIndex = data.CategoryIndex;

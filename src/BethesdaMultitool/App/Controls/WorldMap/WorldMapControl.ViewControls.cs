@@ -126,7 +126,9 @@ public sealed partial class WorldMapControl
         DisposeCellDetailBitmaps();
         BuildCellGridLookup();
         SetCanvasMode(true);
-        ExportButton.IsEnabled = true;
+        // The export tab is persistent, so its cell rectangle / output-size readout has to follow the
+        // active worldspace rather than being captured once when a modal opened.
+        RefreshExportBounds();
         ApplyZoomToFitWorldspace();
         MapCanvas.Invalidate();
     }

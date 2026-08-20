@@ -316,15 +316,17 @@ public sealed partial class WorldView3DControl
         var tonemapAvailable = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
         var operatorOverride = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings
             .ParseTonemapModeOverride(Environment.GetEnvironmentVariable("FALLOUT_VIEWER_TONEMAP"));
-        var hdrEnabled = _hdrEnabled && tonemapAvailable;
+        var hdrEnabled = HdrGuiActive && tonemapAvailable;
+        // Not-HDR covers BOTH the None and Bloom radio states: FO3/FNV keep their standalone
+        // cinematic grade (and, for Bloom, the bright-pass params) resolved through IMGS + IMAD.
         var cinematicOnly = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings
-            .UsesCinematicOnly(game, _hdrEnabled, tonemapAvailable) && operatorOverride is null;
+            .UsesCinematicOnly(game, HdrGuiActive, tonemapAvailable) && operatorOverride is null;
         var diagnosticOperatorActive = tonemapAvailable && operatorOverride is not null;
         if (!hdrEnabled && !cinematicOnly && !diagnosticOperatorActive)
         {
             settings = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ApplyOverrides(settings);
             return Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.FinalizeViewerPostProcessing(
-                settings, game, _hdrEnabled, tonemapAvailable, operatorOverride, _bloomEnabled, historyKey);
+                settings, game, _tonemapGuiMode, tonemapAvailable, operatorOverride, _bloomEnabled, historyKey);
         }
 
         // Tonemap operator overrides are display-pass A/Bs; they must not suppress the raw FO3/FNV
@@ -333,7 +335,7 @@ public sealed partial class WorldView3DControl
         {
             settings = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ApplyOverrides(settings);
             return Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.FinalizeViewerPostProcessing(
-                settings, game, _hdrEnabled, tonemapAvailable, operatorOverride, _bloomEnabled, historyKey);
+                settings, game, _tonemapGuiMode, tonemapAvailable, operatorOverride, _bloomEnabled, historyKey);
         }
 
         // Imagespace "(None)" = skip the authored IMGS overlay (cinematic grade + HDR params)
@@ -460,7 +462,7 @@ public sealed partial class WorldView3DControl
         settings = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ApplyOverrides(settings);
         // Final live policy gates HDR-only state after IMAD and preserves explicit display A/Bs.
         return Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.FinalizeViewerPostProcessing(
-            settings, game, _hdrEnabled, tonemapAvailable, operatorOverride, _bloomEnabled, historyKey);
+            settings, game, _tonemapGuiMode, tonemapAvailable, operatorOverride, _bloomEnabled, historyKey);
     }
 
     private WorldspaceRecord? FindWorldspace(uint formId) =>
