@@ -115,6 +115,14 @@ public sealed class BsaWriter : IDisposable
             {
                 fileFlags |= BsaFileFlags.Sounds;
             }
+            else if (IsMiscContentFolder(dir))
+            {
+                // facegen\, lodsettings\, lsdata\, menus\ content is Misc, matching retail
+                // "Fallout - Misc.bsa" (fileFlags 0x0100). Without this, an archive of
+                // .ctl/.dlodsettings/.dat/.xml files got fileFlags 0 and FNV skipped it
+                // entirely ("MODELS: Unable to load CTL file").
+                fileFlags |= BsaFileFlags.Misc;
+            }
             else
             {
                 // Extension-based fallback
@@ -128,7 +136,10 @@ public sealed class BsaWriter : IDisposable
                     ".xml" or ".swf" => BsaFileFlags.Menus | BsaFileFlags.Misc,
                     ".spt" => BsaFileFlags.Trees,
                     // .fnt and .tex are Oblivion-only flags, stripped for FO3/FNV (see below)
-                    _ => BsaFileFlags.None
+                    // Unknown extensions default to Misc (BSArchPro behavior) so no FNV
+                    // archive can end up with fileFlags 0 — the engine ignores an archive
+                    // whose content-type mask matches nothing.
+                    _ => BsaFileFlags.Misc
                 };
             }
         }
@@ -172,7 +183,29 @@ public sealed class BsaWriter : IDisposable
             }
         }
 
+        // Retail FNV audio convention: Sound.bsa AND Voices1-4.bsa all carry fileFlags
+        // 0x18 (Sounds|Voices) — if either audio bit is set, set both. Applied AFTER the
+        // archive-shape decisions above because those reflect the actual content mix
+        // (retail Voices1.bsa is 0x03 — no RetainFileNames — while Sound.bsa is 0x13).
+        if ((fileFlags & (BsaFileFlags.Sounds | BsaFileFlags.Voices)) != 0)
+        {
+            fileFlags |= BsaFileFlags.Sounds | BsaFileFlags.Voices;
+        }
+
         return new BsaWriter(archiveCompressFiles, fileFlags, embedNames, compressionLevel, additionalFlags);
+    }
+
+    /// <summary>
+    ///     Folders whose content maps to <see cref="BsaFileFlags.Misc" /> for FO3/FNV, matching
+    ///     retail "Fallout - Misc.bsa" (facegen CTLs, LOD settings, lsdata, menu XML).
+    /// </summary>
+    private static bool IsMiscContentFolder(string dir)
+    {
+        return dir is "facegen" or "lodsettings" or "lsdata" or "menus"
+               || dir.StartsWith("facegen\\", StringComparison.Ordinal)
+               || dir.StartsWith("lodsettings\\", StringComparison.Ordinal)
+               || dir.StartsWith("lsdata\\", StringComparison.Ordinal)
+               || dir.StartsWith("menus\\", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -278,8 +311,11 @@ public sealed class BsaWriter : IDisposable
         writer.Write((ushort)_fileFlags);
         writer.Write((ushort)0); // Padding
 
-        // Build file records with data offsets
-        var currentDataOffset = fileDataOffset;
+        // Build file records with data offsets. Tracked as long: BSA file records store
+        // offsets as u32, so an archive whose data crosses 4 GiB is unrepresentable — the
+        // old uint accumulator silently wrapped and shipped a corrupt archive (July-proto
+        // Sound.bsa, 4.43 GB with PCM songs). Overflow must be a hard error.
+        var currentDataOffset = (long)fileDataOffset;
         var folderRecords = new List<FolderRecordData>();
 
         foreach (var folder in sortedFolders)
@@ -303,16 +339,23 @@ public sealed class BsaWriter : IDisposable
                     size |= 0x40000000u;
                 }
 
+                if (currentDataOffset > uint.MaxValue)
+                {
+                    throw new InvalidOperationException(
+                        $"BSA data exceeds the 4 GiB u32 offset limit at '{file.FullPath}' — " +
+                        "the archive must be split or its contents shrunk (e.g. compress audio).");
+                }
+
                 fileRecords.Add(new FileRecordData
                 {
                     Hash = HashPath(file.Name, false),
                     Size = size,
-                    Offset = currentDataOffset,
+                    Offset = (uint)currentDataOffset,
                     Data = fileData,
                     Name = file.Name
                 });
 
-                currentDataOffset += (uint)fileData.Length;
+                currentDataOffset += fileData.Length;
             }
 
             folderRecords.Add(new FolderRecordData

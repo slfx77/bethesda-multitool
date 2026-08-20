@@ -45,9 +45,53 @@ public class BsaWriterFlagsTests
     [Fact]
     public void CreateWithAutoFlags_VoicesOnly_DoesNotSetEmbedFileNames()
     {
-        using var writer = BsaWriter.CreateWithAutoFlags(["sound\\voice\\foo\\bar.ogg"]);
-        // Matches vanilla `Fallout - Voices1.bsa`: uncompressed and voices-only.
-        WriteAndAssertFlags(writer, 0x03, 0x10);
+        using var writer = BsaWriter.CreateWithAutoFlags([
+            "sound\\voice\\foo\\bar.ogg",
+            "sound\\voice\\foo\\bar.lip"
+        ]);
+        // Matches vanilla `Fallout - Voices1.bsa` (header-verified): uncompressed,
+        // no RetainFileNames, and fileFlags 0x18 — retail sets BOTH Sounds and Voices
+        // on every audio archive even when the content is voice-only.
+        WriteAndAssertFlags(writer, 0x03, 0x18);
+    }
+
+    [Fact]
+    public void CreateWithAutoFlags_SoundFxOnly_SetsBothAudioFlags()
+    {
+        using var writer = BsaWriter.CreateWithAutoFlags(["sound\\fx\\a.wav"]);
+        // Matches vanilla `Fallout - Sound.bsa` (header-verified): uncompressed,
+        // RetainFileNames set, fileFlags 0x18 (Sounds|Voices) even for fx-only content.
+        WriteAndAssertFlags(writer, 0x13, 0x18);
+    }
+
+    [Fact]
+    public void CreateWithAutoFlags_MiscContent_MatchesRetailMiscBsa()
+    {
+        using var writer = BsaWriter.CreateWithAutoFlags([
+            "facegen\\si.ctl",
+            "lodsettings\\x.dlodsettings",
+            "lsdata\\y.dat",
+            "menus\\z.xml"
+        ]);
+        // Matches vanilla `Fallout - Misc.bsa` (header-verified): archiveFlags 0x07,
+        // fileFlags exactly 0x0100 (Misc). Previously this mix produced fileFlags 0x0000
+        // and FNV skipped the archive entirely ("MODELS: Unable to load CTL file").
+        WriteAndAssertFlags(writer, 0x07, 0x0100);
+    }
+
+    [Fact]
+    public void CreateWithAutoFlags_UnknownExtension_DefaultsToMisc()
+    {
+        using var writer = BsaWriter.CreateWithAutoFlags(["foo\\bar.qux"]);
+
+        // BSArchPro behavior: unknown extensions map to Misc so no FNV archive can end
+        // up with a fileFlags 0 content mask (which the engine refuses to search).
+        writer.AddFile("foo\\bar.qux", new byte[] { 0x01 });
+        using var ms = new MemoryStream();
+        writer.Write(ms);
+        var fileFlags = BinaryPrimitives.ReadUInt32LittleEndian(ms.ToArray().AsSpan(32, 4));
+
+        Assert.NotEqual(0u, fileFlags & 0x0100);
     }
 
     [Fact]

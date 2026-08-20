@@ -31,6 +31,12 @@ public static class RepackCommand
             Description = "Process BSA archives",
             DefaultValueFactory = _ => true
         };
+        var bsaFilesOpt = new Option<string[]>("--bsa-files")
+        {
+            Description = "Only process these BSA file names (e.g. \"Fallout - Sound.bsa\"); "
+                          + "default is all BSAs in the source Data folder",
+            AllowMultipleArgumentsPerToken = true
+        };
         var menusOpt = new Option<bool>("--menus")
         {
             Description = "Unpack final_master_xml.dat into the loose Data/menus tree (required to boot)",
@@ -58,6 +64,7 @@ public static class RepackCommand
         command.Options.Add(videoOpt);
         command.Options.Add(musicOpt);
         command.Options.Add(bsaOpt);
+        command.Options.Add(bsaFilesOpt);
         command.Options.Add(menusOpt);
         command.Options.Add(pcMenuDonorOpt);
         command.Options.Add(esmOpt);
@@ -71,14 +78,15 @@ public static class RepackCommand
             var processVideo = parseResult.GetValue(videoOpt);
             var processMusic = parseResult.GetValue(musicOpt);
             var processBsa = parseResult.GetValue(bsaOpt);
+            var bsaFiles = parseResult.GetValue(bsaFilesOpt) ?? [];
             var processMenus = parseResult.GetValue(menusOpt);
             var pcMenuDonor = parseResult.GetValue(pcMenuDonorOpt);
             var processEsm = parseResult.GetValue(esmOpt);
             var processEsp = parseResult.GetValue(espOpt);
             var verbose = parseResult.GetValue(verboseOpt);
 
-            await ExecuteAsync(source, output, processVideo, processMusic, processBsa, processMenus, pcMenuDonor,
-                processEsm, processEsp, verbose, cancellationToken);
+            await ExecuteAsync(source, output, processVideo, processMusic, processBsa, bsaFiles, processMenus,
+                pcMenuDonor, processEsm, processEsp, verbose, cancellationToken);
         });
 
         return command;
@@ -90,6 +98,7 @@ public static class RepackCommand
         bool processVideo,
         bool processMusic,
         bool processBsa,
+        string[] bsaFiles,
         bool processMenus,
         string? pcMenuDonor,
         bool processEsm,
@@ -129,6 +138,9 @@ public static class RepackCommand
             ProcessVideo = processVideo,
             ProcessMusic = processMusic,
             ProcessBsa = processBsa,
+            SelectedBsaFiles = bsaFiles.Length > 0
+                ? new HashSet<string>(bsaFiles, StringComparer.OrdinalIgnoreCase)
+                : null,
             ProcessMenus = processMenus,
             PcMenuDonorPath = pcMenuDonor,
             ProcessEsm = processEsm,
