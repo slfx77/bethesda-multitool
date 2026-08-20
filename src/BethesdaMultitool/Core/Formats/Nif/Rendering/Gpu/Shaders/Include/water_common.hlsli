@@ -49,6 +49,11 @@ cbuffer Uniforms : register(b0)
     // the lookup is a normalized screen-space UV — the target may be rendered at any resolution.
     uint4 uWaterReflection;     // x = reflection SceneColor Texture2D index (0xFFFFFFFF = none),
                                 // y/z = scene viewport dimensions, w = asuint(UV distortion scale)
+    // Appended (matching the C# struct tail): the mirror pass's view-projection (origin-relative)
+    // and the scene-content flag (uReflectionParams.x = 1 ⇒ the RT holds mirrored SCENE content —
+    // Oblivion's projective WATER007 arm applies; 0 ⇒ sky-only screen-UV semantics).
+    float4x4 uReflectionViewProj;
+    uint4 uReflectionParams;
 };
 
 // Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants,

@@ -103,7 +103,33 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         var shadowPsBytecode = CompileEmbeddedShader("shadow.frag.hlsl", "main", "ps_5_1");
         ShadowOpaquePso = CreateShadowPipelineState(shadowVsBytecode, psBytecode: null);
         ShadowAlphaTestPso = CreateShadowPipelineState(shadowVsBytecode, shadowPsBytecode);
+
+        // Mirror-winding twins for the water-reflection color replay: only the BACK-CULLED opaque
+        // PSOs need one (a mirrored viewProj flips screen-space winding); CullMode.None PSOs are
+        // winding-agnostic and map to themselves. Decals are excluded from the replay entirely.
+        var mirrorBack = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: false,
+            blendAttachment: null, depthWriteEnabled: true, mirrorWinding: true);
+        _mirrorPsoMap = new Dictionary<ID3D12PipelineState, ID3D12PipelineState>
+        {
+            [OpaqueBackPso] = mirrorBack,
+        };
+        if (AlphaToCoverageAvailable && !ReferenceEquals(OpaqueBackA2CPso, OpaqueBackPso))
+        {
+            var a2cPsBytecodeMirror = CompileEmbeddedShader("reference.frag.hlsl", "main", "ps_5_1",
+                new ShaderMacro("ALPHA_TO_COVERAGE", "1"));
+            _mirrorPsoMap[OpaqueBackA2CPso] = CreatePipelineState(instancedVsBytecode,
+                a2cPsBytecodeMirror, doubleSided: false, blendAttachment: null,
+                depthWriteEnabled: true, alphaToCoverage: true, mirrorWinding: true);
+        }
     }
+
+    // Original opaque PSO -> winding-flipped twin for the mirrored reflection replay.
+    private readonly Dictionary<ID3D12PipelineState, ID3D12PipelineState> _mirrorPsoMap;
+
+    /// <summary>The winding-flipped twin of <paramref name="original" /> for a mirrored view, or
+    /// the original itself when it is winding-agnostic (double-sided / CullMode.None).</summary>
+    public ID3D12PipelineState GetMirrorPso(ID3D12PipelineState original) =>
+        _mirrorPsoMap.TryGetValue(original, out var mirror) ? mirror : original;
 
     /// <summary>Instanced opaque PSO with back-face culling (single-sided submeshes).</summary>
     public ID3D12PipelineState OpaqueBackPso { get; }
@@ -338,13 +364,17 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         bool depthWriteEnabled,
         bool decal = false,
         bool alphaToCoverage = false,
-        bool depthTestEnabled = true)
+        bool depthTestEnabled = true,
+        bool mirrorWinding = false)
     {
         var rasterizer = new D12.RasterizerDescription
         {
             FillMode = D12.FillMode.Solid,
             CullMode = doubleSided ? D12.CullMode.None : D12.CullMode.Back,
-            FrontCounterClockwise = true,
+            // A mirrored (negative-determinant) viewProj flips triangle orientation in screen
+            // space; the water-reflection replay uses winding-flipped twins of the back-culled
+            // opaque PSOs so single-sided geometry keeps its front faces in the mirror.
+            FrontCounterClockwise = !mirrorWinding,
             DepthClipEnable = true,
             // Antialias triangle edges on the multisampled scene RT (no-op when scene isn't MSAA).
             MultisampleEnable = _gpu.SceneSampleCount > 1,

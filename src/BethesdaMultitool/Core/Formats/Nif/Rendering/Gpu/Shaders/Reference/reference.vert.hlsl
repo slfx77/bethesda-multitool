@@ -137,11 +137,22 @@ struct VSOutput
     nointerpolation float4 vSoftParticle  : TEXCOORD14;
     nointerpolation float vSpecularLodFade : TEXCOORD15;
     float3 vFnvActiveAdtBaseLight : TEXCOORD16;
+    // FormID-heatmap debug overlay: rgb = ramp tint, w = 1 when active (0 = ordinary shading).
+    nointerpolation float4 vHeatmap : TEXCOORD17;
 };
 
 VSOutput main(VSInput input)
 {
     VSOutput o;
+    // FormID-heatmap payload (debug overlay): ramp rgb + a 2.0 flag in uWorld's w-lanes
+    // (uWorld[3]), written per draw by the CPU for in-range references. Ordinary affine draws
+    // carry exactly 1.0 in uWorld[3].w and the FNV grass lighting payload caps its w-lane at
+    // 0.99, so > 1.5 uniquely marks the heatmap. Both position branches below keep worldPos.w
+    // at exactly 1.0, so the payload never reaches clip space.
+    float4 heatmapPayload = uWorld[3];
+    float4 heatmap = heatmapPayload.w > 1.5
+        ? float4(heatmapPayload.xyz, 1.0)
+        : float4(0.0, 0.0, 0.0, 0.0);
     bool isTallGrass = IsTallGrassMaterial(uTextureState.z);
     float tallGrassWindWeight = isTallGrass ? saturate(input.aVertexColor.a) : 0.0;
     float4 worldPos;
@@ -221,5 +232,6 @@ VSOutput main(VSInput input)
     o.vEnvMap = uEnvMap;
     o.vSoftParticle = isTallGrass ? 0.0 : uSoftParticle;
     o.vSpecularLodFade = uUvScroll.z;
+    o.vHeatmap = heatmap;
     return o;
 }

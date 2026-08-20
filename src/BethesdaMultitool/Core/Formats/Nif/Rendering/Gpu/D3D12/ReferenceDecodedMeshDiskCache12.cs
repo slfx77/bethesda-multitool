@@ -80,14 +80,22 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // v77: Starfield BSGeometry shapes whose shader has an EMPTY material name are now dropped at
     // extraction (proxy/LOD shapes nothing can texture — they rendered as bright white geometry).
     // Warm v76 entries still contain those submeshes.
+    // v78: rigid node-animated statics — unskinned geometry under controller-driven nodes now
+    // carries a baked delta-sample playback track (saloon sign chains/board, mill wheels). Warm
+    // v77 entries lack the track and would keep those meshes frozen at rest.
+    // v79: scene-graph NiTextureEffect ENVIRONMENT_MAP sphere maps (TES3 glass-armor chrome,
+    // TES4-era authored window reflections) now ride the classic env payload with a new
+    // is-sphere-map bool appended after the rigid-anim track. Warm v78 entries lack both the
+    // bool and the effect-derived env paths, so affected meshes would stay chrome-less.
     // (Full bump history for this constant lives in git blame.)
-    internal const int DecoderVersion = 77;
+    internal const int DecoderVersion = 79;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
     private const int MaxIndicesPerSubmesh = 6_000_000;
     private const int MaxCollisionVertices = 4_000_000;
     private const int MaxCollisionIndices = 12_000_000;
+    private const int MaxRigidNodeAnimationSamples = 4096;
     private const int MaxStringBytes = 8 * 1024;
     private const int MaxAnimBones = 512;
     private const int MaxKeysPerChannel = 65_536;
@@ -571,6 +579,9 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         {
             WriteVector3(writer, materialDiffuse);
         }
+
+        WriteRigidNodeAnimation(writer, submesh.RigidNodeAnimation);
+        writer.Write(submesh.ClassicEnvironmentMapIsSphereMap);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -662,7 +673,9 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             (NifBillboardMode)reader.ReadUInt16(),
             reader.ReadBoolean(),
             reader.ReadBoolean(),
-            reader.ReadBoolean() ? (Vector3?)ReadVector3(reader) : null);
+            reader.ReadBoolean() ? (Vector3?)ReadVector3(reader) : null,
+            ReadRigidNodeAnimation(reader),
+            reader.ReadBoolean());
         if (!Enum.IsDefined(payload.ClassicBasicShaderMode))
         {
             throw new InvalidDataException("Invalid FNV classic basic shader mode in decoded mesh cache.");
@@ -697,6 +710,64 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(sway.MaximumAngle);
         writer.Write(sway.AmplitudeFraction);
         writer.Write(sway.CyclesPerSecond);
+    }
+
+    private static void WriteRigidNodeAnimation(BinaryWriter writer, NifRigidNodeAnimation? track)
+    {
+        writer.Write(track is not null);
+        if (track is null)
+        {
+            return;
+        }
+
+        writer.Write(track.ClipStart);
+        writer.Write(track.ClipLength);
+        writer.Write(track.Loops);
+        writer.Write(track.SamplesPerSecond);
+        writer.Write(track.SampleCount);
+        for (var i = 0; i < track.SampleCount; i++)
+        {
+            var rotation = track.Rotations[i];
+            writer.Write(rotation.X);
+            writer.Write(rotation.Y);
+            writer.Write(rotation.Z);
+            writer.Write(rotation.W);
+            WriteVector3(writer, track.Translations[i]);
+            WriteVector3(writer, track.Scales[i]);
+        }
+    }
+
+    private static NifRigidNodeAnimation? ReadRigidNodeAnimation(BinaryReader reader)
+    {
+        if (!reader.ReadBoolean())
+        {
+            return null;
+        }
+
+        var clipStart = reader.ReadSingle();
+        var clipLength = reader.ReadSingle();
+        var loops = reader.ReadBoolean();
+        var samplesPerSecond = reader.ReadSingle();
+        var sampleCount = ReadInt32(reader, 0, MaxRigidNodeAnimationSamples);
+        var rotations = new Quaternion[sampleCount];
+        var translations = new Vector3[sampleCount];
+        var scales = new Vector3[sampleCount];
+        for (var i = 0; i < sampleCount; i++)
+        {
+            rotations[i] = new Quaternion(
+                reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+            translations[i] = ReadVector3(reader);
+            scales[i] = ReadVector3(reader);
+        }
+
+        if (!float.IsFinite(clipStart) || !float.IsFinite(clipLength) || clipLength <= 0f ||
+            !float.IsFinite(samplesPerSecond) || samplesPerSecond <= 0f)
+        {
+            throw new InvalidDataException("Invalid rigid-node animation track in decoded mesh cache.");
+        }
+
+        return new NifRigidNodeAnimation(
+            clipStart, clipLength, loops, samplesPerSecond, rotations, translations, scales);
     }
 
     private static PhysicsLiteSwayDescriptor? ReadPhysicsLiteSway(BinaryReader reader)
@@ -1007,4 +1078,10 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     bool DepthTestOff = false,
     // Legacy NiMaterialProperty diffuse for untextured shapes (v72+); null when no material,
     // FO3+ stream, or emissive route. See NifMaterialDiffusePolicy.
-    Vector3? MaterialDiffuse = null);
+    Vector3? MaterialDiffuse = null,
+    // Rigid node-animated playback track (v78+): baked model-space delta samples for geometry
+    // parented to controller-driven nodes without a skin (saloon sign chains, mill wheels).
+    NifRigidNodeAnimation? RigidNodeAnimation = null,
+    // TES3/TES4-era NiTextureEffect ENVIRONMENT_MAP + CG_SPHERE_MAP marker (v79+): the classic
+    // env texture is a 2D sphere map (view-space reflection lookup), never cube-promoted.
+    bool ClassicEnvironmentMapIsSphereMap = false);

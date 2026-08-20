@@ -30,12 +30,14 @@
 
 Texture2D    textures[]   : register(t0, space1);
 SamplerState sDiffuse     : register(s0);
+SamplerState sShadowPoint : register(s3); // CLAMP, point — sun-shadow-map depth taps (PCF)
 SamplerState sClampUWrapV : register(s4);
 SamplerState sWrapUClampV : register(s5);
 SamplerState sClampUV     : register(s6);
 
 #include "atmosphere.hlsli"
 #include "fog.hlsli"
+#include "shadow_sampling.hlsli"
 
 struct PSInput
 {
@@ -103,8 +105,16 @@ float4 main(PSInput input) : SV_Target
         discard;
     }
 
-    // GRASS2002's `add r1.xyz, r1, a4` then `mad r0.xyz, r1, r0, ...`.
-    float3 lit = sample.rgb * (input.vGrassDiffuse + input.vGrassAmbient);
+    // GRASS2002's `add r1.xyz, r1, a4` then `mad r0.xyz, r1, r0, ...`. The sun-shadow term
+    // multiplies the DIFFUSE contribution only — retail's canopy shadow attenuates the sun term
+    // and never the ambient (the FNV descendant GRASS2002 makes the same split explicit), so
+    // shadowed grass settles to tex * ambient instead of going black. Bit 12 of the packed
+    // texture state (RuntimeFnvGrassNoSunShadowFlag) is the video-settings "Shadows on grass"
+    // OFF gate (retail ini bShadowsOnGrass); the sun master (uSunColorLighting.w) gates too.
+    bool grassShadowsOff = (MaterialTextureFlags(input.vTextureState.z) & 4096u) != 0u;
+    float sunShadow = uSunColorLighting.w >= 0.5 && !grassShadowsOff
+        ? ShadowFactor(input.vWorldPos) : 1.0;
+    float3 lit = sample.rgb * (input.vGrassDiffuse * sunShadow + input.vGrassAmbient);
     // GRASS2002's `mul r0.w, r0.w, a5.w` — the distance envelope multiplies the blended alpha.
     float outAlpha = saturate(sample.a * input.vAlphaState.z) * saturate(input.vGrassDistanceFade);
     return float4(ApplyFog(lit, input.vWorldPos), outAlpha);

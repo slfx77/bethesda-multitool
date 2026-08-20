@@ -176,8 +176,9 @@ internal static class NifTexturingPropertyReader
 
     // NiSourceTexture: NiObjectNET header + Use External(byte) + File Name. In FO3/FNV+ NIFs File Name
     // is a string-table index (resolved against NifInfo.Strings); in older ones (Oblivion/Morrowind)
-    // it is an inline SizedString immediately after Use External.
-    private static bool TryReadSourceTextureFileName(byte[] data, NifInfo nif, int sourceRef, out string? path)
+    // it is an inline SizedString immediately after Use External. Internal so the NiTextureEffect
+    // environment policy can resolve its Source Texture ref through the same reader.
+    internal static bool TryReadSourceTextureFileName(byte[] data, NifInfo nif, int sourceRef, out string? path)
     {
         path = null;
         var block = nif.Blocks[sourceRef];

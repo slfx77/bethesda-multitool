@@ -16,39 +16,62 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Gpu;
 public sealed class GpuTonemapSettingsTests
 {
     [Theory]
-    [InlineData(BethesdaGame.Fallout3, false, true, -1,
+    // --- Sdr (the launcher's "None"): FO3/FNV keep their standalone cinematic grade. ---
+    [InlineData(BethesdaGame.Fallout3, (int)GpuTonemapGuiMode.Sdr, true, -1,
         (int)GpuTonemapMode.CinematicFo3Fnv, false, true)]
-    [InlineData(BethesdaGame.FalloutNewVegas, false, true, -1,
+    [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.Sdr, true, -1,
         (int)GpuTonemapMode.CinematicFo3Fnv, false, true)]
-    [InlineData(BethesdaGame.Fallout3, false, false, -1,
+    [InlineData(BethesdaGame.Fallout3, (int)GpuTonemapGuiMode.Sdr, false, -1,
         (int)GpuTonemapMode.LegacyClamp, false, true)]
-    [InlineData(BethesdaGame.FalloutNewVegas, false, true, (int)GpuTonemapMode.LegacyClamp,
+    [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.Sdr, true, (int)GpuTonemapMode.LegacyClamp,
         (int)GpuTonemapMode.LegacyClamp, false, true)]
-    [InlineData(BethesdaGame.FalloutNewVegas, false, true, (int)GpuTonemapMode.GammaAces,
+    [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.Sdr, true, (int)GpuTonemapMode.GammaAces,
         (int)GpuTonemapMode.GammaAces, false, true)]
-    [InlineData(BethesdaGame.FalloutNewVegas, false, true, (int)GpuTonemapMode.EngineFo3Fnv,
+    [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.Sdr, true, (int)GpuTonemapMode.EngineFo3Fnv,
         (int)GpuTonemapMode.EngineFo3Fnv, true, true)]
-    [InlineData(BethesdaGame.FalloutNewVegas, false, true, (int)GpuTonemapMode.CreationModern,
+    [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.Sdr, true, (int)GpuTonemapMode.CreationModern,
         (int)GpuTonemapMode.CreationModern, false, true)]
-    [InlineData(BethesdaGame.Oblivion, false, true, -1,
+    [InlineData(BethesdaGame.Oblivion, (int)GpuTonemapGuiMode.Sdr, true, -1,
         (int)GpuTonemapMode.LegacyClamp, false, true)]
-    [InlineData(BethesdaGame.Morrowind, false, true, -1,
+    [InlineData(BethesdaGame.Morrowind, (int)GpuTonemapGuiMode.Sdr, true, -1,
         (int)GpuTonemapMode.LegacyClamp, false, true)]
-    [InlineData(BethesdaGame.Skyrim, false, true, -1,
+    [InlineData(BethesdaGame.Skyrim, (int)GpuTonemapGuiMode.Sdr, true, -1,
         (int)GpuTonemapMode.LegacyClamp, false, true)]
-    [InlineData(BethesdaGame.Fallout4, false, true, -1,
+    [InlineData(BethesdaGame.Fallout4, (int)GpuTonemapGuiMode.Sdr, true, -1,
         (int)GpuTonemapMode.LegacyClamp, false, true)]
-    [InlineData(BethesdaGame.FalloutNewVegas, true, true, -1,
+    // --- SdrBloom (the launcher's middle "Bloom"): SDR clamp + classic bright-pass bloom. ---
+    [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.SdrBloom, true, -1,
+        (int)GpuTonemapMode.ClassicSdrBloom, true, true)]
+    [InlineData(BethesdaGame.Fallout3, (int)GpuTonemapGuiMode.SdrBloom, true, -1,
+        (int)GpuTonemapMode.ClassicSdrBloom, true, true)]
+    [InlineData(BethesdaGame.Oblivion, (int)GpuTonemapGuiMode.SdrBloom, true, -1,
+        (int)GpuTonemapMode.ClassicSdrBloom, true, true)]
+    // Defensive: the UI hides/coerces Bloom for non-classic games (LoadData coercion), but the
+    // finalize policy itself is game-agnostic — pin what the code DOES if the state ever leaks.
+    [InlineData(BethesdaGame.Skyrim, (int)GpuTonemapGuiMode.SdrBloom, true, -1,
+        (int)GpuTonemapMode.ClassicSdrBloom, true, true)]
+    // A diagnostic operator override still wins under SdrBloom; bloom stays truthful per operator.
+    [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.SdrBloom, true, (int)GpuTonemapMode.EngineFo3Fnv,
+        (int)GpuTonemapMode.EngineFo3Fnv, true, true)]
+    [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.SdrBloom, true, (int)GpuTonemapMode.GammaAces,
+        (int)GpuTonemapMode.GammaAces, false, true)]
+    [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.SdrBloom, true, (int)GpuTonemapMode.LegacyClamp,
+        (int)GpuTonemapMode.LegacyClamp, false, true)]
+    // The FALLOUT_VIEWER_HDR=0 kill-switch path is unchanged: no operator can be honored.
+    [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.SdrBloom, false, -1,
+        (int)GpuTonemapMode.LegacyClamp, false, true)]
+    // --- Hdr: each family's engine HDR operator; authored scene multipliers survive. ---
+    [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.Hdr, true, -1,
         (int)GpuTonemapMode.EngineFo3Fnv, true, false)]
-    [InlineData(BethesdaGame.FalloutNewVegas, true, true, (int)GpuTonemapMode.LegacyClamp,
+    [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.Hdr, true, (int)GpuTonemapMode.LegacyClamp,
         (int)GpuTonemapMode.LegacyClamp, false, false)]
-    [InlineData(BethesdaGame.FalloutNewVegas, true, true, (int)GpuTonemapMode.GammaAces,
+    [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.Hdr, true, (int)GpuTonemapMode.GammaAces,
         (int)GpuTonemapMode.GammaAces, false, false)]
-    [InlineData(BethesdaGame.FalloutNewVegas, true, false, (int)GpuTonemapMode.EngineFo3Fnv,
+    [InlineData(BethesdaGame.FalloutNewVegas, (int)GpuTonemapGuiMode.Hdr, false, (int)GpuTonemapMode.EngineFo3Fnv,
         (int)GpuTonemapMode.LegacyClamp, false, true)]
-    public void FinalizeViewerPostProcessing_HdrToggleMatrixIsExplicitlyGameScoped(
+    public void FinalizeViewerPostProcessing_GuiModeMatrixIsExplicitlyGameScoped(
         BethesdaGame game,
-        bool guiHdrEnabled,
+        int guiModeValue,
         bool tonemapAvailable,
         int operatorOverrideValue,
         int expectedMode,
@@ -77,7 +100,7 @@ public sealed class GpuTonemapSettingsTests
             ? null
             : (GpuTonemapMode?)operatorOverrideValue;
         var result = GpuTonemapSettings.FinalizeViewerPostProcessing(
-            authored, game, guiHdrEnabled, tonemapAvailable, operatorOverride,
+            authored, game, (GpuTonemapGuiMode)guiModeValue, tonemapAvailable, operatorOverride,
             guiBloomEnabled: true, historyKey);
 
         Assert.Equal((GpuTonemapMode)expectedMode, result.Mode);
@@ -90,6 +113,48 @@ public sealed class GpuTonemapSettingsTests
         Assert.Equal(authored.TintAmount, result.TintAmount);
         Assert.Equal(expectedBloom, result.BloomEnabled);
         Assert.Equal(expectedNeutralEmissive ? 1f : 7f, result.EmissiveMult);
+    }
+
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, false)]
+    public void FinalizeViewerPostProcessing_SdrBloomRequiresBothAuthoredAndGuiBloom(
+        bool authoredBloom, bool guiBloom, bool expectedBloom)
+    {
+        var authored = GpuTonemapSettings.EngineExteriorDefaults with { BloomEnabled = authoredBloom };
+
+        var result = GpuTonemapSettings.FinalizeViewerPostProcessing(
+            authored, BethesdaGame.FalloutNewVegas, GpuTonemapGuiMode.SdrBloom,
+            tonemapAvailable: true, operatorOverride: null, guiBloom, historyKey: 0);
+
+        Assert.Equal(GpuTonemapMode.ClassicSdrBloom, result.Mode);
+        Assert.Equal(expectedBloom, result.BloomEnabled);
+        Assert.Equal(1f, result.EmissiveMult);
+    }
+
+    [Fact]
+    public void ClassicSdrBloomTraits_SdrDisplayThatStillRunsTheAdaptationChainForBloom()
+    {
+        // SDR display (no HDR operator), but the classic reduction + adaptation still run: the
+        // bright pass thresholds against the adapted average even though the mode-5 composite
+        // never samples uAvgLum.
+        var traits = GpuTonemapModeTraits.For(GpuTonemapMode.ClassicSdrBloom, enabled: true);
+
+        Assert.False(traits.IsHdrDisplayOperator);
+        Assert.True(traits.UsesClassicReduction);
+        Assert.True(traits.UsesAdaptation);
+        Assert.True(traits.AllowsClassicBloom);
+
+        Assert.True(GpuTonemapModeTraits.IsBloomActive(
+            GpuTonemapMode.ClassicSdrBloom, enabled: true, bloomEnabled: true, brightScale: 1.5f));
+        Assert.False(GpuTonemapModeTraits.IsBloomActive(
+            GpuTonemapMode.ClassicSdrBloom, enabled: true, bloomEnabled: false, brightScale: 1.5f));
+        Assert.False(GpuTonemapModeTraits.IsBloomActive(
+            GpuTonemapMode.ClassicSdrBloom, enabled: true, bloomEnabled: true, brightScale: 0f));
+        Assert.False(GpuTonemapModeTraits.IsBloomActive(
+            GpuTonemapMode.ClassicSdrBloom, enabled: false, bloomEnabled: true, brightScale: 1.5f));
     }
 
     [Fact]
@@ -151,6 +216,11 @@ public sealed class GpuTonemapSettingsTests
     [InlineData(true, (int)GpuTonemapMode.EngineFo3Fnv, true, 0f, true, true, false)]
     [InlineData(true, (int)GpuTonemapMode.CreationModern, true, 1f, false, true, false)]
     [InlineData(true, (int)GpuTonemapMode.CinematicFo3Fnv, true, 1f, false, false, false)]
+    // ClassicSdrBloom schedules the full classic chain (the bright pass thresholds against the
+    // adapted average) even though its composite is an SDR clamp.
+    [InlineData(true, (int)GpuTonemapMode.ClassicSdrBloom, true, 1f, true, true, true)]
+    [InlineData(true, (int)GpuTonemapMode.ClassicSdrBloom, false, 1f, true, true, false)]
+    [InlineData(false, (int)GpuTonemapMode.ClassicSdrBloom, true, 1f, false, false, false)]
     public void ExecutionPlan_OnlyEngineModeSchedulesClassicHdrWork(
         bool enabled,
         int mode,

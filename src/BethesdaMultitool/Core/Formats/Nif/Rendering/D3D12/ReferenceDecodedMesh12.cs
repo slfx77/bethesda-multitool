@@ -103,6 +103,10 @@ internal sealed record DecodedSubmesh12(
     // Strict FNV BS34 Havok-lite route. Pivot/axis are already converted from constraint body-local
     // into the extractor's baked root-local frame. Phase remains per placed reference at draw time.
     PhysicsLiteSwayDescriptor? PhysicsLiteSway = null,
+    // Rigid node-animated statics (saloon sign chains, mill wheels): baked model-space delta
+    // samples for geometry parented to controller-driven nodes without a skin. Applied at draw
+    // time exactly like the sway transform (pre-multiplied into instance worlds, global clock).
+    NifRigidNodeAnimation? RigidNodeAnimation = null,
     // Non-persisted source graph for the opt-in live path. Persistent payloads intentionally leave
     // this null; live mode bypasses disk-cache reads so a source decode always supplies it.
     ParticleRuntimeDefinition? ParticleRuntime = null,
@@ -149,5 +153,11 @@ internal sealed record DecodedSubmesh12(
     // in place of the white fallback (see NifMaterialDiffusePolicy). Null when no material was
     // authored, on FO3+ streams (no diffuse lane), and on emissive shapes (whose specular slot
     // already carries the glow tint — a diffuse base bind would wrongly modulate the glow).
-    Vector3? MaterialDiffuse = null);
+    Vector3? MaterialDiffuse = null,
+    // TES3/TES4-era scene-graph NiTextureEffect ENVIRONMENT_MAP with CG_SPHERE_MAP (v79+): the
+    // classic env-map texture is a 2D sphere map sampled from the view-space reflection vector,
+    // resolved through the ordinary 2D upload path — never the cubemap promotion route. Retail
+    // TES4 authors NO such blocks (9,612-NIF sweep 2026-08-19: base + SI + DLC BSAs all zero);
+    // the arm lights up for TES3 chrome (glass armor) and modded/runtime-captured TES4 content.
+    bool ClassicEnvironmentMapIsSphereMap = false);
 #endif

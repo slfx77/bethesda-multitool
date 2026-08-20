@@ -380,6 +380,12 @@ internal static class NifGeometryExtractor
             .GroupBy(static controller => controller.MaterialPropertyRef)
             .ToDictionary(static group => group.Key, static group => group.First());
 
+        // TES3/TES4-era scene-graph NiTextureEffect environment sphere maps (glass-armor chrome,
+        // authored window reflections). Null for the overwhelmingly common NIF with no effects —
+        // the resolver pre-scans block types before doing any work.
+        var textureEffectEnvMaps = NifTextureEffectEnvironmentPolicy.ResolveShapeEnvironmentMaps(
+            data, nif, nodeChildren, shapeDataMap.Keys);
+
         foreach (var (shapeIndex, dataIndex) in shapeDataMap)
         {
             // Resolve texture paths and shader flags from shader properties
@@ -408,6 +414,7 @@ internal static class NifGeometryExtractor
             string? classicEnvironmentMaskPath = null;
             var classicEnvironmentMapScale = 0f;
             var classicEnvironmentMapUsesWindowReflection = false;
+            var classicEnvironmentMapIsSphereMap = false;
             string? classicParallaxHeightMapPath = null;
             var isDoubleSided = false;
             var hasAlphaBlend = false;
@@ -838,6 +845,24 @@ internal static class NifGeometryExtractor
                 }
             }
 
+            // Scene-graph NiTextureEffect ENVIRONMENT_MAP (TES3 chrome, TES4-era authored window
+            // reflections): rides the classic env payload as a 2D SPHERE map. Applied regardless
+            // of NiTexturingProperty ApplyMode (investigation 2026-08-19: retail authors plain
+            // MODULATE beside these effects — the effect itself is the entire signal) and
+            // independent of propRefs (TES3 chrome shapes often carry no texturing property at
+            // all). An authored BSShader classic env pass would win; the two never co-occur in
+            // practice (BSShader* is FO3+, NiTextureEffect authoring is TES3/TES4-era).
+            if (textureEffectEnvMaps is not null && classicEnvironmentMapPath is null &&
+                textureEffectEnvMaps.TryGetValue(shapeIndex, out var sphereEnvPath))
+            {
+                classicEnvironmentMapPath = sphereEnvPath;
+                classicEnvironmentMapScale = NifTextureEffectEnvironmentPolicy.DefaultScale;
+                // TES4 window env effects use the window sign convention (SLS2058-equivalent
+                // reflect(V,N)); it also lets the "Window reflections" video toggle gate them.
+                classicEnvironmentMapUsesWindowReflection = true;
+                classicEnvironmentMapIsSphereMap = true;
+            }
+
             // Look up skinning data for this shape (null if not skinned or bind-pose mode)
             ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning =
                 shapeSkinning.TryGetValue(shapeIndex, out var sd) ? sd : null;
@@ -879,6 +904,7 @@ internal static class NifGeometryExtractor
                 submesh.ClassicEnvironmentMapScale = classicEnvironmentMapScale;
                 submesh.ClassicEnvironmentMapUsesWindowReflection =
                     classicEnvironmentMapUsesWindowReflection;
+                submesh.ClassicEnvironmentMapIsSphereMap = classicEnvironmentMapIsSphereMap;
                 submesh.ClassicParallaxHeightMapTexturePath =
                     classicParallaxHeightMapPath is not null &&
                     NifClassicParallaxPolicy.HasUsableGeometry(submesh)

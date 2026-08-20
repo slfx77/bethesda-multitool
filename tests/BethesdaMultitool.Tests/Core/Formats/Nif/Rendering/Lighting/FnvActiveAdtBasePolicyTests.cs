@@ -214,12 +214,16 @@ public sealed class FnvActiveAdtBasePolicyTests
     }
 
     /// <summary>
-    ///     Leaf cards are flagged for FO3 as well as FNV (shared STLEAF family), and the flag is applied
-    ///     OUTSIDE the FNV-only ADT-base block so FO3 is not dragged onto an unrecovered lighting route.
-    ///     Pinned at the source level because the call site needs a live renderer + GPU device.
+    ///     Leaf cards are flagged for FO3 as well as FNV (shared STLEAF family) AND Oblivion
+    ///     (TES4 ships no shadow-map sampling anywhere — its leaf darkening is the CNAM canopy
+    ///     dimming; sampling our cascades on camera-facing cards re-faced light-perpendicular in
+    ///     the caster pass self-shadowed each card's lower half with a hard noon boundary — user
+    ///     report 2026-08-19). The flag is applied OUTSIDE the FNV-only ADT-base block so neither
+    ///     FO3 nor Oblivion is dragged onto an unrecovered lighting route. Pinned at the source
+    ///     level because the call site needs a live renderer + GPU device.
     /// </summary>
     [Fact]
-    public void LeafCardNoSunShadowFlag_IsAppliedForFallout3AndNewVegasOutsideTheAdtBlock()
+    public void LeafCardNoSunShadowFlag_IsAppliedForClassicSpeedTreeGamesOutsideTheAdtBlock()
     {
         var renderer = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
@@ -229,7 +233,8 @@ public sealed class FnvActiveAdtBasePolicyTests
             renderer,
             "private Vector4 ResolveTextureState(CachedSubmesh12 submesh)",
             "BethesdaGame.FalloutNewVegas",
-            "or Core.Games.BethesdaGame.Fallout3 && submesh.IsLeafBillboard",
+            "or Core.Games.BethesdaGame.Fallout3",
+            "or Core.Games.BethesdaGame.Oblivion && submesh.IsLeafBillboard",
             "FnvActiveAdtBasePolicy.RuntimeSpeedTreeLeafNoSunShadowFlag",
             "if (_renderCache?.Game == Core.Games.BethesdaGame.FalloutNewVegas)");
     }

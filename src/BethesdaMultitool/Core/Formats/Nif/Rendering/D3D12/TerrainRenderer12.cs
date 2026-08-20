@@ -137,6 +137,9 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     // no culling (back faces of grazing slopes must still occlude), and negatively depth-biased
     // for the reversed-Z acne fix — matching the reference renderer's shadow PSOs.
     private readonly ID3D12PipelineState _shadowDepthPso;
+    // Mirror-winding twin of _pso for the water-reflection pass (a mirrored viewProj flips
+    // screen-space winding; without the twin every terrain triangle would back-face cull).
+    private readonly ID3D12PipelineState _mirrorPso;
     // Per-worldspace LAND grid resolution. Defaults to 33×33 (Fallout/Oblivion/Skyrim + runtime DMP);
     // a Morrowind worldspace load bumps this to 65×65. The shared index buffer + scratch arrays are
     // rebuilt in LoadData when the grid size changes, and DrawCell issues _indexCount per cell.
@@ -209,7 +212,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         var vsBytecode = TerrainPipelineFactory12.CompileEmbeddedShader("terrain_textured.vert.hlsl", "main", "vs_5_1");
         var psBytecode = TerrainPipelineFactory12.CompileEmbeddedShader("terrain_textured.frag.hlsl", "main", "ps_5_1");
 
-        (_pso, _depthOnlyPso) = TerrainPipelineFactory12.BuildPipelineStates(
+        (_pso, _depthOnlyPso, _mirrorPso) = TerrainPipelineFactory12.BuildPipelineStates(
             gpu, rootSignature, vsBytecode, psBytecode, TerrainInputElements);
         _shadowDepthPso = TerrainPipelineFactory12.BuildShadowPipelineState(
             gpu, rootSignature, vsBytecode, TerrainInputElements);
@@ -535,6 +538,88 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         // The gather ran to completion; `drawn == 0` here means no RESIDENT cell intersected the
         // cylinder, which is an answer the host may cache.
         LastShadowReplayCompleted = true;
+        return drawn;
+    }
+
+    /// <summary>
+    ///     Water-reflection mirror render: draws the ALREADY-RESIDENT terrain cells in full color
+    ///     with the mirrored view-projection and the winding-flipped PSO. Streaming-free like
+    ///     <see cref="RenderShadowDepth" /> (never builds/uploads cells, never touches the frame
+    ///     timestamp or <c>LastStats</c>, peeks the mesh cache without bumping recency) — missing
+    ///     mirror content heals as the MAIN pass streams cells in. The caller has already bound the
+    ///     reflection RTV/DSV and the mirror-pass b3 atmosphere CB (clip plane + mirrored shading
+    ///     camera). Returns the resident cells drawn.
+    /// </summary>
+    public int RenderMirror(Matrix4x4 mirrorViewProj, VisibilityCylinder cylinder)
+    {
+        if ((_spatialIndex is null || _spatialIndex.CellCount == 0) &&
+            (_cells is null || _cells.Count == 0))
+        {
+            return 0;
+        }
+
+        var cmd = _recorder.CommandList;
+        if (!_ringBuffer.TryAllocate(
+                _recorder.FrameIndex, PerFrameByteSize, out var perFrameAlloc, GpuRingBuffer12.CbAlignment) ||
+            !_ringBuffer.TryAllocate(
+                _recorder.FrameIndex, PerModeByteSize, out var perModeAlloc, GpuRingBuffer12.CbAlignment))
+        {
+            return 0; // soft-skip: the reflection keeps its sky content this frame
+        }
+        unsafe
+        {
+            *(Matrix4x4*)perFrameAlloc.CpuPtr = mirrorViewProj;
+            // Same per-mode lanes as the main color pass: textures on, UV scale, vertex colors on,
+            // FNV normals off (the mirror is a lighting-faithful but detail-light view).
+            *(Vector4*)perModeAlloc.CpuPtr = new Vector4(1f, DiffuseUvScale, 1f, 0f);
+        }
+
+        cmd.SetPipelineState(_mirrorPso);
+        cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        EnsureSharedIndexBuffer(cmd);
+        cmd.IASetIndexBuffer(_sharedIbv);
+        cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
+        cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerModeCbv, perModeAlloc.GpuAddress);
+
+        var vertexStride = (uint)Marshal.SizeOf<GpuMeshUploader.GpuVertex>();
+        const uint blendWeightStride = 64; // SlotVectors (4) × sizeof(Vector4)
+        var drawn = 0;
+        foreach (var key in EnumerateCellKeysInCylinder(cylinder))
+        {
+            if (!_meshCache.TryPeek(key, out var entry))
+            {
+                continue;
+            }
+
+            if (!_ringBuffer.TryAllocate(
+                    _recorder.FrameIndex, PerDrawByteSize, out var perDrawAlloc, GpuRingBuffer12.CbAlignment))
+            {
+                break; // partial mirror beats none; the main pass is unaffected
+            }
+            var textureIndices = entry.TextureIndices;
+            unsafe
+            {
+                textureIndices.NormalDecodeMetadata[0] = BuildNormalBc5Mask(entry.NormalTextureEntries);
+                *(TerrainTextureIndices*)perDrawAlloc.CpuPtr = textureIndices;
+            }
+            cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, perDrawAlloc.GpuAddress);
+
+            cmd.IASetVertexBuffers(0, new VertexBufferView
+            {
+                BufferLocation = entry.VertexBuffer.GPUVirtualAddress,
+                SizeInBytes = (uint)entry.VertexBuffer.Description.Width,
+                StrideInBytes = vertexStride,
+            });
+            cmd.IASetVertexBuffers(1, new VertexBufferView
+            {
+                BufferLocation = entry.BlendWeightBuffer.GPUVirtualAddress,
+                SizeInBytes = (uint)entry.BlendWeightBuffer.Description.Width,
+                StrideInBytes = blendWeightStride,
+            });
+            cmd.DrawIndexedInstanced((uint)_indexCount, 1, 0, 0, 0);
+            drawn++;
+        }
+
         return drawn;
     }
 

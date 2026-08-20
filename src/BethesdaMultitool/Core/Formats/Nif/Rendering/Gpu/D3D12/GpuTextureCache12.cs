@@ -152,7 +152,8 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     /// <summary>
     ///     Returns (creating + uploading on first use) a pinned synthesized RGBA8 texture keyed by
     ///     <paramref name="key" /> — e.g. the 32 Oblivion water-surface animation frames the engine
-    ///     generates at runtime (retail ships no water00-31.dds). Entries are pinned like the
+    ///     generates at runtime (retail ships no water00-31.dds); those upload with a full box-filter
+    ///     mip chain so minification filters instead of shimmering. Entries are pinned like the
     ///     fallback singletons: never refcounted or evicted, released at cache disposal.
     /// </summary>
     public Entry GetOrCreateSynthetic(string key, int width, int height, byte[] rgba)
@@ -162,7 +163,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             return existing;
         }
 
-        var entry = _solidTextureFactory.CreateFromRgba(width, height, rgba);
+        var entry = _solidTextureFactory.CreateFromRgba(width, height, rgba, generateMips: true);
         _syntheticEntries[key] = entry;
         return entry;
     }

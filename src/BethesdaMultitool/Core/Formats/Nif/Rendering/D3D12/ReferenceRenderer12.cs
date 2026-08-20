@@ -150,6 +150,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private readonly List<Matrix4x4> _cascadeSortMatrices = new(256);
     private readonly List<Vector4> _cascadeSortBounds = new(256);
     private readonly List<uint> _cascadeSortSeeds = new(256);
+    private readonly List<uint> _cascadeSortHeatmapIds = new(256);
 
     private readonly List<RenderableReference> _cachedShadowOnlyCasters = new(512);
     private float _cullCacheShadowRing;
@@ -180,6 +181,39 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         ulong PerDrawCbAddress, ulong InstanceSrvAddress, int DrawCount, bool AlphaTested,
         CascadeCounts Cascades,
         bool UsesTallGrassWind);
+
+    /// <summary>
+    ///     One captured instanced-opaque COLOR draw for the water-reflection mirror replay: the
+    ///     original PSO plus the frame-local ring addresses of its per-draw constants and t8
+    ///     instance window — valid exactly until the frame's allocations recycle, so the replay
+    ///     must run in the SAME frame (unlike sky-only reflection content). Main-frustum survivors
+    ///     only (no shadow-only tail); decals and grass are excluded at capture.
+    /// </summary>
+    private readonly record struct MirrorDraw(
+        VertexBufferView VertexBufferView, IndexBufferView IndexBufferView, int IndexCount,
+        ulong PerDrawCbAddress, ulong InstanceSrvAddress, int DrawCount,
+        ID3D12PipelineState Pso);
+
+    private readonly List<MirrorDraw> _mirrorDraws = new(512);
+    private bool _mirrorCaptureArmed;
+
+    /// <summary>Arms per-frame mirror-draw capture (call before the main render; the list is
+    /// consumed by <see cref="RenderMirrorColor" /> the same frame).</summary>
+    public void ArmMirrorCapture()
+    {
+        _mirrorDraws.Clear();
+        _mirrorCaptureArmed = true;
+    }
+
+    /// <summary>Disarms mirror capture and drops any captured draws.</summary>
+    public void DisarmMirrorCapture()
+    {
+        _mirrorCaptureArmed = false;
+        _mirrorDraws.Clear();
+    }
+
+    /// <summary>Number of mirror draws captured this frame (diagnostics/capture parity).</summary>
+    public int MirrorDrawCount => _mirrorDraws.Count;
 
     /// <summary>Bumped when the loaded reference population, resident drawable content
     /// (GPU upload/eviction), or animation eligibility changes. Camera-driven cull/batch rebuilds
@@ -336,6 +370,141 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         }
     }
 
+    private bool _formIdHeatmapEnabled;
+
+    /// <summary>
+    ///     Debug "FormID heatmap" overlay: placed REFRs within
+    ///     <see cref="FormIdHeatmapRangeCells" /> of the camera render in a smooth blue→red ramp
+    ///     keyed on FormID (sequential at authoring time — cold = authored early, hot = authored
+    ///     late), normalized against the min/max FormID currently in range. Mirrors
+    ///     <see cref="AnimationsEnabled" />'s <see cref="BatchContentVersion" /> bump on each real
+    ///     transition, and additionally invalidates the last build: the build loop records
+    ///     per-instance FormIDs (<c>OpaqueBatchState.HeatmapFormIds</c>) only while enabled, so a
+    ///     frozen batch from the other state can never serve — the next frame's
+    ///     <c>ResolveReuseBlocker</c> then re-runs the resolve+batch pass (the cull cache may stand;
+    ///     the survivor set itself is unchanged).
+    /// </summary>
+    public bool FormIdHeatmapEnabled
+    {
+        get => _formIdHeatmapEnabled;
+        set
+        {
+            if (_formIdHeatmapEnabled == value)
+            {
+                return;
+            }
+
+            _formIdHeatmapEnabled = value;
+            _lastBuildValid = false;
+            unchecked
+            {
+                BatchContentVersion++;
+            }
+        }
+    }
+
+    private bool _grassShadowsEnabled = true;
+
+    /// <summary>
+    ///     Video-settings "Shadows on grass" (retail <c>bShadowsOnGrass:Display</c>): whether grass
+    ///     RECEIVES the sun shadow map. Grass never CASTS, matching the engine — this only gates
+    ///     the receive term. Off ORs <see cref="FnvActiveAdtBasePolicy.RuntimeFnvGrassNoSunShadowFlag" />
+    ///     into every grass submesh's packed texture state (the per-game grass shaders honor it),
+    ///     so the setter forces a batch rebuild like <see cref="FormIdHeatmapEnabled" />.
+    /// </summary>
+    public bool GrassShadowsEnabled
+    {
+        get => _grassShadowsEnabled;
+        set
+        {
+            if (_grassShadowsEnabled == value)
+            {
+                return;
+            }
+
+            _grassShadowsEnabled = value;
+            _lastBuildValid = false;
+            unchecked { BatchContentVersion++; }
+        }
+    }
+
+    private bool _windowReflectionsEnabled = true;
+
+    /// <summary>
+    ///     Video-settings "Window reflections" (retail <c>bDynamicWindowReflections:Display</c>):
+    ///     gates the classic environment-map term (window/glass materials) at per-draw constants
+    ///     fill. Off suppresses the env-map slot so tinted glass renders as plain textured
+    ///     geometry. Setter forces a batch rebuild like <see cref="FormIdHeatmapEnabled" />.
+    /// </summary>
+    public bool WindowReflectionsEnabled
+    {
+        get => _windowReflectionsEnabled;
+        set
+        {
+            if (_windowReflectionsEnabled == value)
+            {
+                return;
+            }
+
+            _windowReflectionsEnabled = value;
+            _lastBuildValid = false;
+            unchecked { BatchContentVersion++; }
+        }
+    }
+
+    private bool _treeShadowsEnabled = true;
+
+    /// <summary>
+    ///     Video-settings "Tree canopy shadows" (retail <c>bDoCanopyShadowPass:Display</c>): whether
+    ///     tree canopy geometry casts into the sun shadow map (the viewer's real cascades stand in
+    ///     for retail's projected canopy textures). Off excludes SpeedTree leaf cards and branch
+    ///     geometry from shadow capture and from the off-frustum caster resolve — the trees remain
+    ///     fully VISIBLE (this is a caster-only gate, unlike the category hides). The setter bumps
+    ///     <see cref="BatchContentVersion" /> so cached shadow cascades re-render without the stale
+    ///     caster set.
+    /// </summary>
+    public bool TreeShadowsEnabled
+    {
+        get => _treeShadowsEnabled;
+        set
+        {
+            if (_treeShadowsEnabled == value)
+            {
+                return;
+            }
+
+            _treeShadowsEnabled = value;
+            _lastBuildValid = false;
+            unchecked { BatchContentVersion++; }
+        }
+    }
+
+    /// <summary>
+    ///     Heatmap selection range in WHOLE cells: a ref participates when its position's cell is
+    ///     within this many cells of the camera's cell on both axes (Chebyshev — a full
+    ///     (2N+1)×(2N+1) block of the cell grid, never a circular slice through cells).
+    ///     <see cref="float.PositiveInfinity" /> = unlimited (the whole loaded visible set — the
+    ///     min/max scan still clamps to the render cylinder, since nothing beyond it can draw).
+    ///     Read per frame by the copy pass, so changing it needs no rebuild.
+    /// </summary>
+    public float FormIdHeatmapRangeCells { get; set; } = float.PositiveInfinity;
+
+    /// <summary>
+    ///     The oldest/newest FormID the last frame's scan ranked (over every VISIBLE placed ref in the
+    ///     selected cells), or null while the heatmap is off / no eligible ref is in range. Feeds the
+    ///     settings panel's live key labels; written and read on the UI thread (the render loop is
+    ///     <c>CompositionTarget.Rendering</c>).
+    /// </summary>
+    public (uint Min, uint Max)? FormIdHeatmapWindow =>
+        _frameHeatmapActive ? (_frameHeatmapRanking.Min, _frameHeatmapRanking.Max) : null;
+
+    /// <summary>
+    ///     How many distinct FormIDs the last scan ranked — the number of ramp steps in use. Shown
+    ///     beside the key so the user can tell "one colour because one step" from "one colour because
+    ///     the gradient collapsed".
+    /// </summary>
+    public int FormIdHeatmapRankedCount => _frameHeatmapActive ? _frameHeatmapRanking.DistinctCount : 0;
+
     /// <summary>
     ///     Temporary opt-in legacy live-particle owner. Defaults from
     ///     <c>FALLOUT_VIEWER_LIVE_PARTICLES=1</c>; false keeps immutable cached particle clouds.
@@ -428,6 +597,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private bool _cullCacheShowImposters;
     private bool _cullCacheShowDisabled;
     private int _cullCacheEnabledOverrideVersion;
+    private int _cullCacheDayNightVersion;
     private int _cullCacheCellsVisited;
     private int _cullCacheCandidates;
     private int _cullCacheCulled;
@@ -530,6 +700,180 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         }
 
         return any ? (minZ, maxZ) : null;
+    }
+
+    // === FormID-heatmap frame state ===
+    // Computed once per frame by UpdateFormIdHeatmapScan; consumed by the instanced copy passes and
+    // the blended per-draw path via ApplyFormIdHeatmapTint. The ranking holds the distinct FormIDs of
+    // the VISIBLE non-grass placed refs in the selected whole-cell block around the camera's cell, so
+    // each one gets its own evenly-spaced ramp step; Active is false when the heatmap is off or the
+    // scan found no eligible ref.
+    private bool _frameHeatmapActive;
+    private readonly FormIdHeatmapRanking _frameHeatmapRanking = new();
+    // Whole-cell selection gate shared by the scan and the per-instance tint: camera cell +
+    // Chebyshev radius in cells (int.MaxValue = unlimited) on the active grid's cell size.
+    private int _frameHeatmapCamCellX;
+    private int _frameHeatmapCamCellY;
+    private int _frameHeatmapCellRadius = int.MaxValue;
+    private float _frameHeatmapCellSize = global::BethesdaMultitool.WorldGridConstants.CellSize;
+    // Memo key — the same shape as GetRenderedSceneWorldZExtentCached's epoch memo, extended by the
+    // camera CELL and range because a cell-block scan depends on both: the scan is O(refs in
+    // range), so a static frame must not re-walk every placement list. Keying on the cell (not the
+    // position) also keeps the window fixed while the camera moves inside one cell.
+    private int _heatmapScanEpoch = -1;
+    private int _heatmapScanCamCellX;
+    private int _heatmapScanCamCellY;
+    private int _heatmapScanCellRadius;
+    private float _heatmapScanRadius;
+    // The visibility gates the scan honored. Hiding a ref (per-instance override, category, Show
+    // Disabled, day/night) must RE-RANK the survivors, which is the point of excluding them: the
+    // user prunes noise and the remaining refs spread back over the whole ramp.
+    private ReferenceVisibilityKey _heatmapScanVisibilityKey;
+
+    /// <summary>
+    ///     Recomputes the frame's FormID-heatmap ranking: the distinct FormIDs of every VISIBLE placed
+    ///     (non-grass, non-synthetic) reference whose position falls inside the selected block of WHOLE
+    ///     cells centred on the camera's cell (Chebyshev distance ≤ N on the cell grid — full cells,
+    ///     never a circular slice, so the selection is exactly "these cells").
+    ///     <para>
+    ///         The ranking is ORDINAL (see <see cref="FormIdHeatmapRanking" />): consecutive refs in
+    ///         authoring order are consecutive ramp steps regardless of the numeric gaps between their
+    ///         FormIDs, which is what keeps the gradient readable in a worldspace with late additions.
+    ///     </para>
+    ///     <para>
+    ///         Refs the current visibility gates hide are EXCLUDED — a ref the user manually switched to
+    ///         Hidden, a hidden category, an initially-disabled ref while Show Disabled is off, or a
+    ///         day/night ref that is off at this hour. Nothing draws for them, so letting them consume
+    ///         ramp steps would only compress the refs that do draw; excluding them makes manual pruning
+    ///         an effective way to spread the survivors back out.
+    ///     </para>
+    ///     Deliberately no frustum — the selection, and therefore every ref's colour, is stable under
+    ///     camera ROTATION and only re-ranks when the camera crosses a cell boundary, the range changes,
+    ///     or a visibility gate changes. Enumeration clamps to the loaded visible radius: cells wholly
+    ///     beyond it cannot draw. Memoized per (cull epoch, camera cell, range, visible radius,
+    ///     visibility key).
+    /// </summary>
+    private void UpdateFormIdHeatmapScan(float cameraX, float cameraY, float cameraZ, float visibleRadius)
+    {
+        if (!_formIdHeatmapEnabled || _renderCache is null)
+        {
+            _frameHeatmapActive = false;
+            _heatmapScanEpoch = -1;
+            return;
+        }
+
+        var cellSize = _spatialIndex?.CellSize ?? global::BethesdaMultitool.WorldGridConstants.CellSize;
+        var range = FormIdHeatmapRangeCells;
+        var visibilityKey = VisibilityKey;
+        _frameHeatmapCellSize = cellSize;
+        _frameHeatmapCamCellX = (int)MathF.Floor(cameraX / cellSize);
+        _frameHeatmapCamCellY = (int)MathF.Floor(cameraY / cellSize);
+        _frameHeatmapCellRadius = float.IsPositiveInfinity(range)
+            ? int.MaxValue
+            : Math.Max(0, (int)MathF.Round(range));
+#pragma warning disable S1244 // memoization identity: exact compare of cached snapshot values detects change, not proximity
+        if (_heatmapScanEpoch == _cullEpoch &&
+            _heatmapScanCamCellX == _frameHeatmapCamCellX &&
+            _heatmapScanCamCellY == _frameHeatmapCamCellY &&
+            _heatmapScanCellRadius == _frameHeatmapCellRadius &&
+            _heatmapScanRadius == visibleRadius &&
+            _heatmapScanVisibilityKey == visibilityKey)
+        {
+            return;
+        }
+#pragma warning restore S1244
+
+        _heatmapScanEpoch = _cullEpoch;
+        _heatmapScanCamCellX = _frameHeatmapCamCellX;
+        _heatmapScanCamCellY = _frameHeatmapCamCellY;
+        _heatmapScanCellRadius = _frameHeatmapCellRadius;
+        _heatmapScanRadius = visibleRadius;
+        _heatmapScanVisibilityKey = visibilityKey;
+
+        // Cylinder radius covering the selected cell block's farthest corner (the camera can sit
+        // on its cell's edge, so the block reaches (N+1) cells along an axis — √2× that on the
+        // diagonal), clamped to the loaded visible radius.
+        var scanRadius = _frameHeatmapCellRadius == int.MaxValue
+            ? visibleRadius
+            : MathF.Min(visibleRadius, MathF.Sqrt(2f) * (_frameHeatmapCellRadius + 1) * cellSize);
+        _frameHeatmapRanking.Reset();
+        foreach (var cell in EnumerateVisibleCells(
+                     new VisibilityCylinder(new Vector3(cameraX, cameraY, cameraZ), scanRadius)))
+        {
+            var placements = _renderCache.GetPlacementList(cell);
+            for (var i = 0; i < placements.Count; i++)
+            {
+                var r = placements[i];
+                // Synthetic placements (engine-scattered grass, FormId 0) carry no authoring order.
+                if (r.IsGrass || r.FormId == 0)
+                {
+                    continue;
+                }
+
+                // Exactly the cull's own gate, so the ranked set is the set that renders.
+                if (!visibilityKey.IsVisible(r, _enabledOverrides, DayNightStates))
+                {
+                    continue;
+                }
+
+                var position = r.WorldMatrix.Translation;
+                if (!IsInsideHeatmapCellBlock(position.X, position.Y))
+                {
+                    continue;
+                }
+
+                _frameHeatmapRanking.Add(r.FormId);
+            }
+        }
+
+        _frameHeatmapRanking.Seal();
+        _frameHeatmapActive = !_frameHeatmapRanking.IsEmpty;
+    }
+
+    /// <summary>
+    ///     Whether a world position lies inside the frame's selected block of whole cells. The
+    ///     SAME predicate gates the scan and the per-instance tint, so the normalization window and
+    ///     the tinted set always describe the same cells (a ref placed outside its authoring cell
+    ///     is judged by where it stands — the selection is a clean grid-aligned square in space).
+    /// </summary>
+    private bool IsInsideHeatmapCellBlock(float worldX, float worldY)
+    {
+        if (_frameHeatmapCellRadius == int.MaxValue)
+        {
+            return true;
+        }
+
+        return Math.Abs((int)MathF.Floor(worldX / _frameHeatmapCellSize) - _frameHeatmapCamCellX) <= _frameHeatmapCellRadius &&
+               Math.Abs((int)MathF.Floor(worldY / _frameHeatmapCellSize) - _frameHeatmapCamCellY) <= _frameHeatmapCellRadius;
+    }
+
+    /// <summary>
+    ///     Writes the FormID-heatmap tint into <paramref name="world" />'s otherwise-unused w-lanes
+    ///     (M14/M24/M34 = ramp rgb, M44 = 2.0 active flag — read as HLSL <c>world[3]</c>): the same
+    ///     channel FNV grass packs its lighting payload into, which is why grass instances are
+    ///     excluded (recorded as FormID 0). The 2.0 flag is unambiguous — affine matrices carry
+    ///     exactly 1.0 there and the grass payload's baked light is clamped ≤ 0.99. Both reference
+    ///     VSes force <c>worldPos.w</c> back to 1.0 after transforming, so the payload never reaches
+    ///     clip space; the shadow VS/PS never read the new interpolant, so casters are unaffected.
+    ///     No-ops for refs outside the selected cell block — those render normally.
+    /// </summary>
+    private void ApplyFormIdHeatmapTint(ref Matrix4x4 world, uint formId, float worldX, float worldY)
+    {
+        if (formId == 0)
+        {
+            return;
+        }
+
+        if (!IsInsideHeatmapCellBlock(worldX, worldY))
+        {
+            return;
+        }
+
+        var rgb = FormIdHeatmapPalette.ToVector3(_frameHeatmapRanking.Normalize(formId));
+        world.M14 = rgb.X;
+        world.M24 = rgb.Y;
+        world.M34 = rgb.Z;
+        world.M44 = 2f;
     }
 
     // Placed-NIF water geometry (WaterShaderProperty triangles diverted out of the drawable submesh
@@ -655,6 +999,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     public bool ShowImposters { get; set; }
 
     /// <summary>
+    ///     Current-hour day/night reference states (scripted street lights, glow FX, fire barrels).
+    ///     Owned and re-evaluated by the host as the game hour advances; its Version joins
+    ///     <see cref="VisibilityKey" /> so every cull/shadow/water cache refreshes when a scripted
+    ///     light network flips at dawn or dusk.
+    /// </summary>
+    public DayNightRefStateStore? DayNightStates { get; set; }
+
+    /// <summary>
     ///     Exact non-spatial visibility snapshot for renderer-adjacent caches. This intentionally omits
     ///     camera/cylinder state and the host's global Meshes parent.
     /// </summary>
@@ -664,7 +1016,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         ShowInitiallyDisabled,
         ShowGrass,
         ShowMarkers,
-        ShowImposters);
+        ShowImposters,
+        DayNightStates);
 
     // Per-category visibility filter. References whose RenderableReference.Category is in this set are
     // culled (e.g. activators hidden by the user in the 3D view; the 2D legend's hidden set for the
@@ -798,8 +1151,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // share the STLEAF shader family and the same .spt pipeline. Kept OUTSIDE the FNV block below
         // deliberately: that block also decides ADT-base eligibility, which is recovered for FNV only,
         // and widening it would drag FO3 onto an unrecovered path for an unrelated reason.
+        // Oblivion joined 2026-08-19 (user report: hard shadow edge halfway down each leaf card at
+        // noon): TES4 ships NO shadow-map sampling in any shaderpackage shader — its tree darkening
+        // is the authored CNAM canopy dimming, which the viewer already applies. Sampling our
+        // cascades on a CAMERA-facing card whose caster was re-faced LIGHT-perpendicular
+        // (SHADOW_CARD_LIGHT_FACING) self-shadows the card's lower half with a hard boundary at
+        // the caster plane. Leaves keep casting (canopy shadows on trunks/ground are the feature);
+        // only the leaf RECEIVE is exempt, exactly like FNV/FO3.
         if (_renderCache?.Game is Core.Games.BethesdaGame.FalloutNewVegas
-            or Core.Games.BethesdaGame.Fallout3 && submesh.IsLeafBillboard)
+            or Core.Games.BethesdaGame.Fallout3
+            or Core.Games.BethesdaGame.Oblivion && submesh.IsLeafBillboard)
         {
             state.Z = (uint)MathF.Round(state.Z)
                 | FnvActiveAdtBasePolicy.RuntimeSpeedTreeLeafNoSunShadowFlag;
@@ -819,6 +1180,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 | FnvActiveAdtBasePolicy.RuntimeFnvGrassNoSunShadowFlag;
         }
 
+        // Video-settings "Shadows on grass" OFF: TallGrass carries the no-sun-shadow bit here;
+        // scattered LAND grass has no submesh marker, so its OR happens at the instanced-batch
+        // call site where the grass route is known. Retail semantics are receive-only — the
+        // caster side is already excluded unconditionally (grassNeverCasts).
+        if (!_grassShadowsEnabled && submesh.IsTallGrass)
+        {
+            state.Z = (uint)MathF.Round(state.Z)
+                | FnvActiveAdtBasePolicy.RuntimeFnvGrassNoSunShadowFlag;
+        }
+
         if (_renderCache?.Game == Core.Games.BethesdaGame.FalloutNewVegas)
         {
             // ADT-base eligibility stays FNV-only per the documented recovery scope; the grass
@@ -828,6 +1199,29 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 eligibility,
                 (uint)MathF.Round(state.Z));
         }
+        return state;
+    }
+
+    /// <summary>
+    ///     Applies the "Window reflections" video setting (<see cref="WindowReflectionsEnabled" />,
+    ///     retail <c>bDynamicWindowReflections</c>) at per-draw constants fill: when OFF, every
+    ///     window-flagged classic env-map draw — FNV BSShaderFlags bit 21 SLS2058 glass AND the
+    ///     TES3/TES4-era NiTextureEffect sphere maps, which ride the same window sign convention —
+    ///     has its env slot suppressed (x = −1, scale 0) so the glass renders as plain textured
+    ///     geometry. Ordinary non-window env maps (FO3/FNV shiny metal, FO4 BGSM cubes) are
+    ///     untouched. The .w lane (blend operation) is preserved — the fog term reads it for every
+    ///     draw regardless of env state.
+    /// </summary>
+    private Vector4 ResolveEnvMapState(CachedSubmesh12 submesh)
+    {
+        var state = submesh.EnvMapState;
+        if (!_windowReflectionsEnabled && submesh.ClassicEnvMapUsesWindowReflection)
+        {
+            state.X = -1f;
+            state.Y = 0f;
+            state.Z = 0f;
+        }
+
         return state;
     }
 
@@ -1142,6 +1536,29 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// hoist, decided at routing time — the serialized bits are env-blind).</summary>
     internal static readonly bool EngineZWriteEnabled =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.EngineZWrite) != "0";
+
+    /// <summary>
+    ///     Diagnostic: FALLOUT_VIEWER_BLEND_TRACE=&lt;hex REFR FormID&gt; logs every unified-stream
+    ///     draw belonging to that placed reference — sorted position, source shape block, view-depth
+    ///     key, and the resolved depth write/test — the exact data needed to diagnose "shape A
+    ///     composites over shape B" reports. 0 (unset) in normal runs.
+    /// </summary>
+    private static readonly uint BlendTraceFormId =
+        uint.TryParse(
+            EnvironmentVariables.Get("FALLOUT_VIEWER_BLEND_TRACE")?.Replace("0x", "", StringComparison.OrdinalIgnoreCase),
+            System.Globalization.NumberStyles.HexNumber, null, out var blendTraceId)
+            ? blendTraceId
+            : 0;
+
+    /// <summary>
+    ///     Diagnostic companion to <see cref="BlendTraceFormId" />:
+    ///     FALLOUT_VIEWER_BLEND_SKIP_BLOCK=&lt;n&gt; suppresses the traced reference's submesh with
+    ///     that source block index, isolating which shape paints contested pixels.
+    /// </summary>
+    private static readonly int BlendSkipBlock =
+        int.TryParse(EnvironmentVariables.Get("FALLOUT_VIEWER_BLEND_SKIP_BLOCK"), out var blendSkip)
+            ? blendSkip
+            : -1;
 
     /// <summary>Stable ascending sort for the blended index array: primary key from a parallel
     /// float array, ties broken by the ORIGINAL draw index (the array is initialized 0..n-1, so
@@ -1528,6 +1945,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             && _cullCacheShowImposters == ShowImposters
             && _cullCacheShowDisabled == ShowInitiallyDisabled
             && _cullCacheEnabledOverrideVersion == _enabledOverrides.Version
+            && _cullCacheDayNightVersion == (DayNightStates?.Version ?? 0)
             && _cullCacheShadowRing == shadowRing
             && _cullCacheShadowFarRing == shadowFarRing
             && (tolerant
@@ -1550,6 +1968,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             : _cullCacheShowImposters != ShowImposters ? CullCacheVeto.ShowImposters
             : _cullCacheShowDisabled != ShowInitiallyDisabled ? CullCacheVeto.ShowDisabled
             : _cullCacheEnabledOverrideVersion != _enabledOverrides.Version ? CullCacheVeto.EnabledOverrides
+            : _cullCacheDayNightVersion != (DayNightStates?.Version ?? 0) ? CullCacheVeto.EnabledOverrides
             : _cullCacheShadowRing != shadowRing ? CullCacheVeto.ShadowRing
             : _cullCacheShadowFarRing != shadowFarRing ? CullCacheVeto.ShadowRing
             : cullCacheValid ? CullCacheVeto.None
@@ -1697,7 +2116,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     // Authored/per-instance, category, grass, marker, and imposter decisions share
                     // the exact policy used by retained placed-water and shadow content. Count any
                     // hidden state as culled so the HUD still reflects the aggregate filter.
-                    if (!visibilityKey.IsVisible(r, _enabledOverrides)) return CullVerdict.Culled;
+                    if (!visibilityKey.IsVisible(r, _enabledOverrides, DayNightStates)) return CullVerdict.Culled;
                     // Cull bounds: once a mesh is resident, use its ACTUAL local bounding sphere (radius
                     // around the NIF origin, scaled into world) instead of the OBND-or-cell-sized fallback
                     // baked at LoadData. The mesh sphere is conservative (contains all geometry) and centered at
@@ -1911,6 +2330,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             _cullCacheShowImposters = ShowImposters;
             _cullCacheShowDisabled = ShowInitiallyDisabled;
             _cullCacheEnabledOverrideVersion = _enabledOverrides.Version;
+            _cullCacheDayNightVersion = DayNightStates?.Version ?? 0;
             _cullCacheShadowRing = shadowRing;
             _cullCacheShadowFarRing = shadowFarRing;
             _cullCacheCellsVisited = cellsVisited;
@@ -1931,6 +2351,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _frameCameraPosition = frameCameraPosition;
         _frameRenderOrigin = renderOrigin;
         _frameSmallPropCutoffSq = exactSmallPropCutoffSq;
+        // FormID-heatmap normalization window for this frame (no-op while the overlay is off).
+        // After the cull block so the epoch part of its memo key is settled for this frame.
+        UpdateFormIdHeatmapScan(cylinderX, cylinderY, cylinder.Position.Z, cylinderRadius);
         var meshStarted = StartTiming();
         if (reuseBatches)
         {
@@ -2084,7 +2507,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 if ((sub.AlphaRenderMode == NifAlphaRenderMode.Blend && !instancedGrass)
                     || sub.IsBillboard)
                 {
-                    var sampledSourceWorld = ApplyPhysicsLiteSway(sub, r.FormId, r.WorldMatrix);
+                    var sampledSourceWorld = ApplyRigidNodeAnimation(
+                        sub, ApplyPhysicsLiteSway(sub, r.FormId, r.WorldMatrix));
                     var worldCenter = Vector3.Transform(sub.LocalBoundsCenter, sampledSourceWorld);
                     var worldRadius = ResolveWorldBoundsRadius(sub, sampledSourceWorld);
                     // worldCenter stays ABSOLUTE (sorted against the actual rendering eye; billboard
@@ -2185,6 +2609,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 {
                     batch.PhysicsLiteSeeds.Add(r.FormId);
                 }
+                if (_formIdHeatmapEnabled)
+                {
+                    // Parallel to Instances only while the heatmap is on (the enable setter forces a
+                    // rebuild, so a frozen batch can never be half-filled). Grass records 0: its
+                    // matrices' w-lanes carry the FNV grass lighting payload and must stay untouched.
+                    batch.HeatmapFormIds.Add(r.IsGrass ? 0u : r.FormId);
+                }
                 anySubmeshDrawn = true;
             }
 
@@ -2229,7 +2660,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             foreach (var sub in mesh.Submeshes)
             {
                 if (sub.AlphaRenderMode == NifAlphaRenderMode.Blend || sub.IsBillboard || sub.IsDecal
-                    || (_tallGrassWindSupported && sub.IsTallGrass))
+                    || (_tallGrassWindSupported && sub.IsTallGrass)
+                    // Video-settings "Tree canopy shadows" OFF mirrors the capture-side gate: no
+                    // off-frustum tree canopy streams in just to cast.
+                    || (!_treeShadowsEnabled &&
+                        (sub.IsSpeedTreeBranch || sub.IsLeafBillboard || sub.SpeedTreeLod is not null)))
                 {
                     // TallGrass: retail FO3/FNV ships no grass caster permutation — do not stream
                     // off-screen grass just to cast (mirrors the capture-side exclusion).
@@ -2710,6 +3145,74 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         return LastShadowSubmittedDrawCount > 0;
     }
 
+    /// <summary>
+    ///     Water-reflection mirror COLOR replay: re-issues this frame's captured instanced-opaque
+    ///     draws with the mirrored view-projection into the already-bound reflection target. One
+    ///     fresh b0 (mirror viewProj + the SAME wind rig the main pass used) is the only new GPU
+    ///     allocation — each draw reuses its original PSO (winding-flipped twin via
+    ///     <see cref="ReferencePipelineFactory12.GetMirrorPso" />), per-draw constants, and t8
+    ///     instance window, all frame-local ring addresses. No cull, no batch, no cache touch.
+    ///     The caller has bound the mirror b3 (clip plane + mirrored shading camera). Returns
+    ///     false on ring exhaustion — the reflection keeps its sky content for the frame.
+    /// </summary>
+    public bool RenderMirrorColor(in Matrix4x4 mirrorViewProj)
+    {
+        _mirrorCaptureArmed = false;
+        if (_mirrorDraws.Count == 0)
+        {
+            return false;
+        }
+
+        var cmd = _recorder.CommandList;
+        if (!_ringBuffer.TryAllocate(
+                _recorder.FrameIndex, PerFrameByteSize, out var perFrameAlloc, GpuRingBuffer12.CbAlignment))
+        {
+            return false;
+        }
+
+        unsafe
+        {
+            *(Matrix4x4*)perFrameAlloc.CpuPtr = mirrorViewProj;
+            var windRig = FrameWindRig;
+            var windDst = (Matrix4x4*)((byte*)perFrameAlloc.CpuPtr
+                + InstancedShadowPerFrameConstants.WindMatricesOffset);
+            for (var w = 0; w < 4; w++)
+            {
+                windDst[w] = windRig.WindMatrix(w);
+            }
+        }
+
+        cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
+        GpuRootSignature12.SetGraphicsBindlessTables(cmd, _cbvSrvUavHeap.BindlessHeapStartGpu);
+
+        ID3D12PipelineState? currentPso = null;
+        ulong currentInstanceAddress = 0;
+        foreach (var draw in _mirrorDraws)
+        {
+            var pso = _pipelines.GetMirrorPso(draw.Pso);
+            if (!ReferenceEquals(currentPso, pso))
+            {
+                cmd.SetPipelineState(pso);
+                currentPso = pso;
+            }
+
+            if (draw.InstanceSrvAddress != currentInstanceAddress)
+            {
+                cmd.SetGraphicsRootShaderResourceView(
+                    (uint)GpuRootSignature12.Slots.ReferenceInstanceSrv, draw.InstanceSrvAddress);
+                currentInstanceAddress = draw.InstanceSrvAddress;
+            }
+
+            cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, draw.PerDrawCbAddress);
+            cmd.IASetVertexBuffers(0, draw.VertexBufferView);
+            cmd.IASetIndexBuffer(draw.IndexBufferView);
+            cmd.DrawIndexedInstanced((uint)draw.IndexCount, (uint)draw.DrawCount, 0, 0, 0);
+        }
+
+        return true;
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -2889,13 +3392,22 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     var animatePhysicsLite = AnimationsEnabled &&
                                              batchState.Submesh.PhysicsLiteSway is not null &&
                                              batchState.PhysicsLiteSeeds.Count == worlds.Count;
+                    // Rigid node-animated statics (saloon sign): one shared delta per frame, no
+                    // per-reference seed, applied to every copied instance world.
+                    var animateRigidNode = AnimationsEnabled &&
+                                           batchState.Submesh.RigidNodeAnimation is not null;
+                    // Forces the per-instance branch while the heatmap is on (same trick as
+                    // animatePhysicsLite) so every copied matrix can take its tint in the w-lanes.
+                    var applyHeatmap = _frameHeatmapActive &&
+                                       batchState.HeatmapFormIds.Count == worlds.Count;
                     if (worlds.Count == 0 && shadowCount == 0)
                     {
                         batchState.FrameDrawCount = 0;
                         batchState.FrameShadowOnlyCount = 0;
                         continue;
                     }
-                    if (!exactMainPerInstance && !filterSpeedTreeLod && !animatePhysicsLite)
+                    if (!exactMainPerInstance && !filterSpeedTreeLod && !animatePhysicsLite &&
+                        !animateRigidNode && !applyHeatmap)
                     {
                         CollectionsMarshal.AsSpan(worlds).CopyTo(span.Slice(offset, worlds.Count));
                         offset += worlds.Count;
@@ -2910,6 +3422,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         var worldSpan = CollectionsMarshal.AsSpan(worlds);
                         var boundsSpan = CollectionsMarshal.AsSpan(batchState.InstanceBounds);
                         var physicsSeeds = CollectionsMarshal.AsSpan(batchState.PhysicsLiteSeeds);
+                        var heatmapIds = applyHeatmap
+                            ? CollectionsMarshal.AsSpan(batchState.HeatmapFormIds)
+                            : default;
                         var batchStart = offset;
                         // Instances are in cascade order, so the prefixes only need re-deriving against
                         // what SURVIVES the filters: as each source index crosses a build-time prefix
@@ -2929,9 +3444,21 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                             if (refilter && !PassesExactCull(boundsSpan[i])) continue;
                             if (filterSpeedTreeLod &&
                                 !PassesSpeedTreeLod(batchState.Submesh, worldSpan[i], boundsSpan[i])) continue;
-                            span[offset++] = animatePhysicsLite
+                            var world = animatePhysicsLite
                                 ? ApplyPhysicsLiteSway(batchState.Submesh, physicsSeeds[i], worldSpan[i])
                                 : worldSpan[i];
+                            if (animateRigidNode)
+                            {
+                                world = ApplyRigidNodeAnimation(batchState.Submesh, world);
+                            }
+                            if (applyHeatmap)
+                            {
+                                // InstanceBounds xy = the instance's ABSOLUTE world center — exactly
+                                // what the range test wants (the copied matrix is origin-relative).
+                                ApplyFormIdHeatmapTint(
+                                    ref world, heatmapIds[i], boundsSpan[i].X, boundsSpan[i].Y);
+                            }
+                            span[offset++] = world;
                         }
 
                         batchState.FrameDrawCount = offset - batchStart;
@@ -2952,7 +3479,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         var animateShadowPhysicsLite = AnimationsEnabled &&
                                                        batchState.Submesh.PhysicsLiteSway is not null &&
                                                        batchState.ShadowOnlyPhysicsLiteSeeds.Count == shadowCount;
-                        if (!filterSpeedTreeLod && !animateShadowPhysicsLite && !filterGrassDistance)
+                        if (!filterSpeedTreeLod && !animateShadowPhysicsLite && !animateRigidNode &&
+                            !filterGrassDistance)
                         {
                             CollectionsMarshal.AsSpan(shadowWorlds!).CopyTo(span.Slice(offset, shadowCount));
                             offset += shadowCount;
@@ -2980,10 +3508,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                                         shadowSpan[i].Translation + _frameRenderOrigin,
                                         isGrass: true)) continue;
                                 if (!PassesSpeedTreeLod(batchState.Submesh, shadowSpan[i])) continue;
-                                span[offset++] = animateShadowPhysicsLite
+                                var shadowWorld = animateShadowPhysicsLite
                                     ? ApplyPhysicsLiteSway(
                                         batchState.Submesh, shadowPhysicsSeeds[i], shadowSpan[i])
                                     : shadowSpan[i];
+                                if (animateRigidNode)
+                                {
+                                    shadowWorld = ApplyRigidNodeAnimation(batchState.Submesh, shadowWorld);
+                                }
+                                span[offset++] = shadowWorld;
                             }
 
                             shadowCount = offset - shadowStart;
@@ -3036,10 +3569,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 var animatePhysicsLite = AnimationsEnabled &&
                                          batchState.Submesh.PhysicsLiteSway is not null &&
                                          batchState.PhysicsLiteSeeds.Count == batch.Count;
+                var animateRigidNode = AnimationsEnabled &&
+                                       batchState.Submesh.RigidNodeAnimation is not null;
+                // Same per-instance forcing as the shared block: the tint rides the copied matrix.
+                var applyHeatmap = _frameHeatmapActive &&
+                                   batchState.HeatmapFormIds.Count == batch.Count;
                 unsafe
                 {
                     var span = new Span<Matrix4x4>((void*)batchCpuPtr, batch.Count + fallbackShadowCount);
-                    if (!exactMainPerInstance && !filterSpeedTreeLod && !animatePhysicsLite)
+                    if (!exactMainPerInstance && !filterSpeedTreeLod && !animatePhysicsLite &&
+                        !animateRigidNode && !applyHeatmap)
                     {
                         CollectionsMarshal.AsSpan(batch).CopyTo(span);
                         drawCount = batch.Count;
@@ -3049,6 +3588,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         var worldSpan = CollectionsMarshal.AsSpan(batch);
                         var boundsSpan = CollectionsMarshal.AsSpan(batchState.InstanceBounds);
                         var physicsSeeds = CollectionsMarshal.AsSpan(batchState.PhysicsLiteSeeds);
+                        var heatmapIds = applyHeatmap
+                            ? CollectionsMarshal.AsSpan(batchState.HeatmapFormIds)
+                            : default;
                         drawCount = 0;
                         for (var i = 0; i < worldSpan.Length; i++)
                         {
@@ -3058,9 +3600,19 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                             if (refilter && !PassesExactCull(boundsSpan[i])) continue;
                             if (filterSpeedTreeLod &&
                                 !PassesSpeedTreeLod(batchState.Submesh, worldSpan[i], boundsSpan[i])) continue;
-                            span[drawCount++] = animatePhysicsLite
+                            var world = animatePhysicsLite
                                 ? ApplyPhysicsLiteSway(batchState.Submesh, physicsSeeds[i], worldSpan[i])
                                 : worldSpan[i];
+                            if (animateRigidNode)
+                            {
+                                world = ApplyRigidNodeAnimation(batchState.Submesh, world);
+                            }
+                            if (applyHeatmap)
+                            {
+                                ApplyFormIdHeatmapTint(
+                                    ref world, heatmapIds[i], boundsSpan[i].X, boundsSpan[i].Y);
+                            }
+                            span[drawCount++] = world;
                         }
                     }
 
@@ -3071,7 +3623,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         var animateShadowPhysicsLite = AnimationsEnabled &&
                                                        batchState.Submesh.PhysicsLiteSway is not null &&
                                                        batchState.ShadowOnlyPhysicsLiteSeeds.Count == fallbackShadowCount;
-                        if (!filterSpeedTreeLod && !animateShadowPhysicsLite && !filterGrassDistance)
+                        if (!filterSpeedTreeLod && !animateShadowPhysicsLite && !animateRigidNode &&
+                            !filterGrassDistance)
                         {
                             CollectionsMarshal.AsSpan(shadowOnly!).CopyTo(span.Slice(drawCount, fallbackShadowCount));
                             shadowCount = fallbackShadowCount;
@@ -3088,10 +3641,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                                         shadowSpan[i].Translation + _frameRenderOrigin,
                                         isGrass: true)) continue;
                                 if (!PassesSpeedTreeLod(batchState.Submesh, shadowSpan[i])) continue;
-                                span[drawCount + shadowCount++] = animateShadowPhysicsLite
+                                var shadowWorld = animateShadowPhysicsLite
                                     ? ApplyPhysicsLiteSway(
                                         batchState.Submesh, shadowPhysicsSeeds[i], shadowSpan[i])
                                     : shadowSpan[i];
+                                if (animateRigidNode)
+                                {
+                                    shadowWorld = ApplyRigidNodeAnimation(batchState.Submesh, shadowWorld);
+                                }
+                                span[drawCount + shadowCount++] = shadowWorld;
                             }
                         }
                     }
@@ -3157,6 +3715,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 }
             }
             var textureState = ResolveTextureState(sub);
+            // Video-settings "Shadows on grass" OFF for SCATTERED grass: the submesh has no grass
+            // marker (scatter identity lives on the reference/batch), so the no-sun-shadow bit is
+            // ORed here, where the batch's grass route is known. The per-game grass shaders honor
+            // the bit; TallGrass got it inside ResolveTextureState.
+            if (!_grassShadowsEnabled && batchState.UsesGrassDistanceEnvelope)
+            {
+                textureState.Z = (uint)MathF.Round(textureState.Z)
+                    | FnvActiveAdtBasePolicy.RuntimeFnvGrassNoSunShadowFlag;
+            }
             var instanceDraw = new InstanceDrawConstants(
                 sub.AlphaState,
                 sub.RenderState,
@@ -3191,7 +3758,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 EffectFalloff: sub.HasEffectFalloff ? sub.EffectFalloffParams : sub.Lighting30Emission,
                 // Re-read every frame (like the bindless indices) so a cube promoted after the
                 // batch froze still lands — EnvMapState flips from −1 to the slot on residency.
-                EnvMap: sub.EnvMapState,
+                // ResolveEnvMapState additionally suppresses window-flagged env draws while the
+                // "Window reflections" setting is off.
+                EnvMap: ResolveEnvMapState(sub),
                 SoftParticle: Vector4.Zero,
                 TallGrassWind: BuildTallGrassWindConstants(
                     batchState.UsesTallGrassWind,
@@ -3250,7 +3819,24 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // with the route flag so the exclusion covers exactly the batches this change created.
             var grassNeverCasts = fnvGrassNeverCasts
                                   || (_instancedBlendGrassSupported && batchState.UsesGrassDistanceEnvelope);
-            if (_shadowCaptureArmed && !sub.IsDecal && !grassNeverCasts &&
+            // Video-settings "Tree canopy shadows" OFF: SpeedTree canopy geometry (branches, leaf
+            // cards, LOD components) stops casting — a CASTER-only gate; the trees stay visible.
+            var treeNeverCasts = !_treeShadowsEnabled &&
+                                 (sub.IsSpeedTreeBranch || sub.IsLeafBillboard || sub.SpeedTreeLod is not null);
+            // Water-reflection mirror capture: MAIN-frustum draws only (never the shadow-only
+            // tail — the mirror wants the visible set), original PSO + the per-draw CB / t8
+            // window just bound. Decals are coplanar overlays that need their own biased mirror
+            // PSO (excluded v1); grass reuses the caster classification — retail's default
+            // reflection is land + sky (bUseWaterReflectionsMisc/Statics/Trees ship 0) and no
+            // grass ini exists at all.
+            if (_mirrorCaptureArmed && drawCount > 0 && drawLiveness &&
+                !sub.IsDecal && !grassNeverCasts)
+            {
+                _mirrorDraws.Add(new MirrorDraw(
+                    sub.EffectiveVertexBufferView, sub.IndexBufferView, sub.IndexCount,
+                    instanceDrawAlloc.GpuAddress, boundInstanceAddress, drawCount, batchState.Pso));
+            }
+            if (_shadowCaptureArmed && !sub.IsDecal && !grassNeverCasts && !treeNeverCasts &&
                 drawCount + shadowCount > 0 && drawLiveness)
             {
                 // Record this draw for the frame-end shadow replay: the ring-buffer CB just bound
@@ -3331,11 +3917,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     // host must re-render the map every frame it casts (same as animated leaves).
                     ShadowDrawsIncludeAnimatedMeshes = true;
                 }
-                if (AnimationsEnabled && sub.PhysicsLiteSway is not null)
+                if (AnimationsEnabled &&
+                    (sub.PhysicsLiteSway is not null || sub.RigidNodeAnimation is not null))
                 {
-                    // Reuse the host's general animated-mesh shadow contract: physics-lite changes
-                    // only per-instance matrices, but it has the same requirement that a cached sun
-                    // map be refreshed every frame while the GUI Animations switch is on.
+                    // Reuse the host's general animated-mesh shadow contract: physics-lite and
+                    // rigid node animation change only per-instance matrices, but they have the
+                    // same requirement that a cached sun map be refreshed every frame while the
+                    // GUI Animations switch is on.
                     ShadowDrawsIncludeAnimatedMeshes = true;
                 }
                 if (AnimationsEnabled && batchState.UsesTallGrassWind)
@@ -3496,6 +4084,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 // clobbers the per-frame CBV/bindless tables, so rebind and force a PSO re-set.
                 if (interleave is not null && interleave.DrainDownTo(-sortKeys[order[i]]))
                 {
+                    if (BlendTraceFormId != 0)
+                    {
+                        Core.Diagnostics.Logger.Instance.Info(
+                            $"[blend-trace] water-drain before sorted#{i} " +
+                            $"(down to depth {-sortKeys[order[i]]:F1})");
+                    }
                     cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
                     cmd.SetGraphicsRootConstantBufferView(
                         GpuRootSignature12.Slots.PerFrameCbv, _deferredPerFrameCbvAddress);
@@ -3514,7 +4108,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 // a deliberate viewer deviation (the engine's 16 SetZWriteEnable sites include no
                 // billboard case): their camera-facing quads are not occluders, and most are
                 // NoLighting (authored write-off) anyway.
-                var engineRule = interleave is not null && EngineZWriteEnabled;
+                //
+                // The rule keys on the STREAM ROUTING MODE the draw lists were built under — NOT on
+                // whether THIS pass carries the water interleave. The stream frame issues up to
+                // three DrawBlended passes (submerged partition, interleaved core, above-all-water
+                // tail) and only the core one holds the interleave; gating on it silently dropped
+                // depth writes for every draw in the above-all-water tail, so any queued water
+                // ANYWHERE in the visible radius made elevated meshes resolve by paint order alone
+                // (the Goodsprings saloon sign's south chain compositing over its own nearer post —
+                // the sort centers disagree with per-pixel depth, which only z-writes can fix).
+                var engineRule = _lastBuildStreamActive && EngineZWriteEnabled;
                 var writesDepth = !draw.Submesh.IsBillboard &&
                                   (engineRule
                                       ? !draw.Submesh.EngineZWriteOff
@@ -3522,7 +4125,21 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 // NoLighting "zbuffer test" bit 31 CLEAR ⇒ hardware depth test OFF. Applied only
                 // under the engine rule so stream-off frames stay byte-identical.
                 var depthTestOff = engineRule && draw.Submesh.DepthTestOff;
-                var pso = interleave is not null && writesDepth
+                if (BlendTraceFormId != 0 && draw.PhysicsLiteSeed == BlendTraceFormId)
+                {
+                    Core.Diagnostics.Logger.Instance.Info(
+                        $"[blend-trace] sorted#{i} block={draw.Submesh.SourceBlockIndex} " +
+                        $"depthKey={-sortKeys[order[i]]:F1} zwrite={writesDepth} " +
+                        $"ztestOff={depthTestOff} mode={draw.Submesh.AlphaRenderMode} " +
+                        $"billboard={draw.Submesh.IsBillboard} " +
+                        $"center=({draw.WorldBoundsCenterXY.X:F0},{draw.WorldBoundsCenterXY.Y:F0}," +
+                        $"{draw.WorldBoundsCenterZ:F0})");
+                    if (BlendSkipBlock >= 0 && draw.Submesh.SourceBlockIndex == BlendSkipBlock)
+                    {
+                        continue;
+                    }
+                }
+                var pso = _lastBuildStreamActive && writesDepth
                     ? _pipelines.GetBlendDepthWritePipeline(
                         draw.Submesh.SrcBlendMode,
                         draw.Submesh.DstBlendMode,
@@ -3784,9 +4401,20 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // Blended batches can be reused across frames. Resolve the runtime route here so a
         // lighting or placed-light transition cannot retain stale classic-basic shader flags.
         var textureState = ResolveTextureState(draw.Submesh);
+        // FormID heatmap on the blended/billboard per-draw path — same w-lane channel as the
+        // instanced copy pass. PhysicsLiteSeed carries the owning REFR's FormID on EVERY blended
+        // draw (not just sway meshes — see the BlendedReferenceDraw construction); grass is
+        // excluded because its matrix w-lanes are the FNV grass lighting payload.
+        var heatmapWorld = draw.World;
+        if (_frameHeatmapActive && !draw.IsGrass)
+        {
+            ApplyFormIdHeatmapTint(
+                ref heatmapWorld, draw.PhysicsLiteSeed,
+                draw.WorldBoundsCenterXY.X, draw.WorldBoundsCenterXY.Y);
+        }
         var perDraw = new PerDrawConstants
         {
-            World = draw.World,
+            World = heatmapWorld,
             AlphaState = alphaState,
             RenderState = draw.RenderState,
             TextureState = textureState,
@@ -3812,7 +4440,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             EffectFalloff = draw.Submesh.HasEffectFalloff
                 ? draw.Submesh.EffectFalloffParams
                 : draw.Submesh.Lighting30Emission,
-            EnvMap = draw.Submesh.EnvMapState,
+            EnvMap = ResolveEnvMapState(draw.Submesh),
             UvScroll = new Vector4(
                 WrapUv(draw.Submesh.UvScrollVelocity.X, UvScrollClock),
                 WrapUv(draw.Submesh.UvScrollVelocity.Y, UvScrollClock), specularLodFade, 0f),
@@ -4243,8 +4871,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         for (var i = 0; i < span.Length; i++)
         {
             ref var draw = ref span[i];
-            var sampledSourceWorld = ApplyPhysicsLiteSway(
-                draw.Submesh, draw.PhysicsLiteSeed, draw.SourceWorld);
+            var sampledSourceWorld = ApplyRigidNodeAnimation(
+                draw.Submesh,
+                ApplyPhysicsLiteSway(draw.Submesh, draw.PhysicsLiteSeed, draw.SourceWorld));
             var worldCenter = Vector3.Transform(draw.Submesh.LocalBoundsCenter, sampledSourceWorld);
             var sampledRelativeWorld = sampledSourceWorld;
             sampledRelativeWorld.Translation -= renderOrigin;
@@ -4271,6 +4900,22 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 WorldBoundsCenterXY = new Vector2(worldCenter.X, worldCenter.Y),
             };
         }
+    }
+
+    /// <summary>
+    ///     Applies a baked rigid-node playback delta before the REFR placement (row-vector order:
+    ///     delta * placement, mirroring <see cref="ApplyPhysicsLiteSway" />). One evaluation per
+    ///     call on the shared global animation clock — all placements of a model stay in sync, the
+    ///     engine's controller-manager behavior. Animations off returns the rest matrix unchanged.
+    /// </summary>
+    private Matrix4x4 ApplyRigidNodeAnimation(CachedSubmesh12 submesh, Matrix4x4 restWorld)
+    {
+        if (!AnimationsEnabled || submesh.RigidNodeAnimation is not { } track)
+        {
+            return restWorld;
+        }
+
+        return track.Evaluate(_animationClockSeconds) * restWorld;
     }
 
     /// <summary>
@@ -4347,7 +4992,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         foreach (var batch in _opaqueBatches.ActiveBatches)
         {
             SortInstanceListByCascade(
-                batch.Instances, batch.InstanceBounds, batch.PhysicsLiteSeeds,
+                batch.Instances, batch.InstanceBounds, batch.PhysicsLiteSeeds, batch.HeatmapFormIds,
                 batch.CascadePrefix, fit, cascades, slack);
 
             // Shadow-only casters are a SEPARATE range appended after the main instances, and the
@@ -4359,12 +5004,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         }
     }
 
-    /// <summary>Counting-sorts one instance list (plus its parallel bounds/seed lists) into cascade
-    /// order and fills <paramref name="prefix" />.</summary>
+    /// <summary>Counting-sorts one instance list (plus its parallel bounds/seed/heatmap lists) into
+    /// cascade order and fills <paramref name="prefix" />.</summary>
     private void SortInstanceListByCascade(
         List<Matrix4x4> instances,
         List<Vector4> bounds,
         List<uint> seeds,
+        List<uint> heatmapIds,
         int[] prefix,
         (Vector3 Anchor, Vector3 SunDirection, float[] Radii, float[] Snaps, float SceneZSpan) fit,
         int cascades,
@@ -4377,9 +5023,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             return;
         }
 
-        // Bounds are parallel to instances by construction; seeds only when physics-lite is present.
+        // Bounds are parallel to instances by construction; seeds only when physics-lite is
+        // present; heatmap FormIDs only while the heatmap overlay is enabled.
         var hasBounds = bounds.Count == count;
         var hasSeeds = seeds.Count == count;
+        var hasHeatmapIds = heatmapIds.Count == count;
         if (!hasBounds)
         {
             // No per-instance bounds to classify against — keep every caster in every cascade.
@@ -4414,24 +5062,29 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _cascadeSortMatrices.Clear();
         _cascadeSortBounds.Clear();
         _cascadeSortSeeds.Clear();
+        _cascadeSortHeatmapIds.Clear();
         EnsureCapacity(_cascadeSortMatrices, count);
         EnsureCapacity(_cascadeSortBounds, count);
         if (hasSeeds) EnsureCapacity(_cascadeSortSeeds, count);
+        if (hasHeatmapIds) EnsureCapacity(_cascadeSortHeatmapIds, count);
 
         var matrixSpan = CollectionsMarshal.AsSpan(_cascadeSortMatrices);
         var boundsSpan = CollectionsMarshal.AsSpan(_cascadeSortBounds);
         var seedSpan = hasSeeds ? CollectionsMarshal.AsSpan(_cascadeSortSeeds) : default;
+        var heatmapSpan = hasHeatmapIds ? CollectionsMarshal.AsSpan(_cascadeSortHeatmapIds) : default;
         for (var i = 0; i < count; i++)
         {
             var slot = writeCursor[_cascadeBucketScratch[i]]++;
             matrixSpan[slot] = instances[i];
             boundsSpan[slot] = bounds[i];
             if (hasSeeds) seedSpan[slot] = seeds[i];
+            if (hasHeatmapIds) heatmapSpan[slot] = heatmapIds[i];
         }
 
         matrixSpan.CopyTo(CollectionsMarshal.AsSpan(instances));
         boundsSpan.CopyTo(CollectionsMarshal.AsSpan(bounds));
         if (hasSeeds) seedSpan.CopyTo(CollectionsMarshal.AsSpan(seeds));
+        if (hasHeatmapIds) heatmapSpan.CopyTo(CollectionsMarshal.AsSpan(heatmapIds));
     }
 
     /// <summary>Shadow-only casters carry no bounds list, so they are classified from their world

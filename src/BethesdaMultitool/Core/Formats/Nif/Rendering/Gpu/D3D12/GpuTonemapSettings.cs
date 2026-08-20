@@ -44,6 +44,35 @@ internal enum GpuTonemapMode
     ///     grade. It deliberately performs no exposure, adaptation, bloom, or HDR scene scaling.
     /// </summary>
     CinematicFo3Fnv = 4,
+
+    /// <summary>
+    ///     The classic launcher's middle "Bloom" state (<c>!bDoHighDynamicRange &amp;&amp;
+    ///     bUseBlurShader</c>): SDR display + bloom. Retail's LDR <c>[BlurShader]</c> topology is
+    ///     UNRECOVERED (the shipped section has no bright-pass parameters at all), so this is a
+    ///     documented stand-in: the classic reduction/adapt/bright-pass chain still runs — the
+    ///     bright pass needs the adapted average for its threshold — but the composite clamps the
+    ///     scene at neutral exposure (no eye-adapt scaling, no HDR display operator) and adds the
+    ///     bloom term over it, then applies the classic grade (neutral for Oblivion — no IMGS).
+    /// </summary>
+    ClassicSdrBloom = 5,
+}
+
+/// <summary>
+///     The viewer GUI's post-processing selector — the retail launcher's three-way radio
+///     (None / Bloom / HDR; <c>OblivionLauncher</c>/<c>Fallout3Launcher</c>/<c>FalloutNVLauncher</c>
+///     ship the identical block). Replaces the old two-ToggleSwitch approximation: retail has no
+///     HDR-with-bloom-off launcher state, so bloom-under-HDR remains a diagnostic-only gate.
+/// </summary>
+internal enum GpuTonemapGuiMode
+{
+    /// <summary>The launcher's "None": SDR clamp (FO3/FNV keep their standalone cinematic grade).</summary>
+    Sdr = 0,
+
+    /// <summary>The launcher's "Bloom": SDR + classic bloom (<see cref="GpuTonemapMode.ClassicSdrBloom" />).</summary>
+    SdrBloom = 1,
+
+    /// <summary>The launcher's "HDR": each family's engine HDR operator.</summary>
+    Hdr = 2,
 }
 
 /// <summary>
@@ -68,6 +97,10 @@ internal readonly record struct GpuTonemapModeTraits(
             GpuTonemapMode.CreationModern => new(true, false, true, false),
             // The standalone cinematic effect is an LDR grade, not an HDR display operator.
             GpuTonemapMode.CinematicFo3Fnv => new(false, false, false, false),
+            // SDR display, but the classic reduction + adaptation still run: the bloom
+            // bright-pass thresholds against the adapted average (the mode-5 composite itself
+            // never samples it, so adaptation cannot change the base image).
+            GpuTonemapMode.ClassicSdrBloom => new(false, true, true, true),
             _ => default,
         };
     }
@@ -168,7 +201,7 @@ internal readonly record struct GpuTonemapSettings
     internal static GpuTonemapSettings FinalizeViewerPostProcessing(
         GpuTonemapSettings settings,
         BethesdaGame game,
-        bool guiHdrEnabled,
+        GpuTonemapGuiMode guiMode,
         bool tonemapAvailable,
         GpuTonemapMode? operatorOverride,
         bool guiBloomEnabled,
@@ -187,9 +220,25 @@ internal readonly record struct GpuTonemapSettings
             };
         }
 
-        if (!guiHdrEnabled)
+        if (guiMode == GpuTonemapGuiMode.SdrBloom)
         {
-            var mode = operatorOverride ?? (UsesCinematicOnly(game, guiHdrEnabled, tonemapAvailable)
+            // The launcher's middle state: SDR display + classic bloom. Scene-side HDR
+            // multipliers neutralize exactly like HDR-off (retail's parallel [BlurShader] set
+            // ships fSunlightDimmer=1.0 where [BlurShaderHDR] ships 1.3).
+            var mode = operatorOverride ?? GpuTonemapMode.ClassicSdrBloom;
+            return settings with
+            {
+                Mode = mode,
+                BloomEnabled = (mode is GpuTonemapMode.ClassicSdrBloom or GpuTonemapMode.EngineFo3Fnv)
+                               && settings.BloomEnabled && guiBloomEnabled,
+                EmissiveMult = 1f,
+                HistoryKey = historyKey,
+            };
+        }
+
+        if (guiMode == GpuTonemapGuiMode.Sdr)
+        {
+            var mode = operatorOverride ?? (UsesCinematicOnly(game, guiHdrEnabled: false, tonemapAvailable)
                 ? GpuTonemapMode.CinematicFo3Fnv
                 : GpuTonemapMode.LegacyClamp);
             return settings with

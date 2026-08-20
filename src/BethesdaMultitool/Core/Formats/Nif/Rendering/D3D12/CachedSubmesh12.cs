@@ -95,6 +95,14 @@ internal sealed class CachedSubmesh12
     public bool ClassicEnvMapUsesWindowReflection { get; init; }
 
     /// <summary>
+    ///     TES3/TES4-era scene-graph NiTextureEffect ENVIRONMENT_MAP with CG_SPHERE_MAP:
+    ///     <see cref="ClassicEnvMap" /> is a 2D sphere map sampled through the <c>textures[]</c>
+    ///     alias from the view-space reflection vector — it must never wait for (or get) cube
+    ///     promotion. TextureState bit 14 routes the shader.
+    /// </summary>
+    public bool ClassicEnvMapIsSphereMap { get; init; }
+
+    /// <summary>
     ///     Per-draw env-map constants (uEnvMap): x = cube bindless slot, y = scale, z = smoothness,
     ///     w = <see cref="NifD3D12BlendOperation" /> (consumed by the fog/output-range term).
     ///     x stays −1 until the entry is RESIDENT as a TextureCube — cold placeholders are 2D SRVs,
@@ -112,8 +120,15 @@ internal sealed class CachedSubmesh12
             var env = ClassicEnvMap ?? EnvMap;
             var scale = ClassicEnvMap is not null ? ClassicEnvMapScale : EnvMapScale;
             var smoothness = ClassicEnvMap is not null ? 0f : EnvMapSmoothness;
-            return env is { IsResident: true, IsCubemap: true }
-                ? new Vector4(env.BindlessIndex, scale, smoothness, (float)BlendOperation)
+            // Sphere maps (TES3/TES4-era NiTextureEffect) are ordinary 2D SRVs sampled through
+            // the textures[] alias — they must not wait for cube promotion, and indexing a 2D
+            // descriptor through the cube alias stays impossible: the cube path keeps its strict
+            // TextureCube gate, and TextureState bit 14 routes the shader to the 2D sample.
+            var eligible = ClassicEnvMap is not null && ClassicEnvMapIsSphereMap
+                ? env is { IsResident: true, IsCubemap: false }
+                : env is { IsResident: true, IsCubemap: true };
+            return eligible
+                ? new Vector4(env!.BindlessIndex, scale, smoothness, (float)BlendOperation)
                 : new Vector4(-1f, 0f, 0f, (float)BlendOperation);
         }
     }
@@ -178,9 +193,10 @@ internal sealed class CachedSubmesh12
                 // the spec mask, bits 1/2 = clamp U/V, bit 3 = TexIndices.w is a Lighting30 glow
                 // map, bit 4 = classic Lighting30 material route, bit 5 = TallGrassShaderProperty,
                 // bit 6 = classic FO3/FNV environment pass, bit 7 = TexIndices.z is its custom mask,
-                // bit 9 = classic bit-21/SLS2058 window-reflection direction (bit 8 is parallax).
-                // All values are <= 1023 and exactly
-                // representable; shaders decode with integer bit tests.
+                // bit 9 = classic bit-21/SLS2058 window-reflection direction (bit 8 is parallax),
+                // bit 14 = the classic env texture is a TES3/TES4-era NiTextureEffect 2D SPHERE map
+                // (bits 10-13 are runtime-only, ORed in by ResolveTextureState). All values are
+                // exactly representable in a float; shaders decode with integer bit tests.
                 (SpecularMap is not null ? 1f : 0f) +
                 (ClampTextureU ? 2f : 0f) +
                 (ClampTextureV ? 4f : 0f) +
@@ -190,7 +206,10 @@ internal sealed class CachedSubmesh12
                 (ClassicEnvMap is not null && ClassicEnvMapScale > 0f ? 64f : 0f) +
                 (ClassicEnvMask is not null ? 128f : 0f) +
                 (ClassicParallaxHeightMap is not null ? 256f : 0f) +
-                (ClassicEnvMapUsesWindowReflection ? 512f : 0f),
+                (ClassicEnvMapUsesWindowReflection ? 512f : 0f) +
+                (ClassicEnvMap is not null && ClassicEnvMapScale > 0f && ClassicEnvMapIsSphereMap
+                    ? 16384f
+                    : 0f),
                 GradientMap is not null ? GradientMapV : -1f); // .w >= 0 = palette row for TexIndices.w
             if (TexturesReady)
             {
@@ -227,6 +246,14 @@ internal sealed class CachedSubmesh12
     ///     so this property stays part of the submesh batch key without splitting instances.
     /// </summary>
     public PhysicsLiteSwayDescriptor? PhysicsLiteSway { get; init; }
+
+    /// <summary>
+    ///     Rigid node-animated playback track (controller-driven parent node, no skin). One delta
+    ///     matrix per frame for ALL instances (global animation clock, engine parity), applied
+    ///     while matrices enter the frame ring — like <see cref="PhysicsLiteSway" /> but without a
+    ///     per-reference phase seed.
+    /// </summary>
+    public NifRigidNodeAnimation? RigidNodeAnimation { get; init; }
     public required bool DoubleSided { get; init; }
     public required bool IsEmissive { get; init; }
 

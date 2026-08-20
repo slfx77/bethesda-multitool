@@ -49,4 +49,31 @@ public sealed class OblivionWaterSurfaceSynthesizerTests
             Assert.Equal(255, frame[i + 3]);
         }
     }
+
+    [Fact]
+    public void WaveField_IsFlatSpectrumWithNoRepeatingGlyph()
+    {
+        // 2026-08-08 adversarial-review requirement: the old FIVE low-integer waves (dominant
+        // wavelength ≈ tile/2.2) WERE the reported checkerboard. The rebuilt field must keep every
+        // wave at ≥ 8 cycles per tile (largest feature ≤ tile/8, too small to read as a repeating
+        // glyph) and ≤ 32 cycles (≥ 4 texels/cycle at the 128² ini size — clear of Nyquist), stay
+        // tileable/loopable (integer lattice + integer temporal cycles are enforced by the tuple
+        // types), and keep the summed peak slope inside the gentle-ripple envelope.
+        Assert.True(OblivionWaterSurfaceSynthesizer.Waves.Length >= 12,
+            "too few waves for a broadband (non-glyph) spectrum");
+        var amplitudeSum = 0f;
+        foreach (var (kx, ky, cycles, amplitude, phase) in OblivionWaterSurfaceSynthesizer.Waves)
+        {
+            var k = MathF.Sqrt((kx * kx) + (ky * ky));
+            Assert.True(k >= 8f, $"wave ({kx},{ky}) below 8 cycles/tile — reintroduces the plaid");
+            Assert.True(k <= 32f, $"wave ({kx},{ky}) above 32 cycles/tile — under 4 texels/cycle");
+            Assert.InRange(cycles, 1, 8);
+            Assert.True(amplitude > 0f);
+            Assert.InRange(phase, 0f, 1f);
+            amplitudeSum += amplitude;
+        }
+
+        // Peak slope = ΣA · BaseTilt(0.35); keep it in the same gentle envelope the Z-test pins.
+        Assert.True(amplitudeSum <= 1.3f, $"summed amplitude {amplitudeSum} exceeds the ripple envelope");
+    }
 }

@@ -128,6 +128,15 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
         }
     }
 
+    /// <summary>
+    ///     Current-hour scripted day/night states, shared with the main scene so cages track the
+    ///     same visibility. The version poll in <see cref="Render" /> invalidates cached geometry
+    ///     when a scripted network flips at its scheduled hour.
+    /// </summary>
+    public Scene.DayNightRefStateStore? DayNightStates { get; set; }
+
+    private int _lastDayNightVersion;
+
     public CollisionDebugRenderer12(
         GpuDevice12 gpu,
         GpuCommandRecorder12 recorder,
@@ -256,6 +265,13 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
         if (!showReferences || _disposed || SpatialIndex is null || _collisionResolver is null) return 0;
         if (viewportWidth < 1f || viewportHeight < 1f) return 0;
 
+        var dayNightVersion = DayNightStates?.Version ?? 0;
+        if (dayNightVersion != _lastDayNightVersion)
+        {
+            _lastDayNightVersion = dayNightVersion;
+            _geometryCache.Invalidate();
+        }
+
         _candidateScratch.Clear();
         SpatialIndex.QueryCellsInRadius(cylinder.Position.X, -cylinder.Position.Y, cylinder.Radius, _visibleCellScratch);
 
@@ -271,6 +287,8 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
                 var candidateSourceOrder = sourceOrder++;
                 if (string.IsNullOrEmpty(p.ModelPath)) continue;
                 var authoredDisabled = p.IsInitiallyDisabled || _xespDisabledRefs?.Contains(p.FormId) == true;
+                authoredDisabled = DayNightStates?.EffectiveDisabled(p.FormId, authoredDisabled)
+                    ?? authoredDisabled;
                 if (!_enabledOverrides.IsVisible(p.FormId, authoredDisabled, _showDisabled)) continue;
                 if (p.RecordType is "ACHR" or "ACRE") continue; // skinned actors carry no static collision
                 if (RenderableReference.IsMarkerModelPath(p.ModelPath) ||

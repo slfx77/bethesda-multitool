@@ -161,6 +161,8 @@ internal sealed class ReferenceMeshDecoder12
             Dictionary<int, Skinning.NifSubmeshSkin>? skinsByShapeIndex = null;
             IReadOnlyDictionary<int, PhysicsLiteSwayDescriptor> physicsLiteRoutes =
                 new Dictionary<int, PhysicsLiteSwayDescriptor>();
+            // Baked delta tracks for RIGID node-animated statics (no skin): shape block → track.
+            IReadOnlyDictionary<int, NifRigidNodeAnimation>? rigidTracksByShapeBlock = null;
 
             NifRenderableModel? model;
             NifInfo? nif = null;
@@ -365,6 +367,30 @@ internal sealed class ReferenceMeshDecoder12
                         }
                     }
                 }
+                else if (!animationSignature.HasInternalSkin &&
+                         (animationSignature.HasNodeKeyframeTracks ||
+                          animationSignature.HasControllerSequenceTracks) &&
+                         physicsLiteRoutes.Count == 0)
+                {
+                    // RIGID node animation: controller-driven nodes with UNSKINNED geometry (the
+                    // Goodsprings saloon sign's chains/board, mill wheels). The same collectors
+                    // supply the rig; instead of skins, each shape in an animated node's subtree
+                    // gets a baked model-space delta track applied at draw time like physics-lite
+                    // sway. The rig stays local — DecodedNifMesh12.Animation remains the CPU
+                    // skinner's contract and must not carry skinless rigs.
+                    var rigidRig = animationSignature.HasNodeKeyframeTracks
+                        ? NifNodeKeyframeTrackCollector.Collect(nifData, nif)
+                        : null;
+                    if (rigidRig is null && animationSignature.HasControllerSequenceTracks)
+                    {
+                        rigidRig = NifControllerSequenceTrackCollector.Collect(nifData, nif);
+                    }
+
+                    if (rigidRig is not null)
+                    {
+                        rigidTracksByShapeBlock = NifRigidNodeAnimationBaker.Bake(nifData, nif, rigidRig);
+                    }
+                }
             }
 
             if (model is null)
@@ -506,6 +532,12 @@ internal sealed class ReferenceMeshDecoder12
                                       physicsLiteRoutes.TryGetValue(sub.SourceBlockIndex, out var sway)
                         ? sway
                         : null,
+                    RigidNodeAnimation: !sub.IsBillboard && !sub.IsParticleCloud &&
+                                        rigidTracksByShapeBlock is not null &&
+                                        rigidTracksByShapeBlock.TryGetValue(
+                                            sub.SourceBlockIndex, out var rigidTrack)
+                        ? rigidTrack
+                        : null,
                     ParticleRuntime: ParticleLiveSettings.Enabled ? sub.ParticleRuntime : null,
                     SpeedTreeLod: sub.SpeedTreeLod,
                     IsLighting30: sub.IsLighting30,
@@ -520,6 +552,7 @@ internal sealed class ReferenceMeshDecoder12
                     ClassicEnvironmentMapScale: sub.ClassicEnvironmentMapScale,
                     ClassicEnvironmentMapUsesWindowReflection:
                         sub.ClassicEnvironmentMapUsesWindowReflection,
+                    ClassicEnvironmentMapIsSphereMap: sub.ClassicEnvironmentMapIsSphereMap,
                     ClassicParallaxHeightMapTexturePath:
                         sub.ClassicParallaxHeightMapTexturePath,
                     ClassicBasicShaderMode: nif is not null
@@ -642,7 +675,9 @@ internal sealed class ReferenceMeshDecoder12
                 sub.BillboardMode,
                 sub.EngineZWriteOff,
                 sub.DepthTestOff,
-                sub.MaterialDiffuse));
+                sub.MaterialDiffuse,
+                RigidNodeAnimation: sub.RigidNodeAnimation,
+                ClassicEnvironmentMapIsSphereMap: sub.ClassicEnvironmentMapIsSphereMap));
         }
 
         return new ReferenceDecodedMeshPayload12(
@@ -709,6 +744,7 @@ internal sealed class ReferenceMeshDecoder12
                 ClassicEnvironmentMapScale: sub.ClassicEnvironmentMapScale,
                 ClassicEnvironmentMapUsesWindowReflection:
                     sub.ClassicEnvironmentMapUsesWindowReflection,
+                ClassicEnvironmentMapIsSphereMap: sub.ClassicEnvironmentMapIsSphereMap,
                 ClassicParallaxHeightMapTexturePath:
                     sub.ClassicParallaxHeightMapTexturePath,
                 ClassicBasicShaderMode:
@@ -719,7 +755,8 @@ internal sealed class ReferenceMeshDecoder12
                     sub.BillboardMode,
                 EngineZWriteOff: sub.EngineZWriteOff,
                 DepthTestOff: sub.DepthTestOff,
-                MaterialDiffuse: sub.MaterialDiffuse));
+                MaterialDiffuse: sub.MaterialDiffuse,
+                RigidNodeAnimation: sub.RigidNodeAnimation));
         }
 
         return new DecodedNifMesh12(

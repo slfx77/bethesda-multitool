@@ -146,6 +146,9 @@ struct PSInput
 
 float4 main(PSInput input) : SV_Target
 {
+    // Mirror-pass clip plane (b3 uClipPlane, origin-relative space; neutral (0,0,0,1) = no-op).
+    clip(dot(input.vWorldPos, uClipPlane.xyz) + uClipPlane.w);
+
     float3 normal = normalize(input.vWorldNormal);
     float3 color;
     if (uDebugMode_UvScale_Pad.x > 0.5)

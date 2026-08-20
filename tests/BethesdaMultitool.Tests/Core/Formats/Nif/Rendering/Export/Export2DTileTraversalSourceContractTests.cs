@@ -10,29 +10,31 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Export;
 public sealed class Export2DTileTraversalSourceContractTests
 {
     [Fact]
-    public void ClickPathValidatesBoundsAndTheSharedPlanBeforeOpeningTheSavePicker()
+    public void RunPathValidatesBoundsAndTheSharedPlanBeforeComposingTheOutputPath()
     {
-        var source = SourceContract.ReadAppSource("WorldMapControl.Export.cs");
+        var source = SourceContract.ReadAppSource("WorldMapControl.ExportPanel.cs");
         var click = SourceContract.Extract(
             source,
-            "private async void ExportButton_Click",
-            "private async Task RunExportAsync(");
+            "private async void ExportRun_Click",
+            "private MapExportRequest BuildExportRequest()");
 
         SourceContract.AssertOrder(
             click,
             "WorldMapExportPlan.TryCreateGridBounds(",
-            "new MapExportDialog(",
+            "var req = BuildExportRequest();",
             "WorldMapExportPlan.TryCreate(",
-            "new FileSavePicker",
+            "Path.Combine(folder, name + \".png\")",
             "RunExportAsync(",
             "plan,");
         Assert.DoesNotContain("maxGx - minGx + 1", click, StringComparison.Ordinal);
         Assert.DoesNotContain("maxGy - minGy + 1", click, StringComparison.Ordinal);
         Assert.Contains("Map export rejected invalid grid bounds", click, StringComparison.Ordinal);
         Assert.Contains("Map export rejected an unrepresentable plan", click, StringComparison.Ordinal);
-        Assert.Contains("new FileSavePicker(Win32Interop.GetWindowIdFromWindow(hwnd))", click, StringComparison.Ordinal);
-        Assert.Contains("Microsoft.Windows.Storage.Pickers", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("InitializeWithWindow.Initialize(picker", click, StringComparison.Ordinal);
+        // The save picker is gone with the modal: it returned a newly-created EMPTY StorageFile, which
+        // truncated a same-name target before AtomicFileWriter could protect it.
+        Assert.DoesNotContain("FileSavePicker", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Microsoft.Windows.Storage.Pickers", source, StringComparison.Ordinal);
+        Assert.Contains("new FolderPicker", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -170,7 +172,7 @@ public sealed class Export2DTileTraversalSourceContractTests
     {
         var run = SourceContract.ReadAppSource("WorldMapControl.Export.cs");
         var exporter = SourceContract.ReadAppSource("WorldMapExporter.cs");
-        var dialog = SourceContract.ReadAppSource("MapExportDialog.xaml.cs");
+        var panel = SourceContract.ReadAppSource("WorldMapControl.ExportPanel.cs");
 
         Assert.DoesNotContain("(tgx1 + 1)", run, StringComparison.Ordinal);
         Assert.DoesNotContain("(tgy1 + 1)", run, StringComparison.Ordinal);
@@ -182,10 +184,56 @@ public sealed class Export2DTileTraversalSourceContractTests
         Assert.DoesNotContain("maxGridY + 1", gridHelper, StringComparison.Ordinal);
         Assert.Contains("cellOffsetX <= cellsWide", gridHelper, StringComparison.Ordinal);
         Assert.Contains("cellOffsetY <= cellsTall", gridHelper, StringComparison.Ordinal);
-        Assert.Contains("(long)pxPerCell * maxCells", dialog, StringComparison.Ordinal);
-        Assert.Contains("(long)_cellsWide * effectivePpc", dialog, StringComparison.Ordinal);
-        Assert.Contains("(long)_cellsTall * effectivePpc", dialog, StringComparison.Ordinal);
-        Assert.Contains("((long)_cellsWide + perTile - 1) / perTile", dialog, StringComparison.Ordinal);
-        Assert.Contains("((long)_cellsTall + perTile - 1) / perTile", dialog, StringComparison.Ordinal);
+        // The panel's output-size readout does the same arithmetic the old dialog did — every product
+        // of a cell span and a px/cell scale stays in long.
+        Assert.Contains("(long)pxPerCell * maxCells", panel, StringComparison.Ordinal);
+        Assert.Contains("(long)cellsWide * effectivePpc", panel, StringComparison.Ordinal);
+        Assert.Contains("(long)cellsTall * effectivePpc", panel, StringComparison.Ordinal);
+        Assert.Contains("((long)cellsWide + perTile - 1) / perTile", panel, StringComparison.Ordinal);
+        Assert.Contains("((long)cellsTall + perTile - 1) / perTile", panel, StringComparison.Ordinal);
+        Assert.Contains("(long)requestedPpc * maxCells", panel, StringComparison.Ordinal);
+        Assert.Contains("(long)effectivePpc * maxCells", panel, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     Pins the 2D-export overhaul: the options moved from the modal <c>MapExportDialog</c> (+ the
+    ///     toolbar icon button) into the shared right-panel "Export" tab, whose controls live in
+    ///     <c>WorldMapExportPanel</c> and are owned + wired by the viewer — the 2D half of the same
+    ///     migration <see cref="Export3DTabMigrationSourceContractTests" /> pins for 3D.
+    /// </summary>
+    [Fact]
+    public void OptionsLiveInTheSharedExportTabInsteadOfAModalDialog()
+    {
+        // The dialog and its toolbar entry point are gone.
+        Assert.False(
+            Directory.EnumerateFiles(SourceContract.AppRoot, "MapExportDialog.*", SearchOption.AllDirectories)
+                .Any(),
+            "MapExportDialog was replaced by WorldMapExportPanel and must not come back.");
+        var viewXaml = SourceContract.ReadAppSource("WorldMapControl.xaml");
+        Assert.DoesNotContain("x:Name=\"ExportButton\"", viewXaml, StringComparison.Ordinal);
+
+        // The viewer constructs + wires the panel exactly like it does the settings panel.
+        var ctor = SourceContract.ReadAppSource("WorldMapControl.xaml.cs");
+        SourceContract.AssertOrder(
+            ctor,
+            "ExportPanel = new WorldMapExportPanel();",
+            "WireSettingsPanel();",
+            "WireExportPanel();");
+
+        // The host swaps the ACTIVE viewer's panel into the one Export tab; the tab is no longer 3D-only.
+        var switching = SourceContract.ReadAppSource("SingleFileTab.WorldMap.cs");
+        SourceContract.AssertOrder(
+            switching,
+            "WorldExportPresenter.Content = show3D",
+            "(UIElement)WorldView3DControl.ExportPanel",
+            "WorldMapControl.ExportPanel;");
+        Assert.DoesNotContain(
+            "WorldPanelExportItem.Visibility = show3D", switching, StringComparison.Ordinal);
+
+        // A persistent tab can't capture the worldspace's cell rectangle once, the way the modal did.
+        var panel = SourceContract.ReadAppSource("WorldMapControl.ExportPanel.cs");
+        Assert.Contains("internal void RefreshExportBounds()", panel, StringComparison.Ordinal);
+        var switchWorldspace = SourceContract.ReadAppSource("WorldMapControl.ViewControls.cs");
+        Assert.Contains("RefreshExportBounds();", switchWorldspace, StringComparison.Ordinal);
     }
 }

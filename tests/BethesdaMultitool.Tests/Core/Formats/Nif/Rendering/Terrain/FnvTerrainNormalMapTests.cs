@@ -546,7 +546,13 @@ public sealed class FnvTerrainNormalMapRetailTests(
     SampleFileFixture samples,
     ITestOutputHelper output)
 {
-    private const int ExpectedLandCellCount = 5_523;
+    // 5,523 → 6,022 (2026-08-17): the parser's cell passes used to REPLACE cells[i] with `with`-
+    // clones (terrain attach, enrichment, dedup) while other views/maps kept the pre-clone
+    // instances, silently dropping ~499 cells' attached LandVisualData from the surviving graph.
+    // Those passes now mutate in place, so every LAND-bearing tile keeps its authored layers —
+    // the LTEX/normal-path pins below are unchanged, and the missing-list assert stays empty,
+    // i.e. the extra cells resolve through the same authored LTEX set.
+    private const int ExpectedLandCellCount = 6_022;
     private const int ExpectedLandUsedLtexCount = 81;
     private const int ExpectedDistinctNormalPathCount = 57;
 

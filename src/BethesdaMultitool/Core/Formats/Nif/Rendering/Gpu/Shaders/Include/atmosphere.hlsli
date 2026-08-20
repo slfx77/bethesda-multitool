@@ -52,6 +52,10 @@ cbuffer Atmosphere : register(b3)
     // in, so grass needs both lanes below rather than either alone.
     float4 uGrassSunColorScale; // rgb = sun colour WITHOUT SunlightDimmer, w = IMGS GrassDimmer
                                 // (w == 0 marks the lane unset; consumers then fall back)
+    // Appended: half-space clip plane in origin-relative vWorldPos space (mirror passes trim
+    // below-plane geometry). Neutral default (0,0,0,1) ⇒ clip(+1) never fires — branchless no-op
+    // for the main pass. Consumers: terrain + reference PS entry.
+    float4 uClipPlane;
 };
 
 #endif // ATMOSPHERE_HLSLI

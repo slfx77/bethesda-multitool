@@ -1190,6 +1190,35 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             meshLocalRadiusSq = MathF.Max(meshLocalRadiusSq, swayRadius * swayRadius);
         }
 
+        // A rigid node-animated submesh moves through baked model-space deltas. Bound the whole
+        // clip conservatively: |delta·v| <= maxScale·|v| + |maxTranslation| for a sphere around
+        // the NIF origin, using the largest per-sample scale/translation the track visits.
+        foreach (var sub in decoded.Submeshes)
+        {
+            if (sub.RigidNodeAnimation is not { } rigidTrack || rigidTrack.SampleCount == 0)
+            {
+                continue;
+            }
+
+            var restReach = 0f;
+            foreach (var vertex in sub.Vertices)
+            {
+                restReach = MathF.Max(restReach, vertex.Position.Length());
+            }
+
+            var maxScale = 1f;
+            var maxTranslation = 0f;
+            for (var s = 0; s < rigidTrack.SampleCount; s++)
+            {
+                var scale = rigidTrack.Scales[s];
+                maxScale = MathF.Max(maxScale, MathF.Max(scale.X, MathF.Max(scale.Y, scale.Z)));
+                maxTranslation = MathF.Max(maxTranslation, rigidTrack.Translations[s].Length());
+            }
+
+            var animatedReach = (restReach * maxScale) + maxTranslation;
+            meshLocalRadiusSq = MathF.Max(meshLocalRadiusSq, animatedReach * animatedReach);
+        }
+
         // Degenerate (no vertices) → collapse the AABB to the origin so consumers see min == max and
         // fall back to the sphere rather than an inverted box.
         if (aabbMin.X > aabbMax.X)
@@ -1401,6 +1430,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     ClassicEnvMapScale = sub.ClassicEnvironmentMapScale,
                     ClassicEnvMapUsesWindowReflection =
                         sub.ClassicEnvironmentMapUsesWindowReflection,
+                    // Sphere maps ride the ordinary 2D upload above (GetOrUpload never
+                    // cube-promotes a 2D DDS); the flag routes EnvMapState + the shader.
+                    ClassicEnvMapIsSphereMap = sub.ClassicEnvironmentMapIsSphereMap,
                     AlphaState = BuildAlphaState(sub),
                     RenderState = BuildRenderState(sub),
                     Specular = BuildSpecular(sub),
@@ -1415,6 +1447,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     MaterialAlpha = sub.MaterialAlpha,
                     MaterialAlphaController = sub.MaterialAlphaController,
                     PhysicsLiteSway = sub.PhysicsLiteSway,
+                    RigidNodeAnimation = sub.RigidNodeAnimation,
                     DoubleSided = sub.DoubleSided,
                     IsEmissive = sub.IsEmissive,
                     IsTallGrass = sub.IsTallGrass,

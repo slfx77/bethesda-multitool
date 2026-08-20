@@ -93,6 +93,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.Equal("textures\\foo_m.dds", loaded.ClassicEnvironmentMaskTexturePath);
         Assert.Equal(1.25f, loaded.ClassicEnvironmentMapScale);
         Assert.True(loaded.ClassicEnvironmentMapUsesWindowReflection);
+        Assert.True(loaded.ClassicEnvironmentMapIsSphereMap);
         Assert.Null(loaded.ClassicParallaxHeightMapTexturePath);
         Assert.Equal(FnvClassicBasicShaderMode.Sls1013VertexColor, loaded.ClassicBasicShaderMode);
         Assert.Equal(41, loaded.SourceBlockIndex);
@@ -106,10 +107,12 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         // v77: Starfield BSGeometry shapes with an EMPTY shader material name are dropped at
         // extraction (untexturable proxy/LOD shapes that rendered bright white); warm v76 entries
         // still contain those submeshes.
+        // v78: rigid node-animated statics carry a baked delta-sample playback track.
+        // v79: NiTextureEffect sphere-map marker appended after the rigid-anim track.
         Assert.True(loaded.EngineZWriteOff);
         Assert.True(loaded.DepthTestOff);
         Assert.Equal(HavokCollisionProvenance.AbsentOrUnsupported, mesh.CollisionProvenance);
-        Assert.Equal(77, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+        Assert.Equal(79, ReferenceDecodedMeshDiskCache12.DecoderVersion);
     }
 
     [Fact]
@@ -322,6 +325,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
     [Theory]
     [InlineData(73)] // v74 TES3 placed-water classification invalidated this predecessor.
     [InlineData(74)] // v75 FO4 refraction-shape retention invalidated this predecessor.
+    [InlineData(78)] // v79 NiTextureEffect sphere-map marker invalidated this predecessor.
     public void TryLoad_PredecessorEntryReturnsMissAndDeletesFile(int staleDecoderVersion)
     {
         using var tempDir = new TempDirectory();
@@ -523,6 +527,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
                 ClassicEnvironmentMaskTexturePath: "textures\\foo_m.dds",
                 ClassicEnvironmentMapScale: 1.25f,
                 ClassicEnvironmentMapUsesWindowReflection: true,
+                ClassicEnvironmentMapIsSphereMap: true,
                 ClassicBasicShaderMode: FnvClassicBasicShaderMode.Sls1013VertexColor,
                 SourceBlockIndex: 41,
                 BillboardMode: NifBillboardMode.AlwaysFaceCenter,

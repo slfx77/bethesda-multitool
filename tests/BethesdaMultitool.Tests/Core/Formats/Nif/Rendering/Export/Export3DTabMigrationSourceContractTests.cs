@@ -21,13 +21,15 @@ public sealed class Export3DTabMigrationSourceContractTests
         Assert.Contains("x:Name=\"WorldExportPresenter\"", xaml, StringComparison.Ordinal);
 
         var switching = SourceContract.ReadAppSource("SingleFileTab.WorldMap.cs");
-        // The 3-way visibility switch + framing gate + 3D-only seeding.
+        // The 3-way visibility switch + the framing gate. The tab itself is shared with the 2D map's
+        // export panel now (see Export2DTileTraversalSourceContractTests), so the framing overlay — a
+        // 3D-scene wireframe — is gated on the 3D viewer being active as well as the tab being up.
         Assert.Contains("var export = sender.SelectedItem == WorldPanelExportItem;", switching,
             StringComparison.Ordinal);
         Assert.Contains("WorldExportHost.Visibility = export ?", switching, StringComparison.Ordinal);
-        Assert.Contains("WorldView3DControl.SetExportFramingActive(export);", switching, StringComparison.Ordinal);
-        Assert.Contains("WorldExportPresenter.Content = show3D ? WorldView3DControl.ExportPanel : null;",
-            switching, StringComparison.Ordinal);
+        Assert.Contains("WorldView3DControl.SetExportFramingActive(export && show3D);", switching,
+            StringComparison.Ordinal);
+        Assert.Contains("(UIElement)WorldView3DControl.ExportPanel", switching, StringComparison.Ordinal);
     }
 
     [Fact]

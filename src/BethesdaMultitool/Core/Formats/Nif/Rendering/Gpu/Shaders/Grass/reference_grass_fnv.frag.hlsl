@@ -119,7 +119,11 @@ float4 main(PSInput input) : SV_Target
 
     // GRASS2002.pso: the cascade term multiplies the SUN contribution only. Ambient is never
     // shadowed, so grass in shadow settles to L * AmbientColor instead of going black.
-    float sunShadow = uSunColorLighting.w >= 0.5 ? ShadowFactor(input.vWorldPos) : 1.0;
+    // Bit 12 of the packed texture state (RuntimeFnvGrassNoSunShadowFlag) is the video-settings
+    // "Shadows on grass" OFF gate — the renderer ORs it per draw; retail ini bShadowsOnGrass.
+    bool grassShadowsOff = (MaterialTextureFlags(input.vTextureState.z) & 4096u) != 0u;
+    float sunShadow = uSunColorLighting.w >= 0.5 && !grassShadowsOff
+        ? ShadowFactor(input.vWorldPos) : 1.0;
     float3 lit = input.vGrassSun * sunShadow + input.vGrassAmbient;
 
     // NO per-sample ceiling here. GRASS2002.pso composes lit without a saturate, and the terrain

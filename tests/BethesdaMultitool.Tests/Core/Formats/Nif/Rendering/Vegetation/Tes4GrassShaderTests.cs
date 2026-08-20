@@ -90,9 +90,11 @@ public sealed class Tes4GrassShaderTests
     {
         // GRASS2002's `add r1.xyz, r1, a4`. This is the divergence no uniform can express: the
         // shared path computes sample.rgb * shade * vertexRgb, retail computes tex * (diffuse +
-        // ambient). Multiplying here would silently restore the original defect.
+        // ambient). Multiplying here would silently restore the original defect. The sun-shadow
+        // factor multiplies the DIFFUSE term ONLY (retail's canopy-shadow rule — ambient is never
+        // attenuated), so the additive structure is unchanged.
         Assert.Contains(
-            "sample.rgb * (input.vGrassDiffuse + input.vGrassAmbient)",
+            "sample.rgb * (input.vGrassDiffuse * sunShadow + input.vGrassAmbient)",
             PixelShader(),
             StringComparison.Ordinal);
     }

@@ -179,9 +179,15 @@ public sealed class FnvClassicBasicRenderTelemetryTests
             "ReferenceRenderer12.cs");
         var compact = string.Concat(renderer.Where(static character => !char.IsWhiteSpace(character)));
 
+        // The heatmap tint rides a LOCAL copy of draw.World between these two statements, so the
+        // pins are split: texture state still resolves at submission, and the per-draw constants
+        // still consume that submission-resolved state (never a stored one).
         Assert.Contains(
-            "vartextureState=ResolveTextureState(draw.Submesh);" +
-            "varperDraw=newPerDrawConstants{World=draw.World,AlphaState=alphaState," +
+            "vartextureState=ResolveTextureState(draw.Submesh);",
+            compact,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "varperDraw=newPerDrawConstants{World=heatmapWorld,AlphaState=alphaState," +
             "RenderState=draw.RenderState,TextureState=textureState,",
             compact,
             StringComparison.Ordinal);

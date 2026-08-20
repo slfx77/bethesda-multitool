@@ -15,9 +15,11 @@ public sealed class SunShadowTelemetrySourceContractTests
         var source = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "ReferenceRenderer12.cs");
+        // Window ends at the water-reflection mirror replay that now follows the shadow replay
+        // (RenderMirrorColor legitimately ends in `return true;` — it is not a shadow path).
         var method = SourceContract.Extract(
             source, "public bool RenderShadowDepth(in SunShadowMath.LightFrustum frustum",
-            "public void Dispose()");
+            "public bool RenderMirrorColor(");
 
         SourceContract.AssertOrder(method,
             "LastShadowSubmittedDrawCount = 0;",

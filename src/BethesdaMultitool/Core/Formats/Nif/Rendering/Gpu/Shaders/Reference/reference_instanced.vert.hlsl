@@ -200,11 +200,22 @@ struct VSOutput
     nointerpolation float4 vSoftParticle  : TEXCOORD14;
     nointerpolation float vSpecularLodFade : TEXCOORD15;
     float3 vFnvActiveAdtBaseLight : TEXCOORD16;
+    // FormID-heatmap debug overlay: rgb = ramp tint, w = 1 when active (0 = ordinary shading).
+    nointerpolation float4 vHeatmap : TEXCOORD17;
 };
 
 VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
 {
     float4x4 world = uInstanceWorlds[uInstanceBase + instanceId];
+    // FormID-heatmap payload (debug overlay): the CPU copy pass writes ramp rgb + a 2.0 flag into
+    // the matrix's w-lanes (world[3]) for in-range instances. Ordinary affine matrices carry
+    // exactly 1.0 in world[3].w and the FNV grass lighting payload caps its w-lane at 0.99, so
+    // > 1.5 uniquely marks the heatmap. Read before any transform; both position branches below
+    // already force worldPos.w back to 1.0, so the payload never reaches clip space.
+    float4 heatmapPayload = world[3];
+    float4 heatmap = heatmapPayload.w > 1.5
+        ? float4(heatmapPayload.xyz, 1.0)
+        : float4(0.0, 0.0, 0.0, 0.0);
 #ifdef SHADOW_CARD_LIGHT_FACING
     // Shadow replay shares this VS/ABI but never evaluates a camera-distance shading term.
     float specularLodFade = 1.0;
@@ -404,5 +415,6 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
     o.vEnvMap = uEnvMap;
     o.vSoftParticle = uSoftParticle;
     o.vSpecularLodFade = specularLodFade;
+    o.vHeatmap = heatmap;
     return o;
 }

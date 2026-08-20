@@ -21,17 +21,39 @@ internal static class OblivionWaterSurfaceSynthesizer
     public const int FrameCount = 32;  // ini uSurfaceFrameCount
     public const int TextureSize = 128; // ini uSurfaceTextureSize
 
-    // (cyclesX, cyclesY, temporalCycles, relativeAmplitude): integer spatial cycle counts per
-    // texture tile keep every frame seamlessly tileable; integer temporal cycle counts keep the
-    // 32-frame loop seamless. A small diverse set reads as choppy low-frequency water rather than
-    // a single rolling sine.
-    private static readonly (int Kx, int Ky, int Cycles, float Amplitude)[] Waves =
+    // Flat-spectrum multi-octave wave table (rebuilt 2026-08-17 per the adversarial-review
+    // verdict: the previous FIVE low-integer waves WERE the reported checkerboard — the dominant
+    // wavelength was ≈ tile/2.2, so the surface was literally a lattice of identical glyphs,
+    // amplified by pow(·, SunPower) over a near-black body). Sixteen waves across four octave
+    // bands with the LOWEST at ≥ 8 cycles/tile (largest feature ≈ tile/8 ≈ 171 world units at the
+    // WATER007 4096/3-unit surface tile) — no single wave is large enough to read as a repeating
+    // glyph, and the bands overlap into broadband chop. Directions are azimuthally spread; per-wave
+    // phase offsets decorrelate waves sharing a temporal rate. Integer spatial cycle counts keep
+    // every frame seamlessly tileable and integer temporal cycle counts keep the 32-frame loop
+    // exact (both invariants unchanged); temporal rates grow ≈ √k for a deep-water dispersion
+    // flavor. The highest band tops out at 32 cycles = 4 texels/cycle at 128², clear of Nyquist.
+    internal static readonly (int Kx, int Ky, int Cycles, float Amplitude, float Phase)[] Waves =
     [
-        (1, 2, 1, 1.00f),
-        (3, -1, 2, 0.55f),
-        (-2, 3, 1, 0.40f),
-        (5, 4, 3, 0.22f),
-        (-4, -6, 2, 0.16f),
+        // ~8-10 cycles/tile
+        (8, 1, 2, 0.13f, 0.00f),
+        (5, -7, 2, 0.11f, 0.29f),
+        (-3, 9, 2, 0.12f, 0.61f),
+        (-9, -4, 2, 0.10f, 0.83f),
+        // ~13-15 cycles/tile
+        (12, 5, 3, 0.09f, 0.13f),
+        (-14, 3, 3, 0.08f, 0.47f),
+        (7, -13, 3, 0.08f, 0.71f),
+        (-10, -11, 3, 0.07f, 0.91f),
+        // ~20-24 cycles/tile
+        (19, 8, 4, 0.06f, 0.07f),
+        (-6, 21, 4, 0.06f, 0.37f),
+        (-17, -14, 4, 0.05f, 0.59f),
+        (23, -5, 4, 0.05f, 0.79f),
+        // ~27-32 cycles/tile
+        (26, 9, 5, 0.04f, 0.23f),
+        (-11, 28, 5, 0.04f, 0.43f),
+        (-24, -19, 5, 0.035f, 0.67f),
+        (30, -8, 5, 0.035f, 0.97f),
     ];
 
     /// <summary>Peak normal XY tilt at the default strength (≈ gentle-ripple slope).</summary>
@@ -69,9 +91,9 @@ internal static class OblivionWaterSurfaceSynthesizer
                 // are as periodic as the height field itself (no finite-difference edge seams).
                 var dhdx = 0f;
                 var dhdy = 0f;
-                foreach (var (kx, ky, cycles, amplitude) in Waves)
+                foreach (var (kx, ky, cycles, amplitude, phaseOffset) in Waves)
                 {
-                    var phase = MathF.Tau * ((kx * u) + (ky * v) + (cycles * t));
+                    var phase = MathF.Tau * ((kx * u) + (ky * v) + (cycles * t) + phaseOffset);
                     var slope = amplitude * MathF.Cos(phase);
                     // Normalize by the wave-vector magnitude so every component contributes the
                     // same peak SLOPE regardless of its spatial frequency.

@@ -10,7 +10,10 @@ internal static class PlacedLightSelector
     ///     Appends at most <paramref name="maxPerCell" /> enabled emitters, nearest to the camera.
     ///     Per-reference On/Off previews override the emitter's authored disabled state and the global
     ///     show-disabled diagnostic; the caller remains responsible for scene-wide lighting gates.
-    ///     Returns the number of eligible lights clipped by the cap.
+    ///     For emitters a day/night script drives, the current-hour state replaces the authored
+    ///     REFR/XESP initial state — but a base LIGH authored Off By Default stays dark even inside
+    ///     the scripted on-window, matching the engine (the script enables the REFERENCE; the light
+    ///     object itself still loads unlit). Returns the number of eligible lights clipped by the cap.
     /// </summary>
     internal static int AppendNearest(
         IReadOnlyList<PlacedLight> source,
@@ -19,16 +22,23 @@ internal static class PlacedLightSelector
         ReferenceEnabledOverrideStore enabledOverrides,
         bool includeInitiallyDisabled,
         List<PlacedLight> destination,
-        List<PlacedLight> scratch)
+        List<PlacedLight> scratch,
+        DayNightRefStateStore? dayNightStates = null)
     {
         if (maxPerCell <= 0 || source.Count == 0) return 0;
 
         scratch.Clear();
         foreach (var light in source)
         {
+            var authoredDisabled = light.IsInitiallyDisabled;
+            if (dayNightStates?.TryGetDisabled(light.FormId, out var hourDisabled) == true)
+            {
+                authoredDisabled = hourDisabled || (light.Flags & PlacedLight.OffByDefaultFlag) != 0;
+            }
+
 #pragma warning disable S1244 // exact zero intensity means the light emits nothing; near-zero lights still render
             if (!enabledOverrides.IsVisible(
-                    light.FormId, light.IsInitiallyDisabled, includeInitiallyDisabled) ||
+                    light.FormId, authoredDisabled, includeInitiallyDisabled) ||
                 !light.HasEmission)
 #pragma warning restore S1244
             {

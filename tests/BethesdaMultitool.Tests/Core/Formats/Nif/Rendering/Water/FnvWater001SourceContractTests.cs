@@ -583,17 +583,22 @@ public sealed class FnvWater001SourceContractTests
             "_water!.Render(viewProj, cylinder, captureRenderOrigin)",
             capture, StringComparison.Ordinal);
 
-        // The planar sky reflection is rendered BY the capture, at the capture's own extent, and the
+        // The planar reflection is rendered BY the capture, at the capture's own extent, and the
         // result is reported so a run can never silently fall back to the gradient unnoticed.
+        // The sky-only body is skipped only when the Oblivion scene mirror will overwrite the
+        // target the same frame (captureSceneMirrorPlanned) — the same rule as the live frame.
         SourceContract.AssertOrder(
             capture,
             "RenderSky(viewProjSky, Vector3.Zero",
-            "_captureWaterReflectionBound = TryRenderCaptureWaterReflection(",
+            "_captureWaterReflectionBound = !captureSceneMirrorPlanned &&",
+            "TryRenderCaptureWaterReflection(cmd, viewProjSky, sceneSkyScale, target);",
             "_water?.SetWaterReflection(",
             "(uint)target.Width,");
         Assert.Contains(
-            "fields[\"waterReflection\"] = _captureWaterReflectionBound ? \"planar-rt\"",
+            "fields[\"waterReflection\"] = _captureWaterReflectionBound",
             capture, StringComparison.Ordinal);
+        Assert.Contains(
+            "\"planar-rt-scene\" : \"planar-rt-sky\"", capture, StringComparison.Ordinal);
         // Same mirror construction as the live route (translation-free dome ⇒ a plain Z flip).
         Assert.Contains(
             "RenderSky(Matrix4x4.CreateScale(1f, 1f, -1f) * viewProjSky, Vector3.Zero",

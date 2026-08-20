@@ -112,6 +112,7 @@ internal sealed class OpaqueBatchRegistry12
             batch.Instances.Clear();
             batch.InstanceBounds.Clear();
             batch.PhysicsLiteSeeds.Clear();
+            batch.HeatmapFormIds.Clear();
             batch.ShadowOnlyInstances.Clear();
             batch.ShadowOnlyPhysicsLiteSeeds.Clear();
             Array.Clear(batch.CascadePrefix);
@@ -264,6 +265,15 @@ internal sealed class OpaqueBatchState(
     ///     matrix-only CPU storage and bulk-copy behavior.
     /// </summary>
     public List<uint> PhysicsLiteSeeds { get; } = new(8);
+
+    /// <summary>
+    ///     Placed REFR FormIDs parallel to <see cref="Instances" /> only while the renderer's
+    ///     FormID-heatmap debug overlay is enabled (its enable setter forces a batch rebuild, so a
+    ///     frozen batch can never be half-filled). Grass instances record 0 — their matrices'
+    ///     w-lanes carry the FNV grass lighting payload and must never take the heatmap tint.
+    ///     Empty in the common heatmap-off state, preserving the compact matrix-only storage.
+    /// </summary>
+    public List<uint> HeatmapFormIds { get; } = new(8);
 
     /// <summary>Instances that passed this frame's exact cull in the shared-block copy pass
     /// (== Instances.Count when the refilter is inactive). Set by DrawOpaqueBatches.</summary>

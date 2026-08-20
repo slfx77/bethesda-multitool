@@ -13,7 +13,8 @@ internal readonly record struct ReferenceVisibilityKey(
     bool ShowInitiallyDisabled,
     bool ShowGrass,
     bool ShowMarkers,
-    bool ShowImposters)
+    bool ShowImposters,
+    int DayNightVersion)
 {
     /// <summary>Captures a deterministic key; category enumeration order does not affect it.</summary>
     internal static ReferenceVisibilityKey Capture(
@@ -22,7 +23,8 @@ internal readonly record struct ReferenceVisibilityKey(
         bool showInitiallyDisabled,
         bool showGrass,
         bool showMarkers,
-        bool showImposters)
+        bool showImposters,
+        DayNightRefStateStore? dayNightStates = null)
     {
         ArgumentNullException.ThrowIfNull(enabledOverrides);
         ArgumentNullException.ThrowIfNull(hiddenCategories);
@@ -33,23 +35,27 @@ internal readonly record struct ReferenceVisibilityKey(
             showInitiallyDisabled,
             showGrass,
             showMarkers,
-            showImposters);
+            showImposters,
+            dayNightStates?.Version ?? 0);
     }
 
     /// <summary>
     ///     Applies the same independent authored, grass, marker, imposter, and category gates as the
     ///     reference cull. An explicit <see cref="ReferenceEnabledOverride.On" /> wins only over the
-    ///     authored enabled state; it deliberately does not bypass the other gates.
+    ///     authored enabled state; it deliberately does not bypass the other gates. For references a
+    ///     day/night script toggles, the current-hour state replaces the authored initial state.
     /// </summary>
     internal bool IsVisible(
         in RenderableReference reference,
-        ReferenceEnabledOverrideStore enabledOverrides)
+        ReferenceEnabledOverrideStore enabledOverrides,
+        DayNightRefStateStore? dayNightStates = null)
     {
         ArgumentNullException.ThrowIfNull(enabledOverrides);
 
         return enabledOverrides.IsVisible(
                    reference.FormId,
-                   reference.IsInitiallyDisabled,
+                   dayNightStates?.EffectiveDisabled(reference.FormId, reference.IsInitiallyDisabled)
+                       ?? reference.IsInitiallyDisabled,
                    ShowInitiallyDisabled)
                && (ShowGrass || !reference.IsGrass)
                && (ShowMarkers || !reference.IsMarker)

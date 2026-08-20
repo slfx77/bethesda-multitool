@@ -125,6 +125,14 @@ internal sealed class RenderableSubmesh
     public bool ClassicEnvironmentMapUsesWindowReflection { get; set; }
 
     /// <summary>
+    ///     True when <see cref="ClassicEnvironmentMapTexturePath" /> is a TES3/TES4-era scene-graph
+    ///     <c>NiTextureEffect</c> ENVIRONMENT_MAP with CG_SPHERE_MAP: a 2D sphere map sampled from
+    ///     the view-space reflection vector through the ordinary 2D texture route — never the
+    ///     cubemap promotion path. See <see cref="Materials.NifTextureEffectEnvironmentPolicy" />.
+    /// </summary>
+    public bool ClassicEnvironmentMapIsSphereMap { get; set; }
+
+    /// <summary>
     ///     FO3/FNV simple PP-lighting height map (texture-set slot 3), or null. This is populated
     ///     only when bit 11 is set, bit 28 (POM) is clear, and the mesh has usable UV/TBN data.
     /// </summary>

@@ -23,6 +23,8 @@
 //     their shader/resource oracles are recovered.
 //   4 CinematicFo3Fnv — standalone non-HDR FO3/FNV cinematic grade over a clamped LDR scene;
 //     no exposure, adapted-average sample, or bloom.
+//   5 ClassicSdrBloom — the classic launcher's middle "Bloom" state: SDR clamp + bright-pass
+//     bloom at neutral exposure + classic grade. Stand-in for the unrecovered LDR [BlurShader].
 //
 // mainAdapt consumes the classic recursive DownSample16 chain's 1x1 result and applies ADAPT.
 // mainAvg retains the sparse-grid average only for the default-off modern path, whose reduction
@@ -87,6 +89,20 @@ float4 main(PSInput input) : SV_Target
         float3 lin = pow(max(hdr.rgb, 0.0), 2.2);
         lin = AcesFilmic(lin * uParams0.x);
         return float4(pow(lin, 1.0 / 2.2), hdr.a);
+    }
+
+    // ClassicSdrBloom (mode 5) — the classic launcher's middle "Bloom" state: SDR clamp at
+    // NEUTRAL exposure + the bright-pass bloom term + the classic grade (neutral for Oblivion).
+    // Retail's LDR [BlurShader] topology is unrecovered; this stand-in reuses the recovered
+    // bright-pass chain over the clamped scene with the engine composite's 0.5 bloom weight and
+    // denom = 1 (no eye-adapt scaling — uAvgLum is deliberately never sampled here). Placed
+    // before the mode-4 window so its extraction stays clean, and before the >=2.5 modern range
+    // that would otherwise swallow mode 5.
+    if (uParams0.z >= 4.5)
+    {
+        float3 sdrBloom = uParams3.z * uBloom.Sample(uSampler, input.vUv).rgb;
+        float3 sdr = saturate(hdr.rgb) * uParams0.x + sdrBloom * 0.5;
+        return float4(saturate(ApplyClassicCinematic(sdr)), hdr.a);
     }
 
     // ImageSpaceEffectCinematic is the FO3/FNV alternate selected when engine HDR is off. Its

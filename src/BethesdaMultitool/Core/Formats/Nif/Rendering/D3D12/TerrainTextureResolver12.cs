@@ -55,6 +55,10 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     /// <summary>1×1 white texture returned only when even the engine-default fails.</summary>
     public GpuTextureCache12.Entry WhiteFallback => _textureCache.WhitePixel;
 
+    /// <summary>The flat-normal placeholder (encoded (0,0,1)) — e.g. the water renderer's
+    /// ripples-off substitute surface.</summary>
+    public GpuTextureCache12.Entry FlatNormalFallback => _textureCache.FlatNormal;
+
     /// <summary>Engine-default landscape diffuse for the active game (FNV DirtWasteland01, FO4
     /// CommonwealthDefault01, …). Lazy — first access uploads it via the texture cache (which records
     /// onto the current frame's command list). Game-keyed so a non-FNV worldspace's no-BTXT quadrants

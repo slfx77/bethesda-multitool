@@ -30,7 +30,8 @@ internal static class TerrainPipelineFactory12
     ///     the terrain input layout. Both share the same reversed-Z depth state, back-face cull, and
     ///     MSAA settings; the depth-only variant drops the pixel shader and all render targets.
     /// </summary>
-    public static (ID3D12PipelineState Pso, ID3D12PipelineState DepthOnlyPso) BuildPipelineStates(
+    public static (ID3D12PipelineState Pso, ID3D12PipelineState DepthOnlyPso, ID3D12PipelineState MirrorPso)
+        BuildPipelineStates(
         GpuDevice12 gpu,
         GpuRootSignature12 rootSignature,
         byte[] vsBytecode,
@@ -102,7 +103,16 @@ internal static class TerrainPipelineFactory12
         };
         var depthOnlyPso = gpu.Device.CreateGraphicsPipelineState(depthOnlyPsoDesc);
 
-        return (pso, depthOnlyPso);
+        // Mirror-winding twin of the color PSO for the water-reflection pass: a mirrored
+        // (negative-determinant) viewProj flips screen-space winding, so the mirror pass draws
+        // terrain with the front-face orientation reversed instead of culling everything visible.
+        var mirrorRasterizer = rasterizer;
+        mirrorRasterizer.FrontCounterClockwise = false;
+        var mirrorPsoDesc = psoDesc;
+        mirrorPsoDesc.RasterizerState = mirrorRasterizer;
+        var mirrorPso = gpu.Device.CreateGraphicsPipelineState(mirrorPsoDesc);
+
+        return (pso, depthOnlyPso, mirrorPso);
     }
 
     /// <summary>

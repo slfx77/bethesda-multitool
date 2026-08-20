@@ -278,6 +278,75 @@ internal static class NifSceneGraphBlockReader
     }
 
     /// <summary>
+    ///     Reads a NiNode's dynamic-effects list — the refs that follow the Children array
+    ///     (nif.xml: present through Skyrim SE, removed for FO4+ via <c>#NI_BS_LT_FO4#</c>).
+    ///     Returns null for a malformed block, FO4+ streams, or an empty list. Bethesda's TES3
+    ///     exporter lists NiTextureEffects only among CHILDREN with an empty Effects array
+    ///     (byte-verified on <c>meshes\a\a_glass_boots_gnd.nif</c>), so consumers must check both.
+    /// </summary>
+    internal static List<int>? ParseNodeEffects(
+        byte[] data,
+        BlockInfo block,
+        uint bsVersion,
+        uint binaryVersion,
+        bool be,
+        bool hasInlineStrings = false)
+    {
+        if (bsVersion >= 130)
+        {
+            return null; // FO4+ NiNode carries no effects array
+        }
+
+        var pos = block.DataOffset;
+        var end = block.DataOffset + block.Size;
+        if (!SkipNiGeometryHeader(
+                data,
+                ref pos,
+                end,
+                bsVersion,
+                binaryVersion,
+                be,
+                hasInlineStrings) ||
+            pos + 4 > end)
+        {
+            return null;
+        }
+
+        var numChildren = BinaryUtils.ReadUInt32(data, pos, be);
+        pos += 4;
+        if (numChildren > 500 || pos + numChildren * 4 > end)
+        {
+            return null;
+        }
+
+        pos += (int)numChildren * 4;
+        if (pos + 4 > end)
+        {
+            return null;
+        }
+
+        var numEffects = BinaryUtils.ReadUInt32(data, pos, be);
+        pos += 4;
+        if (numEffects == 0 || numEffects > 500 || pos + numEffects * 4 > end)
+        {
+            return null;
+        }
+
+        var effects = new List<int>((int)numEffects);
+        for (var i = 0; i < numEffects; i++)
+        {
+            var effectRef = BinaryUtils.ReadInt32(data, pos, be);
+            pos += 4;
+            if (effectRef >= 0)
+            {
+                effects.Add(effectRef);
+            }
+        }
+
+        return effects.Count > 0 ? effects : null;
+    }
+
+    /// <summary>
     ///     Reads a <c>NiSwitchNode</c>'s active-child ordinal. Returns <see langword="null" /> for a
     ///     malformed block and <c>-1</c> when the authored index selects no child.
     /// </summary>

@@ -155,6 +155,7 @@ struct PSInput
     nointerpolation float4 vSoftParticle  : TEXCOORD14; // encoded depth slot/view, near, far, signed soft depth
     nointerpolation float vSpecularLodFade : TEXCOORD15; // classic FNV direct-sun specular only
     float3 vFnvActiveAdtBaseLight : TEXCOORD16; // SLS2000 normalized tangent-space Sun vector
+    nointerpolation float4 vHeatmap : TEXCOORD17; // FormID heatmap: rgb = ramp tint, w = active
     bool   IsFrontFace  : SV_IsFrontFace;
 };
 
@@ -240,7 +241,9 @@ bool PassAlphaTest(float alpha, float threshold, float functionId)
 // bit 12 = FNV runtime TallGrass no-sun-shadow (retail's GRASS pixel-shader family never
 // samples a sun/world shadow map; set only on the FNV branch of ResolveTextureState),
 // bit 13 = FO3/FNV runtime SpeedTree LEAF-CARD no-sun-shadow (retail STLEAF*.vso declare no
-// shadow input at all and STLEAF2000/2001.pso bind only DiffuseMap)
+// shadow input at all and STLEAF2000/2001.pso bind only DiffuseMap),
+// bit 14 = the classic env texture is a TES3/TES4-era NiTextureEffect 2D SPHERE map sampled
+// from the view-space reflection vector via textures[], never the cubemaps[] alias
 // (bit 8 is classic parallax).
 uint MaterialTextureFlags(float packedState)
 {
@@ -300,6 +303,11 @@ bool HasFnvGrassNoSunShadow(float packedState)
 bool HasSpeedTreeLeafNoSunShadow(float packedState)
 {
     return (MaterialTextureFlags(packedState) & 8192u) != 0u;
+}
+
+bool HasClassicSphereMapEnvironment(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 16384u) != 0u;
 }
 
 float4 SampleMaterialTexture(uint slot, float2 uv, float packedState)
@@ -386,6 +394,9 @@ float2 ResolveClassicParallaxUv(PSInput input)
 
 float4 main(PSInput input) : SV_Target
 {
+    // Mirror-pass clip plane (b3 uClipPlane, origin-relative space; neutral (0,0,0,1) = no-op).
+    clip(dot(input.vWorldPos.xyz, uClipPlane.xyz) + uClipPlane.w);
+
     // Do this before texture/lighting work. Only explicitly eligible effects carry an encoded depth
     // slot; ordinary transparent draws rely exclusively on the simultaneously bound read-only DSV.
     float sceneDepthFeather = ResolveSceneDepthFeather(input);
@@ -745,8 +756,40 @@ float4 main(PSInput input) : SV_Target
             float3 reflectDir = UsesClassicEnvironmentWindowReflection(input.vTextureState.z)
                 ? reflect(V, normal)
                 : reflect(-V, normal);
-            uint cubeSlot = (uint)input.vEnvMap.x;
-            float3 env = cubemaps[NonUniformResourceIndex(cubeSlot)].Sample(sPalette, reflectDir).rgb;
+            uint envSlot = (uint)input.vEnvMap.x;
+            float3 env;
+            if (HasClassicSphereMapEnvironment(input.vTextureState.z))
+            {
+                // TES3/TES4-era NiTextureEffect ENVIRONMENT_MAP + CG_SPHERE_MAP: a 2D sphere map
+                // authored for the fixed-function EYE-SPACE reflection lookup (chrome-ball photo:
+                // sky at the top of the image). The PS carries no pure view matrix, so the eye
+                // basis is rebuilt per pixel from the view ray and world up (Z-up world): right =
+                // up × forward, upv = forward × right, +Z_eye toward the camera. This matches true
+                // eye space exactly at screen center and deviates only by the pixel's off-axis
+                // angle — imperceptible for glass/window glints — while staying camera-roll-free.
+                // UV is the classic sphere-map projection m = 2·sqrt(Rx² + Ry² + (Rz+1)²),
+                // uv = R.xy/m + 0.5, with v flipped for D3D's top-down texture convention.
+                // C# guarantees this slot is a plain 2D SRV (EnvMapState requires a resident
+                // NON-cube for the sphere route), so textures[] is the correct alias here.
+                float3 forward = -V;
+                float3 rightBasis = cross(float3(0.0, 0.0, 1.0), forward);
+                rightBasis = dot(rightBasis, rightBasis) > 1e-6
+                    ? normalize(rightBasis)
+                    : float3(1.0, 0.0, 0.0);
+                float3 upBasis = cross(forward, rightBasis);
+                float3 rv = float3(
+                    dot(reflectDir, rightBasis),
+                    dot(reflectDir, upBasis),
+                    dot(reflectDir, V));
+                float m = max(
+                    2.0 * sqrt(rv.x * rv.x + rv.y * rv.y + (rv.z + 1.0) * (rv.z + 1.0)), 1e-4);
+                float2 sphereUv = float2(0.5 + rv.x / m, 0.5 - rv.y / m);
+                env = textures[NonUniformResourceIndex(envSlot)].Sample(sPalette, sphereUv).rgb;
+            }
+            else
+            {
+                env = cubemaps[NonUniformResourceIndex(envSlot)].Sample(sPalette, reflectDir).rgb;
+            }
             lit += env * vertexRgb * (classicEnvMask * input.vEnvMap.y * input.vAlphaState.z);
         }
     }
@@ -829,6 +872,16 @@ float4 main(PSInput input) : SV_Target
     }
 #endif
     float3 outputRgb = ApplyFog(lit, input.vWorldPos, input.vEnvMap.w);
+    if (input.vHeatmap.w > 0.5)
+    {
+        // FormID-heatmap debug overlay: REPLACE the lit result with the exact palette color so the
+        // hue reads as pure data (authoring order). Fog is deliberately skipped for tinted pixels —
+        // hazing toward the fog color would shift the perceived hue with distance and corrupt the
+        // read. Alpha-test/coverage above already ran, and outAlpha is kept, so cutout silhouettes
+        // and blend fades still shape the tinted surface; the soft-particle feather below remains a
+        // pure visibility term on top.
+        outputRgb = input.vHeatmap.rgb;
+    }
     if (abs(input.vSoftParticle.w) > 0.0)
     {
         if (input.vEnvMap.w >= 1.5)
